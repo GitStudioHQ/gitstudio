@@ -17,7 +17,6 @@ import type { WorktreeOperation } from "@gitstudio/host-bridge/worktreeRemoval";
 import type {
   ConflictShape,
   ConflictsSnapshot,
-  JetBrainsIdeInfo,
   MergeSettings,
   OperationOutcome,
   OperationView,
@@ -28,7 +27,6 @@ export type { RowStat, CommitDetailsPayload, GraphRefEntry, GraphRefFilter };
 export type {
   ConflictShape,
   ConflictsSnapshot,
-  JetBrainsIdeInfo,
   MergeSettings,
   OperationOutcome,
   OperationView,
@@ -2834,15 +2832,7 @@ export interface IpcChannels {
   "op:continue": [{ confirmDrop?: boolean }, OperationOutcome];
   "op:skip": [void, OperationOutcome];
   "op:abort": [void, OperationOutcome];
-  /** The JetBrains IDE the merge settings resolve to, or undefined when none is installed. */
-  "jetbrains:detect": [void, JetBrainsIdeInfo | undefined];
-  /** Open the file's conflict in the IDE's merge window (LOCAL = Yours, REMOTE = Theirs). */
-  "jetbrains:merge": [{ path: string }, CommitActionResult];
-  /** Open HEAD vs the working copy of the file in the IDE's diff window. */
-  "jetbrains:diff": [{ path: string }, CommitActionResult];
-  /** After the IDE merge: stage the file and remove the launch's temp files. */
-  "jetbrains:markResolved": [{ path: string }, CommitActionResult];
-  /** Settings ▸ Merge (persisted by the main process, which also spawns the IDE). */
+  /** Settings ▸ Merge (persisted by the main process). */
   "merge:settings": [void, MergeSettings];
   "merge:setSettings": [Partial<MergeSettings>, MergeSettings];
   // ── Tag creation (the Branches view's "Create tag here…") ──

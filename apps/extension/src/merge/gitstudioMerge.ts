@@ -14,7 +14,6 @@ import { promptConfirm, promptPick } from "../ui/dialogs";
 import { isSamePathOrInside } from "../util/repoScope";
 import {
   GITSTUDIO_COEXISTENCE_PROMPT_KEY,
-  GITSTUDIO_IDE_CONTEXT_KEY,
   GITSTUDIO_MERGE_COMMANDS,
   GITSTUDIO_MERGE_SECTION,
   GITSTUDIO_MERGE_VIEW_TYPES,
@@ -26,8 +25,8 @@ import {
 // the MergeProduct that says what is GitStudio's — ids, brand, settings under
 // `gitstudio.merge`, questions asked in GitStudio's own dialog (never a modal),
 // the UndoLedger, and repositories from the RepoManager. Everything else — the
-// merge editor, the conflicts dashboard, routing, the JetBrains hand-off, the
-// diff panel — is the code Merge Studio runs too.
+// merge editor, the conflicts dashboard, routing, the diff panel — is the code
+// Merge Studio runs too.
 //
 // D4: when Merge Studio is also installed, it is Merge Studio that stands down
 // its automatic behaviour — until the user hands it back ("Let Merge Studio
@@ -60,7 +59,6 @@ export function registerGitStudioMerge(
     settingsSection: GITSTUDIO_MERGE_SECTION,
     viewTypes: GITSTUDIO_MERGE_VIEW_TYPES,
     commands: GITSTUDIO_MERGE_COMMANDS,
-    ideAvailableContextKey: GITSTUDIO_IDE_CONTEXT_KEY,
     // Lists Continue / Skip / Abort Operation and Abort Rebase in the palette
     // only while there is something for them to act on (package.json).
     operationContextKey: "gitstudio.operationInProgress",

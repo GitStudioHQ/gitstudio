@@ -4,7 +4,7 @@
 // Both components speak a host-agnostic vocabulary — WebviewMessage for the
 // shell, ConflictsAction for the dashboard. The extension answers them over
 // postMessage; here each one is mapped onto the IPC channels P2 implements
-// (conflict:*, op:*, jetbrains:*, merge:settings), and the answers are turned
+// (conflict:*, op:*, merge:settings), and the answers are turned
 // back into the HostMessages / ConflictsState the components expect.
 //
 // Deliberately free of DOM and of `window.gitstudio`: every effect is an
@@ -19,7 +19,6 @@ import {
   type ConflictsAction,
   type ConflictsSnapshot,
   type ConflictsState,
-  type JetBrainsIdeInfo,
   type MergeSettings,
   type OperationOutcome,
   type OperationView,
@@ -137,7 +136,6 @@ export function missingRoleOf(model: ConflictModel): SideRole | undefined {
 export function mergePayload(
   model: ConflictModel,
   settings: MergeSettings,
-  ide?: JetBrainsIdeInfo,
   commits?: { yours?: string; theirs?: string },
 ): MergeInitPayload {
   const shape = conflictShape(model);
@@ -155,7 +153,6 @@ export function mergePayload(
     ours: model.ours,
     theirs: model.theirs,
     result: model.result,
-    jetbrainsName: ide?.name,
     op: model.op,
     // D3 as overridden: the desktop used to auto-apply unconditionally; it is
     // now the Settings ▸ Merge setting, OFF unless turned on.
@@ -183,10 +180,9 @@ export async function submoduleCommits(
   }
 }
 
-// ── settings & IDE, cached for the session ───────────────────────────────────
+// ── settings, cached for the session ────────────────────────────────────────
 
 let settingsCache: Promise<MergeSettings> | undefined;
-let ideCache: Promise<JetBrainsIdeInfo | undefined> | undefined;
 
 /** The merge settings. A main process that cannot answer yet means the defaults. */
 export function loadMergeSettings(invoke: Invoke): Promise<MergeSettings> {
@@ -196,28 +192,17 @@ export function loadMergeSettings(invoke: Invoke): Promise<MergeSettings> {
   return settingsCache;
 }
 
-/** The JetBrains IDE the settings resolve to, or undefined when none is installed. */
-export function detectJetBrains(invoke: Invoke): Promise<JetBrainsIdeInfo | undefined> {
-  ideCache ??= invoke("jetbrains:detect", undefined)
-    .then((i) => i ?? undefined)
-    .catch(() => undefined);
-  return ideCache;
-}
-
 /** Save settings; the answer is what the main process actually stored. */
 export async function saveMergeSettings(invoke: Invoke, patch: Partial<MergeSettings>): Promise<MergeSettings> {
   const next = await invoke("merge:setSettings", patch);
   const merged = { ...DEFAULT_MERGE_SETTINGS, ...(next ?? {}) };
   settingsCache = Promise.resolve(merged);
-  // Which IDE is used can change with the preferred IDE or the path.
-  if ("preferredIde" in patch || "jetbrainsPath" in patch) ideCache = undefined;
   return merged;
 }
 
-/** Forget the cached settings and IDE (a repository switch, a Look again). */
+/** Forget the cached settings (a repository switch, a Look again). */
 export function forgetMergeSettings(): void {
   settingsCache = undefined;
-  ideCache = undefined;
 }
 
 // ── outcomes ─────────────────────────────────────────────────────────────────
@@ -311,13 +296,6 @@ export interface MergeAdapterDeps {
   onExit(): void;
   /** The operation moved (Continue / Abort): refresh refs, the branch, everything. */
   onOperationChanged(outcome: { kind: "done" | "stopped" | "failed"; text: string }): void;
-  /**
-   * The file went to the IDE (Open in <IDE>): the host puts the editor away
-   * and shows the hand-off — "Resolving in <IDE>", with Mark resolved — the
-   * way the Settings route does. False when it has nowhere to, and the
-   * adapter says it in a toast instead.
-   */
-  onHandedToIde?(): boolean;
   undoable: Undoable;
   notify: Notify;
   /**
@@ -343,8 +321,7 @@ function fileName(path: string): string {
  *   conflict:delete;
  * - continueOperation → op:continue; cancel{abort} (older pages) → op:abort —
  *   each an `outcome` then `opChanged`; cancel{exit} (Close) and
- *   showConflicts → back to the dashboard, writing nothing;
- * - openInJetBrains → jetbrains:merge, with "Mark resolved" on the notice.
+ *   showConflicts → back to the dashboard, writing nothing.
  */
 export class DesktopMergeAdapter {
   constructor(
@@ -442,22 +419,6 @@ export class DesktopMergeAdapter {
           this.deps.onOperationChanged(line);
           return;
         }
-        case "openInJetBrains": {
-          const r = await invoke("jetbrains:merge", { path });
-          if (!r.ok) {
-            this.deps.notify(r.message || "Couldn't open the IDE.", "error");
-            return;
-          }
-          // The button says it closes this editor: the host shows the hand-off
-          // in its place. A toast is only for a host with nowhere to put it —
-          // it goes in seconds, and "Mark resolved" with it.
-          if (this.deps.onHandedToIde?.()) return;
-          this.deps.notify(`Resolve ${path} in the IDE's merge window, then mark it resolved here.`, "info", {
-            label: "Mark resolved",
-            onClick: () => void this.markResolvedInIde(),
-          });
-          return;
-        }
         default:
           // ready / resultChanged / diff messages: nothing to do on the desktop,
           // which writes the result only on Apply.
@@ -522,16 +483,6 @@ export class DesktopMergeAdapter {
       if (!go) return `Nothing was written. ${name} keeps the edit made outside the merge editor.`;
     }
     return undefined;
-  }
-
-  private async markResolvedInIde(): Promise<void> {
-    const r = await this.deps.invoke("jetbrains:markResolved", { path: this.model.path });
-    if (!r.ok) {
-      this.deps.notify(r.message || "Couldn't stage the file.", "error");
-      return;
-    }
-    this.deps.notify(`Resolved ${this.model.path}.`, "success");
-    this.deps.onResolved();
   }
 
   /** Every resolution is one ⌘Z away: `checkout -m` brings the conflict back. */

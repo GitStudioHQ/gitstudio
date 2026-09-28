@@ -57,8 +57,7 @@ export type ShowModal = (
 
 /**
  * Merge Studio asks its few yes/no questions (Continue and drop an emptied
- * commit, Skip, Abort from the palette; hand a half-merged file to the IDE)
- * with a modal, as 0.3.4 did. The dashboard's and the merge editor's own
+ * commit, Skip, Abort from the palette) with a modal, as 0.3.4 did. The dashboard's and the merge editor's own
  * buttons confirm inline instead; the question about VS Code's merge editor is
  * a toast (merge-vscode's coexistence.ts).
  */
@@ -104,27 +103,7 @@ export const GITSTUDIO_DEFERRAL: DeferralNotice = {
   handBack: { section: GITSTUDIO_AUTO_OPEN_SECTION, key: GITSTUDIO_AUTO_OPEN_KEY },
 };
 
-// ── Legacy setting values ───────────────────────────────────────────────────
-
-/** What `WorkspaceConfiguration.inspect` reports, reduced to the scope we touch. */
-export interface InspectedSetting {
-  globalValue?: unknown;
-}
-
-/**
- * 0.3.4 called the embedded editor `"webview"`; 1.0 calls it `"embedded"`
- * (the shared settings contract). The old value still works — the shared
- * settings reader maps it — but the Settings editor would flag it as invalid,
- * so a USER-level `"webview"` is rewritten once. A workspace value is left
- * alone: it lives in the user's repository (.vscode/settings.json), and
- * rewriting it would put a change in their working tree.
- */
-export function legacySettingUpdates(
-  inspect: (key: string) => InspectedSetting | undefined,
-): { key: string; value: string }[] {
-  const resolver = inspect("conflictResolver");
-  return resolver?.globalValue === "webview" ? [{ key: "conflictResolver", value: "embedded" }] : [];
-}
+// ── Legacy state ────────────────────────────────────────────────────────────
 
 /**
  * 0.3.4 asked its question about VS Code's own merge editor once, at its first

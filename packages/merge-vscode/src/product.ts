@@ -1,8 +1,8 @@
 // The MergeProduct: everything that differs between the two extensions that
 // mount this package (GitStudio and Merge Studio). Ids, brand, where settings
 // live, how a question is asked, and how repositories are found. Everything
-// else — the merge editor, the dashboard, routing, JetBrains hand-off, the
-// diff panel — is the same code for both (PLAN §3.7 W14, decision D5).
+// else — the merge editor, the dashboard, routing, the diff panel — is the
+// same code for both (PLAN §3.7 W14, decision D5).
 //
 // This module is vscode-free AT RUNTIME (type-only imports), so the pure
 // helpers below are unit-tested under plain node.
@@ -11,9 +11,7 @@ import type * as vscode from "vscode";
 import type { GitContext } from "@gitstudio/git-service/GitContext";
 import {
   DEFAULT_MERGE_SETTINGS,
-  JETBRAINS_IDES,
   type ConflictsState,
-  type JetBrainsIdeId,
   type MergeSettings,
 } from "@gitstudio/host-bridge/conflictsProtocol";
 
@@ -27,11 +25,7 @@ export interface MergeCommandIds {
   showConflicts: string;
   /** Open a conflicted file in the embedded 3-pane merge editor. */
   resolveInMergeEditor: string;
-  /** Open a conflicted file in the installed JetBrains IDE's merge window. */
-  mergeWithJetBrains: string;
-  /** Diff in the installed JetBrains IDE (two selected files, or vs HEAD). */
-  diffWithJetBrains: string;
-  /** The routed Compare: honours the diffTool setting; two selected files diff each other. */
+  /** Compare: two selected files diff each other; one file vs HEAD (or the product's own ask). */
   compare: string;
   /** Always the embedded diff (two selected files, or the file vs HEAD). */
   openDiff: string;
@@ -205,8 +199,6 @@ export interface MergeProduct {
   readonly settingsSection: string;
   readonly viewTypes: MergeViewTypes;
   readonly commands: MergeCommandIds;
-  /** `setContext` key that is true while a JetBrains IDE can be launched. */
-  readonly ideAvailableContextKey: string;
   /**
    * `setContext` key the watcher keeps true while any open repository has an
    * operation stopped or unmerged files — what the operation verbs (Continue /
@@ -257,8 +249,8 @@ export interface MergeProduct {
   readonly peer?: MergePeer;
   /**
    * The peer's settings section, read when this product's own twin is UNSET
-   * (POLISH A5.7): a Merge Studio user's `jbMerge.conflictResolver:
-   * "jetbrains"` keeps working after GitStudio takes the automatic behaviour.
+   * (POLISH A5.7): a Merge Studio user's `jbMerge.autoApplyNonConflicting`
+   * keeps working after GitStudio takes the automatic behaviour.
    */
   readonly settingsFallbackSection?: string;
   /**
@@ -284,13 +276,12 @@ export interface MergeProduct {
   onRepositoryChanged?(repo: MergeRepo): void;
 }
 
-const RESOLVERS = new Set(["embedded", "jetbrains"]);
-const IDE_IDS = new Set<string>(JETBRAINS_IDES.map((i) => i.id));
-
 /**
- * Reads the six settings from a raw getter, with every unknown value falling
- * back to the default rather than reaching the code as garbage. Merge Studio's
- * legacy `conflictResolver: "webview"` means the embedded editor.
+ * Reads the settings from a raw getter, with every unknown value falling back
+ * to the default rather than reaching the code as garbage. The settings of the
+ * removed external-IDE hand-off (`conflictResolver`, `diffTool`,
+ * `preferredIde`, the launcher path) are never read: a stored value means
+ * nothing, and conflicts and diffs open in the embedded editors.
  */
 export function normalizeMergeSettings(
   get: (key: keyof MergeHostSettings) => unknown,
@@ -299,30 +290,12 @@ export function normalizeMergeSettings(
     const v = get(key);
     return typeof v === "boolean" ? v : dflt;
   };
-  const choice = (key: "conflictResolver" | "diffTool"): "embedded" | "jetbrains" => {
-    const v = get(key);
-    if (v === "webview") {
-      return "embedded";
-    }
-    return typeof v === "string" && RESOLVERS.has(v)
-      ? (v as "embedded" | "jetbrains")
-      : DEFAULT_MERGE_SETTINGS[key];
-  };
-  const ide = get("preferredIde");
-  const path = get("jetbrainsPath");
   return {
     autoOpen: bool("autoOpen", true),
     autoApplyNonConflicting: bool(
       "autoApplyNonConflicting",
       DEFAULT_MERGE_SETTINGS.autoApplyNonConflicting,
     ),
-    conflictResolver: choice("conflictResolver"),
-    diffTool: choice("diffTool"),
-    preferredIde:
-      typeof ide === "string" && (ide === "auto" || IDE_IDS.has(ide))
-        ? (ide as JetBrainsIdeId | "auto")
-        : DEFAULT_MERGE_SETTINGS.preferredIde,
-    jetbrainsPath: typeof path === "string" ? path.trim() : "",
   };
 }
 
@@ -391,9 +364,7 @@ export interface InspectedValue {
  * UNSET in every scope, from the peer's (POLISH A5.7). Only an explicit peer
  * value counts — never its default — and `autoOpen` never falls back: it is
  * each product's own switch, and the one that hands the automatic behaviour
- * from one to the other. `jetbrainsPath` falls back to a USER value only: a
- * workspace must not choose the program GitStudio launches, and the peer's key
- * carries no machine scope when the peer is not installed to declare it.
+ * from one to the other.
  */
 export function settingWithFallback(
   key: keyof MergeHostSettings,
@@ -405,7 +376,6 @@ export function settingWithFallback(
   const set = (i: InspectedValue | undefined): boolean =>
     !!i && (i.globalValue !== undefined || i.workspaceValue !== undefined || i.workspaceFolderValue !== undefined);
   if (set(own)) return ownValue;
-  if (key === "jetbrainsPath") return fallback.globalValue !== undefined ? fallback.globalValue : ownValue;
   if (!set(fallback)) return ownValue;
   return fallback.workspaceFolderValue ?? fallback.workspaceValue ?? fallback.globalValue;
 }

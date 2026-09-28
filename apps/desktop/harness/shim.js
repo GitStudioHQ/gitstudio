@@ -465,18 +465,13 @@
     changedFiles.push({ path: "packages/engine/src/spacing.ts", status: "M", staged: false });
     changedFiles.push({ path: "packages/engine/src/spacing-inner.ts", status: "M", staged: false });
   }
-  // ?difftool=jetbrains (Settings ▸ Merge shows diffs in the IDE) adds a
-  // changed BINARY, the one kind of file the IDE route must not take.
-  if (params.get("difftool")) {
-    changedFiles.push({ path: "brand/logo.png", status: "M", staged: false });
-  }
 
 
   // ── Merge parity: a stopped operation, its conflicts, and every verb on them ──
   //
-  // ONE stateful fixture behind the thirteen merge-parity channels
+  // ONE stateful fixture behind the merge-parity channels
   // (conflict:state|takeRole|restore|delete, op:continue|skip|abort,
-  // jetbrains:detect|merge|diff|markResolved, merge:settings|setSettings), plus
+  // merge:settings|setSettings), plus
   // git:opState, status, file:diff and conflict:model derived from it — so a
   // Continue that finishes really does make the banner, the badge and the list
   // agree that nothing is in progress any more. Every one of them is answered:
@@ -492,8 +487,6 @@
   //     merge     feature/login into main: a text file, a binary, a modify/delete
   //     am        `git am` stopped on patch 2 of 5
   //   &willdrop=1                              the resolution emptied the commit
-  //   &noide=1                                 no JetBrains IDE on this machine
-  //   &resolver=jetbrains                      Settings ▸ Merge resolves in the IDE
   //
   // Or a REAL stopped repository: scripts/merge-e2e/render.ts loads a script
   // before this one that sets window.__GS_MERGE_FIXTURE = { op, files, models }
@@ -600,11 +593,7 @@
       step: 1,
       op: FIX ? FIX.op : kind && (viewOf || ctx) ? (ctx === "three" ? rebaseStep(1, 3) : viewOf()) : NONE,
       files: FIX ? FIX.files.map((f) => ({ ...f, status: "pending" })) : kind ? filesFor().map((f) => ({ ...f, status: "pending" })) : [],
-      settings: {
-        autoApplyNonConflicting: false,
-        conflictResolver: params.get("resolver") === "jetbrains" ? "jetbrains" : "embedded",
-        diffTool: params.get("difftool") === "jetbrains" ? "jetbrains" : "embedded", preferredIde: "auto", jetbrainsPath: "",
-      },
+      settings: { autoApplyNonConflicting: false },
     };
     const pending = () => state.files.filter((f) => f.status !== "resolved").length;
     /** The OperationView as the host would report it NOW — capability decided here, like P2's provider. */
@@ -3619,34 +3608,12 @@
       return one(req);
     };
   }
-  const IDE = { id: "webstorm", name: "WebStorm", command: "/Applications/WebStorm.app/Contents/MacOS/webstorm" };
-  dynamic["jetbrains:detect"] = () => (params.get("noide") === "1" ? undefined : IDE);
-  dynamic["jetbrains:merge"] = (req) => {
-    if (params.get("noide") === "1") return { ok: false, changed: false, message: "No JetBrains IDE was found.", expected: true };
-    // As the main process does (ConflictOps.externalMergeInput): the IDE merges
-    // LINES, so a binary, a deleted side or a file too large to read is refused.
-    const f = req && mp.file(req.path);
-    if (f && f.shape !== "text" && f.shape !== "added-both") {
-      return { ok: false, changed: false, expected: true, message: `${req.path} has no text to merge line by line — use Accept Yours or Accept Theirs.` };
-    }
-    return { ok: true, changed: false };
-  };
-  dynamic["jetbrains:diff"] = () =>
-    params.get("noide") === "1" ? { ok: false, changed: false, message: "No JetBrains IDE was found.", expected: true } : { ok: true, changed: false };
-  dynamic["jetbrains:markResolved"] = (req) => resolveRow(req && req.path, "merged");
   dynamic["merge:settings"] = () => ({ ...mp.state.settings });
   dynamic["merge:setSettings"] = (patch) => {
-    const next = { ...(patch || {}) };
-    // As the main process does (mergeSettings.ts → resolveJetBrainsLauncher):
-    // a launcher path is stored only when it names a JetBrains launcher or an
-    // app bundle; anything else comes back unchanged.
-    if (typeof next.jetbrainsPath === "string" && next.jetbrainsPath.trim()) {
-      const p = next.jetbrainsPath.trim();
-      const launcher = /(^|\/)(idea|webstorm|pycharm|phpstorm|goland|clion|rider|rubymine|datagrip)(64)?(\.sh|\.exe|\.cmd|\.bat)?$|\.app\/?$/i;
-      if (!p.startsWith("/") || !launcher.test(p)) delete next.jetbrainsPath;
-      else next.jetbrainsPath = p;
+    // As the main process does (mergeSettings.ts): only a valid value is stored.
+    if (patch && typeof patch.autoApplyNonConflicting === "boolean") {
+      mp.state.settings.autoApplyNonConflicting = patch.autoApplyNonConflicting;
     }
-    Object.assign(mp.state.settings, next);
     return { ...mp.state.settings };
   };
   // The rebase view's own Skip (views/rebase.ts), answered like the host would.

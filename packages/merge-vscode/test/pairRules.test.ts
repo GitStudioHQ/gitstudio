@@ -14,25 +14,22 @@ import {
 
 test("A5.7: an explicit Merge Studio value is read while GitStudio's twin is unset — never a default, never autoOpen", () => {
   const unset = {};
+  const key = "autoApplyNonConflicting";
   // explicit jbMerge + unset gitstudio → the jbMerge value
-  assert.equal(settingWithFallback("conflictResolver", unset, { globalValue: "jetbrains" }, "embedded"), "jetbrains");
-  assert.equal(settingWithFallback("preferredIde", unset, { workspaceValue: "pycharm" }, "auto"), "pycharm");
+  assert.equal(settingWithFallback(key, unset, { globalValue: true }, false), true);
+  assert.equal(settingWithFallback(key, unset, { workspaceValue: true }, false), true);
   assert.equal(
-    settingWithFallback("diffTool", unset, { globalValue: "embedded", workspaceFolderValue: "jetbrains" }, "embedded"),
-    "jetbrains",
+    settingWithFallback(key, unset, { globalValue: false, workspaceFolderValue: true }, false),
+    true,
     "the narrowest scope wins, as VS Code's own get() would",
   );
   // both set → gitstudio
-  assert.equal(settingWithFallback("conflictResolver", { globalValue: "embedded" }, { globalValue: "jetbrains" }, "embedded"), "embedded");
+  assert.equal(settingWithFallback(key, { globalValue: false }, { globalValue: true }, false), false);
   // jbMerge default only → the gitstudio default
-  assert.equal(settingWithFallback("conflictResolver", unset, {}, "embedded"), "embedded");
-  assert.equal(settingWithFallback("conflictResolver", unset, undefined, "embedded"), "embedded");
+  assert.equal(settingWithFallback(key, unset, {}, false), false);
+  assert.equal(settingWithFallback(key, unset, undefined, false), false);
   // autoOpen is each product's own switch (and the hand-over): never borrowed.
   assert.equal(settingWithFallback("autoOpen", unset, { globalValue: false }, true), true);
-  // jetbrainsPath: a USER value only — a workspace must not pick the program launched.
-  assert.equal(settingWithFallback("jetbrainsPath", unset, { globalValue: "/Apps/ws" }, ""), "/Apps/ws");
-  assert.equal(settingWithFallback("jetbrainsPath", unset, { workspaceValue: "/tmp/evil" }, ""), "");
-  assert.equal(settingWithFallback("jetbrainsPath", { globalValue: "/mine" }, { globalValue: "/theirs" }, "/mine"), "/mine");
 });
 
 test("A5.8 the other way: GitStudio stands down only for a Merge Studio 1.0 the user handed conflicts to", () => {

@@ -30,10 +30,6 @@ function hostFor(order: string[] = []): MergeHostCore {
     settings: () => ({
       autoOpen: true,
       autoApplyNonConflicting: false,
-      conflictResolver: "embedded",
-      diffTool: "embedded",
-      preferredIde: "auto",
-      jetbrainsPath: "",
     }),
     defers: () => false,
     notify: async () => undefined,

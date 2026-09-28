@@ -5921,26 +5921,6 @@
     },
 
     /**
-     * With Settings ▸ Merge resolving in the IDE, the file is handed over once
-     * — not again on every repaint of the Changes view. Each repaint used to
-     * relaunch the IDE, and the main process removed the previous window's
-     * LOCAL / REMOTE / BASE as it did.
-     */
-    "the-ide-hand-off-is-not-repeated-by-a-refresh": async (f) => {
-      const c = check(f);
-      await settle(600);
-      $$(".cd-row button").find((b) => text(b) === "Merge…")?.click();
-      await settle(1200);
-      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "jetbrains:merge").length, 1, "handed to the IDE once");
-      for (const gitDir of [false, true]) {
-        window.__gsEmit("repo:filesChanged", { gitDir });
-        await settle(1500);
-      }
-      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "jetbrains:merge").length, 1, "and not again when the view repaints");
-      c.match(text(".diff-empty"), /WebStorm/, "the pane still says where it went");
-    },
-
-    /**
      * Every --gs-* token the shared merge stylesheets (shell.css,
      * conflicts.css, diff.css) use RESOLVES on the desktop, inside the
      * dashboard, the merge shell and the legend's key — in dark and in light.
@@ -5976,7 +5956,7 @@
       c.eq(fg, bodyFg, "--gs-fg IS the desktop theme's foreground");
     },
 
-    /** Settings ▸ Merge: the same five settings the extensions expose, auto-apply OFF by default. */
+    /** Settings ▸ Merge: the setting the extensions expose too, auto-apply OFF by default — and nothing else. */
     "settings-has-a-merge-card": async (f) => {
       const c = check(f);
       await settle(700);
@@ -5985,10 +5965,7 @@
       if (!card) return;
       const box = card.querySelector('.merge-auto input[type="checkbox"]');
       c.ok(!!box && !box.checked, "auto-apply is OFF by default");
-      const activeSeg = card.querySelectorAll(".settings-seg-btn.active");
-      c.eq([...activeSeg].map((b) => text(b)).join(" | "), "GitStudio's merge editor | GitStudio", "both tools default to GitStudio's own");
-      c.match(text(".merge-ide-found"), /Using WebStorm/, "and it says which IDE it would use");
-      c.eq(card.querySelector(".merge-ide-select")?.value, "auto", "the IDE is chosen automatically");
+      c.eq(card.querySelectorAll(".settings-seg, select, input:not([type=checkbox])").length, 0, "no tool choice, IDE picker or launcher path: GitStudio's own editors always");
       box?.click();
       await settle(400);
       const sent = window.__GS_INVOKED.filter((r) => r.channel === "merge:setSettings").map((r) => JSON.stringify(r.payload));
@@ -6012,38 +5989,6 @@
       c.match(text(".diff-empty"), /Couldn't read the conflict in file\.txt/, "the pane says the read failed, and for which file");
     },
 
-    /**
-     * The main process spawns the launcher path, so it stores one only when it
-     * IS a JetBrains launcher. A refused path must SAY so — not quietly snap
-     * back to the old value in the field.
-     */
-    "a-launcher-path-that-is-not-an-ide-is-refused-and-says-so": async (f) => {
-      const c = check(f);
-      await settle(700);
-      const card = $(".merge-settings-card");
-      c.ok(!!card, "Settings has a Merge card");
-      if (!card) return;
-      const input = card.querySelector(".merge-ide-path input");
-      const use = $$(".merge-settings-card button").find((b) => text(b) === "Use this path");
-      c.ok(!!input && !!use, "the card has a launcher path field");
-      if (!input || !use) return;
-      input.focus();
-      input.value = "/bin/sh";
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      await settle(100);
-      use.click();
-      await settle(700);
-      c.match($$(".toast-msg").map((t) => text(t)).join(" | "), /isn't a JetBrains IDE launcher/, "a shell is refused, and the refusal is said");
-      input.value = "/opt/idea/bin/idea.sh";
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      await settle(100);
-      use.click();
-      await settle(700);
-      const saved = window.__GS_INVOKED.filter((r) => r.channel === "merge:setSettings").map((r) => r.payload.jetbrainsPath);
-      c.eq(saved.join(","), "/bin/sh,/opt/idea/bin/idea.sh", "both were asked for");
-      c.eq(card.querySelector(".merge-ide-path input")?.value, "/opt/idea/bin/idea.sh", "the real launcher is kept");
-    },
-
     /** A stopped operation is visible from every view, and the chip goes to it. */
     "a-stopped-operation-shows-from-every-view": async (f) => {
       const c = check(f);
@@ -6064,141 +6009,6 @@
       await settle(900);
       c.ok(!!$(".changes-view"), "the chip goes to Changes");
       c.ok(!!$(".cd-dash"), "where the dashboard is waiting");
-    },
-
-    /**
-     * Settings ▸ Merge ▸ "Resolve conflicts with: a JetBrains IDE" — Merge…
-     * hands the file to the IDE and says so; "Mark resolved" stages it.
-     */
-    "the-ide-route-hands-over-and-marks-resolved": async (f) => {
-      const c = check(f);
-      await settle(600);
-      $$(".cd-row button").find((b) => text(b) === "Merge…")?.click();
-      await settle(1200);
-      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "jetbrains:merge").length, 1, "the file goes to the IDE");
-      c.ok(!$(".ms-shell"), "not to the built-in editor");
-      c.match(text(".diff-empty"), /WebStorm/, "and the pane says where it went");
-      const mark = $$(".diff-empty-actions button").find((b) => text(b) === "Mark resolved");
-      c.ok(!!mark, "with Mark resolved");
-      mark?.click();
-      await settle(1000);
-      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "jetbrains:markResolved").length, 1, "which stages it");
-      c.ok(!!$(".cd-dash") && !!$(".cd-row.is-resolved"), "and the dashboard shows it resolved");
-    },
-
-    /**
-     * …but a conflict with no TEXT is never handed to the IDE: the main process
-     * refuses (ConflictOps.externalMergeInput — the IDE merges lines), so with
-     * Settings resolving in the IDE, opening a binary put up an error toast —
-     * and another on every repaint the repository watcher set off, while the
-     * file stayed open. It goes straight to the panel that can resolve it.
-     */
-    "the-ide-route-leaves-a-conflict-with-no-text-to-the-panel": async (f) => {
-      const c = check(f);
-      await settle(900);
-      const row = () => $$(".dc-file").find((r) => r.dataset.path === "assets/logo.png");
-      for (let i = 0; i < 20 && !row(); i++) await settle(150);
-      c.ok(!!row(), "precondition: the binary conflict is listed");
-      row()?.click();
-      await settle(1200);
-      const handed = () => window.__GS_INVOKED.filter((r) => r.channel === "jetbrains:merge").length;
-      const errors = () => $$(".toast-msg").map((t) => text(t)).filter((t) => /no text to merge|Couldn't open/.test(t));
-      c.eq(handed(), 0, "the binary is not handed to the IDE");
-      c.ok(!!$(".ms-notext"), "it opens the panel that offers Accept Yours / Accept Theirs");
-      c.eq(errors().join(" | "), "", "with no error toast");
-      for (const gitDir of [false, true]) {
-        window.__gsEmit("repo:filesChanged", { gitDir });
-        await settle(1500);
-      }
-      c.eq(handed(), 0, "nor on any repaint after it");
-      c.eq(errors().join(" | "), "", "and no toast repeats with each refresh");
-      c.ok(!!$(".ms-notext"), "the panel is still there");
-      c.ok(!$(".ms-shell .jb-external") || $(".ms-shell .jb-external").hidden, "and it offers no Open in WebStorm either");
-    },
-
-    /**
-     * "Resolve here instead" is the user's answer for THIS conflict. The next
-     * repaint the repository watcher set off asked the IDE route again: it
-     * launched a second IDE window and put the hand-off pane back over the
-     * built-in editor — with whatever had been merged in it.
-     */
-    "resolve-here-instead-survives-the-watchers-refresh": async (f) => {
-      const c = check(f);
-      await settle(700);
-      $('[data-key="merge:src/app.ts"]')?.click();
-      await settle(1500);
-      const launches = () => window.__GS_INVOKED.filter((r) => r.channel === "jetbrains:merge").length;
-      c.eq(launches(), 1, "precondition: Settings sends the file to the IDE");
-      $$(".diff-empty-actions button").find((b) => /Resolve here instead/.test(text(b)))?.click();
-      await settle(1500);
-      const shell = $(".ms-shell");
-      c.ok(!!shell, "Resolve here instead opens the built-in editor");
-      $(".ms-accept-yours")?.click();
-      await settle(200);
-      for (const gitDir of [false, true]) {
-        window.__gsEmit("repo:filesChanged", { gitDir });
-        await settle(1600);
-      }
-      c.eq(launches(), 1, "a repaint does not send it to the IDE again");
-      c.ok(!!$(".ms-shell") && $(".ms-shell") === shell, "the same editor is still there");
-      c.eq(text(".ms-shell .jb-counter"), "All changes have been processed", "with the work done in it");
-    },
-
-    /**
-     * The merge editor's own "Open in WebStorm" says it will "close this editor
-     * and resolve the conflict in the WebStorm merge window". On the desktop it
-     * left the editor open, stale, with Apply live over the IDE's work, and
-     * "Mark resolved" lived only in an 8-second toast.
-     */
-    "the-ide-button-hands-the-file-over-like-the-setting-does": async (f) => {
-      const c = check(f);
-      await settle(700);
-      $('[data-key="merge:src/app.ts"]')?.click();
-      await settle(1500);
-      const ide = $(".ms-shell .jb-external");
-      c.ok(!!ide && !ide.hidden, "the merge editor offers Open in WebStorm");
-      ide?.click();
-      await settle(1200);
-      const launches = () => window.__GS_INVOKED.filter((r) => r.channel === "jetbrains:merge").length;
-      c.eq(launches(), 1, "the file goes to the IDE");
-      c.ok(!$(".ms-shell"), "and the editor closes, as its tooltip says");
-      c.match(text(".diff-empty"), /open in WebStorm/, "the pane says where it went");
-      for (const gitDir of [false, true]) {
-        window.__gsEmit("repo:filesChanged", { gitDir });
-        await settle(1600);
-      }
-      c.eq(launches(), 1, "not handed over again on a repaint");
-      c.ok(!$(".ms-shell"), "and the stale editor does not come back");
-      const mark = $$(".diff-empty-actions button").find((b) => text(b) === "Mark resolved");
-      c.ok(!!mark, "Mark resolved stays on screen, not only in a toast");
-      mark?.focus();
-      mark?.click();
-      await settle(1200);
-      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "jetbrains:markResolved").length, 1, "and stages it");
-      c.ok(!!$('.cd-row.is-resolved[data-path="src/app.ts"]'), "the dashboard shows it resolved");
-      const a = document.activeElement;
-      c.eq(a && a.dataset && a.dataset.key, "restore:src/app.ts", "and the keyboard lands on that file's row, not on <body>");
-    },
-
-    /**
-     * The same rule for "Show diffs with: a JetBrains IDE". The main process
-     * hands the IDE HEAD's side as a decoded STRING, so a changed binary
-     * arrived as U+FFFD beside the real file — a diff of the damage.
-     */
-    "the-ide-diff-route-leaves-a-binary-to-the-built-in-pane": async (f) => {
-      const c = check(f);
-      await settle(900);
-      const row = (p) => $$(".dc-file").find((r) => r.dataset.path === p);
-      for (let i = 0; i < 20 && !row("brand/logo.png"); i++) await settle(150);
-      c.ok(!!row("brand/logo.png"), "precondition: a changed binary is listed");
-      row("brand/logo.png")?.click();
-      await settle(1200);
-      const sent = () => window.__GS_INVOKED.filter((r) => r.channel === "jetbrains:diff").map((r) => r.payload && r.payload.path);
-      c.eq(sent().join(","), "", "the binary is not handed to the IDE");
-      c.eq(text(".diff-empty .list-empty-title"), "Binary file", "the built-in pane says what it is");
-      row("docs/redesign.md")?.click();
-      await settle(1200);
-      c.eq(sent().join(","), "docs/redesign.md", "a text file still goes to the IDE");
     },
 
     /**

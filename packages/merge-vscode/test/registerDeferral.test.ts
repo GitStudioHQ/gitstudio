@@ -16,8 +16,6 @@ beforeEach(() => stub.reset());
 const MS_COMMANDS = {
   showConflicts: "t.showConflicts",
   resolveInMergeEditor: "t.resolveInMergeEditor",
-  mergeWithJetBrains: "t.mergeWithJetBrains",
-  diffWithJetBrains: "t.diffWithJetBrains",
   compare: "t.compare",
   openDiff: "t.openDiff",
   openChanges: "t.openChanges",
@@ -73,7 +71,6 @@ function setUp(defers: boolean): { state: Map<string, unknown>; syncCalls: strin
     settingsSection: "t",
     viewTypes: { mergeEditor: "t.mergeEditor", diffView: "t.diffView", conflicts: "t.conflicts" },
     commands: MS_COMMANDS,
-    ideAvailableContextKey: "t.ideAvailable",
     statusItemId: "t.conflicts",
     coexistencePromptKey: "t.coexistence.answered",
     locator: conflictedLocator(),
@@ -82,8 +79,7 @@ function setUp(defers: boolean): { state: Map<string, unknown>; syncCalls: strin
     deferral: { owner: "GitStudio", noticeKey: "t.deferralNoticeShown", handBack: { section: "gitstudio.merge", key: "autoOpen" } },
     syncedStateKeys: ["t.walkthroughShown"],
   };
-  // VS Code's own merge UI is on (so there is something to ask about), and no
-  // IDE path is set (detection only reads the file system; nothing launches).
+  // VS Code's own merge UI is on (so there is something to ask about).
   stub.config["git.mergeEditor"] = true;
   const experience = registerMergeExperience(context, product);
   return { state, syncCalls, dispose: () => experience.dispose() };

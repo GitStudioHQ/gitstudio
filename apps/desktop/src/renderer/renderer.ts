@@ -55,13 +55,9 @@ import { GraphMount } from "./graphMount";
 import { DiffPanel, type ConflictHandlers } from "./diffPanel";
 import {
   DesktopConflicts,
-  conflictShape,
-  detectJetBrains,
-  loadMergeSettings,
   opIndicator,
   stripText,
 } from "./mergeParity";
-import { hasText } from "@gitstudio/webview-ui/conflicts/opText";
 import { mergeSettingsCard } from "./views/mergeSettingsCard";
 import { ReadonlyFileView } from "./readonlyFileView";
 import { renderMarkdown } from "./markdown";
@@ -191,11 +187,6 @@ import type {
  * history's own push comparison keeps `list` because there it separates a
  * detail entry from a list entry.
  */
-/** What names one conflict's IDE hand-off: the file and the stop it belongs to. */
-function ideMergeTag(model: ConflictModel): string {
-  return `ide-merge:${model.path}:${model.op?.episode ?? ""}`;
-}
-
 function sameTargetContent(a: SectionTarget | undefined, b: SectionTarget | undefined): boolean {
   return (
     a?.number === b?.number &&
@@ -309,13 +300,6 @@ class App {
   private changesDashFocus?: { path: string; at: number };
   /** The file the dashboard's Merge… just opened: the merge editor takes the keyboard when it is up. */
   private changesShellFocus?: { path: string; at: number };
-  /**
-   * Conflicts (ideMergeTag: path + stop) the user chose to resolve HERE after
-   * Settings sent them to the IDE. A repaint asked the IDE route again, which
-   * launched another IDE window and put the hand-off pane back over the
-   * built-in editor and the work in it. Cleared on a repository switch.
-   */
-  private resolveHere = new Set<string>();
   /** The top-bar chip naming a stopped operation. */
   private opChipEl?: HTMLButtonElement;
   /** The repo changed while the graph was parked — reload in place on return. */
@@ -7703,17 +7687,6 @@ class App {
             void this.afterOperationVerb(outcome);
           },
         };
-        // Handed to the IDE and waiting (the view repainted around it): the
-        // hand-off pane stays, whichever route sent it there.
-        const tag = ideMergeTag(model);
-        const here = this.resolveHere.has(tag);
-        if (!here && diffPanel.shows(tag)) return;
-        // The editor's own Open in <IDE> hands over the same way the Settings
-        // route does: the pane replaces the editor.
-        handlers.onHandedToIde = () => void this.showIdeHandOff(diffPanel, model, handlers, tag);
-        // "Resolve here instead" is an answer for this conflict: a repaint
-        // must not trade the built-in editor back for the IDE.
-        if (!here && (await this.resolveInIde(diffPanel, model, gen, handlers))) return;
         const want = this.changesShellFocus;
         this.changesShellFocus = undefined;
         handlers.focusOnMount = !!want && want.path === path && Date.now() - want.at < 5000;
@@ -7721,135 +7694,8 @@ class App {
         return;
       }
     }
-    if (await this.diffInIde(diffPanel, diff, gen)) return;
     diffPanel.showDiff(diff);
   }
-
-  /**
-   * Settings ▸ Merge ▸ "Resolve conflicts with: JetBrains IDE": hand the file
-   * to the IDE's merge window, and say so in the pane — with the one action
-   * that finishes the job from here (stage it) and the way back to the
-   * built-in editor. False when the setting is off, no IDE is found, or the
-   * IDE would not open; the caller then uses the built-in editor.
-   */
-  private async resolveInIde(
-    panel: DiffPanel,
-    model: ConflictModel,
-    gen: number,
-    handlers: ConflictHandlers,
-  ): Promise<boolean> {
-    const [settings, ide] = await Promise.all([loadMergeSettings(host.invoke), detectJetBrains(host.invoke)]);
-    if (gen !== this.diffGen) return true;
-    if (settings.conflictResolver !== "jetbrains") return false;
-    // The IDE merges LINES. A binary, a deleted side, a file too large to read
-    // whole: the main process refuses to hand those over (externalMergeInput),
-    // so asking only put up an error toast — again on every repaint the
-    // repository watcher set off while the file stayed open. The built-in
-    // panel resolves them.
-    if (!hasText(conflictShape(model))) return false;
-    // Already handed over and still waiting (the view repainted around it):
-    // do not launch the IDE again. Every repaint used to open another merge
-    // window — and the main process removed the previous window's LOCAL /
-    // REMOTE / BASE as it did.
-    const tag = ideMergeTag(model);
-    if (panel.shows(tag)) return true;
-    if (!ide) {
-      if (!App.noIdeSaid) {
-        App.noIdeSaid = true;
-        toast("No JetBrains IDE was found, so conflicts open in GitStudio's merge editor.", "info");
-      }
-      return false;
-    }
-    const r = await host.invoke("jetbrains:merge", { path: model.path });
-    if (gen !== this.diffGen) return true;
-    if (!r.ok) {
-      toast(r.message || `Couldn't open ${ide.name}. Using GitStudio's merge editor instead.`, "error");
-      return false;
-    }
-    await this.showIdeHandOff(panel, model, handlers, tag, ide.name);
-    return true;
-  }
-
-  /**
-   * The pane that stands in for the merge editor while a file is in the IDE's
-   * merge window: where it went, the one action that finishes the job from
-   * here (stage it), and the way back. Both routes to the IDE end here — the
-   * Settings route and the editor's own Open in <IDE> — tagged, so a repaint
-   * keeps it rather than asking again.
-   */
-  private async showIdeHandOff(
-    panel: DiffPanel,
-    model: ConflictModel,
-    handlers: ConflictHandlers,
-    tag: string,
-    ideName?: string,
-  ): Promise<void> {
-    const name = ideName ?? (await detectJetBrains(host.invoke))?.name ?? "the IDE";
-    const markResolved = async (): Promise<void> => {
-      const m = await host.invoke("jetbrains:markResolved", { path: model.path });
-      if (!m.ok) {
-        toast(m.message || `Couldn't stage ${model.path}.`, "error");
-        return;
-      }
-      toast(`Resolved ${model.path}.`, "success");
-      handlers.onResolved?.();
-    };
-    panel.showEmpty(
-      `${model.path} is open in ${name}'s merge window. Save the merge there, then mark it resolved here to stage it.`,
-      {
-        title: `Resolving in ${name}`,
-        kind: "waiting",
-        tag,
-        actions: [
-          { label: "Mark resolved", icon: "check", primary: true, onClick: () => void markResolved() },
-          {
-            label: "Resolve here instead",
-            icon: "git-merge",
-            onClick: () => {
-              // Remembered for this conflict, and read FRESH: the IDE may have
-              // written the file since the pane went up.
-              this.resolveHere.add(tag);
-              void this.openWorkingFile(panel, model.path);
-            },
-          },
-        ],
-      },
-    );
-  }
-
-  /**
-   * Settings ▸ Merge ▸ "Show diffs with: JetBrains IDE": open HEAD vs the
-   * working copy in the IDE's diff window, and leave a way to see it here.
-   */
-  private async diffInIde(panel: DiffPanel, diff: FileDiff, gen: number): Promise<boolean> {
-    const [settings, ide] = await Promise.all([loadMergeSettings(host.invoke), detectJetBrains(host.invoke)]);
-    if (gen !== this.diffGen) return true;
-    if (settings.diffTool !== "jetbrains" || !ide) return false;
-    // The sibling of resolveInIde's rule: the IDE diffs TEXT. The main process
-    // hands it HEAD's side as a decoded string, so a binary arrived as U+FFFD
-    // soup beside the real file — a diff of damage, not of the change. The
-    // built-in pane says what happened to a binary instead.
-    if (diff.binary) return false;
-    // Already open in the IDE (the view repainted around the pane): not again.
-    const tag = `ide-diff:${diff.path}`;
-    if (panel.shows(tag)) return true;
-    const r = await host.invoke("jetbrains:diff", { path: diff.path });
-    if (gen !== this.diffGen) return true;
-    if (!r.ok) {
-      toast(r.message || `Couldn't open ${ide.name}.`, "error");
-      return false;
-    }
-    panel.showEmpty(`${diff.path} is open in ${ide.name}'s diff window.`, {
-      title: `Opened in ${ide.name}`,
-      kind: "none",
-      tag,
-      actions: [{ label: "Show the diff here", icon: "diff", onClick: () => panel.showDiff(diff) }],
-    });
-    return true;
-  }
-
-  /** Say it once per session: a JetBrains resolver setting with no IDE to hand to. */
-  private static noIdeSaid = false;
 
   /**
    * The merge editor is about to go (Exit viewer, or the file was resolved)
@@ -7862,8 +7708,7 @@ class App {
    */
   private returnKeyboardToDashboard(path: string): void {
     const active = document.activeElement as HTMLElement | null;
-    // The editor, or the pane that stands in for it while the IDE has the
-    // file (its Mark resolved goes the same way).
+    // The editor, or the pane that stands in for it.
     const inEditor = !active || active === document.body || !!active.closest(".merge-wrap, .ms-shell, .diff-empty");
     this.changesDashFocus = inEditor ? { path, at: Date.now() } : undefined;
   }

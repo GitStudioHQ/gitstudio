@@ -287,7 +287,7 @@ export interface ConflictsState {
   done?: number;
   /** Hold-to-undo duration (HOLD_TO_UNDO_MS). */
   holdToUndoMs: number;
-  /** A transient note ("No JetBrains IDE found — using the embedded editor"). */
+  /** A transient note ("Couldn't open the merge editor"). */
   notice?: { kind: "info" | "warn" | "error"; text: string };
   /** The last Continue / Skip / Abort result ("Rebase complete", git's reason on failure). */
   outcome?: { kind: "done" | "stopped" | "failed"; text: string };
@@ -320,8 +320,8 @@ export interface ConflictsState {
  * - accept: resolve the whole file as that role (`ConflictOps.takeRole`). For a
  *   role with no version of the file this DELETES it — the UI labels that
  *   button "Delete the file".
- * - merge: open the file in the merge editor (or the JetBrains IDE when the
- *   resolver setting says so). Not offered for binary / too-large / DD rows.
+ * - merge: open the file in the merge editor. Not offered for binary /
+ *   too-large / DD rows.
  * - restore: hold-to-undo — re-create the conflict (`git checkout -m`).
  * - delete: the one resolution of a both-deleted (DD) row (`ConflictOps.deleteFile`).
  * - continue: `confirmDrop: true` only after the user confirmed `op.willDrop`.
@@ -351,48 +351,14 @@ export type ConflictsHostMessage = { type: "state"; state: ConflictsState };
 /** How long a resolved row's undo must be held (ms). Keyboard hold uses the same. */
 export const HOLD_TO_UNDO_MS = 750;
 
-// ── JetBrains hand-off and merge settings (all three products) ───────────────
-
-/** The JetBrains IDEs the locator knows, in its default search order. */
-export type JetBrainsIdeId =
-  | "webstorm"
-  | "pycharm"
-  | "intellij"
-  | "phpstorm"
-  | "goland"
-  | "clion"
-  | "rider"
-  | "rubymine"
-  | "datagrip";
-
-/** Display names for settings UIs (the preferred-IDE picker), in search order. */
-export const JETBRAINS_IDES: ReadonlyArray<{ id: JetBrainsIdeId; name: string }> = [
-  { id: "webstorm", name: "WebStorm" },
-  { id: "pycharm", name: "PyCharm" },
-  { id: "intellij", name: "IntelliJ IDEA" },
-  { id: "phpstorm", name: "PhpStorm" },
-  { id: "goland", name: "GoLand" },
-  { id: "clion", name: "CLion" },
-  { id: "rider", name: "Rider" },
-  { id: "rubymine", name: "RubyMine" },
-  { id: "datagrip", name: "DataGrip" },
-];
-
-/** An installed JetBrains IDE the hosts can hand a merge or diff to. */
-export interface JetBrainsIdeInfo {
-  /** "custom" when it came from the explicit `jetbrainsPath` setting. */
-  id: JetBrainsIdeId | "custom";
-  /** Display name for buttons: "Open in WebStorm". */
-  name: string;
-  /** Absolute launcher / binary path that gets spawned. */
-  command: string;
-}
+// ── Merge settings (all three products) ─────────────────────────────────────
 
 /**
  * The merge settings every product exposes (GitStudio: `gitstudio.merge.*`;
  * Merge Studio: `jbMerge.*`; desktop: Settings ▸ Merge via merge:settings).
- * Merge Studio's legacy `jbMerge.conflictResolver: "webview"` value is read as
- * "embedded" by its product adapter.
+ * The settings of the removed external-IDE hand-off (`conflictResolver`,
+ * `diffTool`, `preferredIde` and the launcher path) are gone; a stored value
+ * is ignored.
  */
 export interface MergeSettings {
   /**
@@ -401,20 +367,8 @@ export interface MergeSettings {
    * matching JetBrains' own default).
    */
   autoApplyNonConflicting: boolean;
-  /** Who resolves a conflict opened from a list: the embedded editor or the IDE. */
-  conflictResolver: "embedded" | "jetbrains";
-  /** Who shows a file diff routed through the merge experience. */
-  diffTool: "embedded" | "jetbrains";
-  /** Which installed IDE to use; "auto" = the first found in JETBRAINS_IDES order. */
-  preferredIde: JetBrainsIdeId | "auto";
-  /** Explicit launcher path; overrides detection. Restricted in untrusted workspaces. */
-  jetbrainsPath: string;
 }
 
 export const DEFAULT_MERGE_SETTINGS: Readonly<MergeSettings> = {
   autoApplyNonConflicting: false,
-  conflictResolver: "embedded",
-  diffTool: "embedded",
-  preferredIde: "auto",
-  jetbrainsPath: "",
 };

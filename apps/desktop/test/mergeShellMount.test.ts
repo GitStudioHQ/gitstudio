@@ -152,13 +152,8 @@ test("the payload carries the operation, the shape, and auto-apply OFF unless Se
   assert.equal(p.shape, "modify-delete");
   assert.equal(p.missingRole, "theirs");
   assert.equal(p.oursLabel, "Rebasing 1a2b3c4 from test");
-  const on = mergePayload(model(), { ...DEFAULT_MERGE_SETTINGS, autoApplyNonConflicting: true }, {
-    id: "webstorm",
-    name: "WebStorm",
-    command: "/Applications/WebStorm.app",
-  });
+  const on = mergePayload(model(), { ...DEFAULT_MERGE_SETTINGS, autoApplyNonConflicting: true });
   assert.equal(on.autoApplyNonConflicting, true);
-  assert.equal(on.jetbrainsName, "WebStorm");
   assert.equal(mergePayload(model({ hasBase: false }), DEFAULT_MERGE_SETTINGS).conflictType, "add-add");
 });
 
@@ -297,10 +292,10 @@ test("a submodule's two commits come from the conflicts snapshot into the payloa
   const sub = model({ path: "vendor/lib", shape: "submodule", op: REBASE });
   const got = await submoduleCommits(host.invoke, sub);
   assert.deepEqual(got, commits);
-  assert.deepEqual(mergePayload(sub, DEFAULT_MERGE_SETTINGS, undefined, got).commits, commits, "the payload carries them");
+  assert.deepEqual(mergePayload(sub, DEFAULT_MERGE_SETTINGS, got).commits, commits, "the payload carries them");
   assert.equal(await submoduleCommits(host.invoke, model({ op: REBASE })), undefined, "a text conflict reads nothing");
   assert.equal(host.calls.length, 1, "one read, for the submodule only");
-  assert.equal(mergePayload(model({ op: REBASE }), DEFAULT_MERGE_SETTINGS, undefined, commits).commits, undefined, "and only a submodule's payload carries commits");
+  assert.equal(mergePayload(model({ op: REBASE }), DEFAULT_MERGE_SETTINGS, commits).commits, undefined, "and only a submodule's payload carries commits");
 });
 
 test("the merge bar no longer says the Result starts from the conflict: the shell's own strip says what it starts from", async () => {
@@ -390,59 +385,6 @@ test("a Continue with no confirm sends an empty request, not a drop confirmation
   const r = adapterRig({ "op:continue": { ok: true, view: NONE, remainingConflicts: 0 } });
   await r.adapter.handle({ type: "continueOperation" });
   assert.deepEqual(r.sent("op:continue").map((c) => c.payload), [{}]);
-});
-
-test("Open in the IDE hands the file over and offers Mark resolved, which stages it", async () => {
-  const r = adapterRig({ "jetbrains:merge": OK, "jetbrains:markResolved": OK });
-  await r.adapter.handle({ type: "openInJetBrains" });
-  assert.deepEqual(r.sent("jetbrains:merge").map((c) => c.payload), [{ path: "src/app.ts" }]);
-  assert.equal(r.notices[0].action?.label, "Mark resolved");
-  r.notices[0].action?.onClick();
-  await new Promise((res) => setTimeout(res, 5));
-  assert.deepEqual(r.sent("jetbrains:markResolved").map((c) => c.payload), [{ path: "src/app.ts" }]);
-  assert.ok(r.log.includes("resolved"));
-});
-
-test("a host that can show the hand-off gets it, instead of a toast that disappears", async () => {
-  // The Changes view replaces the merge editor with the same "Resolving in
-  // <IDE>" pane the Settings route shows, whose Mark resolved stays on
-  // screen; only a host with nowhere to put it falls back to the toast.
-  const handed: string[] = [];
-  const host = fakeHost({ "jetbrains:merge": OK });
-  const notices: string[] = [];
-  const adapter = new DesktopMergeAdapter(model({ op: REBASE }), {
-    invoke: host.invoke,
-    deliver: () => {},
-    onResolved: () => {},
-    onExit: () => {},
-    onOperationChanged: () => {},
-    onHandedToIde: () => {
-      handed.push("pane");
-      return true;
-    },
-    undoable: () => {},
-    notify: (message) => notices.push(message),
-  });
-  await adapter.handle({ type: "openInJetBrains" });
-  assert.deepEqual(handed, ["pane"], "the host shows the hand-off");
-  assert.deepEqual(notices, [], "and no toast is needed");
-  const refused = fakeHost({ "jetbrains:merge": { ok: false, changed: false, message: "no IDE" } });
-  const handed2: string[] = [];
-  const failing = new DesktopMergeAdapter(model({ op: REBASE }), {
-    invoke: refused.invoke,
-    deliver: () => {},
-    onResolved: () => {},
-    onExit: () => {},
-    onOperationChanged: () => {},
-    onHandedToIde: () => {
-      handed2.push("pane");
-      return true;
-    },
-    undoable: () => {},
-    notify: () => {},
-  });
-  await failing.handle({ type: "openInJetBrains" });
-  assert.deepEqual(handed2, [], "nothing was handed over when the IDE did not open");
 });
 
 test("a Skip that ended the operation says which one it left out, and whether the rest applied", () => {

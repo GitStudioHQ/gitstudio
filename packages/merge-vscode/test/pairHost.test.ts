@@ -24,8 +24,6 @@ beforeEach(() => stub.reset());
 const COMMANDS = {
   showConflicts: "t.showConflicts",
   resolveInMergeEditor: "t.resolveInMergeEditor",
-  mergeWithJetBrains: "t.mergeWithJetBrains",
-  diffWithJetBrains: "t.diffWithJetBrains",
   compare: "t.compare",
   openDiff: "t.openDiff",
   openChanges: "t.openChanges",
@@ -123,7 +121,6 @@ function setUp(product: Partial<MergeProduct> & { locator: RepoLocator }) {
     settingsSection: "gs.merge",
     viewTypes: { mergeEditor: "gs.mergeEditor", diffView: "gs.diffView", conflicts: "gs.conflicts" },
     commands: COMMANDS,
-    ideAvailableContextKey: "gs.ideAvailable",
     statusItemId: "gs.conflicts",
     coexistencePromptKey: "gs.coexistence.answered",
     ask: async () => false,

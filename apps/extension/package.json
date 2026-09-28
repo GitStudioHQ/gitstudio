@@ -292,18 +292,6 @@
         "icon": "$(warning)"
       },
       {
-        "command": "gitstudio.mergeWithJetBrains",
-        "title": "Merge with JetBrains IDE",
-        "category": "GitStudio",
-        "icon": "$(link-external)"
-      },
-      {
-        "command": "gitstudio.diffWithJetBrains",
-        "title": "Diff with JetBrains IDE",
-        "category": "GitStudio",
-        "icon": "$(link-external)"
-      },
-      {
         "command": "gitstudio.openDiff",
         "title": "Open in Embedded Diff",
         "category": "GitStudio",
@@ -1230,67 +1218,14 @@
           "gitstudio.merge.autoOpen": {
             "type": "boolean",
             "default": true,
-            "markdownDescription": "When a merge, rebase, cherry-pick, revert, git am or stash pop stops on conflicts: show the **Conflicts** dashboard, open a conflicted file in the resolver (the GitStudio merge editor, or your JetBrains IDE) as soon as you switch to it, and take over VS Code's built-in merge editor tab. Off: nothing opens by itself \u2014 use **GitStudio: Resolve Conflicts\u2026**. (This used to open every conflicted file as its own tab.) If Merge Studio is also installed, it leaves this to GitStudio; turn this off to let Merge Studio open conflicts instead.",
+            "markdownDescription": "When a merge, rebase, cherry-pick, revert, git am or stash pop stops on conflicts: show the **Conflicts** dashboard, open a conflicted file in the GitStudio merge editor as soon as you switch to it, and take over VS Code's built-in merge editor tab. Off: nothing opens by itself \u2014 use **GitStudio: Resolve Conflicts\u2026**. (This used to open every conflicted file as its own tab.) If Merge Studio is also installed, it leaves this to GitStudio; turn this off to let Merge Studio open conflicts instead.",
             "order": 1
-          },
-          "gitstudio.merge.conflictResolver": {
-            "type": "string",
-            "enum": [
-              "embedded",
-              "jetbrains"
-            ],
-            "enumDescriptions": [
-              "The GitStudio 3-pane merge editor.",
-              "The merge window of your installed JetBrains IDE (falls back to the GitStudio editor when none is found)."
-            ],
-            "default": "embedded",
-            "description": "Where a conflicted file opens: the Conflicts dashboard's Merge\u2026, the Changes view and automatic routing.",
-            "order": 2
-          },
-          "gitstudio.merge.diffTool": {
-            "type": "string",
-            "enum": [
-              "embedded",
-              "jetbrains"
-            ],
-            "enumDescriptions": [
-              "GitStudio's own diff.",
-              "The diff window of your installed JetBrains IDE (falls back to GitStudio's diff when none is found)."
-            ],
-            "default": "embedded",
-            "description": "Which diff GitStudio: Compare File\u2026 and Open Changes use.",
-            "order": 3
           },
           "gitstudio.merge.autoApplyNonConflicting": {
             "type": "boolean",
             "default": false,
             "description": "Open the merge editor with every non-conflicting change already applied (JetBrains' \"apply non-conflicting changes\" on open). Off: they wait for you, one click each or all at once from the toolbar.",
             "order": 4
-          },
-          "gitstudio.merge.preferredIde": {
-            "type": "string",
-            "enum": [
-              "auto",
-              "webstorm",
-              "pycharm",
-              "intellij",
-              "phpstorm",
-              "goland",
-              "clion",
-              "rider",
-              "rubymine",
-              "datagrip"
-            ],
-            "default": "auto",
-            "description": "Which installed JetBrains IDE to hand merges and diffs to. Auto uses the first one found.",
-            "order": 5
-          },
-          "gitstudio.merge.jetbrainsPath": {
-            "type": "string",
-            "default": "",
-            "scope": "machine",
-            "description": "Path to a JetBrains IDE launcher, used instead of detection \u2014 for example /Applications/WebStorm.app/Contents/MacOS/webstorm. User settings only: a workspace cannot set the program GitStudio launches.",
-            "order": 6
           }
         }
       },
@@ -1626,11 +1561,6 @@
           "group": "navigation@-2"
         },
         {
-          "command": "gitstudio.mergeWithJetBrains",
-          "when": "config.git.enabled && !git.missing && resource in git.mergeChanges && git.activeResourceHasMergeConflicts && gitstudio.merge.ideAvailable",
-          "group": "navigation@-2"
-        },
-        {
           "command": "gitstudio.toggleFileBlame",
           "when": "gitstudio.hasRepo && resourceScheme == file",
           "group": "navigation@-3"
@@ -1658,11 +1588,6 @@
           "command": "gitstudio.resolveInMergeEditor",
           "when": "scmProvider == git && scmResourceGroup == merge",
           "group": "navigation@1"
-        },
-        {
-          "command": "gitstudio.mergeWithJetBrains",
-          "when": "scmProvider == git && scmResourceGroup == merge && gitstudio.merge.ideAvailable",
-          "group": "1_modification@2"
         }
       ],
       "scm/inputBox": [
@@ -1834,14 +1759,6 @@
         {
           "command": "gitstudio.showConflicts",
           "when": "gitstudio.hasRepo"
-        },
-        {
-          "command": "gitstudio.mergeWithJetBrains",
-          "when": "gitstudio.hasRepo && resourceScheme == file && gitstudio.merge.ideAvailable"
-        },
-        {
-          "command": "gitstudio.diffWithJetBrains",
-          "when": "resourceScheme == file"
         },
         {
           "command": "gitstudio.openDiff",

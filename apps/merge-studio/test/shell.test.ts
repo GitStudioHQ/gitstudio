@@ -18,7 +18,7 @@ import {
   type EditorFacts,
 } from "../src/links";
 import { buildMsProduct } from "../src/msProduct";
-import { decideWalkthrough, gitStudioFacts, legacySettingUpdates, legacyStateUpdates, modalAsk } from "../src/shell";
+import { decideWalkthrough, gitStudioFacts, legacyStateUpdates, modalAsk } from "../src/shell";
 
 // The shell's own behaviour: everything Merge Studio decides that is not the
 // shared merge experience.
@@ -48,7 +48,6 @@ test("MS_PRODUCT: Merge Studio's brand, jbMerge settings and ids, and the parts 
   assert.equal(product.settingsSection, "jbMerge");
   assert.equal(product.commands, MS_MERGE_COMMANDS);
   assert.equal(product.viewTypes, MS_MERGE_VIEW_TYPES);
-  assert.equal(product.ideAvailableContextKey, "jbMerge.ideAvailable");
   assert.equal(product.statusItemId, "jbMerge.conflicts");
   assert.equal(product.locator, locator);
   assert.equal(product.defersTo?.(), true);
@@ -209,17 +208,6 @@ test("the dashboard's support links are https pages only (the panel refuses anyt
   );
   for (const l of links) assert.match(l.url, /^https:\/\//);
   assert.equal(links[1].url, MS_OPENVSX_REVIEWS_URL);
-});
-
-// ── Legacy setting values ───────────────────────────────────────────────────
-
-test("0.3.4's conflictResolver 'webview' is rewritten to 'embedded' in user settings only", () => {
-  assert.deepEqual(legacySettingUpdates(() => ({ globalValue: "webview" })), [
-    { key: "conflictResolver", value: "embedded" },
-  ]);
-  assert.deepEqual(legacySettingUpdates(() => ({ globalValue: "jetbrains" })), []);
-  assert.deepEqual(legacySettingUpdates(() => ({})), [], "a workspace value is the repository's file; left alone");
-  assert.deepEqual(legacySettingUpdates(() => undefined), []);
 });
 
 // ── LateLocator ─────────────────────────────────────────────────────────────

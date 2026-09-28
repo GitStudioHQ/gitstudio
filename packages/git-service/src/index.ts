@@ -147,15 +147,6 @@ export type {
   ConflictOpResult,
   WriteResolutionOptions,
 } from "./ConflictOps";
-export { locateJetBrainsIde } from "./jetbrains/locator";
-export type { LocateJetBrainsOptions } from "./jetbrains/locator";
-export { launchJetBrainsMerge, launchJetBrainsDiff } from "./jetbrains/launcher";
-export type {
-  JetBrainsMergeRequest,
-  JetBrainsDiffRequest,
-  JetBrainsDiffSide,
-  JetBrainsLaunch,
-} from "./jetbrains/launcher";
 export { createGitToolHost } from "./GitToolHost";
 export { NodeGitAdapter } from "./NodeGitAdapter";
 export type { NodeGitAdapterOptions } from "./NodeGitAdapter";

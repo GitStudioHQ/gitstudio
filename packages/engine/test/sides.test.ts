@@ -12,8 +12,8 @@ import {
   type SideStages,
 } from "../src/conflict/sides";
 
-// The role helpers are the ONE place contents, missing sides, badges and the
-// JetBrains LOCAL/REMOTE files are re-keyed from git stages to Yours/Theirs.
+// The role helpers are the ONE place contents, missing sides and badges are
+// re-keyed from git stages to Yours/Theirs.
 // They must follow `op.yours.stage` — during a rebase Yours is stage 3 (your
 // commit being replayed), and reading stage 2 as "yours" there is how
 // "Accept Yours" silently dropped the reporter's only commit (issue #12).

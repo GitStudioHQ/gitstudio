@@ -9,8 +9,6 @@ import type { MergeCommandIds, MergeViewTypes } from "@gitstudio/merge-vscode/pr
 export const GITSTUDIO_MERGE_COMMANDS: MergeCommandIds = {
   showConflicts: "gitstudio.showConflicts",
   resolveInMergeEditor: "gitstudio.resolveInMergeEditor",
-  mergeWithJetBrains: "gitstudio.mergeWithJetBrains",
-  diffWithJetBrains: "gitstudio.diffWithJetBrains",
   compare: "gitstudio.compare",
   openDiff: "gitstudio.openDiff",
   openChanges: "gitstudio.openChanges",
@@ -29,11 +27,8 @@ export const GITSTUDIO_MERGE_VIEW_TYPES: MergeViewTypes = {
   conflicts: "gitstudio.conflicts",
 };
 
-/** The configuration section holding autoOpen, autoApplyNonConflicting, conflictResolver, … */
+/** The configuration section holding autoOpen and autoApplyNonConflicting. */
 export const GITSTUDIO_MERGE_SECTION = "gitstudio.merge";
-
-/** True while a JetBrains IDE can be launched (hides the IDE menus otherwise). */
-export const GITSTUDIO_IDE_CONTEXT_KEY = "gitstudio.merge.ideAvailable";
 
 /** The walkthrough (a brand slot, Merge Studio's is jbMerge.openWalkthrough). */
 export const GITSTUDIO_WALKTHROUGH_COMMAND = "gitstudio.openWalkthrough";

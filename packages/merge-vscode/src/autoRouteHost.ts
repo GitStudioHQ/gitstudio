@@ -13,11 +13,9 @@ import {
   ROUTE_GUARD_MS,
 } from "./autoRoute";
 import { closeTextTabs, type MergeHostCore } from "./host";
-import type { JetBrainsUi } from "./jetbrainsUi";
 
 export function registerAutoRoute(
   host: MergeHostCore,
-  jetbrains: JetBrainsUi,
   openEmbedded: (uri: vscode.Uri) => Promise<void>,
 ): vscode.Disposable {
   const recentlyRouted = new Set<string>();
@@ -53,32 +51,20 @@ export function registerAutoRoute(
         conflicted = false;
       }
     }
-    const ide = conflicted && s.conflictResolver === "jetbrains" ? await jetbrains.detect() : undefined;
     const action = decideActiveEditorRoute({
       ...cheap,
       recentlyRouted: recentlyRouted.has(key),
       exited: host.exitGuard.isSuppressed(key),
-      launchedInIde: jetbrains.wasLaunched(key),
       conflicted,
-      resolver: s.conflictResolver,
-      ideAvailable: Boolean(ide),
     });
     switch (action.kind) {
       case "forget":
         host.exitGuard.clear(key);
-        jetbrains.forget(key);
         return;
       case "skip":
         return;
-      case "jetbrains":
-        remember(recentlyRouted, key, ROUTE_GUARD_MS);
-        await jetbrains.merge(uri);
-        return;
       case "embedded":
         remember(recentlyRouted, key, ROUTE_GUARD_MS);
-        if (action.fallbackNotice) {
-          jetbrains.notifyEmbeddedFallback();
-        }
         await openEmbedded(uri);
         // One tab per file: a text tab opened pinned (Quick Open) stayed
         // beside the merge editor, as the built-in reroute below never lets
@@ -100,14 +86,11 @@ export function registerAutoRoute(
           continue;
         }
         const key = result.toString();
-        const ide = s.conflictResolver === "jetbrains" ? await jetbrains.detect() : undefined;
         const action = decideMergeTabReroute({
           autoOpen: s.autoOpen,
           defers: host.defers(),
           recentlyRerouted: recentlyRerouted.has(key),
           exited: host.exitGuard.isSuppressed(key),
-          resolver: s.conflictResolver,
-          ideAvailable: Boolean(ide),
         });
         if (action.kind === "keep") {
           continue;
@@ -118,14 +101,7 @@ export function registerAutoRoute(
         } catch {
           // already gone
         }
-        if (action.to === "jetbrains") {
-          await jetbrains.merge(result);
-        } else {
-          if (action.fallbackNotice) {
-            jetbrains.notifyEmbeddedFallback();
-          }
-          await openEmbedded(result);
-        }
+        await openEmbedded(result);
       }
     }
   };

@@ -747,9 +747,6 @@ body.vscode-high-contrast .jb-ribbon-trace-edge-removed { stroke: var(--jb-done-
 .jb-history-redo { opacity: 0.55; font-style: italic; }
 .jb-history-empty { padding: 4px 10px; opacity: 0.6; font-size: 12px; }
 
-/* "Open in <IDE>" escape hatch: quiet, and kept clear of Cancel/Apply. */
-.jb-external { opacity: 0.85; margin-right: 22px; }
-.jb-external:not([disabled]):hover { opacity: 1; }
 .jb-merge-content { flex: 1 1 auto; min-height: 0; position: relative; }
 
 /* ---- Bottom action bar (the IntelliJ dialog footer) ---- */

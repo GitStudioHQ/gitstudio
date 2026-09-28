@@ -16,7 +16,7 @@ import {
   hasSharedMergeExperience,
   type MergeCommandIds,
 } from "@gitstudio/merge-vscode/product";
-import { MS_IDE_CONTEXT_KEY, MS_MERGE_COMMANDS, MS_SETTINGS_SECTION, MS_WALKTHROUGH_COMMAND } from "../src/ids";
+import { MS_MERGE_COMMANDS, MS_SETTINGS_SECTION, MS_WALKTHROUGH_COMMAND } from "../src/ids";
 
 // "No diff between the standalone extension and the combined one, no parts
 // missing" (POLISH §3 iii), as a test: Merge Studio's package.json against
@@ -50,7 +50,6 @@ const gs = readJson<Manifest>(join(GS_ROOT, "package.json"));
 
 let GS_COMMANDS: MergeCommandIds;
 let GS_SECTION: string;
-let GS_IDE_KEY: string;
 let GS_WALKTHROUGH: string;
 
 before(async () => {
@@ -59,12 +58,10 @@ before(async () => {
   const ids = (await import(pathToFileURL(join(GS_ROOT, "src/merge/mergeIds.ts")).href)) as {
     GITSTUDIO_MERGE_COMMANDS: MergeCommandIds;
     GITSTUDIO_MERGE_SECTION: string;
-    GITSTUDIO_IDE_CONTEXT_KEY: string;
     GITSTUDIO_WALKTHROUGH_COMMAND: string;
   };
   GS_COMMANDS = ids.GITSTUDIO_MERGE_COMMANDS;
   GS_SECTION = ids.GITSTUDIO_MERGE_SECTION;
-  GS_IDE_KEY = ids.GITSTUDIO_IDE_CONTEXT_KEY;
   GS_WALKTHROUGH = ids.GITSTUDIO_WALKTHROUGH_COMMAND;
 });
 
@@ -81,12 +78,12 @@ const gsRole = (command: string | undefined) => roleIn(GS_COMMANDS, GS_WALKTHROU
 const declared = (m: Manifest) => new Set(m.contributes.commands.map((c) => c.command));
 
 test("Merge Studio's manifest satisfies the shared merge contract (the same table GitStudio's is checked against)", () => {
-  const problems = checkManifest(ms, MS_MERGE_COMMANDS, MS_IDE_CONTEXT_KEY, MS_SETTINGS_SECTION);
+  const problems = checkManifest(ms, MS_MERGE_COMMANDS, MS_SETTINGS_SECTION);
   assert.deepEqual(problems, [], problems.join("\n"));
 });
 
 test("GitStudio's manifest satisfies the same contract (the other half of the pair)", () => {
-  const problems = checkManifest(gs, GS_COMMANDS, GS_IDE_KEY, GS_SECTION);
+  const problems = checkManifest(gs, GS_COMMANDS, GS_SECTION);
   assert.deepEqual(problems, [], problems.join("\n"));
 });
 

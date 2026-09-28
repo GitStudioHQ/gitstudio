@@ -57,9 +57,6 @@ export const redoIcon = codicon("redo");
 /** Clock — the merge action history dropdown. */
 export const historyIcon = codicon("history");
 
-/** Open the merge in the external JetBrains/VS Code editor. */
-export const openExternal = codicon("link-external");
-
 /** Builds a DOM element from one of the codicon markup strings above. */
 export function iconElement(markup: string, className = "jb-svg"): HTMLElement {
   const span = document.createElement("span");

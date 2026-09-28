@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "license": "Apache-2.0",
-  "description": "The VS Code host glue for the merge experience GitStudio and Merge Studio share: merge editor, conflicts dashboard, routing, JetBrains hand-off and the diff panel, parameterised by a MergeProduct.",
+  "description": "The VS Code host glue for the merge experience GitStudio and Merge Studio share: merge editor, conflicts dashboard, routing and the diff panel, parameterised by a MergeProduct.",
   "exports": {
     "./*": "./src/*.ts"
   },

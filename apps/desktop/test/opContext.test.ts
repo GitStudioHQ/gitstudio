@@ -1,21 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { RepoStore } from "../src/main/repoStore";
 import { GitBridge } from "../src/main/gitBridge";
 import { MergeSettingsStore, sanitize } from "../src/main/mergeSettings";
-import { DEFAULT_MERGE_SETTINGS, type MergeSettings } from "@gitstudio/host-bridge/conflictsProtocol";
+import { DEFAULT_MERGE_SETTINGS } from "@gitstudio/host-bridge/conflictsProtocol";
 import { removeTempRepo } from "./tmpRepo";
 
-// The desktop main process's half of merge parity (PLAN §4 P2, W6): the 13
+// The desktop main process's half of merge parity (PLAN §4 P2, W6): the
 // channels the S0 contract declared, answered by the SAME OperationProvider /
-// ConflictOps the VS Code hosts use, plus Settings ▸ Merge persisted here
-// (the main process spawns jetbrainsPath, so it must not take it from the
-// renderer per call).
+// ConflictOps the VS Code hosts use, plus Settings ▸ Merge persisted here.
 
 const env = { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_EDITOR: "true" };
 
@@ -57,10 +55,10 @@ function reporter(): ReturnType<typeof repo> & { mine: string } {
   return { ...r, mine };
 }
 
-async function bridgeFor(root: string, settings?: MergeSettings): Promise<GitBridge> {
+async function bridgeFor(root: string): Promise<GitBridge> {
   const repos = new RepoStore([]);
   await repos.open(root);
-  return new GitBridge(repos, undefined, settings ? { get: () => settings } : undefined);
+  return new GitBridge(repos);
 }
 
 // ── The channels exist, and are labelled ────────────────────────────────────
@@ -75,10 +73,6 @@ test("main.ts registers every merge-parity channel, each with an Output-tab labe
     "op:continue",
     "op:skip",
     "op:abort",
-    "jetbrains:detect",
-    "jetbrains:merge",
-    "jetbrains:diff",
-    "jetbrains:markResolved",
     "merge:settings",
     "merge:setSettings",
   ];
@@ -284,226 +278,43 @@ test("a merge continued through op:continue (and merge:continue) leaves no '# Co
 test("merge settings: defaults (auto-apply OFF), persisted, and only valid values stored", async () => {
   const dir = mkdtempSync(join(tmpdir(), "gs-merge-settings-"));
   try {
-    const launcher = join(dir, "idea.sh");
-    writeFileSync(launcher, "#!/bin/sh\n");
     const store = await MergeSettingsStore.load(dir);
     assert.deepEqual(store.get(), DEFAULT_MERGE_SETTINGS);
     assert.equal(store.get().autoApplyNonConflicting, false, "JetBrains' own default");
-    const next = await store.update({
-      autoApplyNonConflicting: true,
-      conflictResolver: "jetbrains",
-      preferredIde: "goland",
-      jetbrainsPath: `  ${launcher}  `,
-    });
+    const next = await store.update({ autoApplyNonConflicting: true });
     assert.equal(next.autoApplyNonConflicting, true);
-    assert.equal(next.jetbrainsPath, launcher);
     const reloaded = await MergeSettingsStore.load(dir);
     assert.deepEqual(reloaded.get(), next, "survives a restart");
 
-    const junk = await reloaded.update({
-      diffTool: "vim" as never,
-      preferredIde: "notepad" as never,
-      autoApplyNonConflicting: "yes" as never,
-      jetbrainsPath: 42 as never,
-    });
+    const junk = await reloaded.update({ autoApplyNonConflicting: "yes" as never });
     assert.deepEqual(junk, next, "invalid values are ignored, not stored");
     writeFileSync(join(dir, "merge-settings.json"), "{ not json");
     assert.deepEqual((await MergeSettingsStore.load(dir)).get(), DEFAULT_MERGE_SETTINGS, "a broken file falls back");
-    assert.deepEqual(sanitize({ conflictResolver: "webview" }, DEFAULT_MERGE_SETTINGS).conflictResolver, "embedded");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("merge:setSettings stores a launcher path only when it IS a JetBrains launcher (main owns what it spawns)", async () => {
-  // jetbrains:merge spawns jetbrainsPath. Taking any string from the renderer
-  // made "set the path, then merge" a two-call exec primitive for anything
-  // that can post to IPC. The path now has to resolve to an existing JetBrains
-  // launcher (or an install folder holding one); clearing it is always allowed.
+test("a settings file from before the external-IDE hand-off was removed loads cleanly, its old keys dropped", async () => {
+  // Someone who had chosen the IDE still has its keys on disk. They mean
+  // nothing now: they are not carried into the settings, not written back,
+  // and conflicts and diffs open in the app's own editors.
   const dir = mkdtempSync(join(tmpdir(), "gs-merge-settings-"));
   try {
+    const old = {
+      autoApplyNonConflicting: true,
+      conflictResolver: "jetbrains",
+      diffTool: "jetbrains",
+      preferredIde: "goland",
+      jetbrainsPath: "/Applications/GoLand.app/Contents/MacOS/goland",
+    };
+    writeFileSync(join(dir, "merge-settings.json"), JSON.stringify(old));
     const store = await MergeSettingsStore.load(dir);
-    for (const bad of ["/bin/sh", process.execPath, join(dir, "missing", "idea"), "idea"]) {
-      const out = await store.update({ jetbrainsPath: bad });
-      assert.equal(out.jetbrainsPath, "", `${bad} is not a JetBrains launcher and is not stored`);
-    }
-    const good = join(dir, "webstorm");
-    writeFileSync(good, "#!/bin/sh\n");
-    assert.equal((await store.update({ jetbrainsPath: good })).jetbrainsPath, good, "a real launcher is stored");
-    assert.equal((await store.update({ jetbrainsPath: "/bin/sh" })).jetbrainsPath, good, "…and a bad one does not replace it");
-    assert.equal((await store.update({ jetbrainsPath: "" })).jetbrainsPath, "", "clearing always works");
+    assert.deepEqual(store.get(), { autoApplyNonConflicting: true });
+    assert.deepEqual(sanitize(old, DEFAULT_MERGE_SETTINGS), { autoApplyNonConflicting: true });
+    await store.update({ autoApplyNonConflicting: false });
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, "merge-settings.json"), "utf8")), { autoApplyNonConflicting: false });
   } finally {
     rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-// ── jetbrains:* (a fake IDE — never a real one) ─────────────────────────────
-
-function fakeIde(): { dir: string; command: string; log: string } {
-  const dir = mkdtempSync(join(tmpdir(), "gs-opctx-ide-"));
-  const command = join(dir, "idea");
-  const log = join(dir, "ide.log");
-  writeFileSync(
-    command,
-    `#!/bin/sh\n{ printf 'ARG %s\\n' "$@"; for a in "$@"; do [ -f "$a" ] && { printf 'FILE %s\\n' "$a"; cat "$a"; printf '<EOF>\\n'; }; done; } > "${log}.tmp" && mv "${log}.tmp" "${log}"\n`,
-  );
-  chmodSync(command, 0o755);
-  return { dir, command, log };
-}
-
-async function waitFor(p: string): Promise<string> {
-  for (let i = 0; i < 200; i++) {
-    if (existsSync(p)) return readFileSync(p, "utf8");
-    await new Promise((res) => setTimeout(res, 25));
-  }
-  throw new Error(`never written: ${p}`);
-}
-
-const posixOnly = process.platform === "win32" ? "the fake IDE is a shell script" : false;
-
-test("jetbrains:merge hands the IDE Yours as LOCAL during a rebase; markResolved stages and cleans up", { skip: posixOnly }, async () => {
-  const r = reporter();
-  const ide = fakeIde();
-  try {
-    const settings: MergeSettings = { ...DEFAULT_MERGE_SETTINGS, jetbrainsPath: ide.command };
-    const b = await bridgeFor(r.root, settings);
-    const found = await b.jetbrainsDetect();
-    assert.deepEqual(found, { id: "custom", name: "IntelliJ IDEA", command: ide.command });
-
-    const opened = await b.jetbrainsMerge({ path: "f.txt" });
-    assert.equal(opened.ok, true, opened.message);
-    const log = await waitFor(ide.log);
-    const args = [...log.matchAll(/^ARG (.*)$/gm)].map((m) => m[1]);
-    assert.equal(args[0], "merge");
-    assert.equal(args[4], realpathSync(join(r.root, "f.txt")), "the output is the real file");
-    const local = new RegExp(`^FILE ${args[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\n([\\s\\S]*?)<EOF>$`, "m").exec(log)?.[1];
-    assert.equal(local?.split("\n")[2], "three-test", "LOCAL is the reporter's own line");
-    const tempDir = join(args[1], "..");
-    assert.equal(existsSync(tempDir), true);
-
-    // The IDE left markers: marking it resolved must refuse, not settle them.
-    const refused = await b.jetbrainsMarkResolved({ path: "f.txt" });
-    assert.equal(refused.ok, false);
-    assert.match(refused.message ?? "", /conflict markers/);
-    // The IDE wrote a clean result.
-    writeFileSync(join(r.root, "f.txt"), "one\ntwo\nthree-test\nfour\nfive\n");
-    const done = await b.jetbrainsMarkResolved({ path: "f.txt" });
-    assert.equal(done.ok, true, done.message);
-    assert.equal(r.git("ls-files", "-u").trim(), "");
-    assert.equal(existsSync(tempDir), false, "LOCAL / REMOTE / BASE are gone");
-    const snap = await b.conflictState();
-    assert.equal(snap.files[0].choice, "merged");
-  } finally {
-    removeTempRepo(r.root);
-    rmSync(ide.dir, { recursive: true, force: true });
-  }
-});
-
-test("jetbrains:merge refuses a file with no text to merge, and a path outside the repo", async () => {
-  const r = repo("jb-bin");
-  const ide = fakeIde();
-  try {
-    const bin = (n: number): Buffer => Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0]), Buffer.alloc(32, n)]);
-    writeFileSync(join(r.root, "a.png"), bin(0));
-    r.git("add", "-A");
-    r.git("commit", "-qm", "base");
-    r.git("checkout", "-q", "-b", "side");
-    writeFileSync(join(r.root, "a.png"), bin(1));
-    r.git("commit", "-qam", "side");
-    r.git("checkout", "-q", "main");
-    writeFileSync(join(r.root, "a.png"), bin(2));
-    r.git("commit", "-qam", "main");
-    r.tryGit("merge", "side");
-    const b = await bridgeFor(r.root, { ...DEFAULT_MERGE_SETTINGS, jetbrainsPath: ide.command });
-    const out = await b.jetbrainsMerge({ path: "a.png" });
-    assert.equal(out.ok, false);
-    assert.equal(out.expected, true);
-    assert.match(out.message ?? "", /no text to merge/);
-    assert.equal((await b.jetbrainsMerge({ path: "../x" })).ok, false);
-    assert.equal(existsSync(ide.log), false, "the IDE was never launched");
-  } finally {
-    removeTempRepo(r.root);
-    rmSync(ide.dir, { recursive: true, force: true });
-  }
-});
-
-test("jetbrains:merge passes the Apply's guards: no non-UTF-8 text, no folder that leads outside", { skip: posixOnly }, async () => {
-  // The IDE writes its result to the real file — the same write the embedded
-  // Apply (conflict:resolve) guards. Two twins it lacked: the sides travel as
-  // strings (a Latin-1 file reached the IDE as U+FFFD and was saved that way),
-  // and only a lexical containment check stood between the output path and a
-  // conflicted folder since replaced by a link to somewhere else.
-  const r = repo("jb-guards");
-  const ide = fakeIde();
-  const outside = mkdtempSync(join(tmpdir(), "gs-opctx-outside-"));
-  try {
-    const put = (rel: string, data: string | Buffer): void => {
-      mkdirSync(join(r.root, rel, ".."), { recursive: true });
-      writeFileSync(join(r.root, rel), data);
-    };
-    const latin1 = (s: string): Buffer => Buffer.from(s, "latin1");
-    put("menu.txt", latin1("café\nthé\n"));
-    put("sub/f.txt", "one\ntwo\nthree\n");
-    r.git("add", "-A");
-    r.git("commit", "-qm", "base");
-    r.git("checkout", "-q", "-b", "side");
-    put("menu.txt", latin1("café side\nthé\n"));
-    put("sub/f.txt", "one\ntwo\nthree-side\n");
-    r.git("commit", "-qam", "side");
-    r.git("checkout", "-q", "main");
-    put("menu.txt", latin1("café main\nthé\n"));
-    put("sub/f.txt", "one\ntwo\nthree-main\n");
-    r.git("commit", "-qam", "main");
-    r.tryGit("merge", "side");
-    writeFileSync(join(outside, "f.txt"), "OUTSIDE\n");
-    rmSync(join(r.root, "sub"), { recursive: true, force: true });
-    symlinkSync(outside, join(r.root, "sub"));
-
-    const b = await bridgeFor(r.root, { ...DEFAULT_MERGE_SETTINGS, jetbrainsPath: ide.command });
-    const menu = await b.jetbrainsMerge({ path: "menu.txt" });
-    assert.equal(menu.ok, false);
-    assert.equal(menu.expected, true);
-    assert.match(menu.message ?? "", /isn't UTF-8 text/);
-    const linked = await b.jetbrainsMerge({ path: "sub/f.txt" });
-    assert.equal(linked.ok, false);
-    assert.match(linked.message ?? "", /resolves outside the repository/);
-    await new Promise((res) => setTimeout(res, 100));
-    assert.equal(existsSync(ide.log), false, "the IDE was never launched");
-    assert.equal(readFileSync(join(outside, "f.txt"), "utf8"), "OUTSIDE\n");
-  } finally {
-    removeTempRepo(r.root);
-    rmSync(ide.dir, { recursive: true, force: true });
-    rmSync(outside, { recursive: true, force: true });
-  }
-});
-
-test("a JetBrains hand-off's temp files go with a new stop, and on quit", { skip: posixOnly }, async () => {
-  // LOCAL / REMOTE / BASE were removed only by "Mark resolved": a merge
-  // finished in the IDE and continued from a terminal, or an abort, left its
-  // mkdtemp directory in $TMPDIR for good.
-  const r = reporter();
-  const ide = fakeIde();
-  try {
-    const b = await bridgeFor(r.root, { ...DEFAULT_MERGE_SETTINGS, jetbrainsPath: ide.command });
-    assert.equal((await b.jetbrainsMerge({ path: "f.txt" })).ok, true);
-    const log = await waitFor(ide.log);
-    const tempDir = join([...log.matchAll(/^ARG (.*)$/gm)].map((m) => m[1])[1], "..");
-    assert.equal(existsSync(tempDir), true, "precondition: the IDE's files exist");
-    const out = await b.opAbort();
-    assert.equal(out.ok, true, out.message);
-    assert.equal(existsSync(tempDir), false, "the stop they belonged to is over, so they are gone");
-
-    // And on quit, whatever is still open.
-    r.tryGit("rebase", "main");
-    rmSync(ide.log, { force: true });
-    assert.equal((await b.jetbrainsMerge({ path: "f.txt" })).ok, true);
-    const log2 = await waitFor(ide.log);
-    const tempDir2 = join([...log2.matchAll(/^ARG (.*)$/gm)].map((m) => m[1])[1], "..");
-    assert.equal(existsSync(tempDir2), true);
-    await b.disposeIdeLaunches();
-    assert.equal(existsSync(tempDir2), false, "quitting removes them");
-  } finally {
-    removeTempRepo(r.root);
-    rmSync(ide.dir, { recursive: true, force: true });
   }
 });

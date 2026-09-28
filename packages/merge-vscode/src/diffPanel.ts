@@ -3,8 +3,7 @@
 // side, restore after reload, and a staging tick per change when the left side
 // is HEAD and the right is the working file — plus Merge Studio's entry
 // points: two files selected in the Explorer diff each other, "Open Changes"
-// is the file vs HEAD, and the routed Compare honours the diffTool setting
-// (the installed JetBrains IDE, or this panel).
+// is the file vs HEAD, and Compare diffs two selected files.
 //
 // One of the two places in this package that write a document the user has
 // open (the other is mergeEditorProvider.ts): an editable right side writes
@@ -16,7 +15,6 @@ import type { DiffInitPayload, StageBlockRef, WebviewMessage } from "@gitstudio/
 import { baseName, collectUris, locate, resolveUriArg } from "./args";
 import { DEMO_DIFF } from "./demoContent";
 import type { MergeHostCore } from "./host";
-import type { JetBrainsUi } from "./jetbrainsUi";
 import { mergeWebviewHtml } from "./webviewHtml";
 
 /**
@@ -397,10 +395,7 @@ export function demoDiffState(): DiffPanelState {
 
 /** The diff entry points every product registers (see register.ts). */
 export class DiffCommands {
-  constructor(
-    private readonly host: MergeHostCore,
-    private readonly jetbrains: JetBrainsUi,
-  ) {}
+  constructor(private readonly host: MergeHostCore) {}
 
   /**
    * "Open in Embedded Diff": two selected files diff each other; otherwise
@@ -416,13 +411,9 @@ export class DiffCommands {
     await this.embeddedHead(uri);
   }
 
-  /** The routed Compare: diffTool=jetbrains (and an IDE installed) goes to the IDE. */
+  /** Compare: two selected files diff each other; one file asks the product (or diffs vs HEAD). */
   async compare(clicked?: unknown, selected?: unknown): Promise<void> {
     const two = collectUris(selected);
-    if (this.host.settings().diffTool === "jetbrains" && (await this.jetbrains.detect())) {
-      await this.diffWithJetBrains(clicked, selected);
-      return;
-    }
     if (two.length === 2) {
       await DiffPanel.create(this.host, twoFileState(two[0], two[1]));
       return;
@@ -435,15 +426,11 @@ export class DiffCommands {
     await this.embeddedHead(uri);
   }
 
-  /** "Open Changes": the file vs HEAD, in the IDE when diffTool says so. */
+  /** "Open Changes": the file vs HEAD. */
   async openChanges(arg?: unknown): Promise<void> {
     const uri = resolveUriArg(arg) ?? vscode.window.activeTextEditor?.document.uri;
     if (!uri) {
       void this.host.notify("warn", "open a file to compare it against HEAD.");
-      return;
-    }
-    if (this.host.settings().diffTool === "jetbrains" && (await this.jetbrains.detect())) {
-      await this.jetbrains.diffAgainstHead(uri);
       return;
     }
     if (this.host.product.openChangesEmbedded) {
@@ -463,32 +450,8 @@ export class DiffCommands {
     await DiffPanel.create(this.host, headState(uri, { editable: false }));
   }
 
-  /** The IDE's diff: two selected files, else the file vs HEAD. */
-  async diffWithJetBrains(clicked?: unknown, selected?: unknown): Promise<void> {
-    const two = collectUris(selected);
-    if (two.length === 2) {
-      await this.jetbrains.diffFiles(two[0], two[1]);
-      return;
-    }
-    const uri = resolveUriArg(clicked) ?? two[0] ?? vscode.window.activeTextEditor?.document.uri;
-    if (!uri) {
-      void this.host.notify("warn", "open a file or select two files to compare.");
-      return;
-    }
-    await this.jetbrains.diffAgainstHead(uri);
-  }
-
   async openDemoDiff(): Promise<void> {
     await DiffPanel.create(this.host, demoDiffState());
-  }
-
-  /** The embedded fallback for two files or one file vs HEAD (the IDE's "Use Embedded Diff"). */
-  async embedded(left: vscode.Uri, right?: vscode.Uri): Promise<void> {
-    if (right) {
-      await DiffPanel.create(this.host, twoFileState(left, right));
-      return;
-    }
-    await this.embeddedHead(left);
   }
 
   private async embeddedHead(uri: vscode.Uri | undefined): Promise<void> {

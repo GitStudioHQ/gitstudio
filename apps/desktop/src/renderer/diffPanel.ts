@@ -25,7 +25,6 @@ import {
   DesktopMergeAdapter,
   conflictSignature,
   conflictStop,
-  detectJetBrains,
   loadMergeSettings,
   mergePayload,
   submoduleCommits,
@@ -45,8 +44,6 @@ export interface ConflictHandlers {
    * keyboard on <body>.
    */
   focusOnMount?: boolean;
-  /** The editor's Open in <IDE> handed the file over: show the hand-off in its place. */
-  onHandedToIde?: () => void;
 }
 
 /** How the diff renders: unified single column, or the 2-pane split view. */
@@ -106,8 +103,8 @@ export class DiffPanel {
   public onStagingChanged?: () => void;
   /**
    * What is on screen, when it is something a caller may want to KEEP rather
-   * than rebuild: the merge shell for one conflict model, an IDE hand-off pane,
-   * or a hosted component. See `shows` / `showConflict`.
+   * than rebuild: the merge shell for one conflict model, a tagged pane, or a
+   * hosted component. See `shows` / `showConflict`.
    */
   private shownTag?: string;
   /** The conflict the shell is showing, for keeping it across a repaint. */
@@ -136,7 +133,7 @@ export class DiffPanel {
     return this.disposed;
   }
 
-  /** Is `tag` what is on screen? (An IDE pane, a hosted component.) */
+  /** Is `tag` what is on screen? (A tagged pane, a hosted component.) */
   shows(tag: string): boolean {
     return this.shownTag === tag;
   }
@@ -643,10 +640,9 @@ export class DiffPanel {
 
     void Promise.all([
       loadMergeSettings(host.invoke),
-      detectJetBrains(host.invoke),
       // A submodule's panel names its two commits; the model has none.
       submoduleCommits(host.invoke, model),
-    ]).then(([settings, ide, commits]) => {
+    ]).then(([settings, commits]) => {
       if (gen !== this.mountGen) return;
       let shell: MergeShell | undefined;
       const adapter = new DesktopMergeAdapter(model, {
@@ -657,19 +653,13 @@ export class DiffPanel {
         onResolved: () => this.conflictHandlers.onResolved?.(),
         onExit: () => this.conflictHandlers.onExit?.(),
         onOperationChanged: (outcome) => this.conflictHandlers.onOperationChanged?.(outcome),
-        onHandedToIde: () => {
-          const show = this.conflictHandlers.onHandedToIde;
-          if (!show) return false;
-          show();
-          return true;
-        },
         undoable: didUndoable,
         notify: (message, kind, action) => toast(message, kind, action ? 8000 : undefined, action),
         // Asked mid-merge: a watcher refresh must not answer it (memory:
         // refresh-closing-dialogs).
         confirm: (spec) => confirmDialog({ ...spec, holdWhile: whileSameRepo() }),
       });
-      shell = new MergeShell(surface, mergePayload(model, settings, ide, commits), {
+      shell = new MergeShell(surface, mergePayload(model, settings, commits), {
         adapter,
         createView: (container) => new MergeView(container),
         // Outside the merge surface ⌘Z is the app's own undo; inside it, the
@@ -857,7 +847,7 @@ export class DiffPanel {
     opts: {
       title?: string;
       kind?: "waiting" | "none" | "error";
-      /** Buttons under the explanation (an IDE hand-off's "Mark resolved"). */
+      /** Buttons under the explanation. */
       actions?: Array<{ label: string; icon?: string; primary?: boolean; onClick: () => void }>;
       /** Names this content, so a repaint can ask whether it is still what is shown (`shows`). */
       tag?: string;

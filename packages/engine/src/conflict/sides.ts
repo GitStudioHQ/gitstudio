@@ -15,9 +15,8 @@
 // A label-only fix leaves "left = mine" false in exactly the case that loses
 // work.
 //
-// Every host maps contents, missing sides, badges and the JetBrains LOCAL /
-// REMOTE files through `byRole` / `stageOf` / `roleOfStage` below and never
-// re-derives the swap (memory: fix-both-siblings). Flipping D1 is one column:
+// Every host maps contents, missing sides and badges through `byRole` /
+// `stageOf` / `roleOfStage` below and never re-derives the swap (memory: fix-both-siblings). Flipping D1 is one column:
 // `YOURS_STAGE`.
 
 import type {
@@ -428,8 +427,7 @@ export function roleOfStage(op: SideStages, stage: 2 | 3): SideRole {
 /**
  * Re-keys stage-keyed values by role: `byRole(op, stage2Value, stage3Value)`.
  * THE content mapping — payload.ours = byRole(...).yours (left), payload.theirs
- * = byRole(...).theirs (right); also for missing sides, XY badge halves and the
- * JetBrains LOCAL (= yours) / REMOTE (= theirs) files.
+ * = byRole(...).theirs (right); also for missing sides and XY badge halves.
  */
 export function byRole<T>(op: SideStages, stage2: T, stage3: T): { yours: T; theirs: T } {
   return op.yours.stage === 2

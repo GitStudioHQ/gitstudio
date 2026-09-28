@@ -506,7 +506,7 @@ test("in a narrow pane the bottom bar wraps: Apply, its warning, Continue, Close
   const v = await run(`
     const root = document.getElementById("root");
     root.style.width = "440px";
-    const shell = mount(payload({ jetbrainsName: "WebStorm" }));
+    const shell = mount(payload());
     fake.setCounts({ total: 5, pending: 3, conflictsPending: 1 });
     const inside = (sel) => {
       const r = root.getBoundingClientRect();
@@ -515,7 +515,7 @@ test("in a narrow pane the bottom bar wraps: Apply, its warning, Continue, Close
       const b = n.getBoundingClientRect();
       return b.width > 0 && b.left >= r.left - 1 && b.right <= r.right + 1 ? "" : sel + " at " + Math.round(b.left) + "–" + Math.round(b.right) + " outside " + Math.round(r.left) + "–" + Math.round(r.right);
     };
-    for (const sel of [".ms-accept-yours", ".ms-accept-theirs", ".jb-external", ".ms-close", ".ms-apply"]) {
+    for (const sel of [".ms-accept-yours", ".ms-accept-theirs", ".ms-close", ".ms-apply"]) {
       const why = inside(sel);
       expect(!why, "on screen: " + why);
     }
@@ -534,20 +534,6 @@ test("in a narrow pane the bottom bar wraps: Apply, its warning, Continue, Close
     shell.handle({ type: "applied", staged: true });
     shell.handle({ type: "opChanged", op: { ...OP, canContinue: true }, remainingConflicts: 0 });
     expect(shown(".ms-continue") && !inside(".ms-continue"), "Continue is on screen: " + inside(".ms-continue"));
-  `);
-  assert.deepEqual(v.fails, [], v.fails.join("\n"));
-});
-
-test("no IDE hand-off is offered for a conflict with no text to merge", { skip }, async () => {
-  // The main process refuses it (ConflictOps.externalMergeInput: "no text to
-  // merge line by line"), so the button could only ever end in an error.
-  const v = await run(`
-    const shell = mount(payload({ shape: "binary", jetbrainsName: "WebStorm" }));
-    expect(!shown(".jb-external"), "no Open in WebStorm over a binary");
-    shell.handle({ type: "init", ...payload({ shape: "modify-delete", missingRole: "theirs", jetbrainsName: "WebStorm" }) });
-    expect(!shown(".jb-external"), "nor over a deleted side");
-    shell.handle({ type: "init", ...payload({ jetbrainsName: "WebStorm" }) });
-    expect(shown(".jb-external") && text(".jb-external") === "Open in WebStorm", "a text conflict still offers it (" + text(".jb-external") + ")");
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
@@ -644,7 +630,7 @@ test("once the operation is over, the strip has no conflicts list to point to", 
   // — the extensions keep it on screen to show the outcome. There is nothing
   // left there to continue or end.
   const v = await run(`
-    const shell = mount(payload({ jetbrainsName: "WebStorm" }));
+    const shell = mount(payload());
     const NONE = { kind: "none", title: "Conflicts", yours: OP.yours, theirs: OP.theirs, verbs: { abort: "Cancel" }, canContinue: false, canSkip: false, episode: "none" };
     expect(shown(".ms-op-list"), "a rebase in progress links to its list");
     shell.handle({ type: "outcome", kind: "done", text: "Rebase complete." });
@@ -652,7 +638,6 @@ test("once the operation is over, the strip has no conflicts list to point to", 
     expect(!$(".ms-op-list"), "none once it is over");
     click(".ms-close");
     expect(JSON.stringify(last()) === JSON.stringify({ type: "cancel", mode: "exit" }), "Close just closes the viewer (" + JSON.stringify(last()) + ")");
-    expect(!shown(".jb-external"), "and nothing is left to hand to the IDE");
     // Unmerged files with no operation around them are still to settle there.
     const bare = mount(payload({ op: NONE }));
     bare.handle({ type: "opChanged", op: NONE, remainingConflicts: 2 });

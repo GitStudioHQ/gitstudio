@@ -445,7 +445,7 @@ const CASES = [
   ["the-merge-surfaces-resolve-every-shared-token", "changes", { extra: "opctx=merge" }],
   ["the-merge-surfaces-resolve-every-shared-token", "changes", { extra: "opctx=merge", theme: "light" }],
   // A watcher refresh (the index changes under every git command) must not eat
-  // an open question, the merge editor, or re-launch an IDE hand-off.
+  // an open question or the merge editor.
   ["the-dashboards-questions-outlive-the-watchers-refresh", "changes", { extra: "opctx=reporter", arg: "abort" }],
   ["the-dashboards-questions-outlive-the-watchers-refresh", "changes", { extra: "op=cherry-pick&conflicts=1", arg: "skip" }],
   ["the-dashboards-questions-outlive-the-watchers-refresh", "changes", { extra: "opctx=reporter&willdrop=1", arg: "drop" }],
@@ -453,16 +453,9 @@ const CASES = [
   // …nor the work in it when the conflicted file itself is written from outside.
   ["the-merge-editor-keeps-its-work-when-the-file-changes-on-disk", "changes", { extra: "opctx=reporter", arg: "keep" }],
   ["the-merge-editor-keeps-its-work-when-the-file-changes-on-disk", "changes", { extra: "opctx=reporter", arg: "reload" }],
-  ["the-ide-hand-off-is-not-repeated-by-a-refresh", "changes", { extra: "opctx=reporter&resolver=jetbrains" }],
   ["the-rebase-views-questions-outlive-the-watchers-refresh", "rebase", { extra: "rebasing=1&op=rebase&willdrop=1" }],
   ["a-rebase-question-does-not-follow-you-to-another-repository", "rebase", { extra: "rebasing=1&op=rebase" }],
-  ["a-launcher-path-that-is-not-an-ide-is-refused-and-says-so", "settings"],
   ["a-conflict-git-could-not-read-says-so", "changes", { extra: "opctx=reporter&fail=conflict:model" }],
-  ["the-ide-route-hands-over-and-marks-resolved", "changes", { extra: "opctx=merge&resolver=jetbrains" }],
-  ["the-ide-route-leaves-a-conflict-with-no-text-to-the-panel", "changes", { extra: "opctx=merge&resolver=jetbrains" }],
-  ["the-ide-diff-route-leaves-a-binary-to-the-built-in-pane", "changes", { extra: "difftool=jetbrains" }],
-  ["resolve-here-instead-survives-the-watchers-refresh", "changes", { extra: "opctx=merge&resolver=jetbrains" }],
-  ["the-ide-button-hands-the-file-over-like-the-setting-does", "changes", { extra: "opctx=merge" }],
   ["the-keyboard-comes-back-to-the-dashboard-after-the-merge-editor", "changes", { extra: "opctx=merge" }],
   ["the-keyboard-follows-merge-into-the-editor", "changes", { extra: "opctx=merge" }],
   ["show-conflicts-takes-the-keyboard-to-the-dashboard", "changes", { extra: "opctx=merge" }],

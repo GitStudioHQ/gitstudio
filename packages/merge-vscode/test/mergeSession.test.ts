@@ -92,7 +92,6 @@ function harness(git?: SessionGit, extra: Partial<MergeSessionDeps> = {}, calls:
     },
     post: (m) => posts.push(m),
     settings: () => ({ autoApplyNonConflicting: false }),
-    jetbrainsName: () => undefined,
     notify: (kind, text) => notes.push({ kind, text }),
     ...extra,
   };
@@ -302,7 +301,6 @@ test("REAL git: Apply while a stale index.lock blocks `git add` reports staged:f
     save: async (text) => writeFileSync(join(r.repo, "a.txt"), text),
     post: (m) => posts.push(m),
     settings: () => ({ autoApplyNonConflicting: false }),
-    jetbrainsName: () => undefined,
     notify: (_k, t) => notes.push(t),
   });
   try {
@@ -343,7 +341,6 @@ test("REAL git: Apply stages the resolution and git agrees", async () => {
     save: async (text) => writeFileSync(join(r.repo, "a.txt"), text),
     post: (m) => posts.push(m),
     settings: () => ({ autoApplyNonConflicting: false }),
-    jetbrainsName: () => undefined,
     notify: () => {},
   });
   try {
@@ -549,7 +546,6 @@ function realMergeSession(repo: string, ctx: GitContext, onUndo: (fn: () => Prom
     save: async (text) => writeFileSync(file, text),
     post: () => {},
     settings: () => ({ autoApplyNonConflicting: false }),
-    jetbrainsName: () => undefined,
     offerUndo: (_t, fn) => onUndo(fn),
     notify: () => {},
   });

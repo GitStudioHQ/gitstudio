@@ -4,9 +4,9 @@
 // links, a modal for its few questions, repositories from VS Code's git
 // extension) and hands it to @gitstudio/merge-vscode's registrar, which
 // registers the merge editor, the conflicts dashboard, routing, the status
-// item, the JetBrains hand-off, the diff panel and the coexistence question.
-// What stays here is brand-only: the walkthrough, the context key that
-// switches its "Using GitStudio too?" step, and one legacy setting value.
+// item, the diff panel and the coexistence question. What stays here is
+// brand-only: the walkthrough and the context key that switches its "Using
+// GitStudio too?" step.
 //
 // When a GitStudio with this same merge experience is installed with
 // `gitstudio.merge.autoOpen` on, GitStudio owns everything automatic (decision
@@ -23,7 +23,6 @@ import {
   MS_034_COEXIST_KEY,
   MS_DEFERS_CONTEXT_KEY,
   MS_LAST_VERSION_KEY,
-  MS_SETTINGS_SECTION,
   MS_SIDES_TIP_KEY,
   MS_WALKTHROUGH_COMMAND,
   MS_WALKTHROUGH_FULL_ID,
@@ -37,7 +36,6 @@ import {
   GITSTUDIO_AUTO_OPEN_SECTION,
   GITSTUDIO_EXTENSION_ID,
   gitStudioFacts,
-  legacySettingUpdates,
   legacyStateUpdates,
   modalAsk,
 } from "./shell";
@@ -125,7 +123,6 @@ export function activate(context: vscode.ExtensionContext): MergeStudioApi {
   );
 
   registerWalkthrough(context, locator);
-  void migrateLegacySettings();
   // GitStudio reads this: a question answered here (or by 0.3.4, counted by
   // legacyStateUpdates above) is not asked again when GitStudio owns it.
   return { mergePeer: experience.peerApi };
@@ -207,15 +204,4 @@ async function anyRepositoryBusy(locator: LateLocator): Promise<boolean> {
     locator.all().map((repo) => repo.ctx.operation.detect().catch(() => ({ kind: "none" as const, unmerged: 0 }))),
   );
   return detections.some((d) => d.kind !== "none" || d.unmerged > 0);
-}
-
-async function migrateLegacySettings(): Promise<void> {
-  try {
-    const config = vscode.workspace.getConfiguration(MS_SETTINGS_SECTION);
-    for (const update of legacySettingUpdates((key) => config.inspect(key))) {
-      await config.update(update.key, update.value, vscode.ConfigurationTarget.Global);
-    }
-  } catch {
-    // Best effort: the old value keeps working either way.
-  }
 }

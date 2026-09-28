@@ -111,67 +111,6 @@
           "default": false,
           "order": 2,
           "description": "When a file opens, apply every change only one side made, and every edit both sides made identically. Conflicts are never applied automatically. Reset returns to this starting point."
-        },
-        "jbMerge.conflictResolver": {
-          "type": "string",
-          "enum": [
-            "embedded",
-            "jetbrains"
-          ],
-          "enumItemLabels": [
-            "Merge Studio",
-            "JetBrains IDE"
-          ],
-          "enumDescriptions": [
-            "The three-pane merge editor, here in the editor.",
-            "The merge window of an installed JetBrains IDE (falls back to Merge Studio when none is found)."
-          ],
-          "default": "embedded",
-          "order": 3,
-          "markdownDescription": "Where conflicted files open. **Merge Studio** (default) uses the three-pane editor here; **JetBrains IDE** opens the merge window of an installed IntelliJ-based IDE (`#jbMerge.preferredIde#`)."
-        },
-        "jbMerge.diffTool": {
-          "type": "string",
-          "enum": [
-            "embedded",
-            "jetbrains"
-          ],
-          "enumItemLabels": [
-            "Merge Studio",
-            "JetBrains IDE"
-          ],
-          "enumDescriptions": [
-            "Merge Studio's side-by-side diff.",
-            "The diff window of an installed JetBrains IDE (falls back to Merge Studio's diff when none is found)."
-          ],
-          "default": "embedded",
-          "order": 4,
-          "description": "Which diff Compare in Merge Studio and Open Changes in Merge Studio use."
-        },
-        "jbMerge.preferredIde": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "webstorm",
-            "pycharm",
-            "intellij",
-            "phpstorm",
-            "goland",
-            "clion",
-            "rider",
-            "rubymine",
-            "datagrip"
-          ],
-          "default": "auto",
-          "order": 5,
-          "description": "Which installed JetBrains IDE to hand merges and diffs to. Auto uses the first one found."
-        },
-        "jbMerge.jetbrainsPath": {
-          "type": "string",
-          "default": "",
-          "scope": "machine",
-          "order": 6,
-          "description": "Path to a JetBrains IDE launcher, used instead of detection — for example /Applications/WebStorm.app/Contents/MacOS/webstorm. User settings only: a workspace cannot set the program Merge Studio launches."
         }
       }
     },
@@ -301,24 +240,6 @@
             "completionEvents": [
               "onCommand:jbMerge.openDemoDiff"
             ]
-          },
-          {
-            "id": "mergeStudio.handoff",
-            "title": "Optional: a JetBrains IDE",
-            "when": "jbMerge.ideAvailable",
-            "description": "Prefer a JetBrains IDE? Merge Studio can hand conflicts to an installed IntelliJ, WebStorm, PyCharm or other JetBrains IDE.\n[Choose the resolver](command:workbench.action.openSettings?%5B%22jbMerge.conflictResolver%22%5D)",
-            "media": {
-              "image": {
-                "dark": "media/walkthrough/jetbrains-dark.png",
-                "light": "media/walkthrough/jetbrains-light.png",
-                "hc": "media/walkthrough/jetbrains-dark.png",
-                "hcLight": "media/walkthrough/jetbrains-light.png"
-              },
-              "altText": "The Conflict Resolver setting and its two values: Merge Studio, the default three-pane editor, and JetBrains IDE."
-            },
-            "completionEvents": [
-              "onSettingChanged:jbMerge.conflictResolver"
-            ]
           }
         ]
       }
@@ -347,18 +268,6 @@
         "title": "Open in Merge Studio",
         "category": "Merge Studio",
         "icon": "$(git-merge)"
-      },
-      {
-        "command": "jbMerge.mergeWithJetBrains",
-        "title": "Merge with JetBrains IDE",
-        "category": "Merge Studio",
-        "icon": "$(link-external)"
-      },
-      {
-        "command": "jbMerge.diffWithJetBrains",
-        "title": "Diff with JetBrains IDE",
-        "category": "Merge Studio",
-        "icon": "$(link-external)"
       },
       {
         "command": "jbMerge.compare",
@@ -443,22 +352,12 @@
           "command": "jbMerge.resolveInMergeEditor",
           "when": "scmProvider == git && scmResourceGroup == merge",
           "group": "1_modification@1"
-        },
-        {
-          "command": "jbMerge.mergeWithJetBrains",
-          "when": "scmProvider == git && scmResourceGroup == merge && jbMerge.ideAvailable",
-          "group": "1_modification@2"
         }
       ],
       "editor/title": [
         {
           "command": "jbMerge.resolveInMergeEditor",
           "when": "config.git.enabled && !git.missing && resource in git.mergeChanges && git.activeResourceHasMergeConflicts",
-          "group": "navigation@-2"
-        },
-        {
-          "command": "jbMerge.mergeWithJetBrains",
-          "when": "config.git.enabled && !git.missing && resource in git.mergeChanges && git.activeResourceHasMergeConflicts && jbMerge.ideAvailable",
           "group": "navigation@-2"
         },
         {
@@ -514,14 +413,6 @@
         {
           "command": "jbMerge.stageWithTicks",
           "when": "gitOpenRepositoryCount != 0 && resourceScheme == file"
-        },
-        {
-          "command": "jbMerge.mergeWithJetBrains",
-          "when": "resourceScheme == file && jbMerge.ideAvailable"
-        },
-        {
-          "command": "jbMerge.diffWithJetBrains",
-          "when": "jbMerge.ideAvailable"
         },
         {
           "command": "jbMerge.operation.continue",

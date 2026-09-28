@@ -1321,9 +1321,8 @@ export class CommitViewProvider
   private async doOpenDiff(path: string, staged: boolean, line?: number): Promise<void> {
     const conflicted = this.repos.getActive();
     if (!staged && conflicted && path && this.merge && this.isConflictRow(conflicted, path)) {
-      // A conflicted file opens where it can be RESOLVED — the merge editor or
-      // the JetBrains IDE, per gitstudio.merge.conflictResolver — not a
-      // working-tree-vs-HEAD diff full of conflict markers.
+      // A conflicted file opens where it can be RESOLVED — the merge editor —
+      // not a working-tree-vs-HEAD diff full of conflict markers.
       void this.merge.openConflict(
         vscode.Uri.joinPath(vscode.Uri.file(conflicted.root), ...path.split("/")),
       );

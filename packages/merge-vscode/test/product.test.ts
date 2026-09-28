@@ -13,51 +13,36 @@ import {
 const read = (raw: Partial<Record<keyof MergeHostSettings, unknown>>) =>
   normalizeMergeSettings((key) => raw[key]);
 
-test("unset settings are the contract's defaults — auto-apply OFF, embedded tools, auto IDE, routing on", () => {
+test("unset settings are the contract's defaults — auto-apply OFF, routing on", () => {
   const s = read({});
   assert.deepEqual(s, { ...DEFAULT_MERGE_SETTINGS, autoOpen: true });
   assert.equal(s.autoApplyNonConflicting, false, "D3 as overridden: JetBrains' own default");
 });
 
-test("Merge Studio's legacy conflictResolver 'webview' means the embedded editor", () => {
-  assert.equal(read({ conflictResolver: "webview" }).conflictResolver, "embedded");
-  assert.equal(read({ conflictResolver: "jetbrains" }).conflictResolver, "jetbrains");
-});
-
-test("garbage never reaches the code: unknown enums and wrong types fall back to defaults", () => {
-  const s = read({
-    conflictResolver: "vim",
-    diffTool: 3,
-    preferredIde: "notepad",
-    jetbrainsPath: { path: "/x" },
-    autoOpen: "yes",
-    autoApplyNonConflicting: 1,
-  });
-  assert.equal(s.conflictResolver, "embedded");
-  assert.equal(s.diffTool, "embedded");
-  assert.equal(s.preferredIde, "auto");
-  assert.equal(s.jetbrainsPath, "");
+test("garbage never reaches the code: wrong types fall back to defaults", () => {
+  const s = read({ autoOpen: "yes", autoApplyNonConflicting: 1 });
   assert.equal(s.autoOpen, true);
   assert.equal(s.autoApplyNonConflicting, false);
 });
 
-test("real values pass through (a padded launcher path is trimmed)", () => {
-  const s = read({
-    conflictResolver: "jetbrains",
-    diffTool: "jetbrains",
-    preferredIde: "pycharm",
-    jetbrainsPath: "  /Applications/PyCharm.app/Contents/MacOS/pycharm ",
+test("real values pass through", () => {
+  assert.deepEqual(read({ autoOpen: false, autoApplyNonConflicting: true }), {
     autoOpen: false,
     autoApplyNonConflicting: true,
   });
-  assert.deepEqual(s, {
+});
+
+// The external-IDE hand-off is gone. A user who had chosen it still has the
+// old values stored; they are never read, so conflicts and diffs simply open
+// in the embedded editors, with no error and no question.
+test("a stored conflictResolver / diffTool from the removed IDE hand-off is ignored", () => {
+  const legacy = {
     conflictResolver: "jetbrains",
     diffTool: "jetbrains",
     preferredIde: "pycharm",
     jetbrainsPath: "/Applications/PyCharm.app/Contents/MacOS/pycharm",
-    autoOpen: false,
-    autoApplyNonConflicting: true,
-  });
+  } as unknown as Partial<Record<keyof MergeHostSettings, unknown>>;
+  assert.deepEqual(read(legacy), { ...DEFAULT_MERGE_SETTINGS, autoOpen: true });
 });
 
 test("D4: Merge Studio defers exactly while a GitStudio with this merge experience is installed with merge.autoOpen not turned off", () => {

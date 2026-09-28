@@ -19,8 +19,6 @@ export const MS_MERGE_COMMANDS: MergeCommandIds = {
   // 0.3.4 ids, unchanged.
   showConflicts: "jbMerge.showConflicts",
   resolveInMergeEditor: "jbMerge.resolveInMergeEditor",
-  mergeWithJetBrains: "jbMerge.mergeWithJetBrains",
-  diffWithJetBrains: "jbMerge.diffWithJetBrains",
   compare: "jbMerge.compare",
   openDiff: "jbMerge.openDiff",
   openChanges: "jbMerge.openChanges",
@@ -42,11 +40,8 @@ export const MS_MERGE_VIEW_TYPES: MergeViewTypes = {
   conflicts: "jbMerge.conflicts",
 };
 
-/** The configuration section holding autoOpen, autoApplyNonConflicting, conflictResolver, … */
+/** The configuration section holding autoOpen and autoApplyNonConflicting. */
 export const MS_SETTINGS_SECTION = "jbMerge";
-
-/** True while a JetBrains IDE can be launched (0.3.4's key; hides the IDE menus otherwise). */
-export const MS_IDE_CONTEXT_KEY = "jbMerge.ideAvailable";
 
 /**
  * True while an open repository has an operation stopped or unmerged files:

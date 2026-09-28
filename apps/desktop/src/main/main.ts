@@ -672,10 +672,6 @@ function actionLabel(channel: string): string {
     "op:continue": "Continue operation",
     "op:skip": "Skip commit",
     "op:abort": "Abort operation",
-    "jetbrains:detect": "Find JetBrains IDE",
-    "jetbrains:merge": "Merge in JetBrains IDE",
-    "jetbrains:diff": "Diff in JetBrains IDE",
-    "jetbrains:markResolved": "Mark resolved",
     "merge:settings": "Read merge settings",
     "merge:setSettings": "Save merge settings",
   };
@@ -1357,9 +1353,9 @@ function registerIpc(): void {
   handle("am:continue", () => bridge.amContinue());
   handle("rebase:continue", () => bridge.rebaseContinue());
   handle("rebase:skip", () => bridge.rebaseSkip());
-  // Merge parity: role-based conflicts, the operation, the JetBrains hand-off
-  // and Settings ▸ Merge — the same meaning as the VS Code hosts, through the
-  // same shared OperationProvider / ConflictOps.
+  // Merge parity: role-based conflicts, the operation and Settings ▸ Merge —
+  // the same meaning as the VS Code hosts, through the same shared
+  // OperationProvider / ConflictOps.
   handle("conflict:state", () => bridge.conflictState());
   handle("conflict:takeRole", (req) => bridge.conflictTakeRole(req));
   handle("conflict:restore", (req) => bridge.conflictRestore(req));
@@ -1367,10 +1363,6 @@ function registerIpc(): void {
   handle("op:continue", (req) => bridge.opContinue(req ?? {}));
   handle("op:skip", () => bridge.opSkip());
   handle("op:abort", () => bridge.opAbort());
-  handle("jetbrains:detect", () => bridge.jetbrainsDetect());
-  handle("jetbrains:merge", (req) => bridge.jetbrainsMerge(req));
-  handle("jetbrains:diff", (req) => bridge.jetbrainsDiff(req));
-  handle("jetbrains:markResolved", (req) => bridge.jetbrainsMarkResolved(req));
   handle("merge:settings", async () => mergeSettings.get());
   handle("merge:setSettings", (patch) => mergeSettings.update(patch));
   handle("tag:create", (req) => bridge.tagCreate(req));
@@ -1453,8 +1445,7 @@ async function boot(): Promise<void> {
     defaultCloneDir: managedReposDir(),
     home: app.getPath("home"),
   });
-  // Settings ▸ Merge live HERE, not in the renderer: jetbrainsPath is an
-  // executable this process spawns.
+  // Settings ▸ Merge, persisted by this process in userData.
   mergeSettings = await MergeSettingsStore.load(app.getPath("userData"));
   bridge = new GitBridge(
     repos,
@@ -1463,7 +1454,6 @@ async function boot(): Promise<void> {
       get: (root) => appSettings.graphRefFilter(root),
       set: (root, refs) => appSettings.setGraphRefFilter(root, refs),
     },
-    mergeSettings,
   );
   github = new GitHubBridge(repos);
   // Authenticate ATTACHMENT images from the renderer. A private repository's
@@ -1614,9 +1604,6 @@ app.on("activate", () => {
 app.on("before-quit", () => {
   void saveState();
   ai?.dispose();
-  // A JetBrains hand-off never marked resolved leaves LOCAL / REMOTE / BASE
-  // in the temp folder; they go with the app (removed synchronously).
-  void bridge?.disposeIdeLaunches();
   repos?.dispose();
 });
 

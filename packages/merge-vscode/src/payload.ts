@@ -38,8 +38,6 @@ export interface PayloadInput {
   fileName: string;
   /** The live document text (still carrying markers until resolved). */
   workingText: string;
-  /** Installed JetBrains IDE's display name, when one can take the merge. */
-  jetbrainsName?: string;
   /** The product's autoApplyNonConflicting setting (default off). */
   autoApplyNonConflicting: boolean;
 }
@@ -77,9 +75,6 @@ export function buildMergePayload(sides: MergeSides, input: PayloadInput): Merge
   }
   if (sides.missingRole) {
     payload.missingRole = sides.missingRole;
-  }
-  if (input.jetbrainsName) {
-    payload.jetbrainsName = input.jetbrainsName;
   }
   return payload;
 }
@@ -136,7 +131,6 @@ export function markersOnlyPayload(input: PayloadInput): MergeInitPayload {
     result: input.workingText !== "" ? input.workingText : base,
     autoApplyNonConflicting: input.autoApplyNonConflicting,
     shape: "text",
-    ...(input.jetbrainsName ? { jetbrainsName: input.jetbrainsName } : {}),
   };
 }
 

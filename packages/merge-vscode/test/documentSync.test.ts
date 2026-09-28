@@ -5,7 +5,6 @@ import * as vscode from "vscode";
 import type { HostMessage } from "@gitstudio/host-bridge/protocol";
 import { ExitGuard } from "../src/exitGuard";
 import type { MergeHostCore } from "../src/host";
-import type { JetBrainsUi } from "../src/jetbrainsUi";
 import { MergeEditorProvider } from "../src/mergeEditorProvider";
 import type { MergeProduct, MergeRepo, RepoLocator } from "../src/product";
 import { view } from "./fixtures";
@@ -98,10 +97,6 @@ function rig(working: string): Rig {
     settings: () => ({
       autoOpen: true,
       autoApplyNonConflicting: false,
-      conflictResolver: "embedded",
-      diffTool: "embedded",
-      preferredIde: "auto",
-      jetbrainsPath: "",
     }),
     defers: () => false,
     // host.notify: an info WITH an action is a notification toast; without
@@ -112,7 +107,6 @@ function rig(working: string): Rig {
     },
     changed: () => {},
   };
-  const noIde = { detect: async () => undefined, cachedName: () => undefined } as unknown as JetBrainsUi;
   let text = working;
   const document = {
     uri: vscode.Uri.file("/r/app.txt"),
@@ -130,7 +124,7 @@ function rig(working: string): Rig {
       text = next;
     },
   } as unknown as vscode.TextDocument & { set(text: string): void };
-  return { provider: new MergeEditorProvider(host, noIde), document, asked, notes, saved, answer, restored };
+  return { provider: new MergeEditorProvider(host), document, asked, notes, saved, answer, restored };
 }
 
 /** Every message the page was sent, by type. */

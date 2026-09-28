@@ -1,9 +1,9 @@
 // MS_PRODUCT: what is Merge Studio's in the shared merge experience — ids,
 // brand, settings under `jbMerge`, the dashboard's support links, how a
 // question is asked, and where repositories come from. Everything else (the
-// merge editor, the conflicts dashboard, routing, the JetBrains hand-off, the
-// diff panel, the coexistence question) is @gitstudio/merge-vscode, the code
-// GitStudio runs too.
+// merge editor, the conflicts dashboard, routing, the diff panel, the
+// coexistence question) is @gitstudio/merge-vscode, the code GitStudio runs
+// too.
 //
 // vscode-free at runtime (only vscode-free modules are imported): extension.ts
 // supplies the parts that touch the editor, so the product itself is
@@ -18,7 +18,6 @@ import {
 } from "@gitstudio/merge-vscode/product";
 import {
   MS_COEXISTENCE_PROMPT_KEY,
-  MS_IDE_CONTEXT_KEY,
   MS_OPERATION_CONTEXT_KEY,
   MS_MERGE_COMMANDS,
   MS_MERGE_VIEW_TYPES,
@@ -47,7 +46,6 @@ export function buildMsProduct(parts: MsProductParts): MergeProduct {
     settingsSection: MS_SETTINGS_SECTION,
     viewTypes: MS_MERGE_VIEW_TYPES,
     commands: MS_MERGE_COMMANDS,
-    ideAvailableContextKey: MS_IDE_CONTEXT_KEY,
     operationContextKey: MS_OPERATION_CONTEXT_KEY,
     statusItemId: MS_STATUS_ITEM_ID,
     coexistencePromptKey: MS_COEXISTENCE_PROMPT_KEY,

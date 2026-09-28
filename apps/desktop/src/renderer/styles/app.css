@@ -13278,7 +13278,7 @@ select.rb-action:hover {
   --gs-danger: color-mix(in srgb, var(--vscode-errorForeground, #e51400) 60%, var(--vscode-foreground, #000000));
 }
 
-/* ── Merge parity: rail badge, top-bar chip, IDE hand-off, Settings ▸ Merge ── */
+/* ── Merge parity: rail badge, top-bar chip, Settings ▸ Merge ── */
 /* A stopped operation is visible from every view: a count on the Changes rail
    item, and a chip in the top bar that goes straight there. */
 .nav-item .nav-badge {
@@ -13335,15 +13335,6 @@ select.rb-action:hover {
   gap: 8px;
   margin-top: 12px;
 }
-.merge-settings-card .merge-settings-group { margin-top: var(--sp-3); }
-.merge-settings-card .merge-ide-select {
-  display: block;
-  width: min(320px, 100%);
-  margin-top: 6px;
-}
-.merge-settings-card .merge-ide-found { margin-top: 6px; overflow-wrap: anywhere; }
-.merge-settings-card .merge-ide-found.is-missing { color: var(--status-warn); }
-.merge-settings-card .merge-ide-path { margin-top: var(--sp-3); }
 
 /* Squash commits…'s message editor (issue #32, dialogs.ts promptMessage):
    room for several commit messages, in the editor's own face. */

@@ -56,7 +56,6 @@ import {
   historyIcon,
   iconElement,
   magicWand,
-  openExternal,
   redoIcon,
   resetIcon,
   syncScroll,
@@ -362,7 +361,6 @@ export class MergeShell {
 
   private readonly acceptYoursBtn: HTMLButtonElement;
   private readonly acceptTheirsBtn: HTMLButtonElement;
-  private readonly jetbrainsBtn: HTMLButtonElement;
   private readonly closeBtn: HTMLButtonElement;
   private readonly undoApplyBtn: HTMLButtonElement;
   private readonly applyBtn: HTMLButtonElement;
@@ -505,10 +503,6 @@ export class MergeShell {
     this.bottomNote.setAttribute("role", "status");
     this.bottomNote.hidden = true;
 
-    this.jetbrainsBtn = toolbarButton("");
-    this.jetbrainsBtn.classList.add("jb-external");
-    this.jetbrainsBtn.hidden = true;
-
     // Close: ONLY closes the merge editor. Nothing is written, and the
     // operation stays paused; ending it is the conflicts list's to offer.
     this.closeBtn = toolbarButton("Close", "bordered");
@@ -532,7 +526,6 @@ export class MergeShell {
       this.acceptTheirsBtn,
       bottomSpacer,
       this.bottomNote,
-      this.jetbrainsBtn,
       this.closeBtn,
       this.undoApplyBtn,
       this.applyBtn,
@@ -656,16 +649,6 @@ export class MergeShell {
     this.eolInfo = undefined;
     this.lastPosted = undefined;
     this.hideWsConfirm();
-
-    // The JetBrains escape hatch, only when the host found an IDE — and only
-    // for text: the IDE merges lines, and the hosts refuse to hand it a
-    // binary, a deleted side or a file too large to read (syncBottom).
-    this.jetbrainsBtn.replaceChildren();
-    if (payload.jetbrainsName) {
-      this.jetbrainsBtn.append(iconElement(openExternal), document.createTextNode(`Open in ${payload.jetbrainsName}`));
-      this.jetbrainsBtn.title =
-        `Close this editor and resolve the conflict in the ${payload.jetbrainsName} merge window`;
-    }
 
     this.labelSides();
     this.renderStrip();
@@ -1374,9 +1357,6 @@ export class MergeShell {
         ? "Answer the question above first: the file changed outside the merge editor"
         : "Save the result and mark the conflict resolved";
     }
-    // The IDE merges lines: never offered over a panel with no text, nor once
-    // the operation is over and there is no conflict left to hand it.
-    this.jetbrainsBtn.hidden = !this.payload.jetbrainsName || noText || (!!this.op && !this.endable());
     this.closeBtn.disabled = busy;
     this.closeBtn.textContent = this.closeLabel();
     const name = displayPath(this.payload.fileName);
@@ -1535,7 +1515,6 @@ export class MergeShell {
       this.viewApi?.acceptAllRight();
       this.acceptTheirsBtn.classList.toggle("jb-confirmed", this.counts.pending === 0);
     });
-    on(this.jetbrainsBtn, "click", () => this.adapter.post({ type: "openInJetBrains" }));
     on(this.closeBtn, "click", () => this.clickClose());
     on(this.undoApplyBtn, "click", () => {
       if (this.busy || !this.undoable) return;

@@ -40,11 +40,6 @@ export interface MergeInitPayload {
   /** Current working-tree text (still carries conflict markers until resolved). */
   result: string;
   /**
-   * Name of the installed JetBrains IDE (WebStorm, PyCharm, …) the host can
-   * hand this merge to, or absent when none is installed.
-   */
-  jetbrainsName?: string;
-  /**
    * S0. The operation this conflict belongs to. When present, the host has
    * ALREADY mapped the contents through it: `ours` holds the Yours (LEFT)
    * content = stage `op.yours.stage`, `theirs` holds the Theirs (RIGHT)
@@ -184,8 +179,6 @@ export type WebviewMessage =
   | { type: "showConflicts" }
   /** The tip's "Got it" (MergeInitPayload.tip): never show tip `id` again. */
   | { type: "dismissTip"; id: string }
-  // Hand this conflict to the real JetBrains merge window and close the panel.
-  | { type: "openInJetBrains" }
   /**
    * S0. The shell's "Continue <op>" after Apply. `confirmDrop: true` only after
    * the user confirmed op.willDrop. Host answers `outcome` then `opChanged`.

@@ -6,7 +6,6 @@ import { fileURLToPath } from "node:url";
 import { configurationProperties } from "@gitstudio/merge-vscode/contract";
 import {
   MS_DEFERS_CONTEXT_KEY,
-  MS_IDE_CONTEXT_KEY,
   MS_MERGE_VIEW_TYPES,
   MS_OPERATION_CONTEXT_KEY,
   MS_WALKTHROUGH_ID,
@@ -77,13 +76,6 @@ test("every editor-title button has an icon (no text buttons in the tab bar)", (
   }
 });
 
-test("the JetBrains commands stay out of the palette without an IDE", () => {
-  for (const id of ["jbMerge.mergeWithJetBrains", "jbMerge.diffWithJetBrains"]) {
-    const e = pkg.contributes.menus.commandPalette.find((x) => x.command === id);
-    assert.ok(e?.when?.includes(MS_IDE_CONTEXT_KEY), `${id}: ${e?.when}`);
-  }
-});
-
 test("Continue / Skip / Abort Operation are in the palette only while something is stopped", () => {
   // With nothing in progress each one only answered "nothing is in progress".
   // The shared watcher sets the key (packages/merge-vscode register.ts).
@@ -92,11 +84,6 @@ test("Continue / Skip / Abort Operation are in the palette only while something 
     assert.ok(e?.when?.includes(MS_OPERATION_CONTEXT_KEY), `${id}: ${e?.when}`);
   }
   assert.match(read("src/msProduct.ts"), /operationContextKey: MS_OPERATION_CONTEXT_KEY/);
-});
-
-test("the launcher path is user-only: a workspace can never set the program Merge Studio launches", () => {
-  const props = configurationProperties(pkg.contributes.configuration) as Record<string, { scope?: string }>;
-  assert.equal(props["jbMerge.jetbrainsPath"].scope, "machine");
 });
 
 test("Restricted Mode is declared as it is: Merge Studio needs VS Code's Git extension, which Restricted Mode turns off", () => {
@@ -124,23 +111,23 @@ const walkthrough = pkg.contributes.walkthroughs.find((w) => w.id === MS_WALKTHR
 test("the walkthrough keeps 0.3.4's id and the step ids that still mean the same thing", () => {
   assert.ok(walkthrough, "mergeStudio.gettingStarted is gone");
   const ids = walkthrough.steps.map((s) => s.id);
-  for (const id of ["mergeStudio.tryMerge", "mergeStudio.realConflicts", "mergeStudio.tryDiff", "mergeStudio.handoff"]) {
+  for (const id of ["mergeStudio.tryMerge", "mergeStudio.realConflicts", "mergeStudio.tryDiff"]) {
     assert.ok(ids.includes(id), id);
   }
 });
 
-test("seven steps whichever product owns the automatic behaviour: 'Choose your merge editor' or 'Using GitStudio too?'", () => {
+test("six steps whichever product owns the automatic behaviour: 'Choose your merge editor' or 'Using GitStudio too?'", () => {
   const steps = walkthrough!.steps;
-  assert.equal(steps.length, 8);
+  assert.equal(steps.length, 7);
   const shown = (defers: boolean) =>
     steps.filter((s) => {
       if (s.when === `!${MS_DEFERS_CONTEXT_KEY}`) return !defers;
       if (s.when === MS_DEFERS_CONTEXT_KEY) return defers;
       return true;
     }).length;
-  assert.equal(shown(false), 7);
-  assert.equal(shown(true), 7);
-  assert.equal(steps.find((s) => s.id === "mergeStudio.handoff")?.when, MS_IDE_CONTEXT_KEY);
+  assert.equal(shown(false), 6);
+  assert.equal(shown(true), 6);
+  assert.equal(steps.find((s) => s.id === "mergeStudio.handoff"), undefined, "the external-IDE step is gone");
 });
 
 test("every walkthrough link and completion event names a command that exists", () => {
@@ -236,13 +223,16 @@ test("the dashboard captures' words are the dashboard's own, as the 1.0 build sa
 
 const changelog = read("CHANGELOG.md");
 const entries = changelog.split(/\n## /).slice(1);
+// The next release's notes, gathered under "Unreleased" until it is cut.
+const released = entries.filter((e) => !/^\[?Unreleased\]?\s*\n/i.test(e));
 // Found by version: a later release's entry sits above it.
 const entry100 = entries.find((e) => /^1\.0\.0\b/.test(e)) ?? "";
 const sectionsOf = (entry: string) => entry.split(/\n### /).slice(1);
 
 test("the newest CHANGELOG entry is the version package.json ships", () => {
-  // Compared as text: the heading is "1.0.1 — 2026-09-25".
-  const heading = (entries[0] ?? "").split("\n")[0];
+  // Compared as text: the heading is "1.0.1 — 2026-09-25". An "Unreleased"
+  // section above it is the next release's.
+  const heading = (released[0] ?? "").split("\n")[0];
   assert.ok(heading === pkg.version || heading.startsWith(`${pkg.version} `), `the first entry is ${pkg.version} (it is "${heading}")`);
 });
 

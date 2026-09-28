@@ -8,7 +8,6 @@ import * as vscode from "vscode";
 import { GitContext } from "@gitstudio/git-service/GitContext";
 import { ExitGuard } from "../src/exitGuard";
 import type { MergeHostCore } from "../src/host";
-import type { JetBrainsUi } from "../src/jetbrainsUi";
 import { MergeEditorProvider } from "../src/mergeEditorProvider";
 import type { MergeProduct, MergeRepo, RepoLocator } from "../src/product";
 import { git, removeTemp, reporterRebase } from "./fixtures";
@@ -40,10 +39,6 @@ function host(locator: RepoLocator, exitGuard = new ExitGuard()): MergeHostCore 
     settings: () => ({
       autoOpen: true,
       autoApplyNonConflicting: false,
-      conflictResolver: "embedded",
-      diffTool: "embedded",
-      preferredIde: "auto",
-      jetbrainsPath: "",
     }),
     defers: () => false,
     notify: async () => undefined,
@@ -51,7 +46,6 @@ function host(locator: RepoLocator, exitGuard = new ExitGuard()): MergeHostCore 
   };
 }
 
-const noIde = { detect: async () => undefined, cachedName: () => undefined } as unknown as JetBrainsUi;
 
 /** A document backed by a real file: the stub's edits land in it, and a save would write it. */
 function fileDocument(path: string) {
@@ -112,7 +106,7 @@ test("REAL git: Close leaves the operation directory, the index and the file exa
     onDidChange: () => new vscode.Disposable(() => {}),
   };
   const guard = new ExitGuard();
-  const provider = new MergeEditorProvider(host(locator, guard), noIde);
+  const provider = new MergeEditorProvider(host(locator, guard));
   const { doc, saves } = fileDocument(join(r.repo, "a.txt"));
   try {
     const before = snapshot(r.repo, "a.txt");
@@ -160,7 +154,7 @@ function fakeRepoLocator(): RepoLocator {
 }
 
 test("Close with nothing unsaved just closes the tab — nothing to revert", async () => {
-  const provider = new MergeEditorProvider(host(fakeRepoLocator()), noIde);
+  const provider = new MergeEditorProvider(host(fakeRepoLocator()));
   const doc = {
     uri: vscode.Uri.file("/r/a.txt"),
     getText: () => "<<<<<<< a\nx\n=======\ny\n>>>>>>> b\n",
@@ -182,7 +176,7 @@ test("Close never reverts ANOTHER editor: when this one cannot be made the activ
   // "Revert and Close" acts on whatever editor is active. Should the merge
   // editor not be (and not become so), reverting would throw away another
   // file's unsaved work.
-  const provider = new MergeEditorProvider(host(fakeRepoLocator()), noIde);
+  const provider = new MergeEditorProvider(host(fakeRepoLocator()));
   const onDisk = "<<<<<<< a\nx\n=======\ny\n>>>>>>> b\n";
   let text = onDisk;
   const doc = {
@@ -218,7 +212,7 @@ test("Close never reverts ANOTHER editor: when this one cannot be made the activ
 });
 
 test("Close after an edit made OUTSIDE the editor leaves that edit to its owner: only the tab closes", async () => {
-  const provider = new MergeEditorProvider(host(fakeRepoLocator()), noIde);
+  const provider = new MergeEditorProvider(host(fakeRepoLocator()));
   let text = "<<<<<<< a\nx\n=======\ny\n>>>>>>> b\n";
   const doc = {
     uri: vscode.Uri.file("/r/a.txt"),

@@ -15,25 +15,20 @@
 // exit guard gates both routes (Merge Studio's reroute ignored it). D4:
 // `defers` (another product owns automatic behaviour) gates both.
 
-import type { MergeSettings } from "@gitstudio/host-bridge/conflictsProtocol";
-
 export type SkipReason =
   | "auto-open-off"
   | "deferred"
   | "not-a-file"
   | "just-routed"
-  | "exited"
-  | "launched-in-ide";
+  | "exited";
 
 export type RouteAction =
   /** Leave the file where it is. */
   | { kind: "skip"; reason: SkipReason }
-  /** Not conflicted (any more): lift the exit guard and the "launched in IDE" memory. */
+  /** Not conflicted (any more): lift the exit guard. */
   | { kind: "forget" }
-  /** Open the embedded merge editor. `fallbackNotice`: the IDE was wanted but none is installed. */
-  | { kind: "embedded"; fallbackNotice: boolean }
-  /** Hand the conflict to the installed JetBrains IDE. */
-  | { kind: "jetbrains" };
+  /** Open the embedded merge editor. */
+  | { kind: "embedded" };
 
 export interface ActiveEditorInput {
   /** The document's URI scheme; only "file" documents are routed. */
@@ -45,12 +40,8 @@ export interface ActiveEditorInput {
   recentlyRouted: boolean;
   /** The user exited the viewer for this file. */
   exited: boolean;
-  /** The IDE was already launched for this file this session. */
-  launchedInIde: boolean;
   /** Whether git reports the file unmerged. Only asked when the cheap gates pass. */
   conflicted: boolean;
-  resolver: MergeSettings["conflictResolver"];
-  ideAvailable: boolean;
 }
 
 /** How long a routed file is left alone, so an editor focus bounce cannot re-open it. */
@@ -64,7 +55,7 @@ export const REROUTE_GUARD_MS = 3000;
  * only spends a git call when this returns undefined.
  */
 export function activeEditorGate(
-  i: Omit<ActiveEditorInput, "conflicted" | "exited" | "launchedInIde" | "resolver" | "ideAvailable">,
+  i: Omit<ActiveEditorInput, "conflicted" | "exited">,
 ): RouteAction | undefined {
   if (!i.autoOpen) {
     return { kind: "skip", reason: "auto-open-off" };
@@ -93,12 +84,7 @@ export function decideActiveEditorRoute(i: ActiveEditorInput): RouteAction {
   if (i.exited) {
     return { kind: "skip", reason: "exited" };
   }
-  if (i.resolver === "jetbrains" && i.ideAvailable) {
-    return i.launchedInIde
-      ? { kind: "skip", reason: "launched-in-ide" }
-      : { kind: "jetbrains" };
-  }
-  return { kind: "embedded", fallbackNotice: i.resolver === "jetbrains" };
+  return { kind: "embedded" };
 }
 
 export interface MergeTabInput {
@@ -108,14 +94,12 @@ export interface MergeTabInput {
   recentlyRerouted: boolean;
   /** The user exited OUR viewer for this file — they chose the built-in one. */
   exited: boolean;
-  resolver: MergeSettings["conflictResolver"];
-  ideAvailable: boolean;
 }
 
 export type RerouteAction =
   | { kind: "keep"; reason: "auto-open-off" | "deferred" | "just-rerouted" | "exited" }
   /** Close the built-in tab and open ours. */
-  | { kind: "reroute"; to: "embedded" | "jetbrains"; fallbackNotice: boolean };
+  | { kind: "reroute" };
 
 /** What to do with VS Code's own 3-way merge tab for a file. */
 export function decideMergeTabReroute(i: MergeTabInput): RerouteAction {
@@ -131,10 +115,7 @@ export function decideMergeTabReroute(i: MergeTabInput): RerouteAction {
   if (i.exited) {
     return { kind: "keep", reason: "exited" };
   }
-  if (i.resolver === "jetbrains" && i.ideAvailable) {
-    return { kind: "reroute", to: "jetbrains", fallbackNotice: false };
-  }
-  return { kind: "reroute", to: "embedded", fallbackNotice: i.resolver === "jetbrains" };
+  return { kind: "reroute" };
 }
 
 /**
@@ -158,12 +139,7 @@ export function mergeTabResult<U>(input: unknown): U | undefined {
  * text editor on it simply failed. Its resolution — "Delete the file" — lives
  * in the conflicts dashboard, so that is where it goes.
  */
-export function decideExplicitOpen(i: {
-  onDisk: boolean;
-  resolver: MergeSettings["conflictResolver"];
-  ideAvailable: boolean;
-}): "dashboard" | "jetbrains" | "embedded" | "embedded-fallback" {
+export function decideExplicitOpen(i: { onDisk: boolean }): "dashboard" | "embedded" {
   if (!i.onDisk) return "dashboard";
-  if (i.resolver === "jetbrains") return i.ideAvailable ? "jetbrains" : "embedded-fallback";
   return "embedded";
 }

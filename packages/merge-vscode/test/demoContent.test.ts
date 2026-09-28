@@ -19,7 +19,6 @@ import {
 import { sampleUri } from "../src/demo";
 import { ExitGuard } from "../src/exitGuard";
 import type { MergeHostCore } from "../src/host";
-import type { JetBrainsUi } from "../src/jetbrainsUi";
 import { MergeEditorProvider } from "../src/mergeEditorProvider";
 import type { MergeProduct } from "../src/product";
 
@@ -76,7 +75,6 @@ test("it opens as a rebase stop with names, step and commit — and nothing in i
   assert.equal(p.ours, DEMO_MERGE.yours);
   assert.equal(p.op?.kind, "none", "no operation for Cancel to abort");
   assert.equal(p.op?.verbs.continue, undefined, "and no Continue");
-  assert.equal(p.jetbrainsName, undefined, "no IDE hand-off of a file that is not on disk");
 });
 
 test("the sample answers the page: stages, nothing left to resolve, an explanation for Apply, a close for Cancel", () => {
@@ -135,10 +133,6 @@ function sampleHost(): MergeHostCore {
     settings: () => ({
       autoOpen: true,
       autoApplyNonConflicting: false,
-      conflictResolver: "embedded",
-      diffTool: "embedded",
-      preferredIde: "auto",
-      jetbrainsPath: "",
     }),
     defers: () => false,
     notify: async () => undefined,
@@ -151,7 +145,7 @@ test("the sample is served from its own scheme, titled as a sample, and its edit
   const uri = sampleUri(host.product);
   assert.equal(uri.scheme, "merge-studio-sample");
   assert.doesNotMatch(uri.toString(), /globalStorage/);
-  const provider = new MergeEditorProvider(host, { detect: async () => undefined, cachedName: () => undefined } as unknown as JetBrainsUi);
+  const provider = new MergeEditorProvider(host);
   const document = { uri, getText: () => sampleFileText(), lineCount: 40, isDirty: false } as unknown as vscode.TextDocument;
   const panel = vscode.window.createWebviewPanel("test.mergeEditor", "x", vscode.ViewColumn.Active, {});
   await provider.resolveCustomTextEditor(document, panel, {} as vscode.CancellationToken);

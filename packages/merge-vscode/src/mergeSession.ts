@@ -75,7 +75,6 @@ export interface MergeSessionDeps {
   save(text: string): Promise<void>;
   post(msg: HostMessage): void;
   settings(): { autoApplyNonConflicting: boolean };
-  jetbrainsName(): string | undefined;
   /** The one-time tip for this stop (POLISH A5.9), if the product has one to show. */
   tip?(op: OperationView | undefined): MergeInitPayload["tip"];
   /**
@@ -109,7 +108,6 @@ export class MergeSession {
     const input = {
       fileName: d.fileName,
       workingText: text ?? d.workingText(),
-      jetbrainsName: d.jetbrainsName(),
       autoApplyNonConflicting: d.settings().autoApplyNonConflicting,
     };
     let payload: MergeInitPayload;

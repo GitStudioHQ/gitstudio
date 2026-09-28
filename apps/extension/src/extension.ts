@@ -345,7 +345,7 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
     // The merge experience GitStudio shares with Merge Studio
     // (@gitstudio/merge-vscode): the 3-pane merge editor, the Conflicts
     // dashboard, automatic routing (gitstudio.merge.autoOpen), the status item,
-    // the JetBrains hand-off, the embedded diff, and the commands resolve /
+    // the embedded diff, and the commands resolve /
     // compare / openChanges / stageWithTicks / operation.continue|skip|abort.
     //
     // Its refresh hook reaches `stagingRefresh`, so that binding is declared

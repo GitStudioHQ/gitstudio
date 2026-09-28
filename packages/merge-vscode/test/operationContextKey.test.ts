@@ -16,8 +16,6 @@ beforeEach(() => stub.reset());
 const COMMANDS = {
   showConflicts: "t.showConflicts",
   resolveInMergeEditor: "t.resolveInMergeEditor",
-  mergeWithJetBrains: "t.mergeWithJetBrains",
-  diffWithJetBrains: "t.diffWithJetBrains",
   compare: "t.compare",
   openDiff: "t.openDiff",
   openChanges: "t.openChanges",
@@ -76,7 +74,6 @@ function register(loc: RepoLocator, operationContextKey?: string): { dispose(): 
     settingsSection: "t",
     viewTypes: { mergeEditor: "t.mergeEditor", diffView: "t.diffView", conflicts: "t.conflicts" },
     commands: COMMANDS,
-    ideAvailableContextKey: "t.ideAvailable",
     ...(operationContextKey ? { operationContextKey } : {}),
     statusItemId: "t.conflicts",
     coexistencePromptKey: "t.coexistence.answered",

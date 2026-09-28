@@ -10,7 +10,7 @@
 //   dashboard's auto-show, the "⚠ Resolve Conflicts" status item and the
 //   coexistence question — all of them gated on one `autoOpen` meaning and on
 //   D4 (`product.defersTo`);
-// - the ideAvailable context key, and the operation one when the product names it.
+// - the operation context key, when the product names it.
 
 import * as vscode from "vscode";
 import type { OperationOutcome, OperationView } from "@gitstudio/host-bridge/conflictsProtocol";
@@ -30,7 +30,6 @@ import { openDemoMerge, SampleFileSystem } from "./demo";
 import { DiffCommands, DiffPanel } from "./diffPanel";
 import { ExitGuard } from "./exitGuard";
 import { closeMergeEditorTabs, createHostCore, type MergeHostCore } from "./host";
-import { JetBrainsUi } from "./jetbrainsUi";
 import { MergeEditorProvider, saveConflictedDocuments } from "./mergeEditorProvider";
 import { continueRefusal, outcomeLine, verbConfirm, type OperationVerb } from "./outcome";
 import { statusItemLook, type MergePeerApi, type MergeProduct, type MergeRepo } from "./product";
@@ -48,10 +47,9 @@ export interface OperationVerbOptions {
 
 export interface MergeExperience extends vscode.Disposable {
   readonly exitGuard: ExitGuard;
-  readonly jetbrains: JetBrainsUi;
   /** Open the conflicts dashboard (for `repo`, or the repository with conflicts). */
   showConflicts(repo?: MergeRepo): Promise<void>;
-  /** Open one conflicted file in the configured resolver (embedded editor or the IDE). */
+  /** Open one conflicted file in the merge editor (the dashboard for a file deleted on both sides). */
   openConflict(uri: vscode.Uri): Promise<void>;
   /** Continue / Skip / Abort with the product's own confirm. Undefined when nothing ran. */
   runOperationVerb(verb: OperationVerb, opts?: OperationVerbOptions): Promise<OperationOutcome | undefined>;
@@ -79,33 +77,19 @@ export function registerMergeExperience(
     exitGuard.clear(uri.toString());
     await vscode.commands.executeCommand("vscode.openWith", uri, product.viewTypes.mergeEditor);
   };
-  // The JetBrains UI's "Use Embedded Diff" fallback reaches the diff commands.
-  const embeddedDiff = (left: vscode.Uri, right?: vscode.Uri): Promise<void> =>
-    diffs.embedded(left, right);
-  const jetbrains: JetBrainsUi = new JetBrainsUi(host, openEmbedded, embeddedDiff);
-  const diffs: DiffCommands = new DiffCommands(host, jetbrains);
+  const diffs: DiffCommands = new DiffCommands(host);
 
   const openConflict = async (uri: vscode.Uri): Promise<void> => {
-    const resolver = host.settings().conflictResolver;
     const route = decideExplicitOpen({
       onDisk: await vscode.workspace.fs.stat(uri).then(
         () => true,
         () => false,
       ),
-      resolver,
-      ideAvailable: resolver === "jetbrains" ? Boolean(await jetbrains.detect()) : false,
     });
     if (route === "dashboard") {
       // Deleted on both sides: no file to open; the dashboard offers "Delete the file".
       await showConflicts(locate(product.locator, uri)?.repo);
       return;
-    }
-    if (route === "jetbrains") {
-      await jetbrains.merge(uri);
-      return;
-    }
-    if (route === "embedded-fallback") {
-      jetbrains.notifyEmbeddedFallback();
     }
     await openEmbedded(uri);
   };
@@ -231,12 +215,11 @@ export function registerMergeExperience(
   const sample = SampleFileSystem.register(host);
   disposables.push(
     sample.disposable,
-    MergeEditorProvider.register(host, jetbrains),
+    MergeEditorProvider.register(host),
     DiffPanel.register(host),
-    jetbrains,
     dashboard,
     status,
-    registerAutoRoute(host, jetbrains, openEmbedded),
+    registerAutoRoute(host, openEmbedded),
     product.locator.onDidChange(scheduleScan),
     // The other product installed, updated or removed: who owns the automatic
     // behaviour may have changed.
@@ -272,15 +255,6 @@ export function registerMergeExperience(
     }
     await openEmbedded(uri);
   });
-  reg(c.mergeWithJetBrains, async (arg) => {
-    const uri = targetUri(arg);
-    if (!uri || uri.scheme !== "file") {
-      void host.notify("info", "open or select a conflicted file first.");
-      return;
-    }
-    await jetbrains.merge(uri);
-  });
-  reg(c.diffWithJetBrains, (clicked, selected) => diffs.diffWithJetBrains(clicked, selected));
   reg(c.compare, (clicked, selected) => diffs.compare(clicked, selected));
   reg(c.openDiff, (clicked, selected) => diffs.openDiff(clicked, selected));
   reg(c.openChanges, (arg) => diffs.openChanges(arg));
@@ -298,12 +272,10 @@ export function registerMergeExperience(
   reg(c.operationAbort, (arg) => runOperationVerb("abort", verbArg(arg)));
   reg(c.restoreBuiltInMergeEditor, () => restoreBuiltIns(host));
 
-  void jetbrains.refreshContext();
   void scan();
 
   return {
     exitGuard,
-    jetbrains,
     showConflicts,
     openConflict,
     runOperationVerb,

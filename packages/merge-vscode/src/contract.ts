@@ -7,7 +7,6 @@
 //
 // vscode-free data + one pure checker.
 
-import { JETBRAINS_IDES } from "@gitstudio/host-bridge/conflictsProtocol";
 import type { MergeCommandIds } from "./product";
 
 export type CommandRole = keyof MergeCommandIds;
@@ -16,8 +15,6 @@ export type CommandRole = keyof MergeCommandIds;
 export const COMMAND_TITLES: Record<CommandRole, string> = {
   showConflicts: "Resolve Conflicts…",
   resolveInMergeEditor: "Resolve in Merge Editor",
-  mergeWithJetBrains: "Merge with JetBrains IDE",
-  diffWithJetBrains: "Diff with JetBrains IDE",
   compare: "Compare File…",
   openDiff: "Open in Embedded Diff",
   openChanges: "Open Changes (vs HEAD)",
@@ -32,12 +29,11 @@ export const COMMAND_TITLES: Record<CommandRole, string> = {
 
 /**
  * Merge Studio 0.3.4's commands (its package.json at origin/main d86cf21) and
- * the role each one plays. Every one must have a twin in every product.
- * `openWalkthrough` is a brand slot, checked separately.
+ * the role each one plays, less the removed external-IDE hand-off. Every one
+ * must have a twin in every product. `openWalkthrough` is a brand slot,
+ * checked separately.
  */
 export const JB_MERGE_COMMAND_TWINS: Readonly<Record<string, CommandRole | "openWalkthrough">> = {
-  "jbMerge.mergeWithJetBrains": "mergeWithJetBrains",
-  "jbMerge.diffWithJetBrains": "diffWithJetBrains",
   "jbMerge.resolveInMergeEditor": "resolveInMergeEditor",
   "jbMerge.showConflicts": "showConflicts",
   "jbMerge.compare": "compare",
@@ -48,12 +44,11 @@ export const JB_MERGE_COMMAND_TWINS: Readonly<Record<string, CommandRole | "open
   "jbMerge.openDemoDiff": "openDemoDiff",
 };
 
-/** Merge Studio 0.3.4's settings and the MergeHostSettings key each one is. */
+/**
+ * Merge Studio 0.3.4's settings that are still read, and the MergeHostSettings
+ * key each one is (its external-IDE hand-off settings are gone).
+ */
 export const JB_MERGE_SETTING_TWINS: Readonly<Record<string, string>> = {
-  "jbMerge.conflictResolver": "conflictResolver",
-  "jbMerge.diffTool": "diffTool",
-  "jbMerge.preferredIde": "preferredIde",
-  "jbMerge.jetbrainsPath": "jetbrainsPath",
   "jbMerge.autoOpen": "autoOpen",
 };
 
@@ -63,28 +58,13 @@ export const MERGE_SETTINGS_SPEC: ReadonlyArray<{
   type: "boolean" | "string";
   default: boolean | string;
   enum?: readonly string[];
-  /**
-   * "machine": settable in user settings only — never by a workspace's own
-   * .vscode/settings.json, which the repository supplies. For the one value
-   * the product SPAWNS (as VS Code's own git.path).
-   */
-  scope?: "machine";
 }> = [
   { key: "autoOpen", type: "boolean", default: true },
   // D3, orchestrator override: OFF by default, as JetBrains ships it.
   { key: "autoApplyNonConflicting", type: "boolean", default: false },
-  { key: "conflictResolver", type: "string", default: "embedded", enum: ["embedded", "jetbrains"] },
-  { key: "diffTool", type: "string", default: "embedded", enum: ["embedded", "jetbrains"] },
-  {
-    key: "preferredIde",
-    type: "string",
-    default: "auto",
-    enum: ["auto", ...JETBRAINS_IDES.map((i) => i.id)],
-  },
-  { key: "jetbrainsPath", type: "string", default: "", scope: "machine" },
 ];
 
-/** When-clause pieces the merge menus are gated on. `IDE` is replaced by the product's context key. */
+/** When-clause pieces the merge menus are gated on. */
 export const WHEN = {
   scmMergeGroup: "scmProvider == git && scmResourceGroup == merge",
   editorHasMergeConflicts:
@@ -94,7 +74,7 @@ export const WHEN = {
 export interface MenuRule {
   menu: string;
   role: CommandRole;
-  /** The when-clause the entry must have (IDE → the product's ideAvailable key). */
+  /** The when-clause the entry must have. */
   when?: string;
   /** The when-clause must CONTAIN this (when an exact clause is product-specific). */
   whenIncludes?: string[];
@@ -106,24 +86,15 @@ export const MERGE_MENU_RULES: readonly MenuRule[] = [
   { menu: "scm/resourceGroup/context", role: "showConflicts", when: WHEN.scmMergeGroup },
   // A conflicted row in the SCM view.
   { menu: "scm/resourceState/context", role: "resolveInMergeEditor", when: WHEN.scmMergeGroup },
-  {
-    menu: "scm/resourceState/context",
-    role: "mergeWithJetBrains",
-    when: `${WHEN.scmMergeGroup} && IDE`,
-  },
   // The editor title — ONLY on a file that has merge conflicts (row 10).
   { menu: "editor/title", role: "resolveInMergeEditor", when: WHEN.editorHasMergeConflicts },
-  { menu: "editor/title", role: "mergeWithJetBrains", when: `${WHEN.editorHasMergeConflicts} && IDE` },
   { menu: "editor/title", role: "openChanges", whenIncludes: ["resourceScheme == file"] },
   // Explorer: the routed Compare, which diffs two selected files.
   { menu: "explorer/context", role: "compare", whenIncludes: ["!explorerResourceIsFolder"] },
 ];
 
-/** Commands whose every non-palette menu entry must be gated on the IDE key. */
-export const IDE_ONLY_ROLES: readonly CommandRole[] = ["mergeWithJetBrains"];
-
 /** Commands that are merge ACTIONS: never on an editor title without a conflict gate. */
-export const MERGE_ACTION_ROLES: readonly CommandRole[] = ["resolveInMergeEditor", "mergeWithJetBrains"];
+export const MERGE_ACTION_ROLES: readonly CommandRole[] = ["resolveInMergeEditor"];
 
 interface ManifestShape {
   contributes?: {
@@ -135,15 +106,9 @@ interface ManifestShape {
 
 /**
  * Every way `manifest` fails the contract, in plain words (empty = conforms).
- * `ids` maps roles to the product's command ids; `ideKey` is its ideAvailable
- * context key; `section` its settings section.
+ * `ids` maps roles to the product's command ids; `section` its settings section.
  */
-export function checkManifest(
-  manifest: ManifestShape,
-  ids: MergeCommandIds,
-  ideKey: string,
-  section: string,
-): string[] {
+export function checkManifest(manifest: ManifestShape, ids: MergeCommandIds, section: string): string[] {
   const problems: string[] = [];
   const declared = new Set((manifest.contributes?.commands ?? []).map((c) => c.command));
   const menus = manifest.contributes?.menus ?? {};
@@ -169,7 +134,7 @@ export function checkManifest(
       problems.push(`${rule.menu} has no entry for ${id}`);
       continue;
     }
-    const want = rule.when?.replace(/\bIDE\b/g, ideKey);
+    const want = rule.when;
     for (const e of entries) {
       if (want !== undefined && e.when !== want) {
         problems.push(`${rule.menu} ${id}: when is "${e.when ?? ""}", expected "${want}"`);
@@ -189,22 +154,10 @@ export function checkManifest(
     }
   }
 
-  for (const [menu, entries] of Object.entries(menus)) {
-    if (menu === "commandPalette") {
-      continue;
-    }
-    for (const e of entries) {
-      const role = roleOf(ids, e.command);
-      if (role && IDE_ONLY_ROLES.includes(role) && !(e.when ?? "").includes(ideKey)) {
-        problems.push(`${menu} ${e.command} is shown without ${ideKey}`);
-      }
-    }
-  }
-
   const props = configurationProperties(manifest.contributes?.configuration);
   for (const spec of MERGE_SETTINGS_SPEC) {
     const key = `${section}.${spec.key}`;
-    const p = props[key] as { type?: string; default?: unknown; enum?: unknown[]; scope?: string } | undefined;
+    const p = props[key] as { type?: string; default?: unknown; enum?: unknown[] } | undefined;
     if (!p) {
       problems.push(`setting ${key} is not contributed`);
       continue;
@@ -217,9 +170,6 @@ export function checkManifest(
     }
     if (spec.enum && JSON.stringify(p.enum) !== JSON.stringify(spec.enum)) {
       problems.push(`setting ${key} enum is ${JSON.stringify(p.enum)}, expected ${JSON.stringify(spec.enum)}`);
-    }
-    if (spec.scope && p.scope !== spec.scope) {
-      problems.push(`setting ${key} has scope ${JSON.stringify(p.scope)}, expected "${spec.scope}" (a workspace must not set it)`);
     }
   }
   return problems;

@@ -7,23 +7,16 @@
 // shared by both hosts).
 
 import { readFile, readdir, writeFile, lstat, readlink } from "node:fs/promises";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { continueRebase, skipRebase } from "@gitstudio/git-service/RebaseRunner";
 import type { RebaseOutcome } from "@gitstudio/git-service/RebaseRunner";
 import { textWriteSafe } from "@gitstudio/git-service/ConflictOps";
 import { noneOperationView } from "@gitstudio/git-service/OperationProvider";
-import { locateJetBrainsIde } from "@gitstudio/git-service/jetbrains/locator";
-import {
-  launchJetBrainsDiff,
-  launchJetBrainsMerge,
-  type JetBrainsLaunch,
-} from "@gitstudio/git-service/jetbrains/launcher";
-import { DEFAULT_MERGE_SETTINGS } from "@gitstudio/host-bridge/conflictsProtocol";
 import { stageOf } from "@gitstudio/engine/conflict/sides";
 import { ExpectedError } from "./expectedError";
 import { applyForDoor, checkoutOp, pullForDoor, stashGoneAnswer, type DoorApplied } from "./inTheWay";
 import { newBranchAtHead, type ApplyOp } from "@gitstudio/git-service/changesInTheWay";
-import { basename, extname, join, resolve, sep } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { computeGraphLayout } from "@gitstudio/engine/graph/layout";
 import type { GraphInputCommit } from "@gitstudio/engine/graph/layout";
@@ -104,8 +97,6 @@ import type {
   WorktreeRemoveResult,
   CommitBranches,
   ConflictsSnapshot,
-  JetBrainsIdeInfo,
-  MergeSettings,
   OperationOutcome,
   SideRole,
   OkResult,
@@ -236,17 +227,6 @@ const UNSAFE_PATH_RESULT: CommitActionResult = {
   changed: false,
   message: "That isn't a usable file path.",
 };
-
-/** The JetBrains channels' answer when no IDE is installed — a state, not a crash. */
-function noIde(): CommitActionResult {
-  return {
-    ok: false,
-    changed: false,
-    expected: true,
-    message:
-      "No JetBrains IDE was found. Install one (WebStorm, PyCharm, IntelliJ IDEA…) or set its path in Settings ▸ Merge.",
-  };
-}
 
 /**
  * Did a failed git command DECLINE — explain itself on stdout alone — rather
@@ -434,14 +414,6 @@ export class GitBridge {
     this.mutationChains.delete(root);
   }
   /**
-   * JetBrains merge windows still open, by repo root + path, with the stop
-   * (op.episode) they were opened for. Their LOCAL / REMOTE / BASE temp files
-   * are removed by "Mark resolved", when the same file is handed over again,
-   * when that stop is over (a Continue, Skip or Abort, here or in a terminal —
-   * see pruneIdeLaunches), and on quit (disposeIdeLaunches).
-   */
-  private readonly ideLaunches = new Map<string, { launch: JetBrainsLaunch; root: string; episode: string }>();
-  /**
    * Where each stash this app dropped sat — its index and the entries above
    * it then — by repo root + stash sha, so the drop's Undo (`stash:restore`)
    * puts it back THERE rather than on top. Bounded: the undo stack is short.
@@ -451,8 +423,6 @@ export class GitBridge {
   constructor(
     private readonly repos: RepoStore,
     private readonly refFilters?: GraphRefFilterStore,
-    /** Settings ▸ Merge — the main process's own copy (it spawns jetbrainsPath). */
-    private readonly mergeSettings?: { get(): MergeSettings },
   ) {}
 
   private ctx(): GitContext | undefined {
@@ -3879,14 +3849,9 @@ export class GitBridge {
     const entry = { root: ctx.root, at: Date.now(), value };
     this.conflictStateCache = entry;
     // A failed read is never served again.
-    value.then(
-      // The operation moved on (here or in a terminal): hand-offs made for
-      // an earlier stop have nothing left to do.
-      (s) => void this.pruneIdeLaunches(ctx.root, s.op.episode),
-      () => {
-        if (this.conflictStateCache === entry) this.conflictStateCache = undefined;
-      },
-    );
+    value.catch(() => {
+      if (this.conflictStateCache === entry) this.conflictStateCache = undefined;
+    });
     return value;
   }
 
@@ -3969,140 +3934,7 @@ export class GitBridge {
         remainingConflicts: 0,
       };
     }
-    const out = await this.serialize(() => run(ctx, this.repos.runnerOptions()));
-    await this.pruneIdeLaunches(ctx.root, out.view.episode);
-    return out;
-  }
-
-  // ── JetBrains hand-off (Settings ▸ Merge) ───────────────────────────────────
-
-  /**
-   * Remove every hand-off's temp files — the app is quitting. The removal
-   * itself is SYNCHRONOUS: `before-quit` cannot wait for a promise, and an
-   * async rm that loses the race with the exit leaves the files behind.
-   */
-  disposeIdeLaunches(): Promise<void> {
-    const all = [...this.ideLaunches.values()];
-    this.ideLaunches.clear();
-    for (const l of all) {
-      if (!l.launch.tempDir) continue;
-      try {
-        rmSync(l.launch.tempDir, { recursive: true, force: true });
-      } catch {
-        /* best effort: a temp dir the OS reclaims */
-      }
-    }
-    return Promise.all(all.map((l) => l.launch.dispose())).then(() => undefined);
-  }
-
-  /**
-   * The stop a hand-off belonged to is over (the repository moved to another
-   * episode, or nothing is stopped any more): its merge window has nothing
-   * left to resolve, and its temp files would otherwise stay in $TMPDIR for
-   * good — "Mark resolved" was the only thing that removed them.
-   */
-  private async pruneIdeLaunches(root: string, episode: string): Promise<void> {
-    const done: Array<Promise<void>> = [];
-    for (const [key, l] of this.ideLaunches) {
-      if (l.root === root && l.episode !== episode) {
-        this.ideLaunches.delete(key);
-        done.push(l.launch.dispose());
-      }
-    }
-    await Promise.all(done);
-  }
-
-  private settings(): MergeSettings {
-    return this.mergeSettings?.get() ?? { ...DEFAULT_MERGE_SETTINGS };
-  }
-
-  /** `jetbrains:detect` — the IDE the merge settings resolve to, if one is installed. */
-  async jetbrainsDetect(): Promise<JetBrainsIdeInfo | undefined> {
-    const s = this.settings();
-    return locateJetBrainsIde({ preferred: s.preferredIde, explicitPath: s.jetbrainsPath });
-  }
-
-  /**
-   * `jetbrains:merge` — the conflict in the IDE's three-way merge window, with
-   * LOCAL = the YOURS content and REMOTE = the THEIRS content after the role
-   * mapping (so a rebase's own commit is on the left there too), BASE when
-   * there is one, and the real file as the output.
-   */
-  async jetbrainsMerge(req: { path: string }): Promise<CommitActionResult> {
-    const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
-    if (!safePath(req?.path)) return UNSAFE_PATH_RESULT;
-    if (!containedPath(ctx.root, req.path)) return UNSAFE_PATH_RESULT;
-    const ide = await this.jetbrainsDetect();
-    if (!ide) return noIde();
-    // The IDE writes its result to the real file, so the hand-off passes the
-    // same guards as the embedded Apply (ConflictOps.writeResolution): the
-    // realpath containment check, and text-only — the sides travel as strings,
-    // so a non-UTF-8 file would come back from the IDE as U+FFFD.
-    const input = await ctx.conflictOps.externalMergeInput(req.path);
-    if (!input.ok) return input.result;
-    const { abs, sides } = input;
-    const key = `${ctx.root}\0${req.path}`;
-    await this.ideLaunches.get(key)?.launch.dispose();
-    const launch = await launchJetBrainsMerge({
-      ide,
-      outputPath: abs,
-      yours: sides.yours,
-      theirs: sides.theirs,
-      ...(sides.hasBase ? { base: sides.base } : {}),
-    });
-    if (!launch.ok) {
-      return { ok: false, changed: false, expected: true, message: launch.message ?? `Couldn't open ${ide.name}.` };
-    }
-    this.ideLaunches.set(key, { launch, root: ctx.root, episode: sides.op.episode });
-    return {
-      ok: true,
-      changed: false,
-      message: `Opened ${req.path} in ${ide.name}. Merge it there, then mark it resolved.`,
-    };
-  }
-
-  /** `jetbrains:diff` — HEAD against the working copy in the IDE's diff window. */
-  async jetbrainsDiff(req: { path: string }): Promise<CommitActionResult> {
-    const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
-    if (!safePath(req?.path)) return UNSAFE_PATH_RESULT;
-    const abs = containedPath(ctx.root, req.path);
-    if (!abs) return UNSAFE_PATH_RESULT;
-    const ide = await this.jetbrainsDetect();
-    if (!ide) return noIde();
-    const head = await ctx.conflict.getHeadVersion(req.path).catch(() => "");
-    const ext = extname(req.path);
-    const launch = await launchJetBrainsDiff({
-      ide,
-      left: { text: head, name: `${basename(req.path, ext)}.HEAD${ext}` },
-      right: { path: abs },
-    });
-    if (!launch.ok) {
-      return { ok: false, changed: false, expected: true, message: launch.message ?? `Couldn't open ${ide.name}.` };
-    }
-    // The IDE reads the HEAD copy as it opens; give it a minute, then tidy up.
-    setTimeout(() => void launch.dispose(), 60_000).unref?.();
-    return { ok: true, changed: false };
-  }
-
-  /**
-   * `jetbrains:markResolved` — after merging in the IDE: stage the file (the
-   * same marker guard as Stage: a file still carrying conflict markers is
-   * refused, not settled) and remove the launch's temp files.
-   */
-  async jetbrainsMarkResolved(req: { path: string }): Promise<CommitActionResult> {
-    const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
-    if (!safePath(req?.path) || !containedPath(ctx.root, req.path)) return UNSAFE_PATH_RESULT;
-    const out = await this.stage(req.path);
-    if (out.ok) {
-      ctx.conflictOps.noteChoice(req.path, "merged");
-      const key = `${ctx.root}\0${req.path}`;
-      await this.ideLaunches.get(key)?.launch.dispose();
-      this.ideLaunches.delete(key);
-    }
-    return out;
+    return this.serialize(() => run(ctx, this.repos.runnerOptions()));
   }
 }
 
