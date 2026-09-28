@@ -186,8 +186,14 @@ export function longestRootMatch<R extends { root: string }>(
   caseInsensitive = process.platform === "win32" || process.platform === "darwin",
 ): R | undefined {
   const norm = (p: string) => {
-    const s = p.replace(/\\/g, "/").replace(/\/+$/, "");
-    return caseInsensitive ? s.toLowerCase() : s;
+    const s = p.replace(/\\/g, "/");
+    // Trailing separators trimmed by a backwards walk, not /\/+$/ — that
+    // retried from every slash of a long run that did not end the path,
+    // quadratic in the run's length.
+    let end = s.length;
+    while (end > 0 && s[end - 1] === "/") end--;
+    const t = s.slice(0, end);
+    return caseInsensitive ? t.toLowerCase() : t;
   };
   const file = norm(fsPath);
   let best: R | undefined;

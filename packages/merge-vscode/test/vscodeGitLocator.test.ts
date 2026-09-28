@@ -5,7 +5,7 @@ import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as vscode from "vscode";
-import { VscodeGitLocator } from "../src/vscodeGitLocator";
+import { VscodeGitLocator, longestRootMatch } from "../src/vscodeGitLocator";
 import { newRepo, removeTemp } from "./fixtures";
 
 // Merge Studio's RepoLocator over vscode.git, against a stand-in for the
@@ -71,6 +71,25 @@ async function until(pred: () => boolean, ms = 10_000): Promise<void> {
 
 const liveOutside = (root: string) =>
   stub.watchers.filter((w) => !w.disposed && !w.pattern.base.fsPath.startsWith(root)).map((w) => w.pattern.base.fsPath);
+
+test("longestRootMatch: the longest containing root, on path boundaries, trailing separators ignored", () => {
+  const repos = [{ root: "/w/app" }, { root: "/w/app/sub/" }, { root: "C:\\w\\lib\\\\" }];
+  assert.equal(longestRootMatch(repos, "/w/app/f.ts", false), repos[0]);
+  assert.equal(longestRootMatch(repos, "/w/app/sub/f.ts", false), repos[1]);
+  assert.equal(longestRootMatch(repos, "/w/app/sub///", false), repos[1]);
+  assert.equal(longestRootMatch(repos, "/w/apple/f.ts", false), undefined);
+  assert.equal(longestRootMatch(repos, "C:/w/lib/x.ts", false), repos[2]);
+  assert.equal(longestRootMatch(repos, "c:\\W\\LIB\\x.ts", true), repos[2]);
+  assert.equal(longestRootMatch(repos, "/W/APP/f.ts", false), undefined);
+});
+
+test("longestRootMatch stays linear on a long run of slashes", () => {
+  // The old /\/+$/ retried from each slash of a run that did not end the path.
+  const t = Date.now();
+  assert.equal(longestRootMatch([{ root: "/w/app" }], `/w/app/${"/".repeat(50_000)}x`, false)?.root, "/w/app");
+  assert.equal(longestRootMatch([{ root: `/w/app${"\\".repeat(50_000)}x` }], "/w/app", false), undefined);
+  assert.ok(Date.now() - t < 200, `took ${Date.now() - t}ms`);
+});
 
 test("a repository that closes while git is still saying where to watch is left with no live watchers", posixOnly, async () => {
   // GitStudio's RepoManager checks that the binding is still alive after the

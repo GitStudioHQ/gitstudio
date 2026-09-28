@@ -356,6 +356,36 @@ test("mergeLabel reads the label a merge todo line re-creates", () => {
   assert.equal(mergeLabel("pick 0123abcd x"), undefined);
 });
 
+test("mergeLabel answers as the old pattern did, and in linear time", () => {
+  // The implementation it replaced, kept here as the reference for the same answers.
+  const old = (line: string): string | undefined => {
+    const m = /^(?:m|merge)\s+(.*)$/.exec(line.trim());
+    if (!m) return undefined;
+    const words = m[1].split("#")[0].trim().split(/\s+/).filter(Boolean);
+    const labels: string[] = [];
+    for (let i = 0; i < words.length; i++) {
+      if (words[i] === "-C" || words[i] === "-c") i++;
+      else if (!words[i].startsWith("-")) labels.push(words[i]);
+    }
+    return labels.length ? labels.join(", ") : undefined;
+  };
+  for (const line of [
+    "merge", "m", "merge ", "mergex a", "mx a", "merge\ta", "  m   a  ", "merge \n a", "merge a\nb",
+    "merge a\rb", "merge a\u2028b", "merge a", "merge -C 0123abcd", "merge # only a comment", "Merge a",
+  ]) {
+    assert.equal(mergeLabel(line), old(line), JSON.stringify(line));
+  }
+  // "m ", 100k spaces, then a break the rest cannot span: the old pattern's
+  // worst case (~5s), re-running `.*` from each space it gave back.
+  const t = Date.now();
+  assert.equal(mergeLabel(`m ${"  ".repeat(50_000)}x\ny`), undefined);
+  assert.equal(mergeLabel(`m ${"  ".repeat(50_000)}\nx`), "x");
+  assert.equal(mergeLabel(`m ${"  ".repeat(50_000)}x\n`), "x");
+  assert.equal(mergeLabel(`m ${" \n".repeat(50_000)}!x`), "!x");
+  assert.equal(mergeLabel(`merge a${" ".repeat(50_000)}\n${" ".repeat(50_000)}b`), undefined);
+  assert.ok(Date.now() - t < 200, `took ${Date.now() - t}ms`);
+});
+
 // git 2.55 writes a todo line's subject as a comment — `pick <sha> # <subject>`
 // — in git-rebase-todo, in done, and in sequencer/todo. Every reader here
 // takes the verb and the object name only; these pin that for both spellings.

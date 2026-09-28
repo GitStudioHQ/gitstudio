@@ -153,7 +153,7 @@ function resolveExplicit(
   j: (...parts: string[]) => string,
 ): string | undefined {
   if (exists(p)) return p;
-  const dir = p.replace(/[\\/]+$/, "");
+  const dir = trimSeparators(p);
   if (!dir) return undefined;
   for (const spec of Object.values(SPECS)) {
     const inner =
@@ -173,8 +173,19 @@ function nameFromPath(p: string): string {
   return knownName(p) ?? (cleanBase(p) || "JetBrains IDE");
 }
 
+/**
+ * `p` without its trailing `/` and `\` separators. A backwards walk, not
+ * /[\\/]+$/: that pattern retried from every separator in a long run that
+ * did not end the string, which is quadratic in the run's length.
+ */
+export function trimSeparators(p: string): string {
+  let end = p.length;
+  while (end > 0 && (p[end - 1] === "/" || p[end - 1] === "\\")) end--;
+  return p.slice(0, end);
+}
+
 function cleanBase(p: string): string {
-  const base = p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? "";
+  const base = trimSeparators(p).split(/[\\/]/).pop() ?? "";
   return base.replace(/\.(app|exe|cmd|bat|sh)$/i, "").replace(/64$/, "");
 }
 

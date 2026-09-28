@@ -1086,9 +1086,19 @@ function todoCommands(text: string | undefined): string[] {
  * 'side' into feat` → "side". Octopus labels are joined.
  */
 export function mergeLabel(line: string): string | undefined {
-  const m = /^(?:m|merge)\s+(.*)$/.exec(line.trim());
-  if (!m) return undefined;
-  const words = m[1].split("#")[0].trim().split(/\s+/).filter(Boolean);
+  // Read by walking, not by /^(?:m|merge)\s+(.*)$/: that pattern gave back
+  // its whitespace one character at a time to a `.*` that re-ran to the end,
+  // so a long run of spaces took quadratic time. Same answers: the verb, a
+  // run of whitespace, then the rest — which, like `.*`, spans no line break.
+  const t = line.trim();
+  let i = 0;
+  while (i < t.length && !/\s/.test(t[i])) i++;
+  const verb = t.slice(0, i);
+  if ((verb !== "m" && verb !== "merge") || i === t.length) return undefined;
+  while (i < t.length && /\s/.test(t[i])) i++;
+  const rest = t.slice(i);
+  if (/[\n\r\u2028\u2029]/.test(rest)) return undefined;
+  const words = rest.split("#")[0].trim().split(/\s+/).filter(Boolean);
   const labels: string[] = [];
   for (let i = 0; i < words.length; i++) {
     const w = words[i];
