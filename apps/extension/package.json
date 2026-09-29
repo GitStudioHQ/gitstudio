@@ -1262,10 +1262,10 @@
               "Use Anthropic directly (requires an API key, set with \u201cGitStudio: Connect AI Provider\u201d).",
               "Use any OpenAI-compatible endpoint \u2014 OpenAI, Codex, OpenRouter, or a local server (Ollama / LM Studio). Configure the base URL and model below; a key is optional for local servers.",
               "Use a local agent CLI \u2014 Claude Code, Codex or Gemini CLI \u2014 with its own login and no API key. Which one is gitstudio.ai.cliAgent; pick it with \u201cGitStudio: Connect AI Provider\u201d.",
-              "Disable all GitBrain AI features."
+              "Disable all AI features."
             ],
             "default": "auto",
-            "markdownDescription": "Which provider GitBrain uses for optional AI features. AI is off until a provider is available; it never gates or breaks Git operations. Use **GitStudio: Select AI Model\u2026** for a guided picker.",
+            "markdownDescription": "Which provider GitStudio uses for its optional AI features. AI is off until a provider is available; it never gates or breaks Git operations. Use **GitStudio: Select AI Model\u2026** for a guided picker.",
             "order": 1
           },
           "gitstudio.ai.commitStyle": {
@@ -1281,7 +1281,7 @@
               "Imperative subject plus a short explanatory body."
             ],
             "default": "conventional",
-            "description": "How GitBrain styles generated commit messages.",
+            "description": "How AI-generated commit messages are styled.",
             "order": 2
           },
           "gitstudio.ai.reviewPrompt": {
@@ -1484,8 +1484,8 @@
           },
           {
             "id": "gitstudio.walkthrough.connect",
-            "title": "Connect GitHub & set up GitBrain (optional)",
-            "description": "Sign in once with VS Code's built-in GitHub account to list, check out, review, merge, and create pull requests in-editor. GitBrain AI is optional: it uses Copilot's (or Cursor's) model when there is one, with nothing to set up; otherwise connect Anthropic, an OpenAI-compatible endpoint or a local agent CLI for commit messages, explain-this-diff, and summaries. It never gates a Git operation, and Disable AI Features turns it off.\n[Sign in to GitHub](command:gitstudio.pr.signIn)\n[Connect AI Provider](command:gitstudio.ai.connect)\nGitStudio is free and open source. [Support GitStudio…](command:gitstudio.support)",
+            "title": "Connect GitHub & set up AI (optional)",
+            "description": "Sign in once with VS Code's built-in GitHub account to list, check out, review, merge, and create pull requests in-editor. AI is optional: it uses Copilot's (or Cursor's) model when there is one, with nothing to set up; otherwise connect Anthropic, an OpenAI-compatible endpoint or a local agent CLI for commit messages, explain-this-diff, and summaries. It never gates a Git operation, and Disable AI Features turns it off.\n[Sign in to GitHub](command:gitstudio.pr.signIn)\n[Connect AI Provider](command:gitstudio.ai.connect)\nGitStudio is free and open source. [Support GitStudio…](command:gitstudio.support)",
             "media": {
               "image": {
                 "light": "media/walkthrough/connect-light.png",

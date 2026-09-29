@@ -21,7 +21,7 @@ This is GitStudio's first public release. One Apache-2.0 extension covers the fu
 - **Live fetch** — Fetch runs without closing the branch menu, then every branch row's ↑/↓ badges update live. Pull a local branch without checking it out (fast-forward from upstream, straight from its submenu).
 
 ### AI (optional, off by default)
-- **GitBrain** — AI commit messages, explain-this-diff, and change summaries. Bring your own Anthropic key or use GitHub Copilot's model with zero keys. Keys live in SecretStorage and never reach a webview; AI never gates a Git operation.
+- **AI features** — AI commit messages, explain-this-diff, and change summaries. Bring your own Anthropic key or use GitHub Copilot's model with zero keys. Keys live in SecretStorage and never reach a webview; AI never gates a Git operation.
 
 ## Install
 

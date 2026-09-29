@@ -1,7 +1,7 @@
 // The Changes view's host (CommitViewProvider) under the vscode stand-in, with
 // the parts changesHost.ts leaves out wired to recorders a test can read: the
 // commands it runs, the settings it reads and writes, its memento, an optional
-// GitBrain generator, the merge experience's hooks, an Undo ledger, and a
+// AI generator, the merge experience's hooks, an Undo ledger, and a
 // vscode.git Repository whose state the test sets. Not a test itself.
 //
 // Loads changesHost.ts first, which puts the stand-in in place and answers the

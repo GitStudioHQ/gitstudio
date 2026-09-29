@@ -437,7 +437,7 @@ export class PullRequestCreate {
     if (s.ai) {
       const a = button("prp-ghost prc-tool", "ai-draft", "aiDraft");
       a.append(codicon(s.busy === "ai" ? "loading" : "sparkle", s.busy === "ai" ? "codicon-modifier-spin" : ""), el("span", "", s.busy === "ai" ? "Drafting…" : "Draft with AI"));
-      a.title = "Write the description from the commits and the diff with GitBrain (replaces what is there)";
+      a.title = "Write the description from the commits and the diff with AI (replaces what is there)";
       a.disabled = busy || s.compare.status !== "ready";
       tools.appendChild(a);
     }

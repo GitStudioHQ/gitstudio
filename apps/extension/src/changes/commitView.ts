@@ -272,7 +272,7 @@ interface FromWebview {
 
 /**
  * The host-side hook the commit box uses to draft a message from the staged
- * diff. Injected (not imported) so this view stays decoupled from GitBrain and
+ * diff. Injected (not imported) so this view stays decoupled from the AI layer and
  * the key stays 100% host-side — the webview only ever receives the result text.
  * Returns null when AI is unavailable or nothing is staged.
  */
@@ -444,7 +444,7 @@ export class CommitViewProvider
     private readonly onCommitted: () => void,
     /** Persists the tree/list layout choice across reloads. */
     private readonly memento: vscode.Memento,
-    /** Optional GitBrain hook for the "Generate message" sparkle button. */
+    /** Optional AI hook for the "Generate message" sparkle button. */
     private readonly generator?: CommitMessageGenerator,
     /** The merge experience's doors (conflicted rows, the operation banner). */
     private readonly merge?: ChangesMergeHooks,
@@ -1659,7 +1659,7 @@ export class CommitViewProvider
   }
 
   /**
-   * Draft a commit message from the staged diff via GitBrain and fill the box.
+   * Draft a commit message from the staged diff via the AI features and fill the box.
    * AI is optional: when there's no provider (or nothing staged), we toast a
    * friendly note and clear the button's loading state — never an error, and
    * never anything that touches the commit flow itself.
@@ -1676,7 +1676,7 @@ export class CommitViewProvider
         this.view?.webview.postMessage({ type: "setMessage", text });
       } else {
         void vscode.window.setStatusBarMessage(
-          "$(sparkle) GitBrain: nothing to draft (stage changes first)",
+          "$(sparkle) Nothing to draft (stage changes first)",
           3000,
         );
       }
@@ -2934,7 +2934,7 @@ export class CommitViewProvider
     this.updateBadge(staged, unstaged, behind);
 
     // THEN resolve the slower bits — the AI availability (cached; see
-    // GitBrain.isEnabledCached) and the branch-menu data (for-each-ref + stash
+    // AiFeatures.isEnabledCached) and the branch-menu data (for-each-ref + stash
     // list) — in parallel, and re-post ONLY what they corrected. The client
     // dedups the (unchanged) file list, so a re-post only refreshes the ✨
     // button + branch menu without a re-render; but it is still the whole
@@ -5142,7 +5142,7 @@ export class CommitViewProvider
       placeholder="Message (what & why)…"
       aria-label="Commit message"></textarea>
     <button class="sparkle" id="generate" type="button"
-      title="Generate commit message with GitBrain"
+      title="Generate commit message with AI"
       aria-label="Generate commit message">
       <i class="codicon codicon-sparkle glyph" aria-hidden="true"></i>
       <i class="codicon codicon-loading spinner" aria-hidden="true"></i>

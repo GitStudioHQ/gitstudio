@@ -2,12 +2,12 @@ import {
   AnthropicSseParser,
   extractAnthropicText,
   type AnthropicMessageResponse,
-} from "@gitstudio/engine/ai/gitBrainCore";
+} from "@gitstudio/engine/ai/aiCore";
 import type {
-  GitBrainProvider,
+  AiProvider,
   CompleteRequest,
   ModelTier,
-} from "./gitBrain";
+} from "./aiFeatures";
 
 // The Anthropic bring-your-own-key provider. Runs entirely on the extension
 // host (Node 22 → global fetch), so the API key never reaches a webview and
@@ -63,7 +63,7 @@ interface AnthropicRequestBody {
   stream?: boolean;
 }
 
-export class AnthropicProvider implements GitBrainProvider {
+export class AnthropicProvider implements AiProvider {
   readonly id = "anthropic";
 
   constructor(private readonly opts: AnthropicProviderOptions) {}
@@ -128,13 +128,13 @@ export class AnthropicProvider implements GitBrainProvider {
   private friendlyFor(status: number): string {
     switch (status) {
       case 401:
-        return "GitBrain: the Anthropic API key is missing or invalid. Run “GitStudio: Set Anthropic API Key…”.";
+        return "The Anthropic API key is missing or invalid. Run “GitStudio: Set Anthropic API Key…”.";
       case 429:
-        return "GitBrain: Anthropic rate limit hit — try again in a moment.";
+        return "Anthropic rate limit hit — try again in a moment.";
       case 529:
-        return "GitBrain: Anthropic is temporarily overloaded — try again shortly.";
+        return "Anthropic is temporarily overloaded — try again shortly.";
       default:
-        return `GitBrain: Anthropic request failed (HTTP ${status}).`;
+        return `Anthropic request failed (HTTP ${status}).`;
     }
   }
 
@@ -162,14 +162,14 @@ export class AnthropicProvider implements GitBrainProvider {
       const json = (await res.json()) as AnthropicMessageResponse;
       const text = extractAnthropicText(json);
       if (text === null && json.stop_reason === "refusal") {
-        this.report("GitBrain: the model declined this request.");
+        this.report("The model declined this request.");
       }
       return text;
     } catch (err) {
       if (isAbort(err)) {
         return null;
       }
-      this.report("GitBrain: couldn't reach Anthropic (network error).");
+      this.report("Couldn't reach Anthropic (network error).");
       return null;
     }
   }
@@ -228,7 +228,7 @@ export class AnthropicProvider implements GitBrainProvider {
       if (isAbort(err)) {
         return null;
       }
-      this.report("GitBrain: couldn't reach Anthropic (network error).");
+      this.report("Couldn't reach Anthropic (network error).");
       return null;
     }
   }

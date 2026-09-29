@@ -5,12 +5,12 @@ import { fileURLToPath } from "node:url";
 
 // The Changes view asks "is AI available?" on every state push, and a state
 // push is the onDidChange firehose — many a second during a rebase or fetch.
-// GitBrain.isEnabled() is a real probe: a vscode.lm model query, a key-file
+// AiFeatures.isEnabled() is a real probe: a vscode.lm model query, a key-file
 // stat, or a `which` spawn depending on the provider. It ran per push for a
 // value that only moves when a setting, a key or the model list changes, and
 // every one of those already calls refreshEnabled().
 //
-// GitBrain and the wiring both import `vscode`, so this cannot be driven under
+// AiFeatures and the wiring both import `vscode`, so this cannot be driven under
 // plain tsx. What CAN be pinned is the mechanism: the view reads the cached
 // answer, and the one availability change no setting or key announces — chat
 // models arriving after activation — re-probes it, so the cache is not stale.
@@ -30,6 +30,6 @@ test("the Changes view reads the cached AI availability, not the probe", async (
 });
 
 test("chat models arriving late re-probe, so the cached answer cannot go stale", async () => {
-  const text = await readFile(`${SRC}/ai/gitBrain.ts`, "utf8");
+  const text = await readFile(`${SRC}/ai/aiFeatures.ts`, "utf8");
   assert.match(text, /onDidChangeChatModels\(\(\)\s*=>\s*void this\.refreshEnabled\(\)\)/);
 });

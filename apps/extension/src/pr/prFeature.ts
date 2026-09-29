@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { notifyCopied } from "../ui/notify";
 import { promptConfirm, promptPick } from "../ui/dialogs";
 import type { RepoManager } from "../git/repoManager";
-import type { GitBrain } from "../ai/gitBrain";
+import type { AiFeatures } from "../ai/aiFeatures";
 import type { GraphqlFn } from "@gitstudio/engine/forge/prList";
 import { GitHubAuth } from "./githubAuth";
 import { GitHubApi, GitHubApiError, type PullRequest } from "./githubApi";
@@ -41,7 +41,7 @@ interface PrCommandArg {
 export function registerPrFeature(
   context: vscode.ExtensionContext,
   repos: RepoManager,
-  brain: GitBrain,
+  brain: AiFeatures,
 ): { list: PullRequestsViewProvider; review: ReviewController } {
   const auth = new GitHubAuth();
   const api = new GitHubApi({ getToken: (o) => auth.getToken(o) });

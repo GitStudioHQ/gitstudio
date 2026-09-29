@@ -11,9 +11,9 @@ import {
   extractAnthropicText,
   extractOpenAiText,
   truncateDiff,
-} from "../src/ai/gitBrainCore";
+} from "../src/ai/aiCore";
 
-// Hermetic tests for the rest of the GitBrain core: the diff truncator, the
+// Hermetic tests for the rest of the AI core: the diff truncator, the
 // prompt builders, and the Anthropic stream/non-stream parsers. No network.
 
 // ── truncateDiff ─────────────────────────────────────────────────────────────
@@ -63,7 +63,7 @@ test("truncateDiff defaults to a 6000-token budget", () => {
 test("buildCommitStyleSystem includes the style guide and up to 10 trimmed examples", () => {
   const subjects = ["  feat: one  ", "", "   ", ...Array.from({ length: 12 }, (_, i) => `fix: ${i}`)];
   const sys = buildCommitStyleSystem(subjects, "conventional");
-  assert.ok(sys.startsWith("You are GitBrain"));
+  assert.ok(sys.startsWith("You are the AI assistant embedded in the GitStudio Git client."));
   assert.match(sys, /Conventional Commit/);
   assert.match(sys, /Recent commit subjects from this repository/);
   assert.match(sys, /^- feat: one$/m);
@@ -218,7 +218,7 @@ test("AnthropicSseParser joins multi-line data payloads before parsing", () => {
   assert.deepEqual(p.push(block), ["multi"]);
 });
 
-// ── OpenAI parser edges not covered by gitBrainCore.test.ts ──────────────────
+// ── OpenAI parser edges not covered by aiCore.test.ts ────────────────────────
 
 test("OpenAiSseParser picks the earlier separator when LF and CRLF blocks mix", () => {
   const p = new OpenAiSseParser();

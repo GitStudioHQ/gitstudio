@@ -6,9 +6,9 @@ import {
   truncateDiff,
   buildCommitStyleSystem,
   buildCommitPrompt,
-} from "@gitstudio/engine/ai/gitBrainCore";
+} from "@gitstudio/engine/ai/aiCore";
 
-// Hermetic tests for the pure GitBrain core: the Anthropic SSE parser fed a
+// Hermetic tests for the pure AI core: the Anthropic SSE parser fed a
 // hand-written byte sequence (no network), the diff truncator's token-ish
 // budget, the non-streaming response extractor, and the prompt builders. None
 // of this imports vscode / node-fetch — it runs under plain tsx.

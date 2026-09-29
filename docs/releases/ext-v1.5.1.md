@@ -66,7 +66,7 @@ already undone.
 
 ## Closing a panel while it is working no longer errors
 
-Closing the AI result panel while GitBrain was still streaming — because you had
+Closing the AI result panel while the model was still streaming — because you had
 read enough — made every remaining chunk fail against a webview that no longer
 existed.
 

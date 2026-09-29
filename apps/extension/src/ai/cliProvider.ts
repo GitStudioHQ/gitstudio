@@ -1,4 +1,4 @@
-// A GitBrain provider that drives a locally-installed agent CLI — Claude Code
+// An AI provider that drives a locally-installed agent CLI — Claude Code
 // (`claude`), Codex (`codex`), or the Gemini CLI (`gemini`) — in non-interactive
 // "print" mode, using the CLI's OWN login/subscription instead of an API key.
 // This is how the extension "connects to a local agent" alongside the BYO-key
@@ -6,7 +6,7 @@
 
 import { spawn } from "node:child_process";
 import { auditSpawn } from "@gitstudio/git-service/spawnAudit";
-import type { GitBrainProvider, CompleteRequest } from "./gitBrain";
+import type { AiProvider, CompleteRequest } from "./aiFeatures";
 
 interface CliSpec {
   command: string;
@@ -52,7 +52,7 @@ export interface CliProviderOptions {
   model: () => string | undefined;
 }
 
-export class CliProvider implements GitBrainProvider {
+export class CliProvider implements AiProvider {
   readonly id: string;
 
   constructor(private readonly opts: CliProviderOptions) {

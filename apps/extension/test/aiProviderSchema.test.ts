@@ -1,7 +1,7 @@
 // gitstudio.ai.provider's schema allows every value GitStudio writes to it.
 //
 // Connecting Claude Code, Codex or Gemini CLI in the AI panel writes
-// provider = "cli" (GitBrain.setCliAgent), and the schema's enum did not have
+// provider = "cli" (AiFeatures.setCliAgent), and the schema's enum did not have
 // it: the Settings editor then flagged the user's own setting as "not an
 // accepted value". The README table repeated the short list.
 
@@ -24,9 +24,9 @@ const provider = props["gitstudio.ai.provider"];
 
 /** The ProviderChoice union, read from the source that writes the setting. */
 function choices(): string[] {
-  const src = readFileSync(join(ROOT, "src", "ai", "gitBrain.ts"), "utf8");
+  const src = readFileSync(join(ROOT, "src", "ai", "aiFeatures.ts"), "utf8");
   const union = /export type ProviderChoice =([^;]+);/.exec(src);
-  assert.ok(union, "gitBrain.ts declares ProviderChoice");
+  assert.ok(union, "aiFeatures.ts declares ProviderChoice");
   return [...union[1].matchAll(/"([a-z]+)"/g)].map((m) => m[1]);
 }
 

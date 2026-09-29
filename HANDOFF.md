@@ -14,7 +14,7 @@ You're picking up GitStudio. This doc is the context you need so you don't relit
 1. **One flagship extension, not a swarm.** GitStudio is `gitstudio.gitstudio` — a single extension that grows pillar by pillar (the GitLens model). Merge Studio stays a separate, focused product. They **share an engine, not a listing**.
 2. **Publisher = brand, extension = product.** The publisher id `gitstudio` is the umbrella; products are extensions under it. (This distinction cost us a day of confusion — see the war-story; don't repeat it.)
 3. **Reuse before rebuild.** The merge engine and webview ribbon stack are proven. Extract, don't fork-and-drift.
-4. **AI (GitBrain) is optional + BYO-key.** Don't make the core depend on it.
+4. **AI is optional + BYO-key.** Don't make the core depend on it.
 
 ## Suggested first moves (highest leverage first)
 
@@ -22,7 +22,7 @@ You're picking up GitStudio. This doc is the context you need so you don't relit
 2. **Scaffold the extension** from `../vscode-extension-starter` (esbuild bundling, `vscode:prepublish`, `.vscodeignore`, CI + release workflows). You get a publishable shell in minutes.
 3. **Ship pillar #1: Blame & history.** It's the highest-value, lowest-risk feature after merge — ambient (decorations + hovers, no custom editor needed), and it makes the extension immediately useful. Resist starting with the commit graph (high effort, easy to get visually wrong).
 4. **Then the commit graph / log**, reusing the webview muscle.
-5. **GitBrain last**, once there's a surface to attach it to (commit-message gen on the staging view, "explain this diff" on the diff/history view).
+5. **AI features last**, once there's a surface to attach it to (commit-message gen on the staging view, "explain this diff" on the diff/history view).
 
 ## How to work with the codebases
 
@@ -50,7 +50,7 @@ Don't hand-publish. Use the pipeline:
 
 - License for GitStudio (Merge Studio is MIT — match it, or go source-available?).
 - Monorepo (merge-studio + gitstudio + shared engine) vs. separate repos with a published `@gitstudio/engine`?
-- Free vs. freemium for the suite (GitBrain/AI is the natural paid tier).
+- Free vs. freemium for the suite (AI is the natural paid tier).
 - How much of Merge Studio folds *into* GitStudio vs. stays standalone long-term.
 
 Start with the engine extraction and blame pillar. Everything else builds on those.

@@ -1,4 +1,4 @@
-// Pure, host-agnostic helpers for the GitBrain AI layer (M10): an Anthropic SSE
+// Pure, host-agnostic helpers for the AI layer (M10): an Anthropic SSE
 // stream parser, a token-ish diff truncator, and the prompt/system-prefix
 // builders. No vscode / node / fs imports — this stays unit-testable and lets
 // the same logic power the future desktop app. The provider classes that touch
@@ -75,7 +75,7 @@ export function buildCommitStyleSystem(
       : "";
 
   return [
-    "You are GitBrain, an assistant embedded in the GitStudio Git client. You write commit messages.",
+    "You are the AI assistant embedded in the GitStudio Git client. You write commit messages.",
     styleGuide,
     exampleBlock,
   ]

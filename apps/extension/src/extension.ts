@@ -72,7 +72,7 @@ import { UndoLedger } from "./undo/undoLedger";
 import { RebaseTodoEditorProvider } from "./rebase/rebaseTodoEditor";
 import { abortRebase } from "./rebase/rebaseCommands";
 import { RebaseWorkspacePanel } from "./rebase/rebaseWorkspacePanel";
-import { GitBrain } from "./ai/gitBrain";
+import { AiFeatures } from "./ai/aiFeatures";
 import { AiSettingsPanel } from "./ai/aiSettingsPanel";
 import {
   setApiKey,
@@ -94,7 +94,7 @@ import { promptConfirm, promptPick, registerDialogHost } from "./ui/dialogs";
 // The suite grows pillar-by-pillar (M1+): git-service wiring, the Commits /
 // Branches / Remotes / Stashes / Worktrees / Tags tree views, inline blame, the
 // commit graph, file & line history, hunk/line staging, diff + 3-pane merge,
-// interactive rebase + the universal Undo envelope, and optional GitBrain AI.
+// interactive rebase + the universal Undo envelope, and the optional AI features.
 //
 // Activation stays cheap (`onStartupFinished`): heavy git work is lazy and
 // off the activation path — the first commit/ref load happens when a view is
@@ -375,14 +375,14 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
     });
     context.subscriptions.push(merge);
 
-    // GitBrain — the optional bring-your-own-key AI layer (M10). It is OFF until
+    // The AI features — the optional bring-your-own-key layer (M10). It is OFF until
     // configured: with no provider, `gitstudio.ai.enabled` stays false, the ✨
     // affordance and palette commands stay hidden, and every call returns null.
     // AI never gates or breaks a git op. The API key lives in GitStudio's own
     // encrypted store — NOT the editor's OS-keyring-backed SecretStorage, whose
     // read is what made this very line raise a macOS password prompt at startup
     // — and never leaves the host (the commit box only gets the result text).
-    const brain = new GitBrain(context);
+    const brain = new AiFeatures(context);
     context.subscriptions.push(brain);
     void brain.refreshEnabled();
     context.subscriptions.push(
@@ -454,7 +454,7 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
     // Code's built-in GitHub auth, then list / check out / review / merge /
     // create PRs without leaving the editor. Everything degrades gracefully:
     // not a GitHub repo or not signed in → the view is empty + a connect-prompt
-    // shows, and no command throws. Reuses GitBrain for the optional AI-drafted
+    // shows, and no command throws. Reuses the AI features for the optional AI-drafted
     // PR body.
     registerPrFeature(context, repos, brain);
 

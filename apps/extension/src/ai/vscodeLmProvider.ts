@@ -1,10 +1,10 @@
 import * as vscode from "vscode";
 import type {
-  GitBrainProvider,
+  AiProvider,
   CompleteRequest,
-} from "./gitBrain";
+} from "./aiFeatures";
 
-// The zero-key path: route GitBrain through vscode.lm (the VS Code Language Model
+// The zero-key path: route the AI features through vscode.lm (the VS Code Language Model
 // API) when the host exposes it. This covers GitHub Copilot's models AND any
 // other LM provider the editor surfaces — Cursor exposes its own models through
 // the same API — so we select with NO vendor filter and let every available
@@ -72,7 +72,7 @@ export interface VsCodeLmProviderOptions {
   getPreferredModelId?: () => string | undefined;
 }
 
-export class VsCodeLmProvider implements GitBrainProvider {
+export class VsCodeLmProvider implements AiProvider {
   readonly id = "vscode-lm";
 
   constructor(private readonly opts: VsCodeLmProviderOptions = {}) {}

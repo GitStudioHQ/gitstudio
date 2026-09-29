@@ -229,7 +229,7 @@ test("Commit & Push opens the push review for what was just committed, never pus
   assert.equal(r.git("rev-parse", "origin/main").trim(), r.git("rev-parse", "HEAD~1").trim(), "nothing was pushed yet");
 });
 
-test("Generate fills the box with GitBrain's draft and releases the button", async () => {
+test("Generate fills the box with the AI's draft and releases the button", async () => {
   const r = repo("generate");
   const drafted: string[] = [];
   const h = host(r.dir, {
@@ -261,7 +261,7 @@ test("Generate with nothing to draft says so in the status bar, and a failing pr
   });
   await h.send({ type: "generateMessage" });
   assert.equal(h.all("setMessage").length, 0);
-  assert.ok(said("status").includes("$(sparkle) GitBrain: nothing to draft (stage changes first)"));
+  assert.ok(said("status").includes("$(sparkle) Nothing to draft (stage changes first)"));
   fail = true;
   resetRecorders();
   const doneBefore = h.all("generateDone").length;

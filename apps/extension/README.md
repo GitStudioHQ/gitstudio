@@ -124,7 +124,7 @@ The lanes, chips and avatars follow your theme — the same graph in Light Moder
 
 ## Optional AI, on your terms
 
-**Optional, and it never gates a Git operation.** With GitHub Copilot (or Cursor's models) it works with nothing to set up; otherwise it stays off until you connect a provider, and *GitStudio: Disable AI Features* turns it off entirely. GitBrain adds **Generate Commit Message**, **Explain Diff**, **Summarize Changes**, and **Review Changes** — a structured review of your working tree with a customizable prompt — plus a ✨ button in the commit box that drafts a message from your staged diff.
+**Optional, and it never gates a Git operation.** With GitHub Copilot (or Cursor's models) it works with nothing to set up; otherwise it stays off until you connect a provider, and *GitStudio: Disable AI Features* turns it off entirely. It adds **Generate Commit Message**, **Explain Diff**, **Summarize Changes**, and **Review Changes** — a structured review of your working tree with a customizable prompt — plus a ✨ button in the commit box that drafts a message from your staged diff.
 
 Connect it however you already pay for AI:
 

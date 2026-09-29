@@ -4,7 +4,7 @@ import {
   OpenAiSseParser,
   extractOpenAiText,
   type OpenAiChatResponse,
-} from "../src/ai/gitBrainCore";
+} from "../src/ai/aiCore";
 
 // Hermetic tests for the OpenAI-compatible parsing helpers — no network. They
 // cover the non-streaming `choices[0].message.content` extraction and the

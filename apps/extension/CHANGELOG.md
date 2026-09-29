@@ -29,6 +29,8 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   than they should have, with the release that fixed each. The crash-report
   setting's description now says what is scrubbed, including that a remote's
   host name is kept.
+- **The AI features are just called AI.** Settings, Get Started, the commit
+  box, progress and error messages no longer use an old name for them.
 
 ### Fixed
 - **Push no longer re-creates a branch someone deleted on the remote.** When a
@@ -2011,7 +2013,7 @@ commit that builds green on every platform.
 - **Changed-files badge** on the activity-bar icon, matching the built-in Source
   Control behaviour, with incoming-commit count in the tooltip. Disable with
   `gitstudio.changesBadge`.
-- **Disable AI Features** command, so turning GitBrain off no longer means
+- **Disable AI Features** command, so turning the AI features off no longer means
   hunting for a provider setting.
 
 ### Changed
@@ -2214,7 +2216,7 @@ and Cursor, with the full workflow in one extension.
   list, open, check out, review (inline comments + submit), merge, and create pull requests.
 
 ### Assist (optional)
-- **GitBrain AI** — bring-your-own-key (Anthropic) or zero-key (GitHub Copilot's model):
+- **AI features** — bring-your-own-key (Anthropic) or zero-key (GitHub Copilot's model):
   AI commit messages, explain-this-diff, and change summaries. Off until enabled; the key is
   stored in SecretStorage and never reaches a webview; AI never gates a Git operation.
 

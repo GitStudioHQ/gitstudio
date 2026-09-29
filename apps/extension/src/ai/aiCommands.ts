@@ -3,17 +3,17 @@ import { NO_REPOSITORY, notice } from "../ui/notify";
 import { promptInput, promptPick, type DialogChoice } from "../ui/dialogs";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import {
-  GitBrain,
+  AiFeatures,
   ANTHROPIC_KEY_SECRET,
   OPENAI_KEY_SECRET,
-} from "./gitBrain";
+} from "./aiFeatures";
 import { getNonce } from "../webview/html";
 
 /** Shown in a result panel when no model is connected / the request was declined. */
 const UNAVAILABLE_MESSAGE =
   "No AI model is connected. Connect one from the ✨ button in the Changes view, then try again.";
 
-// Command implementations for the GitBrain AI layer: key management
+// Command implementations for the AI layer: key management
 // (SecretStorage — never sent to a webview), the seamless model picker, and the
 // explain / summarize palette commands that render their Markdown result in a
 // webview panel. The commit-box ✨ lives in commitView.ts and the native SCM
@@ -23,7 +23,7 @@ const UNAVAILABLE_MESSAGE =
 /** Store the Anthropic key in GitStudio's own encrypted store. */
 export async function setApiKey(
   _context: vscode.ExtensionContext,
-  brain: GitBrain,
+  brain: AiFeatures,
 ): Promise<void> {
   const key = await promptInput({
     title: "Set Anthropic API Key",
@@ -49,7 +49,7 @@ export async function setApiKey(
 /** Clear the stored Anthropic key. */
 export async function clearApiKey(
   _context: vscode.ExtensionContext,
-  brain: GitBrain,
+  brain: AiFeatures,
 ): Promise<void> {
   await brain.clearAnthropicKey();
   void vscode.window.showInformationMessage(
@@ -63,7 +63,7 @@ export async function clearApiKey(
  */
 export async function setOpenAIKey(
   _context: vscode.ExtensionContext,
-  brain: GitBrain,
+  brain: AiFeatures,
 ): Promise<void> {
   const key = await promptInput({
     title: "Set OpenAI API Key",
@@ -92,7 +92,7 @@ export async function setOpenAIKey(
 /** Clear the stored OpenAI-compatible key. */
 export async function clearOpenAIKey(
   _context: vscode.ExtensionContext,
-  brain: GitBrain,
+  brain: AiFeatures,
 ): Promise<void> {
   await brain.clearOpenAiKey();
   void vscode.window.showInformationMessage(
@@ -129,7 +129,7 @@ async function stagedDiff(entry: RepoEntry): Promise<string> {
  * staged (so callers can stay silent / hide the affordance).
  */
 export async function draftCommitMessage(
-  brain: GitBrain,
+  brain: AiFeatures,
   entry: RepoEntry,
   signal?: AbortSignal,
 ): Promise<string | null> {
@@ -151,7 +151,7 @@ export async function draftCommitMessage(
  * diff at all.
  */
 async function draftCommitMessageWithFallback(
-  brain: GitBrain,
+  brain: AiFeatures,
   entry: RepoEntry,
   signal?: AbortSignal,
 ): Promise<{ message: string; unstaged: boolean } | null> {
@@ -196,7 +196,7 @@ async function workingDiff(entry: RepoEntry): Promise<string> {
  * If no provider is set up, we offer a one-click "Select AI Model…" path.
  */
 export async function generateCommitMessageCommand(
-  brain: GitBrain,
+  brain: AiFeatures,
   repos: RepoManager,
   arg?: unknown,
 ): Promise<void> {
@@ -216,7 +216,7 @@ export async function generateCommitMessageCommand(
     return;
   }
   const message = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Window, title: "GitBrain: drafting commit message…" },
+    { location: vscode.ProgressLocation.Window, title: "Drafting a commit message with AI…" },
     () => draftCommitMessage(brain, entry),
   );
   if (!message) {
@@ -238,7 +238,7 @@ export async function generateCommitMessageCommand(
 
 /** Draft into the native SCM input box for the given SourceControl. */
 async function generateForSourceControl(
-  brain: GitBrain,
+  brain: AiFeatures,
   repos: RepoManager,
   sourceControl: SourceControlLike,
 ): Promise<void> {
@@ -254,7 +254,7 @@ async function generateForSourceControl(
     return;
   }
   const drafted = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.SourceControl, title: "GitBrain: drafting commit message…" },
+    { location: vscode.ProgressLocation.SourceControl, title: "Drafting a commit message with AI…" },
     () => draftCommitMessageWithFallback(brain, entry),
   );
   if (!drafted) {
@@ -268,7 +268,7 @@ async function generateForSourceControl(
   }
   if (drafted.unstaged) {
     void vscode.window.setStatusBarMessage(
-      "$(sparkle) GitBrain drafted from unstaged changes (nothing was staged)",
+      "$(sparkle) Drafted from unstaged changes (nothing was staged)",
       4000,
     );
   }
@@ -329,7 +329,7 @@ async function offerAiSetup(): Promise<void> {
  */
 export async function selectModelCommand(
   context: vscode.ExtensionContext,
-  brain: GitBrain,
+  brain: AiFeatures,
 ): Promise<void> {
   // ids are "lm:<modelId>" | "anthropic" | "openai".
   const choices: DialogChoice[] = [];
@@ -368,7 +368,7 @@ export async function selectModelCommand(
 
   const pick = await promptPick({
     title: "Select AI Model",
-    hint: "Which model should GitBrain use?",
+    hint: "Which model should the AI features use?",
     choices,
   });
   if (!pick) {
@@ -407,7 +407,7 @@ export async function selectModelCommand(
 /** Prompt through the OpenAI-compatible base URL, model, and optional key. */
 async function configureOpenAi(
   context: vscode.ExtensionContext,
-  brain: GitBrain,
+  brain: AiFeatures,
   cfg: vscode.WorkspaceConfiguration,
 ): Promise<void> {
   const baseUrl = await promptInput({
@@ -474,7 +474,7 @@ async function activeDiff(entry: RepoEntry): Promise<string> {
 
 /** Palette command: explain the active diff, streaming Markdown into a panel. */
 export async function explainDiffCommand(
-  brain: GitBrain,
+  brain: AiFeatures,
   repos: RepoManager,
 ): Promise<void> {
   const entry = repos.getActive();
@@ -513,7 +513,7 @@ export async function explainDiffCommand(
 
 /** Palette command: summarize the active changes into a panel. */
 export async function summarizeChangesCommand(
-  brain: GitBrain,
+  brain: AiFeatures,
   repos: RepoManager,
 ): Promise<void> {
   const entry = repos.getActive();
@@ -530,7 +530,7 @@ export async function summarizeChangesCommand(
   const panel = createResultPanel("Summarize Changes", "A high-level summary of your current changes");
   panel.postStatus("Summarizing your changes…");
   const result = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Window, title: "GitBrain: summarizing…" },
+    { location: vscode.ProgressLocation.Window, title: "Summarizing with AI…" },
     () => brain.summarizeChanges(diff),
   );
   if (result) {
@@ -544,7 +544,7 @@ export async function summarizeChangesCommand(
  *  into a Markdown panel. Reviews the staged diff (falling back to the working
  *  tree) with the built-in review prompt or the user's `reviewPrompt` override. */
 export async function reviewChangesCommand(
-  brain: GitBrain,
+  brain: AiFeatures,
   repos: RepoManager,
 ): Promise<void> {
   const entry = repos.getActive();
@@ -586,7 +586,7 @@ export async function reviewChangesCommand(
   }
 }
 
-// ── The GitBrain result panel ────────────────────────────────────────────────
+// ── The AI result panel ──────────────────────────────────────────────────────
 
 interface ResultPanel {
   /** Render accumulated Markdown (safe: the webview escapes then renders it). */
@@ -597,7 +597,7 @@ interface ResultPanel {
 }
 
 /**
- * A polished webview panel that renders GitBrain's Markdown output as a real,
+ * A polished webview panel that renders the model's Markdown output as a real,
  * designed report — headings, lists, code blocks, links, plus severity badges
  * and file chips for code reviews. Dependency-free and strict-CSP: the inline
  * script HTML-escapes the text FIRST, then applies a small Markdown transform,
@@ -1063,7 +1063,7 @@ function resultHtml(nonce: string, title: string, subtitle: string): string {
         }
       }
 
-      status("Waiting for GitBrain…", "loading");
+      status("Waiting for the model…", "loading");
       window.addEventListener("message", function (event) {
         var msg = event.data;
         if (!msg) return;

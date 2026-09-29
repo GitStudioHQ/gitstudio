@@ -16,7 +16,7 @@ import {
   buildSummarizePrompt,
   truncateDiff,
   type CommitStyle,
-} from "@gitstudio/engine/ai/gitBrainCore";
+} from "@gitstudio/engine/ai/aiCore";
 import type { ChatMessage, ModelTier, Provider } from "./types";
 
 export type { CommitStyle };

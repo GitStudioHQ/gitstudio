@@ -107,7 +107,7 @@ export function aiSettingsHtml(theme: VsCodeTheme, over: Record<string, string> 
   return out;
 }
 
-/** What the host's connectionStatus() answers (gitBrain.ts). */
+/** What the host's connectionStatus() answers (aiFeatures.ts). */
 export function aiStatus(over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     provider: "auto",

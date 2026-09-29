@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { GitBrain } from "./gitBrain";
+import type { AiFeatures } from "./aiFeatures";
 import { getNonce } from "../webview/html";
 // Shared design tokens (inlined as text by esbuild). We ALSO inline the desktop
 // app's own tokens below so this panel is a pixel-for-pixel match of the app's
@@ -52,7 +52,7 @@ export class AiSettingsPanel {
   private static current: AiSettingsPanel | undefined;
   private readonly disposables: vscode.Disposable[] = [];
 
-  static show(brain: GitBrain, extensionUri: vscode.Uri): void {
+  static show(brain: AiFeatures, extensionUri: vscode.Uri): void {
     if (AiSettingsPanel.current) {
       AiSettingsPanel.current.panel.reveal(vscode.ViewColumn.Active);
       void AiSettingsPanel.current.pushStatus();
@@ -73,7 +73,7 @@ export class AiSettingsPanel {
 
   private constructor(
     private readonly panel: vscode.WebviewPanel,
-    private readonly brain: GitBrain,
+    private readonly brain: AiFeatures,
     extensionUri: vscode.Uri,
   ) {
     this.panel.webview.html = this.html(this.panel.webview, extensionUri);

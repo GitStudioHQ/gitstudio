@@ -5,7 +5,7 @@
 // the dependency surface tiny and the request shape explicit — matching the
 // house style of the rest of GitStudio's network code.
 
-import { AnthropicSseParser } from "@gitstudio/engine/ai/gitBrainCore";
+import { AnthropicSseParser } from "@gitstudio/engine/ai/aiCore";
 import {
   AiError,
   type ChatMessage,

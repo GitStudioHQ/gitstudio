@@ -7,7 +7,7 @@ import {
   buildPrDescriptionPrompt,
   truncateDiff,
   type CommitStyle,
-} from "@gitstudio/engine/ai/gitBrainCore";
+} from "@gitstudio/engine/ai/aiCore";
 import { SecretStore } from "@gitstudio/secret-store/secretStore";
 import { notice } from "../ui/notify";
 import { AnthropicProvider } from "./anthropicProvider";
@@ -15,7 +15,7 @@ import { VsCodeLmProvider, type LmModelInfo } from "./vscodeLmProvider";
 import { CliProvider, CLI_SPECS } from "./cliProvider";
 import { OpenAiProvider, type OpenAiConfig } from "./openAiProvider";
 
-// GitBrain — the optional, bring-your-own-key AI layer (M10).
+// The AI features — the optional, bring-your-own-key AI layer (M10).
 //
 // It is OFF until configured: with no usable provider, every feature returns
 // null, the `gitstudio.ai.enabled` context key stays false, and the AI
@@ -30,8 +30,8 @@ interface LmChangeEvents {
   onDidChangeChatModels?: (listener: () => void) => vscode.Disposable;
 }
 
-/** What every GitBrain provider must implement. */
-export interface GitBrainProvider {
+/** What every AI provider must implement. */
+export interface AiProvider {
   readonly id: string;
   isAvailable(): Promise<boolean> | boolean;
   complete(req: CompleteRequest): Promise<string | null>;
@@ -87,7 +87,7 @@ export interface AiConnectionStatus {
  * entry, and on macOS that entry's ACL is bound to the host's code signature —
  * so every Cursor/VS Code update invalidated it and the next read raised
  * "Cursor wants to make changes. Enter your password to allow this."
- * GitBrain reads its key while merely deciding whether to show the ✨ button, so
+ * The AI layer reads its key while merely deciding whether to show the ✨ button, so
  * that prompt fired at startup, for users who had never configured AI at all.
  * See importFromEditorSecretStorage() for the one-way migration path.
  */
@@ -139,7 +139,7 @@ export interface CommitMessageOptions {
   signal?: AbortSignal;
 }
 
-export class GitBrain implements vscode.Disposable {
+export class AiFeatures implements vscode.Disposable {
   private readonly anthropic: AnthropicProvider;
   private readonly vscodeLm: VsCodeLmProvider;
   private readonly openai: OpenAiProvider;
@@ -253,7 +253,7 @@ export class GitBrain implements vscode.Disposable {
   async isEnabledCached(): Promise<boolean> {
     if (this.lastEnabled === undefined) {
       await this.refreshEnabled();
-    } else if (!this.lastEnabled && Date.now() - this.lastProbedAt > GitBrain.STALE_AFTER) {
+    } else if (!this.lastEnabled && Date.now() - this.lastProbedAt > AiFeatures.STALE_AFTER) {
       this.lastProbedAt = Date.now(); // one background probe at a time
       void this.refreshEnabled();
     }
@@ -342,7 +342,7 @@ export class GitBrain implements vscode.Disposable {
    *   off        → none.
    * Returns undefined when nothing is usable (features hidden).
    */
-  async getProvider(): Promise<GitBrainProvider | undefined> {
+  async getProvider(): Promise<AiProvider | undefined> {
     const choice = this.providerChoice();
     if (choice === "off") {
       return undefined;
@@ -669,9 +669,8 @@ export class GitBrain implements vscode.Disposable {
       const detail = this.takeLastError();
       return {
         ok: false,
-        message: detail
-          ? detail.replace(/^GitBrain:\s*/, "")
-          : "No response from the model — check the server, base URL and model ID.",
+        message:
+          detail || "No response from the model — check the server, base URL and model ID.",
       };
     } catch (e) {
       return {

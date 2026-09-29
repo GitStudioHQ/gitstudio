@@ -9,7 +9,7 @@
 // the tool-calling path is non-streaming (simpler and reliable for the agent
 // loop, where we need the fully-assembled tool_calls before executing them).
 
-import { OpenAiSseParser } from "@gitstudio/engine/ai/gitBrainCore";
+import { OpenAiSseParser } from "@gitstudio/engine/ai/aiCore";
 import {
   AiError,
   type ChatMessage,

@@ -2,12 +2,12 @@ import {
   OpenAiSseParser,
   extractOpenAiText,
   type OpenAiChatResponse,
-} from "@gitstudio/engine/ai/gitBrainCore";
+} from "@gitstudio/engine/ai/aiCore";
 import type {
-  GitBrainProvider,
+  AiProvider,
   CompleteRequest,
   ModelTier,
-} from "./gitBrain";
+} from "./aiFeatures";
 
 // The OpenAI-compatible bring-your-own-endpoint provider. A SINGLE provider that
 // covers OpenAI, Codex, OpenRouter, Ollama, LM Studio, and any other server that
@@ -53,7 +53,7 @@ interface OpenAiRequestBody {
   stream?: boolean;
 }
 
-export class OpenAiProvider implements GitBrainProvider {
+export class OpenAiProvider implements AiProvider {
   readonly id = "openai";
 
   constructor(private readonly opts: OpenAiProviderOptions) {}
@@ -143,13 +143,13 @@ export class OpenAiProvider implements GitBrainProvider {
   private friendlyFor(status: number): string {
     switch (status) {
       case 401:
-        return "GitBrain: the OpenAI-compatible endpoint rejected the API key (401). Run “GitStudio: Set OpenAI API Key”, or clear it for a local server.";
+        return "The OpenAI-compatible endpoint rejected the API key (401). Run “GitStudio: Set OpenAI API Key”, or clear it for a local server.";
       case 404:
-        return "GitBrain: the OpenAI-compatible endpoint returned 404 — check the base URL and model ID in settings.";
+        return "The OpenAI-compatible endpoint returned 404 — check the base URL and model ID in settings.";
       case 429:
-        return "GitBrain: OpenAI rate limit hit — try again in a moment.";
+        return "OpenAI rate limit hit — try again in a moment.";
       default:
-        return `GitBrain: OpenAI-compatible request failed (HTTP ${status}).`;
+        return `OpenAI-compatible request failed (HTTP ${status}).`;
     }
   }
 
@@ -160,7 +160,7 @@ export class OpenAiProvider implements GitBrainProvider {
   /** A friendly note for a connection-level failure (local server down, etc.). */
   private reportNetwork(cfg: OpenAiConfig): void {
     this.report(
-      `GitBrain: couldn't reach ${cfg.baseUrl} — is the model server running?`,
+      `Couldn't reach ${cfg.baseUrl} — is the model server running?`,
     );
   }
 
