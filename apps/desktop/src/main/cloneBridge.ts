@@ -29,9 +29,28 @@ const activeClones = new Set<ReturnType<typeof spawn>>();
 /** Terminate any running clone — called when the window closes / app quits. */
 export function killActiveClones(): void {
   for (const child of activeClones) {
-    child.kill("SIGTERM");
+    killTree(child);
   }
   activeClones.clear();
+}
+
+/**
+ * Stop a clone and everything it started. On Windows, killing git.exe leaves
+ * the ssh (or credential helper) it spawned running, holding the clone's pipes
+ * open — so the clone never reported that it ended, and the ssh outlived the
+ * window. taskkill /T takes the whole tree; elsewhere the children go when git
+ * does.
+ */
+function killTree(child: ReturnType<typeof spawn>): void {
+  if (process.platform === "win32" && child.pid !== undefined) {
+    try {
+      spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true }).on("error", () => child.kill());
+      return;
+    } catch {
+      /* fall through to a plain kill */
+    }
+  }
+  child.kill("SIGTERM");
 }
 
 /** Native "choose a folder" dialog; returns the absolute path or undefined.

@@ -175,7 +175,9 @@ test("a clone the OS refuses to start is answered with the reason, not thrown", 
   assert.match(res.message ?? "", /null bytes|string without null/i);
 });
 
-test("closing the window kills a clone still in flight instead of orphaning it", async () => {
+// Capped: if the kill ever leaves the clone running again, this fails in 30s
+// instead of holding a CI runner for six hours (Windows did, until killTree).
+test("closing the window kills a clone still in flight instead of orphaning it", { timeout: 30_000 }, async () => {
   const parent = temp("clonedest");
   // An ssh that connects and then waits forever — until git, its parent, goes
   // away and its stdin closes. Forward slashes: git runs it through `sh -c`.
