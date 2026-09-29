@@ -71,6 +71,18 @@ export function pushUnseenMessage(): string {
 }
 
 /**
+ * Why a push of a tracked branch was refused when the branch it tracks is gone
+ * from the remote. Pushing would re-create a branch somebody deleted — most
+ * often after its PR merged — so the user picks what it tracks now instead.
+ */
+function goneUpstreamMessage(pair: { local: string; remote: string; remoteBranch: string }): string {
+  return (
+    `'${pair.local}' tracks ${pair.remote}/${pair.remoteBranch}, which no longer exists on the remote. ` +
+    "Choose the branch it tracks now, then push."
+  );
+}
+
+/**
  * Is this `git version` output 2.30 or later — the first git with
  * `--force-if-includes`? Reads the numbers, not the words around them: Apple
  * ("2.39.3 (Apple Git-146)") and Windows ("2.45.1.windows.1") builds say it
@@ -429,6 +441,16 @@ export class SyncOps {
           remote = target.remote;
           refspec = `refs/heads/${target.branch}:refs/heads/${target.branch}`;
           setUpstream = true;
+        } else {
+          // publishTarget declines a TRACKED branch whose remote branch is gone
+          // so that the push fails — but falling through to a bare `git push`
+          // did not fail: with the tracking config intact, push.default=simple
+          // pushes to the upstream's name and re-creates the branch somebody
+          // deleted ("* [new branch]", exit 0). Refuse here instead.
+          const pair = await this.upstreamPair(opts?.signal);
+          if (pair && (await this.upstreamGone(pair.local, opts?.signal))) {
+            return { ok: false, stderr: goneUpstreamMessage(pair) };
+          }
         }
       } else {
         // The upstream can be named differently from the local branch — most
@@ -461,6 +483,13 @@ export class SyncOps {
       // Source is the local branch by full ref (a bare name resolves against
       // refs/tags too); destination is the name the upstream actually has.
       const pair = await this.upstreamPair(opts?.signal, branch);
+      if (pair && (await this.upstreamGone(pair.local, opts?.signal))) {
+        // The tracking config outlives the remote branch (deleted, then
+        // pruned), and the refspec below names it outright — so this re-created
+        // the branch somebody deleted, the same resurrection the HEAD path
+        // refuses above.
+        return { ok: false, stderr: goneUpstreamMessage(pair) };
+      }
       if (pair) {
         // ALWAYS fully qualified, not only when the names differ. A bare name is
         // resolved against refs/heads AND refs/tags, so on a repo where a tag
@@ -1008,6 +1037,21 @@ export class SyncOps {
     const r = await this.proc.run(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], { signal });
     const sha = r.stdout.trim();
     return r.code === 0 && FULL_SHA.test(sha) ? sha : null;
+  }
+
+  /**
+   * Is `refs/heads/<local>`'s upstream configured, mapped to a remote-tracking
+   * ref, and that ref missing — deleted on the remote and pruned here? git's
+   * own "[gone]". NOT merely "@{u} does not resolve": in a single-branch
+   * (or shallow) clone the fetch refspec maps no ref for a pushed branch, so
+   * %(upstream) is empty and @{u} fails although the remote branch is alive.
+   */
+  private async upstreamGone(local: string, signal?: AbortSignal): Promise<boolean> {
+    const up = await this.proc.run(["for-each-ref", "--format=%(upstream)", `refs/heads/${local}`], { signal });
+    const ref = up.stdout.trim();
+    if (up.code !== 0 || !ref.startsWith("refs/")) return false;
+    const r = await this.proc.run(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], { signal });
+    return r.code !== 0;
   }
 
   /**
