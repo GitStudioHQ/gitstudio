@@ -256,15 +256,15 @@ test("no file editor, or a file in no repository: the user is told, nothing reso
   ]);
 });
 
-// BUG (not fixed here — tests only): historyContext.ts and fileTimelineProvider.ts
-// each test "is this file inside the repository" with `dir + "/"`. On Windows
-// both VS Code's editor fsPath and a repository's root (repo.rootUri.fsPath)
-// use backslashes — "c:\\work\\repo\\f.txt" never starts with "c:\\work\\repo/" —
-// so File History, Line History, Open Changes / Back / Forward and the
-// Timeline all say the file is not in a repository. util/repoScope.ts's
-// isSamePathOrInside already handles both separators (and case). Skipped
-// until the source is fixed; it states the behaviour a Windows user needs.
-test("a Windows path inside a Windows repository root resolves", { skip: "source bug: isInside only knows '/' (see comment)" }, () => {
+// historyContext.ts and fileTimelineProvider.ts each used to test "is this
+// file inside the repository" with `dir + "/"`. On Windows both VS Code's
+// editor fsPath and a repository's root (repo.rootUri.fsPath) use backslashes —
+// "c:\\work\\repo\\f.txt" never started with "c:\\work\\repo/" — so File
+// History, Line History, Open Changes / Back / Forward and the Timeline all
+// said the file was not in a repository. Both now go through util/repoScope.ts,
+// which is separator-tolerant, and slice the relative path rather than asking
+// the running platform's path.relative — so these hold on every OS.
+test("a Windows path inside a Windows repository root resolves", () => {
   const entry = { root: "c:\\work\\repo", ctx: {} };
   vscode.window.activeTextEditor = {
     document: { uri: { scheme: "file", fsPath: "c:\\work\\repo\\src\\a.ts", path: "/c:/work/repo/src/a.ts", query: "" } },
@@ -272,6 +272,23 @@ test("a Windows path inside a Windows repository root resolves", { skip: "source
   const got = resolveActiveFile({ getAll: () => [entry] } as never);
   assert.equal(got?.entry, entry);
   assert.equal(got?.rel, "src/a.ts");
+  // …and the boundary is still a boundary: a sibling whose name merely begins
+  // with the root's is not inside it.
+  const sibling = { root: "c:\\work\\rep", ctx: {} };
+  assert.equal(resolveActiveFile({ getAll: () => [sibling] } as never), undefined);
+});
+
+test("the Timeline reads a Windows path's history under its forward-slashed repository path", async () => {
+  const asked: string[] = [];
+  const entry = {
+    root: "c:\\work\\repo",
+    ctx: { history: { fileHistory: async (rel: string) => (asked.push(rel), []) } },
+  };
+  const p = new FileTimelineProvider({ getAll: () => [entry], onDidChange: () => ({ dispose() {} }) } as never);
+  const uri = { scheme: "file", fsPath: "c:\\work\\repo\\src\\a.ts", path: "/c:/work/repo/src/a.ts", query: "" };
+  assert.deepEqual(await p.provideTimeline(uri as never, {}, noCancel), { items: [], paging: undefined });
+  assert.deepEqual(asked, ["src/a.ts"], "the file was found inside the repository and its history asked for");
+  p.dispose();
 });
 
 // ── timelineApi ─────────────────────────────────────────────────────────────

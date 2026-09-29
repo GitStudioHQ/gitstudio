@@ -5,6 +5,7 @@ import {
   isInsideRepo,
   isSamePathOrInside,
   isWorkingTreeFileOf,
+  relativeInside,
 } from "../src/util/repoScope";
 
 // The Changes view refreshes itself when you save a file (issue #17), which means
@@ -108,4 +109,17 @@ test("the combined check wants both: inside the repo AND not metadata", () => {
   assert.equal(isWorkingTreeFileOf("/code/app-old/src/x.ts", "/code/app", LINUX), false);
   // And it inherits the case rule, so a differently-cased save still counts.
   assert.equal(isWorkingTreeFileOf("/Code/App/src/x.ts", "/code/app", MAC), true);
+});
+
+test("relativeInside slices the path below the root, forward-slashed, by the same rules", () => {
+  assert.equal(relativeInside("c:\\work\\repo\\src\\a.ts", "c:\\work\\repo", WIN), "src/a.ts");
+  assert.equal(relativeInside("C:\\Work\\Repo\\a.ts", "c:\\work\\repo\\", WIN), "a.ts");
+  assert.equal(relativeInside("C:\\x.ts", "C:\\", WIN), "x.ts", "a drive root keeps its own separator");
+  // path.relative is case-sensitive on macOS: after the case-tolerant
+  // containment test it would have answered "../../code/app/src/x.ts".
+  assert.equal(relativeInside("/code/app/src/x.ts", "/Code/App", MAC), "src/x.ts");
+  assert.equal(relativeInside("/code/app", "/code/app/", LINUX), "", "the root itself");
+  assert.equal(relativeInside("/x.ts", "/", LINUX), "x.ts");
+  assert.equal(relativeInside("/code/app-old/x.ts", "/code/app", LINUX), undefined);
+  assert.equal(relativeInside("/Code/App/x.ts", "/code/app", LINUX), undefined, "Linux is case-sensitive");
 });
