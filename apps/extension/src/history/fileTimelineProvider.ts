@@ -1,9 +1,9 @@
 import * as vscode from "vscode";
-import { relative } from "node:path";
 import type { FileHistoryEntry } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { touches } from "../git/repoChange";
 import { relativeTime } from "../util/relativeTime";
+import { isSamePathOrInside, relativeInside } from "../util/repoScope";
 import { historyChangeSides, revisionSideUri } from "./revisionContentProvider";
 import {
   createTimelineItem,
@@ -60,8 +60,8 @@ export class FileTimelineProvider implements TimelineProvider {
       return { items: [] };
     }
 
-    const rel = relative(entry.root, uri.fsPath);
-    if (!rel || rel.startsWith("..")) {
+    const rel = relativeInside(uri.fsPath, entry.root);
+    if (!rel) {
       return { items: [] };
     }
 
@@ -152,7 +152,9 @@ export class FileTimelineProvider implements TimelineProvider {
     const path = uri.fsPath;
     let best: RepoEntry | undefined;
     for (const entry of this.repos.getAll()) {
-      if (isInside(path, entry.root)) {
+      // Separator- and case-tolerant (see historyContext): a "/"-only
+      // boundary gave every Windows file an empty Timeline.
+      if (isSamePathOrInside(path, entry.root)) {
         if (best === undefined || entry.root.length > best.root.length) {
           best = entry;
         }
@@ -172,14 +174,6 @@ export class FileTimelineProvider implements TimelineProvider {
 function parseCursor(cursor: string | undefined): number {
   const n = cursor ? Number(cursor) : 0;
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
-}
-
-function isInside(filePath: string, dir: string): boolean {
-  if (filePath === dir) {
-    return true;
-  }
-  const withSep = dir.endsWith("/") ? dir : `${dir}/`;
-  return filePath.startsWith(withSep);
 }
 
 function baseName(rel: string): string {

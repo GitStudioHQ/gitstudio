@@ -170,6 +170,11 @@ export async function startClone(
 
     activeClones.add(child);
     let lastStderr = "";
+    // git states WHY on its first `fatal:`/`error:` line and follows it with
+    // advice ("Please make sure you have the correct access rights\nand the
+    // repository exists."). Reporting only the last line showed the clone
+    // sheet "and the repository exists." with the reason cut off.
+    let reason = "";
     let settled = false;
     const finish = (r: CloneResult) => {
       if (settled) return;
@@ -185,6 +190,11 @@ export async function startClone(
       const text = line.trim();
       if (!text) return;
       lastStderr = text;
+      if (!reason && /^(fatal|error):/i.test(text)) {
+        // The prefix off, as condenseGitOutput does for every other git error:
+        // the toast already says it is one.
+        reason = text.replace(/^(fatal|error):\s*/i, "");
+      }
       const m = PERCENT_RE.exec(text);
       if (m) {
         onProgress({ phase: m[1].trim(), percent: Number(m[2]), raw: text });
@@ -210,7 +220,7 @@ export async function startClone(
       if (code === 0) {
         finish({ ok: true, root: join(req.parentDir, name) });
       } else {
-        finish({ ok: false, message: lastStderr || `git clone exited ${code}` });
+        finish({ ok: false, message: reason || lastStderr || `git clone exited ${code}` });
       }
     });
   });

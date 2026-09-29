@@ -82,3 +82,22 @@ export function isWorkingTreeFileOf(
 ): boolean {
   return isInsideRepo(filePath, root, platform) && !isGitMetadata(filePath);
 }
+
+/**
+ * `child`'s path below `parent`, forward-slashed ("" for `parent` itself), or
+ * undefined when it is not inside. Sliced from `child` rather than computed
+ * with path.relative: that one is case-SENSITIVE on macOS and only knows the
+ * running platform's separator, so after a case- or separator-tolerant
+ * containment test it could still hand back "../../Work/repo/a.ts".
+ */
+export function relativeInside(
+  child: string,
+  parent: string,
+  platform: string = process.platform,
+): string | undefined {
+  if (!isSamePathOrInside(child, parent, platform)) {
+    return undefined;
+  }
+  const depth = parent.replace(/[\\/]+$/, "").length;
+  return child.slice(depth).replace(/^[\\/]+/, "").replace(/\\/g, "/");
+}

@@ -516,9 +516,10 @@ test("Sync on a branch whose remote branch was deleted asks what to do; Republis
   try {
     reset([[/which no longer exists$/, "republish"]]);
     await b.run("sync");
-    // The remote-tracking ref went with the fetch's prune, so the upstream is
-    // named generically — the question is still the one about a deleted branch.
-    assert.deepEqual(titles(), ['"topic" tracks its upstream, which no longer exists']);
+    // The remote-tracking ref went with the fetch's prune, so the title used to
+    // read `@{u}` and find nothing — "tracks its upstream". It reads the
+    // configured upstream now, which survives the prune, and names it.
+    assert.deepEqual(titles(), ['"topic" tracks origin/topic, which no longer exists']);
     assert.equal(w.origin("rev-parse", "refs/heads/topic"), w.git("rev-parse", "HEAD"));
     assert.deepEqual(said("status"), ["$(check) Published topic"]);
     assert.deepEqual(said("error"), [], "git's 'no such ref was fetched' is not shown");

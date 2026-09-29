@@ -122,18 +122,21 @@ test("scrub is idempotent: a scrubbed report scrubs to itself", () => {
   });
 });
 
-// BUG (reported, not fixed here): a POSIX or home path whose TAIL contains a
-// space scrubs to "~/<path>/<path>" on the first pass (the path rule stops at
-// the space, then the spaced-path rule appends a second "/<path>"), and to
-// "~/<path>" on the second. Nothing leaks, but the output is not a fixed point,
-// so the same crash scrubbed by the extension and again by the desktop app
-// produces two different fingerprints. Correct behaviour pinned as a todo.
-test.todo("a path with a space in its tail scrubs to a fixed point", () => {
+// A POSIX or home path whose TAIL contains a space used to scrub to
+// "~/<path>/<path>" on the first pass (the path rule stopped at the space, then
+// the spaced-path rule appended a second "/<path>"), and to "~/<path>" on the
+// second. Nothing leaked, but the output was not a fixed point, so the same
+// crash scrubbed by the extension and again by the desktop app produced two
+// different fingerprints.
+test("a path with a space in its tail scrubs to a fixed point", () => {
   withHome({ HOME: "/nonexistent-home-for-test" }, () => {
-    for (const input of ["/home/notarealuser/a b/c.ts", "~/a b/c"]) {
+    for (const input of ["/home/notarealuser/a b/c.ts", "~/a b/c", "https://example.com/a b/c", "C:\\a b\\c d\\e.ts:3:4"]) {
       const once = scrub(input);
       assert.equal(scrub(once), once, input);
+      assert.doesNotMatch(once, /\bb\b|\bc\b|\bd\b|\be\.ts/, `nothing of the tail survives: ${once}`);
     }
+    assert.equal(scrub("~/a b/c"), "~/<path>");
+    assert.equal(scrub("/home/notarealuser/a b/c.ts"), "/home/<user>/<path>");
   });
 });
 
