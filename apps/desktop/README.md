@@ -57,7 +57,15 @@ when their secrets are absent.
 
 ## Privacy
 
-No accounts, no usage tracking. During the beta the app sends **anonymous,
-scrubbed crash reports** (on by default; toggle via **Help → Send Anonymous
-Crash Reports**) to the same collector as the extension. Details in
-[PRIVACY.md](PRIVACY.md).
+No accounts, no usage tracking. What the app does send:
+
+- **anonymous, scrubbed crash reports**, on by default (**Help → Send
+  Anonymous Crash Reports** turns them off), to the same collector as the
+  extension;
+- **update checks** to GitHub Releases, which ask before downloading;
+- **commit authors' pictures** from Gravatar (**Settings ▸ Appearance** turns
+  it off) or GitHub;
+- **GitHub requests** while you're signed in, and your diff to the **AI
+  provider** you connect, only when you ask.
+
+Every connection, in full: [PRIVACY.md](PRIVACY.md).

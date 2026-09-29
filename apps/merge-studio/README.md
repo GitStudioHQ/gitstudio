@@ -146,7 +146,7 @@ Requires VS Code 1.82 (August 2023) or newer, **git**, and VS Code's built-in Gi
 
 ## Feedback and support
 
-Found a bug, or a merge that went wrong? [Open an issue](https://github.com/GitStudioHQ/merge-studio/issues). The dashboard's **Report a problem** link fills in your Merge Studio and editor versions for you.
+Found a bug, or a merge that went wrong? [Open an issue](https://github.com/GitStudioHQ/merge-studio/issues). The dashboard's **Report a problem** link fills in your Merge Studio and editor versions for you. A security problem? [Report it privately](https://github.com/GitStudioHQ/merge-studio/blob/main/SECURITY.md). Merge Studio makes no network requests of its own ([PRIVACY.md](https://github.com/GitStudioHQ/merge-studio/blob/main/PRIVACY.md)).
 
 Merge Studio is free. If it saves you a bad merge:
 

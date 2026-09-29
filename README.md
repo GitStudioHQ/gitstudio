@@ -101,7 +101,7 @@ Everything ships in one extension (`gitstudio.gitstudio`) and one desktop app, b
 | **Rewrite** | Drag-to-reorder interactive rebase (pick · reword · edit · squash · fixup · drop); a universal, reflog-powered **Undo** safety net (never hijacks `Ctrl/Cmd+Z`). |
 | **Manage** | Branches (live ↑/↓ badges, fetch-in-place, pull without checkout), remotes, tags, first-class stashes, worktrees; GitHub-style branch compare; status-bar sync with in-view Push/Pull. |
 | **Collaborate** | In-editor GitHub pull-request review — list, check out, diff, comment inline, submit, merge, create. |
-| **Assist** | GitBrain — optional, bring-your-own-key (Anthropic or any OpenAI-compatible endpoint, including local Ollama / LM Studio) or zero-key (Copilot): AI commit messages, explain-diff, summaries. With Copilot it works with nothing to set up, otherwise it is off until you connect a provider; keys live in SecretStorage; AI never gates a Git operation. |
+| **Assist** | GitBrain — optional, bring-your-own-key (Anthropic or any OpenAI-compatible endpoint, including local Ollama / LM Studio) or zero-key (Copilot): AI commit messages, explain-diff, summaries. With Copilot it works with nothing to set up, otherwise it is off until you connect a provider; keys stay on your machine in GitStudio's own encrypted store; AI never gates a Git operation. |
 
 ## The desktop app
 
@@ -181,7 +181,7 @@ Issues and pull requests are welcome at [GitStudioHQ/gitstudio](https://github.c
 npm test && npm run check-types && npm run check-purity
 ```
 
-[CONTRIBUTING.md](CONTRIBUTING.md) has the rest, and [`docs/merge-studio.md`](docs/merge-studio.md) explains how the merge code is shared with Merge Studio and how a pull request opened on its repository comes back here.
+[CONTRIBUTING.md](CONTRIBUTING.md) has the rest (and the [code of conduct](CODE_OF_CONDUCT.md); report security problems privately, as [SECURITY.md](SECURITY.md) says), and [`docs/merge-studio.md`](docs/merge-studio.md) explains how the merge code is shared with Merge Studio and how a pull request opened on its repository comes back here.
 
 ## Facts
 
@@ -191,6 +191,8 @@ npm test && npm run check-types && npm run check-purity
 | **Desktop** | [GitHub Releases](https://github.com/GitStudioHQ/gitstudio/releases) — `.dmg` (arm64 + x64), `.exe`, `.AppImage`, `.deb`, `.rpm`, `.tar.gz` |
 | **Website** | [gitstudio.dev](https://gitstudio.dev) |
 | **License** | **Apache-2.0** |
+| **Privacy** | What each product sends, and how to turn it off: [desktop](apps/desktop/PRIVACY.md) · [extension](apps/extension/PRIVACY.md) · [Merge Studio](apps/merge-studio/PRIVACY.md) |
+| **Security** | [SECURITY.md](SECURITY.md) — report privately, through the repository's Security tab |
 | **Sibling product** | [Merge Studio](https://marketplace.visualstudio.com/items?itemName=gitstudio.merge-studio) — `gitstudio.merge-studio`, the merge-only extension. Built from `apps/merge-studio` and the shared packages here, exported to [GitStudioHQ/merge-studio](https://github.com/GitStudioHQ/merge-studio). Shares its merge editor, not a listing. |
 
 ## Architecture notes
