@@ -6,7 +6,7 @@
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { join } from "node:path";
+import { join, normalize } from "node:path";
 import * as kit from "./graphPanel.kit";
 import { repoChange } from "../src/git/repoChange";
 
@@ -563,7 +563,9 @@ test("opening an uncommitted file: HEAD against the file on disk, nothing on the
   const [m, a, d, ren] = diffs();
   assert.equal(sideOf(m.args[0]).rev, "HEAD");
   assert.equal(m.args[1].scheme, "file");
-  assert.equal(m.args[1].fsPath, join(r.dir, "two.txt"));
+  // Spelled root + "/" + path, as real VS Code's Uri.file accepts on every OS;
+  // the stand-in Uri keeps the spelling, so compare the path itself.
+  assert.equal(normalize(m.args[1].fsPath), join(r.dir, "two.txt"));
   assert.equal(m.args[2], "two.txt (HEAD ↔ Working Tree)");
   assert.equal(sideOf(a.args[0]).rev, EMPTY_TREE);
   assert.equal(sideOf(d.args[1]).rev, EMPTY_TREE);
