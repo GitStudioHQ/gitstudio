@@ -94,8 +94,6 @@ want to take, turn crash reports off.
 
 **Past mistakes.** Reports have carried more than this page says they may:
 
-- before 1.4.0, git's error output was scrubbed like any other text, so a
-  file name, branch name or repository-relative path in it was sent as it was;
 - before 1.5.1, other extensions' failures were reported as GitStudio's.
   Three reports came from other extensions this way, and one of them carried a
   slice of an unrelated project's source code and file paths; that report was

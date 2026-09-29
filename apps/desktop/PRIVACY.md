@@ -81,8 +81,6 @@ want to take, turn crash reports off.
 
 - before 1.1.0, git's error output was scrubbed like any other text, so a
   file name, branch name or repository-relative path in it was sent as it was;
-- before 2.0.0, on Windows and in any path with a space in it, the end of an
-  absolute path (a project's folder and file names) got through;
 - before 2.1.0, so did a repository's `owner/name` when an error message
   quoted it, as GitHub's does when it can't find a repository;
 - in 2.3.0 and earlier, a commit's subject when a rebase, cherry-pick, revert
