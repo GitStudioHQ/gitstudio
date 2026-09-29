@@ -78,7 +78,7 @@ test("its ground is the app's canvas and the window's own background, in both th
 
 test("it animates only transform and opacity, and reduced motion is a plain fade", () => {
   const frames = [...style.matchAll(/@keyframes\s+([\w-]+)\s*\{([\s\S]*?)\}\s*\}/g)];
-  assert.ok(frames.length >= 5, "the launch keyframes are found");
+  assert.ok(frames.length >= 4, "the launch keyframes are found");
   for (const [, name, body] of frames) {
     const props = [...body.matchAll(/([a-z-]+)\s*:/g)].map((m) => m[1]);
     for (const p of props) assert.ok(p === "opacity" || p === "transform", `@keyframes ${name} animates ${p}`);
@@ -95,7 +95,8 @@ test("it animates only transform and opacity, and reduced motion is a plain fade
   }
   const reduce = style.slice(style.indexOf("@media (prefers-reduced-motion: reduce)"));
   assert.ok(reduce.length > 40, "a reduced-motion block");
-  assert.match(reduce, /animation: launch-fade/, "the mark only fades in");
+  assert.match(reduce, /animation: launch-fade/, "the glow only fades in");
+  assert.match(reduce, /\.launch-mark,\s*#launch \.launch-word \{ animation: none; \}/, "and the mark does not move");
   assert.match(reduce, /\.launch-progress \{ display: none; \}/, "no sweeping progress bar");
   // Leaving hands the pointer and the title-bar drag straight to the app.
   assert.match(style, /#launch\.is-leaving \{ opacity: 0; pointer-events: none; -webkit-app-region: no-drag; \}/);
@@ -121,6 +122,40 @@ test("every moving part is an HTML box, never an <svg> — those animate on the 
     assert.ok(tags.length > 0, `.${m[1]} is in the markup`);
     for (const t of tags) assert.equal(t, "div", `.${m[1]} is a <${t}>, not an HTML box`);
   }
+});
+
+test("the mark is whole from its first frame — nothing in it fades or assembles in", () => {
+  // The app is often up within a couple of hundred milliseconds and the
+  // hand-off never waits, so a part that faded in was caught half-drawn: on
+  // dark, a cube with no commit graph and no wordmark.
+  const frames = new Map<string, string>();
+  for (const [, name, body] of style.matchAll(/@keyframes\s+([\w-]+)\s*\{([\s\S]*?)\}\s*\}/g)) frames.set(name, body);
+  for (const part of ["launch-mark", "launch-cube", "launch-graph", "launch-word"]) {
+    for (const m of style.matchAll(new RegExp(`#launch \\.${part}\\b[^{]*\\{[^}]*\\banimation:\\s*([\\w-]+)`, "g"))) {
+      if (m[1] === "none") continue;
+      const body = frames.get(m[1]);
+      assert.ok(body, `@keyframes ${m[1]} is defined`);
+      assert.doesNotMatch(body, /opacity/, `.${part} animates ${m[1]}, which fades it`);
+    }
+  }
+});
+
+test("the mark wears the Dock icon's own palette, in both themes", () => {
+  const icon = readFileSync(join(__dirname, "../../../brand/gitstudio-icon.svg"), "utf8").toLowerCase();
+  const stops = (id: string) => {
+    const g = new RegExp(`<lineargradient id="${id}"[\\s\\S]*?</lineargradient>`).exec(icon);
+    assert.ok(g, `gradient ${id} in the icon`);
+    return [...g[0].matchAll(/stop-color="(#[0-9a-f]{6})"/g)].map((m) => m[1]);
+  };
+  const want: Record<string, string> = {};
+  [want["--lc-top-a"], want["--lc-top-b"]] = stops("ftop");
+  [want["--lc-left-a"], want["--lc-left-b"]] = stops("fleft");
+  [want["--lc-right-a"], want["--lc-right-b"]] = stops("fright");
+  [want["--lc-lane-a"], want["--lc-lane-b"]] = stops("lane");
+  for (const [name, hex] of Object.entries(want)) assert.equal(tokenIn(style, "#launch", name), hex, name);
+  const light = style.slice(style.indexOf("body.vscode-light #launch {"));
+  const lightRule = light.slice(0, light.indexOf("}"));
+  for (const name of Object.keys(want)) assert.ok(!lightRule.includes(`${name}:`), `light does not repaint ${name}`);
 });
 
 test("the screen is removed once its dissolve has run, not before and not long after", () => {

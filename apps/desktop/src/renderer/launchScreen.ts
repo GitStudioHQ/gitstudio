@@ -7,11 +7,11 @@
 //
 // It is never held for show. From the first frame of the dissolve, clicks,
 // drags and the pointer belong to the app, so the launch screen costs the app
-// no time at all. A mark that is still assembling keeps moving while it fades:
-// a warm start is a brief breath of the brand, a slow one ends on the finished
-// mark. (Holding the app back to let the animation land was tried and measured:
-// on this app's usual start it fell right where the mark is half-formed, so it
-// added a quarter of a second to half the starts for nothing you could see.)
+// no time at all. That is why the mark is whole from its first frame
+// (index.html): it used to assemble — graph onto cube, then the wordmark — and a
+// warm start dissolved it half-drawn, a cube with no graph. (Holding the app
+// back to let an animation land was tried and measured: it added a quarter of
+// a second to half the starts.)
 
 /** The dissolve: #launch's opacity transition in index.html (a test keeps the two equal). */
 export const LAUNCH_FADE_MS = 220;

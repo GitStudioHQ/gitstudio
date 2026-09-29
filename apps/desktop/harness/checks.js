@@ -34,9 +34,15 @@
       return n ? getComputedStyle(n)[prop] : null;
     };
     const anims = {};
-    for (const sel of [".launch-glow", ".launch-cube", ".launch-graph", ".launch-word"]) {
+    for (const sel of [".launch-glow", ".launch-mark", ".launch-word"]) {
       const n = l.querySelector(sel);
       anims[sel] = n ? getComputedStyle(n).animationName : null;
+    }
+    // Whole from the first frame: every layer of the mark at full strength.
+    const strength = {};
+    for (const sel of [".launch-mark", ".launch-cube", ".launch-graph", ".launch-word"]) {
+      const n = l.querySelector(sel);
+      strength[sel] = n ? getComputedStyle(n).opacity : null;
     }
     const snap = {
       theme: document.body.className,
@@ -54,6 +60,7 @@
       cubeTop: colour(".lc-top-a", "stopColor"),
       node: colour(".launch-node", "fill"),
       anims,
+      strength,
       leaving: null,
     };
     new MutationObserver((_m, obs) => {
@@ -1014,8 +1021,10 @@
      * is up, not with a literal, so the two cannot drift). And once the shell
      * is up it must leave: gone from the page, nothing of it under the pointer,
      * and from the first frame of leaving it takes neither clicks nor the
-     * window drag. `?arg=reduced` runs under prefers-reduced-motion and asks
-     * for a plain fade.
+     * window drag. The mark is whole on that first frame — cube, commit graph
+     * and wordmark at full strength, in the Dock icon's palette in both themes:
+     * a warm start used to dissolve it half-drawn, a dim cube with no graph.
+     * `?arg=reduced` runs under prefers-reduced-motion: nothing moves.
      */
     "the-launch-screen-covers-the-start-and-hands-off": async (f) => {
       const c = check(f);
@@ -1035,12 +1044,13 @@
       c.eq(b.bg, getComputedStyle(document.body).backgroundColor, "its ground is the app's own canvas (--app-bg)");
       c.eq(b.bg, light ? "rgb(238, 241, 245)" : "rgb(13, 16, 22)", "…which is the theme's canvas");
       c.eq(b.ink, light ? "rgb(27, 31, 42)" : "rgb(245, 243, 255)", "the wordmark's 'Git' is the theme's ink");
-      c.eq(b.cubeTop, light ? "rgb(123, 121, 166)" : "rgb(78, 76, 106)", "the cube wears the theme's brand slate");
-      c.eq(b.node, light ? "rgb(180, 155, 255)" : "rgb(169, 140, 255)", "the commit graph is the brand violet");
+      c.eq(b.cubeTop, "rgb(123, 121, 166)", "the cube wears the Dock icon's slate, in both themes");
+      c.eq(b.node, "rgb(180, 155, 255)", "the commit graph is the icon's violet");
+      for (const [sel, o] of Object.entries(b.strength)) c.eq(o, "1", `${sel} is at full strength on the first frame`);
       const reduced = window.__GS_ARG === "reduced";
-      for (const [sel, name] of Object.entries(b.anims)) {
-        if (reduced) c.eq(name, "launch-fade", `reduced motion: ${sel} only fades`);
-        else c.ok(name && name !== "none" && name !== "launch-fade", `${sel} has its entrance (${name})`);
+      c.eq(b.anims[".launch-glow"], reduced ? "launch-fade" : "launch-glow", "the glow comes up behind it");
+      for (const sel of [".launch-mark", ".launch-word"]) {
+        c.eq(b.anims[sel], reduced ? "none" : "launch-settle", reduced ? `reduced motion: ${sel} does not move` : `${sel} settles in`);
       }
       // The hand-off.
       await settle(700);

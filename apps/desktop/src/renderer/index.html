@@ -25,32 +25,38 @@
          launchScreen.ts fades it out once the shell is up.
 
          Colours are the app's own: the ground is --app-bg for the theme
-         (test/launchScreen.test.ts keeps the two equal), the mark is
-         brand/gitstudio-mark.svg on dark and the light Dock tile's palette
-         (brand/gitstudio-icon-light.svg) on light, and the wordmark is
-         brand/gitstudio-wordmark-*.svg's own outlined glyphs. The theme comes
-         from the body class theme-boot.js set a moment earlier, which already
-         honours the theme picked in Settings.
+         (test/launchScreen.test.ts keeps the two equal), the mark is the Dock
+         icon's own palette (brand/gitstudio-icon.svg) in both themes, and the
+         wordmark is brand/gitstudio-wordmark-*.svg's own outlined glyphs. The
+         theme comes from the body class theme-boot.js set a moment earlier,
+         which already honours the theme picked in Settings. (Dark once wore
+         brand/gitstudio-mark.svg's deeper slate: on this ground it read as a
+         shadow of the icon, not the icon.)
 
-         Motion is transform and opacity only, so it keeps running on the
-         compositor while the bundle holds the main thread: the cube settles
-         in, the commit graph assembles onto it from the merge node, the
-         wordmark follows — landed by 640ms. A progress sweep appears only if
-         the start is still going at 1.2s. Reduced motion gets a plain fade. */
+         The mark is WHOLE from the first frame: cube, commit graph and
+         wordmark are all painted at full strength, and only transform moves
+         them. The app is often up within a couple of hundred milliseconds, and
+         the screen never holds it back (launchScreen.ts), so any part that
+         faded or assembled in was caught half-drawn by the hand-off — a cube
+         without its graph, no wordmark. What moves is the settle (a small
+         scale and lift), the glow behind it, and a progress sweep that shows
+         only if the start is still going at 1.2s. Transform and opacity only,
+         on HTML boxes, so it all runs on the compositor while the bundle holds
+         the main thread. Reduced motion: nothing moves but the glow's fade. */
       #launch {
         --lc-bg: #0d1016;
-        --lc-top-a: #4e4c6a;
-        --lc-top-b: #383650;
-        --lc-left-a: #2c2a44;
-        --lc-left-b: #1c1a30;
-        --lc-right-a: #3c3a58;
-        --lc-right-b: #282640;
-        --lc-edge: rgba(255, 255, 255, 0.12);
-        --lc-lane-a: #a98cff;
-        --lc-lane-b: #a98cff;
-        --lc-node: #a98cff;
-        --lc-node-c: #a98cff;
-        --lc-core: transparent;
+        --lc-top-a: #7b79a6;
+        --lc-top-b: #5d5b82;
+        --lc-left-a: #39375a;
+        --lc-left-b: #2a2845;
+        --lc-right-a: #55527c;
+        --lc-right-b: #403e63;
+        --lc-edge: rgba(255, 255, 255, 0.26);
+        --lc-lane-a: #c4adff;
+        --lc-lane-b: #9a78ff;
+        --lc-node: #b49bff;
+        --lc-node-c: #c2abff;
+        --lc-core: #2a2845;
         --lc-ink: #f5f3ff;
         --lc-glow: rgba(124, 92, 240, 0.2);
         --lc-track: rgba(245, 243, 255, 0.07);
@@ -70,18 +76,7 @@
       }
       body.vscode-light #launch {
         --lc-bg: #eef1f5;
-        --lc-top-a: #7b79a6;
-        --lc-top-b: #5d5b82;
-        --lc-left-a: #39375a;
-        --lc-left-b: #2a2845;
-        --lc-right-a: #55527c;
-        --lc-right-b: #403e63;
         --lc-edge: rgba(27, 31, 42, 0.16);
-        --lc-lane-a: #c4adff;
-        --lc-lane-b: #9a78ff;
-        --lc-node: #b49bff;
-        --lc-node-c: #c2abff;
-        --lc-core: #2a2845;
         --lc-ink: #1b1f2a;
         --lc-glow: rgba(124, 92, 240, 0.13);
         --lc-track: rgba(27, 31, 42, 0.08);
@@ -108,8 +103,7 @@
       #launch .launch-graph > svg,
       #launch .launch-word > svg { display: block; width: 100%; height: 100%; overflow: visible; }
       #launch .launch-glow,
-      #launch .launch-cube,
-      #launch .launch-graph,
+      #launch .launch-mark,
       #launch .launch-word,
       #launch .launch-progress > i { will-change: transform, opacity; }
       #launch .launch-glow {
@@ -154,24 +148,14 @@
       }
 
       @keyframes launch-glow { from { opacity: 0; transform: scale(0.7); } to { opacity: 1; transform: none; } }
-      @keyframes launch-cube { from { opacity: 0; transform: translateY(10px) scale(0.92); } to { opacity: 1; transform: none; } }
-      @keyframes launch-graph {
-        from { opacity: 0; transform: scale(0.55); }
-        55% { opacity: 1; }
-        to { opacity: 1; transform: none; }
-      }
-      @keyframes launch-word { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+      /* Transform only: whatever frame the hand-off lands on, the mark is whole. */
+      @keyframes launch-settle { from { transform: translateY(6px) scale(0.95); } to { transform: none; } }
       @keyframes launch-fade { from { opacity: 0; } to { opacity: 1; } }
       @keyframes launch-sweep { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
 
       #launch .launch-glow { animation: launch-glow 900ms cubic-bezier(0.16, 1, 0.3, 1) both; }
-      #launch .launch-cube { animation: launch-cube 560ms cubic-bezier(0.16, 1, 0.3, 1) both; }
-      /* From the merge node (256,250 in the mark's 96 92 320 340 box). */
-      #launch .launch-graph {
-        transform-origin: 50% 46.47%;
-        animation: launch-graph 520ms cubic-bezier(0.34, 1.36, 0.64, 1) 120ms both;
-      }
-      #launch .launch-word { animation: launch-word 480ms cubic-bezier(0.16, 1, 0.3, 1) 240ms both; }
+      #launch .launch-mark { animation: launch-settle 520ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+      #launch .launch-word { animation: launch-settle 520ms cubic-bezier(0.16, 1, 0.3, 1) both; }
       #launch .launch-progress { animation: launch-fade 400ms ease 1200ms both; }
       /* Bounded, not infinite: a start that takes a minute has bigger news. */
       #launch .launch-progress > i { animation: launch-sweep 1100ms cubic-bezier(0.45, 0, 0.55, 1) 1200ms 60 both; }
@@ -185,10 +169,9 @@
 
       @media (prefers-reduced-motion: reduce) {
         #launch { transition-duration: 160ms; }
-        #launch .launch-glow,
-        #launch .launch-cube,
-        #launch .launch-graph,
-        #launch .launch-word { animation: launch-fade 240ms ease-out both; }
+        #launch .launch-glow { animation: launch-fade 240ms ease-out both; }
+        #launch .launch-mark,
+        #launch .launch-word { animation: none; }
         #launch .launch-progress { display: none; }
         #launch.is-leaving .launch-stage { transform: translateY(-2vh); }
       }
