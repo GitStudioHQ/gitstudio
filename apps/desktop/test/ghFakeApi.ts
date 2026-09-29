@@ -69,7 +69,9 @@ export function fakeGitHub(
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input instanceof Request ? input.url : input);
     const method = (init?.method ?? "GET").toUpperCase();
-    const path = url.startsWith(API) ? url.slice(API.length) : url;
+    // By origin, not by prefix: "https://api.github.com.evil" must not match.
+    const parsed = URL.canParse(url) ? new URL(url) : undefined;
+    const path = parsed && parsed.origin === new URL(API).origin ? parsed.pathname + parsed.search : url;
     let body: unknown = init?.body ?? undefined;
     if (typeof body === "string") {
       try {
