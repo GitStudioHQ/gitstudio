@@ -130,15 +130,14 @@ test("a renamed branch whose remote branch was deleted is neither re-published u
   }
 });
 
-// BUG (reported, not fixed): publishTarget's comment says a tracked branch
-// whose remote branch was deleted "must not be auto-published — let the push
-// fail so the upstream-repair flow runs". publishTarget does return null, but
-// push() then runs a bare `git push`, and with the tracking config intact
-// git's push.default=simple pushes the branch to its (deleted) upstream name
-// and re-creates it: "* [new branch] feat -> feat", exit 0 (git 2.49). Only a
-// branch whose local name differs from its upstream's (the test above) is
-// protected.
-test.skip("Push on a branch whose remote branch was deleted does not resurrect it", async () => {
+// publishTarget's comment always said a tracked branch whose remote branch
+// was deleted "must not be auto-published — let the push fail so the
+// upstream-repair flow runs". It did return null, but push() then ran a bare
+// `git push`, and with the tracking config intact git's push.default=simple
+// pushed the branch to its (deleted) upstream name and re-created it:
+// "* [new branch] feat -> feat", exit 0 (git 2.49). Only a branch whose local
+// name differed from its upstream's (the test above) was protected.
+test("Push on a branch whose remote branch was deleted does not resurrect it", async () => {
   const s = synced("gone-same");
   try {
     s.me.git("checkout", "-q", "-b", "feat");
@@ -150,6 +149,53 @@ test.skip("Push on a branch whose remote branch was deleted does not resurrect i
     const r = await s.ctx().sync.push();
     assert.equal(r.ok, false);
     assert.equal(s.remoteRefs().has("refs/heads/feat"), false, "the deleted branch stays deleted");
+  } finally {
+    s.cleanup();
+  }
+});
+
+// The twin: the Branches view's Push names the branch, and the refspec built
+// from its tracking config named the deleted remote branch outright.
+test("pushing a branch BY NAME whose remote branch was deleted does not resurrect it either", async () => {
+  const s = synced("gone-named");
+  try {
+    s.me.git("checkout", "-q", "-b", "feat");
+    s.me.write("g.txt", "g\n");
+    s.me.commitAll("feat");
+    s.me.git("push", "-q", "-u", "origin", "feat");
+    s.me.git("push", "-q", "origin", "--delete", "feat");
+    s.me.git("fetch", "-q", "--prune");
+    s.me.git("checkout", "-q", "main");
+    const r = await s.ctx().sync.push({ remote: "origin", branch: "feat" });
+    assert.equal(r.ok, false);
+    assert.match(r.stderr, /no longer exists on the remote/);
+    assert.equal(s.remoteRefs().has("refs/heads/feat"), false, "the deleted branch stays deleted");
+    assert.equal(s.runs.some((a) => a[0] === "push"), false, "and git was never asked to push");
+  } finally {
+    s.cleanup();
+  }
+});
+
+// What "gone" must NOT be confused with: in a single-branch (or shallow) clone
+// the fetch refspec maps no remote-tracking ref for a pushed branch, so @{u}
+// does not resolve although the remote branch is alive — and Push must still work.
+test("in a single-branch clone, Push on a tracked branch with no remote-tracking ref still pushes", async () => {
+  const s = synced("single");
+  try {
+    s.me.git("config", "remote.origin.fetch", "+refs/heads/main:refs/remotes/origin/main");
+    s.me.git("checkout", "-q", "-b", "feat");
+    s.me.write("g.txt", "g\n");
+    s.me.commitAll("feat");
+    s.me.git("push", "-q", "-u", "origin", "feat");
+    s.me.write("g.txt", "g2\n");
+    const tip = s.me.commitAll("feat, more");
+    const ctx = s.ctx();
+    assert.equal(await ctx.sync.currentUpstream(), null, "@{u} does not resolve here");
+    const r = await ctx.sync.push();
+    assert.equal(r.ok, true, r.stderr);
+    assert.equal(s.remoteRefs().get("refs/heads/feat"), tip);
+    const named = await ctx.sync.push({ remote: "origin", branch: "feat" });
+    assert.equal(named.ok, true, named.stderr);
   } finally {
     s.cleanup();
   }

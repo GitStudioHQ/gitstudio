@@ -207,6 +207,14 @@ export class RefProvider {
       this.proc.run(["symbolic-ref", "--quiet", "--short", "HEAD"]),
       this.proc.run(["symbolic-ref", "--quiet", "HEAD"]),
     ]);
+    // `symbolic-ref --quiet` exits 1 for a detached HEAD and nothing else; any
+    // other failure is git unable to read the repository at all (a `.git` file
+    // pointing nowhere: "not a git repository", 128). Reading that as
+    // "detached" with an empty sha sent the push review off advising the user
+    // to create a branch in a repository git could not open.
+    if (branchResult.code !== 0 && branchResult.code !== 1) {
+      throw new Error(branchResult.stderr.trim() || `git symbolic-ref HEAD failed (${branchResult.code}).`);
+    }
     const sha = shaResult.stdout.trim();
     const branch = branchResult.stdout.trim();
     const detached = branchResult.code !== 0 || branch.length === 0;

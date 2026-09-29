@@ -189,21 +189,51 @@ test("with rebase.autoStash git stashes by itself, so a failed rebase is never t
   assert.equal(out.inTheWay, undefined);
 });
 
-test.todo(
-  "BUG: a rebase onto a name git can't resolve is git's failure ('invalid upstream'), not the edits in the way",
-  async () => {
-    // touchedBy returns null for an unresolvable ref ("then the failure was
-    // something else"), but the rebase branch of changesInTheWay adds every
-    // staged and unstaged change regardless — so `git rebase no-such-base`
-    // over any edit is reported as the edit being in the way, and Stash &
-    // Retry stashes it for a command that can never run.
-    const r = repo("rebase-unknown");
+// touchedBy returns null for an unresolvable ref ("then the failure was
+// something else"), but the rebase branch of changesInTheWay used to add every
+// staged and unstaged change regardless — so `git rebase no-such-base` over any
+// edit was reported as the edit being in the way, and Stash & Retry stashed it
+// for a command that can never run.
+test("a rebase onto a name git can't resolve is git's failure ('invalid upstream'), not the edits in the way", async () => {
+  const r = repo("rebase-unknown");
+  r.write("a.txt", "edit\n");
+  const out = await runApplying(procOf(r), { kind: "rebase", onto: "no-such-base", args: ["rebase", "no-such-base"] });
+  assert.equal(out.result.code, 128);
+  assert.equal(out.inTheWay, undefined, "git refused the name before it looked at the tree");
+});
+
+// The twin: a pick or revert claimed every STAGED change whatever it touched,
+// and git refuses a commit it cannot find ("bad revision") before the index.
+test("a pick or revert of a commit git can't find, over a STAGED edit, claims nothing", async () => {
+  for (const kind of ["cherry-pick", "revert"] as const) {
+    const r = repo(`${kind}-unknown-staged`);
     r.write("a.txt", "edit\n");
-    const out = await runApplying(procOf(r), { kind: "rebase", onto: "no-such-base", args: ["rebase", "no-such-base"] });
-    assert.equal(out.result.code, 128);
-    assert.equal(out.inTheWay, undefined, "git refused the name before it looked at the tree");
-  },
-);
+    r.git("add", "a.txt");
+    const ghost = "f".repeat(40);
+    const out = await runApplying(procOf(r), { kind, commit: ghost, args: [kind, ghost] });
+    assert.equal(out.result.code, 128, kind);
+    assert.equal(out.inTheWay, undefined, `${kind}: git refused the name before it looked at the index`);
+    assert.equal(status(r), "M  a.txt", `${kind}: the staging is untouched`);
+  }
+});
+
+test("several commits, one git can't find, over a staged edit: git refuses the run by name, and nothing is asked", async () => {
+  const r = repo("many-unknown-staged");
+  r.write("b.txt", "edit\n");
+  r.git("add", "b.txt");
+  const one = r.sha("feature~1");
+  const ghost = "f".repeat(40);
+  const out = await runApplying(procOf(r), {
+    kind: "cherry-pick",
+    commit: one,
+    commits: [one, ghost],
+    args: ["cherry-pick", one, ghost],
+  });
+  assert.equal(out.result.code, 128);
+  assert.equal(out.inTheWay, undefined);
+  assert.equal(r.sha("HEAD"), r.sha("master"), "nothing was picked");
+  assert.equal(status(r), "M  b.txt");
+});
 
 // ── When git can't say ─────────────────────────────────────────────────────
 

@@ -330,15 +330,13 @@ test("a rebase git cannot autostash over an unmerged index rewrites nothing and 
   }
 });
 
-// BUG (reported, not fixed): git refuses this run up front ("f.txt: needs
-// merge … fatal: Cannot autostash", exit 128, no rebase directory), but
-// runRebasePlan matches "needs merge" in the output and answers
-// `{status: "stopped", reason: "conflict"}` — a paused rebase that does not
-// exist, whose Continue/Abort then fail with "no rebase in progress". The
-// conflict regex is consulted before asking whether a rebase is live; a
-// refusal with nothing started should be `failed` (and `expected`: it is the
-// user's unmerged index).
-test.skip("a rebase git refuses to autostash over an unmerged index is a failure, not a stop", async () => {
+// git refuses this run up front ("f.txt: needs merge … fatal: Cannot
+// autostash", exit 128, no rebase directory), and runRebasePlan used to match
+// "needs merge" in that output and answer `{status: "stopped", reason:
+// "conflict"}` — a paused rebase that did not exist, whose Continue/Abort then
+// failed with "no rebase in progress". It is now refused before anything is
+// written, as the user's own state.
+test("a rebase git refuses to autostash over an unmerged index is a failure, not a stop", async () => {
   const { r, sha } = unmergedWithAutoStash("autostash-verdict");
   try {
     const out = await runRebasePlan(r.root, {
@@ -347,6 +345,8 @@ test.skip("a rebase git refuses to autostash over an unmerged index is a failure
       rewords: [],
     });
     assert.equal(out.status, "failed");
+    assert.equal(out.status === "failed" && out.expected, true, "the user's unmerged index, not ours to crash-report");
+    assert.equal(await isRebaseInProgress(r.root), false);
   } finally {
     r.cleanup();
   }
