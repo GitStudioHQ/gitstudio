@@ -13,6 +13,9 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+/** Every regex metacharacter, not only the dots in a version. */
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 const SCRIPT = join(__dirname, "..", "..", "..", "scripts", "install.sh");
 const skip = process.platform === "win32" && "the installer is for macOS and Linux";
 
@@ -58,7 +61,8 @@ test("macOS 11 with the last release that runs there pinned: let through, and it
     const r = install("Darwin", "11.7.10", { GITSTUDIO_VERSION: pin });
     assert.doesNotMatch(r.stderr, /need macOS 12/, pin);
     const version = pin.replace(/^(app-)?v/, "");
-    assert.match(r.curled, new RegExp(`releases/download/app-v${version.replace(/\./g, "\\.")}/GitStudio-${version.replace(/\./g, "\\.")}-arm64\\.dmg`), pin);
+    const v = escapeRegExp(version);
+    assert.match(r.curled, new RegExp(`releases/download/app-v${v}/GitStudio-${v}-arm64\\.dmg`), pin);
   }
   // …but not a release that needs 12.
   const r = install("Darwin", "11.7.10", { GITSTUDIO_VERSION: "2.3.0" });
