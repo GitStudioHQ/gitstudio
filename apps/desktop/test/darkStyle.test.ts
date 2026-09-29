@@ -82,7 +82,7 @@ test("theme-boot.js, launch-reveal.js and app.css speak the shared names", () =>
 
 test("the Neon block only re-points tokens Graphite declares", () => {
   const block = (sel: string): Map<string, string> => {
-    const at = appCss.search(new RegExp(`^${sel.replace(/\./g, "\\.")} \\{`, "m"));
+    const at = appCss.search(new RegExp(`^${sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{`, "m"));
     assert.ok(at >= 0, sel);
     const body = appCss.slice(at, appCss.indexOf("\n}", at)).replace(/\/\*[\s\S]*?\*\//g, "");
     return new Map([...body.matchAll(/(--[\w-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]));
