@@ -578,7 +578,8 @@ function byBlock(
     const gapFrom = l >= 0 ? found[l] + 1 : 0;
     let gapTo = r < baseRegion.length ? found[r] : region.length;
     // An empty base's region ends with the file's last line break, not a line.
-    if (p.baseEmpty && gapTo > gapFrom && region[gapTo - 1] === "") gapTo--;
+    const eofBreak = p.baseEmpty && gapTo > gapFrom && region[gapTo - 1] === "";
+    if (eofBreak) gapTo--;
     const gap = region.slice(gapFrom, gapTo);
     const taken = candidates(p, b).some((c) => {
       const lines = p.baseEmpty && c.lines[c.lines.length - 1] === "" ? c.lines.slice(0, -1) : c.lines;
@@ -587,11 +588,16 @@ function byBlock(
     if (taken || (b.kind !== "conflict" && gap.length > 0)) continue;
     // Right after the base line before it when only the line after it was
     // edited; otherwise right before the line after it — so after anything
-    // typed at the spot itself.
-    const before = s > 0 ? found[s - 1] : -1;
-    const afterIntact = s < baseRegion.length && found[s] >= 0;
-    const place = before >= 0 && !afterIntact ? before + 1 : gapTo;
-    edits.push({ from: place, to: place, lines: open() });
+    // typed at the spot itself. At either end of the group that line is the
+    // group's anchor, intact by definition: read as edited, a conflict at the
+    // start of its group once landed after the edited line after it.
+    const beforeIntact = s === 0 || found[s - 1] >= 0;
+    const afterIntact = s === baseRegion.length || found[s] >= 0;
+    const place = beforeIntact && !afterIntact ? gapFrom : gapTo;
+    const put = open();
+    // An empty base's region keeps the file's last line break after the spot;
+    // the one the block carries (see markers) would be a second.
+    edits.push({ from: place, to: place, lines: eofBreak && put[put.length - 1] === "" ? put.slice(0, -1) : put });
   }
   const out: string[] = [];
   let at = 0;
@@ -659,8 +665,15 @@ function natural(p: PreparedMerge, b: ChangeBlock): string[] {
 
 /** A conflict as diff3 markers, stage 2's side first (see MarkerLabels). */
 function markers(p: PreparedMerge, b: ChangeBlock, labels: MarkerLabels): string[] {
-  const yours = yoursOf(p, b);
-  const theirs = theirsOf(p, b);
+  // With an empty base (both sides added the file) a side's lines end with its
+  // final line break, read as an empty line: inside the markers it was a blank
+  // line git's own markers don't have, left behind once they were deleted. The
+  // marker line after a section ends it, as git writes it; the file's last line
+  // break goes after the closing marker, where the block's own empty line was.
+  const eof = p.baseEmpty && b.baseSpan.endExclusive > b.baseSpan.start;
+  const trim = (l: string[]): string[] => (p.baseEmpty && l[l.length - 1] === "" ? l.slice(0, -1) : l);
+  const yours = trim(yoursOf(p, b));
+  const theirs = trim(theirsOf(p, b));
   const [first, second] = labels.firstIsYours ? [yours, theirs] : [theirs, yours];
   return [
     `<<<<<<< ${labels.first}`,
@@ -670,6 +683,7 @@ function markers(p: PreparedMerge, b: ChangeBlock, labels: MarkerLabels): string
     "=======",
     ...second,
     `>>>>>>> ${labels.second}`,
+    ...(eof ? [""] : []),
   ];
 }
 

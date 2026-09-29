@@ -151,14 +151,43 @@ test("added on both sides: a line typed before anything is taken stays, beside t
   assert.match(out.text, /\n>>>>>>> Theirs \(feature\)\n$/);
 });
 
-// With an empty base, each side's section also carries the side's final
-// line break as an empty line ("x\ny\n\n||||||| Base"), which git's own
-// markers don't: resolving by deleting the marker lines leaves a stray blank
-// line ("typed\nx\ny\n\n" instead of "typed\nx\ny\n"). Suspected bug in
-// markers()/yoursOf() for baseEmpty — not fixed here.
-test.todo("added on both sides: the marked sections hold each side's lines exactly, as git writes them", () => {
+// With an empty base, each side's section used to carry the side's final line
+// break as an empty line too ("x\ny\n\n||||||| Base"), which git's own markers
+// don't: resolving by deleting the marker lines left a stray blank line
+// ("typed\nx\ny\n\n"), and the untouched file lost its last line break.
+// What git writes for this add/add conflict (diff3, git 2.49):
+const ADDED_MARKERS = ["<<<<<<< Yours (main)", "x", "y", "||||||| Base", "=======", "x", "z", ">>>>>>> Theirs (feature)"];
+
+test("added on both sides: the marked sections hold each side's lines exactly, as git writes them", () => {
   const out = markUnsettled(ADDED, lines("typed"), MERGE)!;
   assert.equal(parseConflictMarkers(out.text).ours, lines("typed", "x", "y"));
+  assert.equal(out.text, lines("typed", ...ADDED_MARKERS));
+});
+
+test("added on both sides, untouched: the document is git's own conflicted file", () => {
+  assert.deepEqual(markUnsettled(ADDED, "", MERGE), { text: lines(...ADDED_MARKERS), marked: 1, changes: 0 });
+  // Stage 2 is Theirs (a rebase): the sections swap, nothing else moves.
+  const rebase = markUnsettled(ADDED, "", { firstIsYours: false, first: "Theirs (main)", second: "Yours (topic)" })!;
+  assert.equal(rebase.text, lines("<<<<<<< Theirs (main)", "x", "z", "||||||| Base", "=======", "x", "y", ">>>>>>> Yours (topic)"));
+});
+
+test("added on both sides with no final line break: the markers still end every section, and the file", () => {
+  // git: "<<<<<<< HEAD\nx\ny\n||||||| …\n=======\nx\nz\n>>>>>>> feature\n" whichever side lacks it.
+  const p = prepareMerge({ base: "", ours: "x\ny", theirs: lines("x", "z") });
+  assert.equal(markUnsettled(p, "", MERGE)!.text, lines(...ADDED_MARKERS));
+  assert.equal(markUnsettled(p, "typed", MERGE)!.text, lines("typed", ...ADDED_MARKERS), "a Result with no line break yet");
+});
+
+test("added on both sides, CRLF: the same lines, every break CRLF", () => {
+  const crlf = (s: string) => s.replace(/\n/g, "\r\n");
+  const p = prepareMerge({ base: "", ours: crlf(lines("x", "y")), theirs: crlf(lines("x", "z")) });
+  assert.equal(markUnsettled(p, "", MERGE)!.text, crlf(lines(...ADDED_MARKERS)));
+  assert.equal(markUnsettled(p, crlf(lines("typed")), MERGE)!.text, crlf(lines("typed", ...ADDED_MARKERS)));
+});
+
+test("added on both sides: git's own conflicted file seeds as markers, keeping nothing", () => {
+  const git = lines("<<<<<<< HEAD", "x", "y", "||||||| d80c2e5", "=======", "x", "z", ">>>>>>> feature");
+  assert.deepEqual(seedFromWorking(ADDED, git), { kind: "markers", keep: [] });
 });
 
 test("added on one side only: git's version stands until something is typed there", () => {
@@ -183,11 +212,22 @@ test("an inserted conflict taken amid edits on both sides of it is settled", () 
 
 // byBlock's own rule: "right after the base line before it when only the line
 // after it was edited". When the block starts its group, the line before it is
-// the group's anchor — intact by definition — but `before` reads -1, so the
-// markers land AFTER the edited line ("a", "c2", markers) instead of between
-// "a" and "c2". Bug in byBlock's placement for s === 0 — not fixed here.
-test.todo("an inserted conflict stays marked right after the line before it when only the line after it was edited", () => {
-  assert.equal(markUnsettled(INSERTED, lines("a", "c2"), MERGE)!.text, lines("a", ...INSERTED_MARKERS, "c2"));
+// the group's anchor — intact by definition — but it used to read as edited,
+// so the markers landed AFTER the edited line ("a", "c2", markers) instead of
+// between "a" and "c2".
+test("an inserted conflict stays marked right after the line before it when only the line after it was edited", () => {
+  assert.deepEqual(markUnsettled(INSERTED, lines("a", "c2"), MERGE), { text: lines("a", ...INSERTED_MARKERS, "c2"), marked: 1, changes: 1 });
+  // At the very top of the file the line before it is the start of the file.
+  const top = prepareMerge({ base: lines("c"), ours: lines("X", "c"), theirs: lines("Y", "c") });
+  assert.equal(markUnsettled(top, lines("c2"), MERGE)!.text, lines(...INSERTED_MARKERS, "c2"));
+});
+
+test("an inserted conflict: typed at the spot, it goes after the typing; both neighbours edited, after both", () => {
+  assert.equal(markUnsettled(INSERTED, lines("a", "t", "c"), MERGE)!.text, lines("a", "t", ...INSERTED_MARKERS, "c"));
+  assert.equal(markUnsettled(INSERTED, lines("a2", "c2"), MERGE)!.text, lines("a2", "c2", ...INSERTED_MARKERS));
+  // Only the line after edited, and a line typed at the spot: the edit can't be
+  // told from the typing, so the markers stay right after the intact line.
+  assert.equal(markUnsettled(INSERTED, lines("a", "t", "c2"), MERGE)!.text, lines("a", ...INSERTED_MARKERS, "t", "c2"));
 });
 
 test("a one-sided insertion beside an edited common line: the edit reads as typed there, and stands alone", () => {
