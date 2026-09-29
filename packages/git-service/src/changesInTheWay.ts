@@ -570,6 +570,9 @@ async function aheadOfMany(proc: GitProcess, op: ApplyOp, signal?: AbortSignal):
   const unstaged = new Set(s.unstaged.filter((f) => f.status !== "U").map((f) => f.path));
   const untracked = new Set(s.unstaged.filter((f) => f.status === "U").map((f) => f.path));
   if (staged.size + unstaged.size + untracked.size === 0) return null;
+  // A commit git cannot find is refused by name before the first is applied
+  // ("fatal: bad revision", 128): nothing to stash for.
+  if (!(await commitsResolve(proc, op.commits ?? [], signal))) return null;
   const touched = await touchedBy(proc, op, signal);
   const inWay = new Set<string>(staged);
   for (const p of [...unstaged, ...untracked]) if (touched?.has(p)) inWay.add(p);
@@ -629,6 +632,9 @@ async function changesInTheWay(
   switch (op.kind) {
     case "cherry-pick":
     case "revert":
+      // A commit git cannot find is refused by NAME ("fatal: bad revision")
+      // before the index is looked at — the staged changes are not in the way.
+      if (!touched && !(await commitsResolve(proc, op.commits ?? [op.commit], signal))) return null;
       // The index must match HEAD before anything is merged — checked before
       // everything else, a merge commit's missing -m included.
       add(staged);
@@ -648,9 +654,14 @@ async function changesInTheWay(
       break;
     }
     case "rebase":
+      // Null only when `onto` does not resolve: git refuses the NAME ("fatal:
+      // invalid upstream") before it looks at the tree. Every edit was claimed
+      // here regardless, and Stash & Retry stashed the user's work for a
+      // command that could never run.
+      if (!touched) return null;
       add(staged);
       add(unstaged);
-      if (touched) add(untracked, touched);
+      add(untracked, touched);
       break;
     case "checkout":
     case "stash":
@@ -684,6 +695,15 @@ async function newBranchNameRefused(proc: GitProcess, args: readonly string[], s
   if (!name) return false;
   if ((await proc.run(["check-ref-format", "--branch", name], { signal })).code !== 0) return true;
   return (await proc.run(["rev-parse", "--verify", "--quiet", `refs/heads/${name}`], { signal })).code === 0;
+}
+
+/** Does every one of `commits` name a commit git can find? */
+async function commitsResolve(proc: GitProcess, commits: readonly string[], signal?: AbortSignal): Promise<boolean> {
+  for (const c of commits) {
+    const r = await proc.run(["rev-parse", "--verify", "--quiet", `${c}^{commit}`], { signal });
+    if (r.code !== 0) return false;
+  }
+  return true;
 }
 
 /** Is `key` a true boolean in the repository's config? */

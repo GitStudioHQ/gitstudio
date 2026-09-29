@@ -392,6 +392,18 @@ export async function runRebasePlan(
       message: "You have uncommitted changes. Commit or stash them, then start the rebase.",
     };
   }
+  // …and unmerged paths, which the check above waves through when
+  // rebase.autoStash is on: git then refuses up front ("needs merge … fatal:
+  // Cannot autostash", exit 128, nothing started), and the "needs merge" in
+  // that output was reported as a rebase stopped on a conflict — a rebase that
+  // did not exist, whose Continue and Abort then failed.
+  if (await hasUnmergedPaths(root, { ...process.env, GIT_OPTIONAL_LOCKS: "0" }, opts)) {
+    return {
+      status: "failed",
+      expected: true,
+      message: "Some files still have unresolved conflicts. Resolve them, then start the rebase.",
+    };
+  }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gitstudio-rebase-"));
   const seqJs = path.join(dir, "seq.js");
   const todoFile = path.join(dir, "todo");
@@ -460,6 +472,17 @@ export async function runRebasePlan(
           // the next rebase of this branch would find it.
           clearRewordQueue(rw);
         }
+        // The chosen comment character travels with the queue: resumeEnv reads
+        // it from beside the MOVED queue. Left behind in .git it was never
+        // found, so every --continue / --skip ran with '#' and git's cleanup
+        // deleted a reword's "#123 …" line — and the stale note stayed in .git.
+        try {
+          fs.renameSync(charPath(rw.queue), charPath(inRebase.queue));
+        } catch {
+          // Not written (the default is then right), or not movable: either
+          // way nothing may stay in .git for the next rebase to find.
+          fs.rmSync(charPath(rw.queue), { force: true });
+        }
       } else {
         clearRewordQueue(rw);
       }
@@ -478,8 +501,11 @@ export async function runRebasePlan(
       clearRewordQueue(rw);
       return { status: "done" };
     }
+    // Only a LIVE rebase can be stopped on a conflict: git's refusals before it
+    // starts say "needs merge" too, and nothing is paused then.
+    const live = await rebaseInProgress(root, env, opts);
     const blob = `${stdout}\n${stderr}`;
-    if (/could not apply|CONFLICT|Merge conflict|needs merge|fix conflicts/i.test(blob)) {
+    if (live && /could not apply|CONFLICT|Merge conflict|needs merge|fix conflicts/i.test(blob)) {
       return paused("conflict", firstLine(stderr, stdout) || "Rebase paused on a conflict.");
     }
     // No `Stopped at .*edit` branch here on purpose.
@@ -492,7 +518,7 @@ export async function runRebasePlan(
     // below already answers correctly: it reports a stop only when a rebase is
     // genuinely live, and carries git's words when it does.
     // Still mid-rebase? Treat as a stop the user must resolve rather than a hard fail.
-    if (await rebaseInProgress(root, env, opts)) {
+    if (live) {
       return paused("unknown", firstLine(stderr, stdout) || "Rebase paused.");
     }
     // A hard failure ends the rebase; a STOP does not, and its queue must
@@ -628,6 +654,16 @@ async function rebaseInProgress(
   const gitDir = stdout.trim();
   if (code !== 0 || !gitDir) return false;
   return rebaseStateDir(gitDir) !== undefined;
+}
+
+/** Are there unmerged index entries — conflicts left for the user to resolve? */
+async function hasUnmergedPaths(
+  root: string,
+  env: NodeJS.ProcessEnv,
+  opts: RebaseRunOptions,
+): Promise<boolean> {
+  const { code, stdout } = await spawnGit(["ls-files", "--unmerged", "-z"], root, env, opts);
+  return code === 0 && stdout.length > 0;
 }
 
 /**

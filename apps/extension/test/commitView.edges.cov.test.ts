@@ -94,13 +94,13 @@ test("Switch Repository from the view's header, with no repository open, says th
   assert.deepEqual(said("info"), ["GitStudio: No repository is open."]);
 });
 
-// BUG (not fixed here): over a folder whose .git git cannot read (a `.git`
-// file pointing nowhere), RefProvider.getHead answers a DETACHED head with an
-// empty sha instead of failing, so the review opens saying "HEAD is detached …
-// Create a branch here to push them", and Push fails with that same reason —
-// advice about a state the repository is not in. The correct behaviour is
-// git's own refusal ("not a git repository") in "couldn't prepare the push".
-test.todo("a folder git cannot read fails the push review with git's reason, not a detached-HEAD story", async () => {
+// Over a folder whose .git git cannot read (a `.git` file pointing nowhere),
+// RefProvider.getHead used to answer a DETACHED head with an empty sha instead
+// of failing, so the review opened saying "HEAD is detached … Create a branch
+// here to push them", and Push failed with that same reason — advice about a
+// state the repository was not in. Now git's own refusal ("not a git
+// repository") comes back in "couldn't prepare the push".
+test("a folder git cannot read fails the push review with git's reason, not a detached-HEAD story", async () => {
   const dir = mkdtempSync(join(tmpdir(), "gs-ext-cov-notgit-"));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 }));
   writeFileSync(join(dir, ".git"), "gitdir: ./nowhere\n");

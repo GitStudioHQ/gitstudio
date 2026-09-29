@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { GitRef } from "@gitstudio/host-bridge/git";
-import type { GitProcess, GitRunResult } from "../src/GitProcess";
+import { GitProcess, type GitRunResult } from "../src/GitProcess";
 import { RefProvider, headBranchName } from "../src/RefProvider";
 import { makeRepo, type Repo } from "./opRepo";
 import { removeTempRepo } from "./tmpRepo";
@@ -271,6 +271,23 @@ test(
     assert.deepEqual(await refs.getHead(), { detached: true, sha: c });
   }),
 );
+
+// It used to answer a DETACHED head with an empty sha here, and the push
+// review then advised creating a branch in a repository git could not open.
+test("getHead over a .git git cannot read fails with git's reason rather than calling HEAD detached", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "gs-refs-unreadable-"));
+  try {
+    writeFileSync(join(dir, ".git"), "gitdir: ./nowhere\n");
+    const proc = new GitProcess({ cwd: dir });
+    try {
+      await assert.rejects(new RefProvider(proc).getHead(), /not a git repository/);
+    } finally {
+      proc.dispose();
+    }
+  } finally {
+    removeTempRepo(dir);
+  }
+});
 
 test("getHead on a HEAD that points outside refs/heads carries no full name", async () => {
   // symbolic-ref succeeds but names something that is not a local branch.
