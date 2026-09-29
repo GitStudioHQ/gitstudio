@@ -169,6 +169,24 @@ test("the screen is removed once its dissolve has run, not before and not long a
   assert.ok(LAUNCH_FADE_MS <= 300, "a dissolve, not a curtain");
 });
 
+test("the mark leaves before the ground does, so no logo is stamped over the app", () => {
+  // The two opacities multiply. When both eased over similar spans, a
+  // third-strength logo sat over a half-visible app for ~100ms.
+  const rule = (sel: string) => {
+    const at = style.indexOf(`${sel} {`);
+    return style.slice(at, style.indexOf("}", at));
+  };
+  const ground = /transition: opacity (\d+)ms cubic-bezier\(([^)]*)\)/.exec(rule("#launch"));
+  const mark = /opacity (\d+)ms cubic-bezier\(([^)]*)\)/.exec(rule("#launch .launch-stage"));
+  assert.ok(ground && mark, "both dissolves are found");
+  assert.ok(Number(mark[1]) * 2 <= Number(ground[1]), `the mark (${mark[1]}ms) is gone within the ground's first half (${ground[1]}ms)`);
+  const [gx1, gy1, gx2, gy2] = ground[2].split(",").map(Number);
+  assert.ok(gx2 === 1 && gy2 === 1 && gy1 === 0 && gx1 > 0, `the ground eases in, holding while the mark leaves (${ground[2]})`);
+  const [, my1] = mark[2].split(",").map(Number);
+  assert.equal(Number(mark[2].split(",")[0]), 0, `the mark eases out, dropping at once (${mark[2]})`);
+  assert.equal(my1, 0);
+});
+
 test("the hand-off never holds the app back for the animation's sake", () => {
   const src = readFileSync(join(SRC, "renderer/launchScreen.ts"), "utf8");
   const body = src.slice(src.indexOf("export function dismissLaunchScreen"));

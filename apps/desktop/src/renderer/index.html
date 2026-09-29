@@ -72,7 +72,8 @@
         cursor: default;
         user-select: none;
         contain: strict;
-        transition: opacity 220ms cubic-bezier(0.4, 0, 0.2, 1);
+        /* Ease-in: the ground holds while the mark leaves (below), then goes. */
+        transition: opacity 220ms cubic-bezier(0.4, 0, 1, 1);
       }
       body.vscode-light #launch {
         --lc-bg: #eef1f5;
@@ -89,7 +90,7 @@
         transform: translateY(-2vh);
         transition:
           transform 240ms cubic-bezier(0.4, 0, 0.2, 1),
-          opacity 140ms cubic-bezier(0.4, 0, 1, 1);
+          opacity 90ms cubic-bezier(0, 0, 0.2, 1);
       }
       #launch .launch-mark { position: relative; width: 96px; height: 102px; }
       /* Every moving part is an HTML box around its SVG, never the <svg>
@@ -162,7 +163,11 @@
 
       /* The hand-off (launchScreen.ts): the app is already painted beneath, so
          the screen dissolves as the mark eases toward you — the mark goes
-         first, so the app never shows through with a logo stamped on it. From
+         first, so the app never shows through with a logo stamped on it: the
+         mark is gone in 90ms (ease-out) while the ground, easing in, has only
+         just begun to fade. (Both once eased over similar spans and their
+         opacities multiplied — for ~100ms a third-strength logo sat over a
+         half-visible app.) From
          the first frame of it, clicks and drags belong to the app. */
       #launch.is-leaving { opacity: 0; pointer-events: none; -webkit-app-region: no-drag; }
       #launch.is-leaving .launch-stage { opacity: 0; transform: translateY(-2vh) scale(1.04); }
