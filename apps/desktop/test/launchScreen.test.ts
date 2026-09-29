@@ -248,5 +248,6 @@ test("the window request is the renderer bundle's first statement, and keeps it 
   assert.match(renderer, /banner:\s*\{\s*js:\s*fs\.readFileSync\(path\.join\(rendererDir, "launch-reveal\.js"\)/, "the renderer build's banner is launch-reveal.js");
   // The bundle's own "use strict" is no longer the file's first statement, so
   // the banner has to open with one or the whole bundle would run sloppy.
-  assert.match(launchReveal, /^"use strict";\n/, "launch-reveal.js opens with \"use strict\"");
+  // \r?: Windows CI checks files out with CRLF line ends (core.autocrlf).
+  assert.match(launchReveal, /^"use strict";\r?\n/, "launch-reveal.js opens with \"use strict\"");
 });
