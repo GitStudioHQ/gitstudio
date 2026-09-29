@@ -32,8 +32,14 @@
  */
 export const MAX_LOCAL_REPOS = 300;
 
+/**
+ * One spelling for comparing paths: forward slashes, no trailing slash. On
+ * Windows the folders someone tracks come from the OS picker with backslashes,
+ * and every "/"-based comparison below failed against them — each repository
+ * landed outside the folder it sits in.
+ */
 export function normalizePath(p: string): string {
-  return p.replace(/\/+$/, "");
+  return p.replace(/\\/g, "/").replace(/\/+$/, "");
 }
 
 /**

@@ -73,8 +73,13 @@ export function scrub(input: string): string {
     // leaving the surname and the whole project path in the report. Redact what
     // trails a marker ONLY when it still contains a separator, so a genuine
     // sentence ("/Users/bob is not a repository") keeps its words.
+    //
+    // A run trailing a `<path>` is the REST of that path, so it folds into it
+    // rather than growing a second "/<path>": "~/a b/c" became "~/<path>/<path>",
+    // which the home rule then scrubbed again to "~/<path>" — not a fixed point,
+    // so one crash reported by two hosts had two fingerprints.
     .replace(/(<user>|<path>|~)((?: [^\s"':]+)+)/g, (_m, tag: string, rest: string) =>
-      /[/\\]/.test(rest) ? `${tag}/<path>` : `${tag}${rest}`,
+      /[/\\]/.test(rest) ? (tag === "<path>" ? tag : `${tag}/<path>`) : `${tag}${rest}`,
     )
     // A QUOTED identifier containing a slash: 'owner/repo', "src/billing.ts",
     // 'feature/acme-migration'.

@@ -127,6 +127,18 @@ function feedStdin(child: ChildProcessWithoutNullStreams, input: string | undefi
   }
 }
 
+/**
+ * SIGTERM a child — only one that actually started. A git whose spawn failed
+ * (a missing cwd, no git binary) has no pid until Node reports the error on the
+ * next tick, and killing it in that window signals pid 0: the WHOLE process
+ * group, which here is the extension host (or the test runner, which is how
+ * this was found).
+ */
+function killChild(child: ChildProcessWithoutNullStreams): void {
+  if (child.pid === undefined) return;
+  child.kill("SIGTERM");
+}
+
 /** Throw away whatever of stdin has not been written yet. Called once the
  *  child is done with — killed or exited — so a large payload is not held in
  *  memory, or retried against a pipe nobody reads, after it stopped mattering. */
@@ -300,7 +312,7 @@ export class GitProcess {
             return;
           }
           settled = true;
-          spawned.kill("SIGTERM");
+          killChild(spawned);
           dropStdin(spawned);
           cleanup();
           reject(makeAbortError());
@@ -405,7 +417,7 @@ export class GitProcess {
         return;
       }
       failure = makeAbortError();
-      spawned.kill("SIGTERM");
+      killChild(spawned);
       ended = true;
       wake();
     };
@@ -480,7 +492,7 @@ export class GitProcess {
         signal.removeEventListener("abort", onAbort);
       }
       if (spawned.exitCode === null && spawned.signalCode === null) {
-        spawned.kill("SIGTERM");
+        killChild(spawned);
       }
       dropStdin(spawned);
       this.children.delete(spawned);
@@ -503,7 +515,7 @@ export class GitProcess {
   dispose(): void {
     this.disposed = true;
     for (const child of this.children) {
-      child.kill("SIGTERM");
+      killChild(child);
       dropStdin(child);
     }
     this.children.clear();

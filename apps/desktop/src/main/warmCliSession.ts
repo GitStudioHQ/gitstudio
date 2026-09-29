@@ -89,8 +89,15 @@ export class WarmCliSession {
         this.dispose();
       };
       if (handlers.signal) {
-        if (handlers.signal.aborted) onAbort();
-        else handlers.signal.addEventListener("abort", onAbort, { once: true });
+        if (handlers.signal.aborted) {
+          // Cancelled before the message went out (ai:cancel can land while the
+          // caller is still saving the turn). dispose() has ended stdin and
+          // failed the turn; a write now would be an 'error' event nobody
+          // listens for — an uncaught exception in the main process.
+          onAbort();
+          return;
+        }
+        handlers.signal.addEventListener("abort", onAbort, { once: true });
       }
       try {
         proc.stdin.write(JSON.stringify({ type: "user", message: { role: "user", content: text } }) + "\n");

@@ -9,8 +9,12 @@ const FIELD_SEP = "\x1f";
 //
 // The last four fields cost nothing — this read already runs — and each buys a
 // fact the UI could not previously state:
-//   committerdate  a remote branch or tag row with only a name and a sha cannot
-//                  be told from its neighbours, or sorted by anything useful
+//   creatordate    a remote branch or tag row with only a name and a sha cannot
+//                  be told from its neighbours, or sorted by anything useful.
+//                  CREATORdate, not committerdate: an annotated tag points at
+//                  a tag object, which has no committer, so committerdate left
+//                  every release tag without a date; creatordate is the
+//                  commit's date for a commit and the tagger's for a tag
 //   contents:subject   what the ref actually points AT
 //   objecttype     "tag" for an ANNOTATED tag; the only thing that separates
 //                  the two kinds, and nothing has ever carried it
@@ -20,7 +24,7 @@ const REF_FORMAT =
   `--format=%(objectname)${FIELD_SEP}%(refname)${FIELD_SEP}` +
   `%(refname:short)${FIELD_SEP}%(HEAD)${FIELD_SEP}%(upstream:short)` +
   `${FIELD_SEP}%(upstream:track)${FIELD_SEP}%(*objectname)` +
-  `${FIELD_SEP}%(committerdate:unix)${FIELD_SEP}%(contents:subject)` +
+  `${FIELD_SEP}%(creatordate:unix)${FIELD_SEP}%(contents:subject)` +
   `${FIELD_SEP}%(objecttype)${FIELD_SEP}%(symref:short)` +
   // WHO. For a commit-pointing ref, authorname/email answer directly; for an
   // ANNOTATED tag they are empty (the ref points at a tag object), so the
@@ -203,6 +207,14 @@ export class RefProvider {
       this.proc.run(["symbolic-ref", "--quiet", "--short", "HEAD"]),
       this.proc.run(["symbolic-ref", "--quiet", "HEAD"]),
     ]);
+    // `symbolic-ref --quiet` exits 1 for a detached HEAD and nothing else; any
+    // other failure is git unable to read the repository at all (a `.git` file
+    // pointing nowhere: "not a git repository", 128). Reading that as
+    // "detached" with an empty sha sent the push review off advising the user
+    // to create a branch in a repository git could not open.
+    if (branchResult.code !== 0 && branchResult.code !== 1) {
+      throw new Error(branchResult.stderr.trim() || `git symbolic-ref HEAD failed (${branchResult.code}).`);
+    }
     const sha = shaResult.stdout.trim();
     const branch = branchResult.stdout.trim();
     const detached = branchResult.code !== 0 || branch.length === 0;

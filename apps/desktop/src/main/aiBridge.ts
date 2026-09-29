@@ -77,7 +77,9 @@ type Send = <E extends keyof IpcEvents>(event: E, data: IpcEvents[E]) => void;
 const CONFIRM_TIMEOUT_MS = 120_000;
 
 export class AiBridge {
-  private settings: AiSettings = { ...EMPTY_AI_SETTINGS };
+  // A copy down to the array: a shallow spread shared EMPTY_AI_SETTINGS's
+  // connections, so an add before any settings file was read pushed into it.
+  private settings: AiSettings = { ...EMPTY_AI_SETTINGS, connections: [...EMPTY_AI_SETTINGS.connections] };
   private loaded = false;
   /**
    * Keychain-free key storage. Lazily constructed because `app.getPath` is only
