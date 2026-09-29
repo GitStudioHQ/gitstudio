@@ -73,7 +73,14 @@ function open(entry: Entry | undefined, opts: { ready?: boolean; sidebar?: boole
 
 const live: { dispose(): void }[] = [];
 afterEach(() => {
-  while (live.length) live.pop()!.dispose();
+  // Every disposal runs, and the records reset, even if one of them throws.
+  while (live.length) {
+    try {
+      live.pop()!.dispose();
+    } catch {
+      /* a failed cleanup must not leak this test's records into the next */
+    }
+  }
   kit.resetRecords();
   setRefFilterStore(undefined);
   setAuthorAvatarResolver(undefined);

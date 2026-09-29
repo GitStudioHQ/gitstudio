@@ -272,7 +272,11 @@ test("a second Drop of a stash whose first Drop is still asking is ignored — t
   const outcomes = await withRepo(dir, async (repos) => {
     const first = stashesView.dropStash(repos, picked, () => {});
     // Wait until the first Drop is at its question: the stash is in flight.
-    for (let i = 0; i < 1000 && asked.length === 0; i++) await new Promise((r) => setImmediate(r));
+    // A deadline, not a turn count: on a slow runner the git reads before the
+    // question outlast any fixed number of event-loop turns.
+    for (const until = Date.now() + 30_000; asked.length === 0 && Date.now() < until; ) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
     assert.equal(asked.length, 1);
     const second = await stashesView.dropStash(repos, picked, () => {});
     release({ value: "ok" });

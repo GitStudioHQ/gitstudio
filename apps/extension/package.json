@@ -2465,7 +2465,7 @@
     "watch": "node esbuild.js --watch",
     "package": "node esbuild.js --production",
     "check-types": "tsc --noEmit",
-    "test": "tsx --import ../../scripts/test/hermetic-git.mjs --test --test-timeout=300000 \"test/**/*.test.ts\"",
+    "test": "tsx --import ../../scripts/test/hermetic-git.mjs --test \"test/**/*.test.ts\"",
     "vscode:prepublish": "npm run package"
   },
   "devDependencies": {
