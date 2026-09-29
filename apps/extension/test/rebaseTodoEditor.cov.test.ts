@@ -248,7 +248,9 @@ test("a row the webview never sent back becomes a drop — a commit is never sil
   e.send({ type: "start", rows: [{ id: c2.id, action: "reword" }, { id: 999, action: "pick" }, { id: c4.id, action: "pick" }] });
   await until(() => e.doc.saved.length === 1, "saved");
   const lines = e.doc.saved[0].split("\n").filter((l) => /^[a-z]+ [0-9a-f]{7,}/.test(l));
-  assert.deepEqual(lines.map((l) => `${l.split(" ")[0]} ${l.split(" ").slice(2).join(" ")}`), ["reword c2", "pick c4", "drop c3"]);
+  // Newer git writes "pick <sha> # <subject>"; older git, "pick <sha> <subject>".
+  const row = (l: string) => `${l.split(" ")[0]} ${l.split(" ").slice(2).join(" ").replace(/^# /, "")}`;
+  assert.deepEqual(lines.map(row), ["reword c2", "pick c4", "drop c3"]);
   assert.deepEqual(runPlan(dir, e.doc.saved[0]), ["c4", "c2", "c1"]);
   assert.equal(c3.subject, "c3");
 });
