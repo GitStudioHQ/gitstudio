@@ -162,3 +162,13 @@ test("a directory holding no repository produces no group", () => {
   assert.deepEqual(loose, []);
   assert.deepEqual(groups, []);
 });
+
+test("Windows paths group like POSIX ones — backslashes from the folder picker included", () => {
+  const dev = "C:\\Users\\a\\Developer";
+  assert.equal(isUnder(dev, "C:\\Users\\a\\Developer\\team\\app"), true);
+  assert.equal(isUnder(dev, "C:/Users/a/Developer/team/app"), true, "git's own C:/ spelling");
+  assert.equal(isUnder(dev, "C:\\Users\\a\\Developers\\x"), false, "segment-aware on Windows too");
+  assert.equal(isUnder(dev + "\\", dev), false, "a folder is not under itself, trailing separator or not");
+  assert.equal(relativeDir(dev, "C:\\Users\\a\\Developer\\team\\app"), "team");
+  assert.equal(relativeDir(dev, "C:\\Users\\a\\Developer\\app"), "");
+});

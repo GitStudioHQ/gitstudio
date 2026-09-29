@@ -135,22 +135,22 @@ test("a clone git refuses fails, leaves no half-made folder, and names no succes
   assert.equal(existsSync(join(parent, "copy")), false, "git leaves no half-made folder behind");
 });
 
-// BUG (reported, not fixed here): the failure message is only the LAST stderr
-// line. git explains a refused clone over several lines —
+// The failure message used to be only the LAST stderr line. git explains a
+// refused clone over several lines —
 //   fatal: '/…/no-repo-here' does not appear to be a git repository
 //   fatal: Could not read from remote repository.
 //
 //   Please make sure you have the correct access rights
 //   and the repository exists.
-// — so the clone sheet shows "and the repository exists." and nothing else: a
-// sentence fragment with the reason cut off. Unskip when the message keeps the
-// fatal line(s).
-test.skip("a clone git refuses resolves with git's reason, not the tail of its advice", async () => {
+// — so the clone sheet showed "and the repository exists." and nothing else: a
+// sentence fragment with the reason cut off. It now keeps the first fatal line.
+test("a clone git refuses resolves with git's reason, not the tail of its advice", async () => {
   const parent = temp("clonedest");
   const missing = join(temp("clonesrc"), "no-repo-here");
   const res = await startClone({ url: pathToFileURL(missing).href, parentDir: parent, name: "copy" }, () => undefined);
   assert.equal(res.ok, false);
   assert.match(res.message ?? "", /does not appear to be a git repository|Could not read from remote/);
+  assert.doesNotMatch(res.message ?? "", /^fatal:/, "the severity prefix is the toast's to show, not the sentence's");
 });
 
 test("with no git on PATH the clone says so in words, not ENOENT", async () => {

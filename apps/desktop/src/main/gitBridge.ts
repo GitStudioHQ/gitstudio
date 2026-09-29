@@ -612,6 +612,14 @@ export class GitBridge {
     maxCount: number,
   ): Promise<GraphInputCommit[]> {
     const page: GraphInputCommit[] = [];
+    if (!g.currentHeadSha && !g.refsListed) {
+      // Nothing to walk: no ref, and HEAD names no commit — a freshly `git
+      // init`ed repository. The walk passes a literal HEAD, which git refuses
+      // there ("ambiguous argument 'HEAD'"), and that rejection painted
+      // "Couldn't load history" + Retry over a repository that simply has no
+      // commits yet. An empty page is what draws its "No commits yet" tile.
+      return page;
+    }
     for await (const commit of ctx.log.streamCommits({
       revRange: "--all",
       // The branch filter: every page of one load walks the same ticked set,

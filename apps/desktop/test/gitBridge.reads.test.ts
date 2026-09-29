@@ -97,14 +97,13 @@ test("HEAD reads as the plain branch name, as a detached sha, and as nothing whe
 
 // ── graph ───────────────────────────────────────────────────────────────────
 
-// BUG (reported, not fixed here): in a freshly `git init`ed repository the
-// graph's walk passes a literal `HEAD` to `git log`, which has no commit to
-// resolve — git exits 128 ("ambiguous argument 'HEAD'") and graph:load
-// REJECTS. The renderer then paints "Couldn't load history" + Retry over a
-// repository that simply has no commits yet, instead of its crafted "No
-// commits yet" tile (graphMount.renderEmpty), which it only shows for an empty
-// page. Unskip when the walk tolerates an unborn HEAD.
-test.skip("an unborn repository loads an empty graph with no head, rather than failing", async () => {
+// In a freshly `git init`ed repository the graph's walk used to pass a literal
+// `HEAD` to `git log`, which has no commit to resolve — git exited 128
+// ("ambiguous argument 'HEAD'") and graph:load REJECTED. The renderer then
+// painted "Couldn't load history" + Retry over a repository that simply had no
+// commits yet, instead of its crafted "No commits yet" tile
+// (graphMount.renderEmpty), which it only shows for an empty page.
+test("an unborn repository loads an empty graph with no head, rather than failing", async () => {
   const t = repo();
   const page = await t.bridge.graphLoad({ skip: 0 });
   assert.deepEqual(page.rows, []);

@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { notice } from "../ui/notify";
-import { relative } from "node:path";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
+import { isSamePathOrInside, relativeInside } from "../util/repoScope";
 
 /** A resolved (repo, file-relative-path) for the active editor's document. */
 export interface ActiveFile {
@@ -26,7 +26,10 @@ export function resolveActiveFile(repos: RepoManager): ActiveFile | undefined {
 
   let best: RepoEntry | undefined;
   for (const entry of repos.getAll()) {
-    if (isInside(uri.fsPath, entry.root)) {
+    // Separator- and case-tolerant: on Windows both paths use "\\", and a
+    // "/"-only boundary here once told every Windows file it was outside
+    // every repository.
+    if (isSamePathOrInside(uri.fsPath, entry.root)) {
       if (best === undefined || entry.root.length > best.root.length) {
         best = entry;
       }
@@ -37,14 +40,6 @@ export function resolveActiveFile(repos: RepoManager): ActiveFile | undefined {
     return undefined;
   }
 
-  const rel = relative(best.root, uri.fsPath).replace(/\\/g, "/");
+  const rel = relativeInside(uri.fsPath, best.root) ?? "";
   return { entry: best, rel, uri };
-}
-
-function isInside(filePath: string, dir: string): boolean {
-  if (filePath === dir) {
-    return true;
-  }
-  const withSep = dir.endsWith("/") ? dir : `${dir}/`;
-  return filePath.startsWith(withSep);
 }
