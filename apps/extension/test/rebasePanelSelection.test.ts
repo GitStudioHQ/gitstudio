@@ -390,6 +390,16 @@ test("a refusal borrows a paused rebase's banner and gives it back", { skip }, a
         buttons: Array.prototype.map.call(b.querySelectorAll("button"), function (x) { return x.textContent; }) };
     })()`);
   const wayOut = ["Resolve Conflicts…", "Continue Rebase", "Skip this commit", "Abort Rebase"];
+  // A keypress re-renders the banner on the page's own schedule; a busy CI
+  // runner read it before the refusal was painted. Wait for the words, capped.
+  const bannerSays = async (re: RegExp) => {
+    for (let i = 0; i < 40; i++) {
+      const now = await banner();
+      if (re.test(now.text)) return now;
+      await page.settle(50);
+    }
+    return banner();
+  };
 
   await page.eval(stopped);
   await page.settle();
@@ -401,7 +411,7 @@ test("a refusal borrows a paused rebase's banner and gives it back", { skip }, a
   // 1 · a refused squash borrows it…
   await page.clickRow(N - 1);
   await page.key("s");
-  b = await banner();
+  b = await bannerSays(/oldest commit you keep can't be a squash/);
   assert.match(b.text, /oldest commit you keep can't be a squash/, "a refusal is said in its place");
   await page.settle(4300);
   b = await banner();
@@ -440,7 +450,7 @@ test("a refusal borrows a paused rebase's banner and gives it back", { skip }, a
   await page.settle();
   await page.clickRow(N - 1);
   await page.key("s");
-  assert.match((await banner()).text, /can't be a squash/);
+  assert.match((await bannerSays(/can't be a squash/)).text, /can't be a squash/);
   await page.eval(`document.activeElement.blur()`);
   await page.settle(4300);
   b = await banner();
