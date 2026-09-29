@@ -11128,7 +11128,7 @@ class TabShell {
     // without a working Git is told so, and how to get it (noGit.ts) — then,
     // once Check again finds it, the window carries on from here.
     const root = document.getElementById("root")!;
-    await waitForGit(root);
+    await waitForGit(root, dismissLaunchScreen);
     if (root.firstElementChild !== this.strip.el) root.replaceChildren(this.strip.el, this.stage);
     window.addEventListener("keydown", (e) => this.onKey(e));
     window.addEventListener("keydown", (e) => this.live()?.handleHelpKey(e));

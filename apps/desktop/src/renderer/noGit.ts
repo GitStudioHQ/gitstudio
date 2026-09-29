@@ -25,10 +25,16 @@ import { gitInstallHelp, type GitMissing } from "./noGitHelp";
  * tab way, it went out stamped "no repository", which reads as a call from
  * whichever tab is in front — a gone folder's tab included.
  */
-export async function waitForGit(root: HTMLElement): Promise<void> {
+export async function waitForGit(root: HTMLElement, onShown?: () => void): Promise<void> {
   const first = await shellHost.invoke("app:gitCheck", undefined).catch(() => undefined);
   if (!first || first.ok !== false) return;
-  await new Promise<void>((done) => render(root, first, done));
+  await new Promise<void>((done) => {
+    render(root, first, done);
+    // This screen is the app for now: whatever stood in front of the window
+    // until the app was up (the launch screen) makes way for it here, not when
+    // the wait for Git ends — which, without Git, it never would.
+    onShown?.();
+  });
 }
 
 function render(root: HTMLElement, git: GitMissing, done: () => void): void {

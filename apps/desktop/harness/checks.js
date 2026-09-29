@@ -5072,6 +5072,15 @@
       for (let i = 0; i < 30 && !$(".no-git"); i++) await settle(100);
       c.ok(!!$(".no-git"), "the no-Git screen is shown");
       if (!$(".no-git")) return;
+      // The launch screen hands off to this screen too. start() waits here for
+      // Git, and the launch screen waited for start(): without Git the window
+      // sat on the logo for good, on exactly the machines that need these words.
+      const launchIsUp = () => {
+        const l = document.getElementById("launch");
+        return !!l && !l.classList.contains("is-leaving");
+      };
+      for (let i = 0; i < 20 && launchIsUp(); i++) await settle(50);
+      c.ok(!launchIsUp(), "the launch screen has handed off to it");
       c.ok(!$(".screen.repo") && !$(".repo-tab"), "and nothing that needs git was built behind it");
       const title = text(".no-git-title");
       const want = { missing: /^Git isn't installed$/, xcode: /^Git needs Apple's Command Line Tools$/, broken: /^Git isn't working$/ }[reason];
