@@ -21,6 +21,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { initAutoUpdate, type UpdateManager } from "../src/main/autoUpdate";
 
+/**
+ * Let the updater's async work land: event-loop turns until `done()`, capped by
+ * wall time, not by a turn count — loading electron-updater on a busy CI runner
+ * took more than 20 turns, and a check that read too early saw nothing.
+ */
+async function settle(done: () => boolean, ms = 5000): Promise<void> {
+  const until = performance.now() + ms;
+  while (!done() && performance.now() < until) await new Promise((r) => setImmediate(r));
+}
+
 const RELEASES_API = "https://api.github.com/repos/GitStudioHQ/gitstudio/releases";
 const RELEASES_PAGE = "https://github.com/GitStudioHQ/gitstudio/releases/latest";
 const arch = process.arch === "arm64" ? "arm64" : "x64";
@@ -251,7 +261,7 @@ test("mac: while the installer is downloading, a check says so instead of asking
   });
   await w.updates.check(true);
   const downloading = w.updates.download();
-  for (let i = 0; i < 50 && !w.fetched.includes(ASSET_URL); i++) await new Promise((r) => setImmediate(r));
+  await settle(() => w.fetched.includes(ASSET_URL));
   const apiReads = w.fetched.filter((u) => u === RELEASES_API).length;
   assert.deepEqual(await w.updates.check(true), { status: "downloading", current: "2.2.0", version: "2.3.0" });
   assert.equal(w.fetched.filter((u) => u === RELEASES_API).length, apiReads);
@@ -314,7 +324,7 @@ test("el: the confirmed download reports progress, then ready, and install resta
   assert.equal(updater.downloads, 1);
 
   assert.deepEqual(await w.updates.install(), { ok: true });
-  for (let i = 0; i < 10 && updater.installs === 0; i++) await new Promise((r) => setImmediate(r));
+  await settle(() => updater.installs > 0);
   assert.equal(updater.installs, 1, "restarted into the new version");
 });
 
@@ -337,7 +347,7 @@ test("el: while downloading, a check says so", async (t) => {
   updater.download = () => new Promise<void>((r) => (finish = r));
   await w.updates.check(true);
   const downloading = w.updates.download();
-  for (let i = 0; i < 50 && updater.downloads === 0; i++) await new Promise((r) => setImmediate(r));
+  await settle(() => updater.downloads > 0);
   assert.deepEqual(await w.updates.check(true), { status: "downloading", current: "2.2.0", version: "2.3.0" });
   assert.equal(updater.checks, 1, "not checked again mid-download");
   finish();
@@ -361,7 +371,7 @@ test("el: the background check announces once and raises a system notification",
   const w = world(t, { mac: false });
   updater.checkAnswer = { updateInfo: { version: "2.3.0" } };
   mock.timers.tick(20_000);
-  for (let i = 0; i < 20 && w.notified.length === 0; i++) await new Promise((r) => setImmediate(r));
+  await settle(() => w.notified.length > 0);
   assert.deepEqual(w.notified, ["2.3.0"]);
   assert.deepEqual(events(w.sent, "update:available"), [{ version: "2.3.0", current: "2.2.0" }]);
 });
