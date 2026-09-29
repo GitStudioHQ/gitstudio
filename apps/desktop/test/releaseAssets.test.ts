@@ -15,7 +15,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const WORKFLOW = readFileSync(join(__dirname, "..", "..", "..", ".github", "workflows", "release-desktop.yml"), "utf8");
+// LF line ends: Windows CI checks files out with CRLF (core.autocrlf), and the
+// patterns below read the file line by line.
+const WORKFLOW = readFileSync(join(__dirname, "..", "..", "..", ".github", "workflows", "release-desktop.yml"), "utf8").replace(/\r\n/g, "\n");
 
 /** Each matrix leg's upload globs, by runner. */
 const legs = new Map<string, string[]>();
