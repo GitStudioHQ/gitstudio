@@ -7,6 +7,12 @@
 - **Support Merge Studio…** Merge Studio is free and open source, and if it saves you time you can now support it: **Merge Studio: Support Merge Studio…** offers **Sponsor on GitHub** (recurring support) or **Buy me a coffee** (a one-off tip) and opens the one you pick in your browser. It is in the command palette and on the last step of Get Started. It never opens by itself.
 - **How to report a problem, and what Merge Studio sends.** SECURITY.md says how to report a vulnerability privately (from the repository's Security tab) and that fixes go into the latest version. PRIVACY.md says what is true: Merge Studio makes no network requests. Bug reports now use a form that asks for the version, your operating system and editor, the git operation that stopped, and screenshots.
 
+### Fixed
+
+- **A conflict is written where it happened.** A conflict both sides inserted between two lines was written after the next line when only that line had been edited.
+- **An add/add conflict matches git's own file.** With no common base, each side carried an extra blank line inside the markers and the file lost its last line break; resolving by hand left a stray blank line. Left untouched, the file is now byte-for-byte what git wrote.
+- **Closing a repository whose git could not start no longer signals the editor's own processes.** Stopping a git that never started sent the signal to the whole process group.
+
 ## 1.1.0 — 2026-09-28
 
 ### Removed

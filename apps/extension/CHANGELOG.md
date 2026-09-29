@@ -31,6 +31,34 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   host name is kept.
 
 ### Fixed
+- **Push no longer re-creates a branch someone deleted on the remote.** When a
+  branch's remote copy was deleted but it still tracked it, Push (and pushing
+  a branch from the Branches view) published it again. It now stops and says
+  the branch it tracks is gone.
+- **A reword keeps its `#` lines after the rebase pauses.** Lines like
+  "#123 was the ticket" in a reworded message were deleted once the rebase
+  had stopped for a conflict or an edit.
+- **A rebase git refuses is no longer shown as stopped on conflicts.** With
+  `rebase.autoStash` on and conflicts still unresolved, the rebase is refused
+  up front, with the reason.
+- **Stash & Retry is not offered for a name git doesn't know.** A rebase onto,
+  or a cherry-pick or revert of, something that doesn't exist blamed your
+  changes; git refuses the name before it looks at them.
+- **An unreadable repository says so.** A `.git` file pointing nowhere read
+  as a detached HEAD, and the push review said "HEAD is detached".
+- **On Windows, File History, Line History, Open Changes and the Timeline
+  find the file's repository.** They compared paths with `/`, so on Windows
+  every file was "not inside an open Git repository".
+- **Sync's "upstream no longer exists" question names the upstream** — "tracks
+  origin/topic" — instead of leaving it out.
+- **Merge editor: a conflict is written where it happened.** A conflict both
+  sides inserted between two lines was written after the next line when only
+  that line had been edited. And an add/add conflict (no common base) no
+  longer carries an extra blank line on each side or loses the file's last
+  line break — left untouched, the file is exactly what git wrote.
+- **Closing a repository whose git could not start no longer signals the
+  editor's own processes.** Stopping a git that never started sent the signal
+  to the whole process group.
 - **An image in a pull request written as `//host/a.png` shows.** An address
   that starts with two slashes now means https, as it does on GitHub; it used
   to resolve against the page itself and show as a broken image.

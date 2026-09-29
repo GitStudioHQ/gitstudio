@@ -21,6 +21,15 @@ GitStudio…** offers GitHub Sponsors (recurring support) or a one-off tip. It
 sits in the command palette, at the bottom of the Changes view's **…** menu,
 and on the last step of Get Started. It never opens by itself.
 
+## Fixed
+
+- Push no longer re-creates a branch someone deleted on the remote.
+- On Windows, File History, Line History, Open Changes and the Timeline find
+  the file's repository again.
+- A reword keeps its `#` lines after the rebase pauses.
+- The merge editor writes a conflict where it happened, and an add/add
+  conflict without stray blank lines.
+
 ## Security
 
 - Crash reports no longer carry a commit's subject, or a branch name git

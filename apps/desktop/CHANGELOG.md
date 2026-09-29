@@ -71,6 +71,28 @@ but they share the same engine, so most Git behaviour lands in both at once.
   Dock doesn't get your shell's PATH, and a Windows app keeps the PATH it
   started with.
 
+- **Push no longer re-creates a branch someone deleted on the remote.** When a
+  branch's remote copy was deleted but it still tracked it, Push published it
+  again. It now stops and says the branch it tracks is gone.
+- **A repository with no commits yet shows "No commits yet"** in the graph,
+  not "Couldn't load history".
+- **A failed clone says why.** The clone sheet showed git's last line — often
+  a fragment like "and the repository exists." — instead of the reason.
+- **On Windows, repositories are grouped inside the folders they sit in.**
+  The folders you track came from the folder picker with backslashes, and
+  every repository landed outside them.
+- **Release tags show their date.** Annotated tags — most releases — came
+  back with no date.
+- **A reword keeps its `#` lines after the rebase pauses**, a rebase git
+  refuses up front is no longer shown as stopped on conflicts, and Stash &
+  Retry is not offered for a branch or commit git doesn't know.
+- **Merge editor: a conflict is written where it happened**, and an add/add
+  conflict no longer carries an extra blank line on each side.
+- **The Assistant:** cancelling a chat just as its message was sent could
+  crash the app's main process; an Azure OpenAI address ending in `/` before
+  its `?api-version=` produced a broken URL; and the first connection added on
+  a fresh install could leak into later ones.
+
 ### Security
 - **Crash reports no longer carry a commit's subject, or a branch name git
   prints without quotes.** When a rebase, cherry-pick, revert or `git am`

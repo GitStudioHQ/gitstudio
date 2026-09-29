@@ -2,10 +2,10 @@
 
 ## A launch screen
 
-The window now opens straight onto the GitStudio mark, in your chosen theme
-from the very first frame, and fades into the app the moment it's ready. The
-window also appears sooner than before. With **Reduce motion** on, it simply
-fades.
+The window now opens straight onto the whole GitStudio mark, in your chosen
+theme from the very first frame, and fades into the app the moment it's ready.
+The window also appears sooner than before. With **Reduce motion** on, nothing
+on it moves.
 
 ## Your tabs come back after you quit
 
@@ -33,6 +33,17 @@ from Gravatar** turns the Gravatar lookups off.
 **Help ▸ Sponsor GitStudio on GitHub…** and **Help ▸ Buy Me a Coffee…**, two
 buttons in **Settings ▸ About**, two entries in **⌘K**, and one quiet line at
 the foot of Home. Nothing pops up.
+
+## Fixed
+
+- Push no longer re-creates a branch someone deleted on the remote.
+- A repository with no commits yet shows "No commits yet" instead of an error.
+- A failed clone says why, not a fragment of git's last line.
+- On Windows, repositories are grouped inside the folders they sit in.
+- Release tags show their date.
+- The merge editor writes a conflict where it happened, and an add/add
+  conflict without stray blank lines.
+- Cancelling an Assistant chat just as it was sent could crash the app.
 
 ## Security
 
