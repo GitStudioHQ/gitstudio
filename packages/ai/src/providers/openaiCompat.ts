@@ -54,10 +54,12 @@ export class OpenAiCompatProvider implements Provider {
 
   private endpoint(): string {
     const base = this.opts.baseUrl.replace(/\/+$/, "");
-    // Azure deployments carry an `?api-version=` query; append the path before it.
+    // Azure deployments carry an `?api-version=` query; append the path before
+    // it — trimming the path's own trailing slash too, or "…/gpt/?api-version"
+    // became "…/gpt//chat/completions".
     const q = base.indexOf("?");
     if (q !== -1) {
-      return base.slice(0, q) + "/chat/completions" + base.slice(q);
+      return base.slice(0, q).replace(/\/+$/, "") + "/chat/completions" + base.slice(q);
     }
     return base + "/chat/completions";
   }

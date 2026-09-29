@@ -64,7 +64,7 @@ export interface GitRef {
    * one in perfect sync.
    */
   gone?: boolean;
-  /** Tip commit date, epoch seconds — every kind of ref has one. */
+  /** When the tip was made, epoch seconds — the commit's date, or an annotated tag's own. */
   date?: number;
   /** Tip commit subject. A remote branch or a tag with only a name and a sha
    *  cannot be told apart from its neighbours at a glance. */
