@@ -63,6 +63,15 @@ variants = {
         '<rect width="512" height="512" fill="url(#glow)"/>' + placed(cube, 0.84),
         TILE + GLOW,
     ),
+    # The dark tile with no glow behind the cube.
+    "gitstudio-square-dark-flat": svg(
+        '<rect width="512" height="512" fill="url(#tile)"/>' + placed(cube, 0.70),
+        TILE,
+    ),
+    "gitstudio-square-dark-flat-large": svg(
+        '<rect width="512" height="512" fill="url(#tile)"/>' + placed(cube, 0.84),
+        TILE,
+    ),
     # Plain black, no glow: the crispest at 40px next to other avatars.
     "gitstudio-square-black": svg('<rect width="512" height="512" fill="#000"/>' + placed(cube, 0.74)),
     # The white mark on the brand violet — the loudest, for a profile that should stand out.

@@ -81,6 +81,7 @@ squircle; the cube and graph are the app icon's own. 1024 px PNGs beside each SV
 |---|---|
 | `square/gitstudio-square-dark-large-1024.png` | **The GitHub organisation.** The icon's dark tile with its violet light, the mark filling the square. |
 | `square/gitstudio-square-dark-1024.png` | Circle crops (X, LinkedIn, Bluesky): the same, with room around the mark. |
+| `square/gitstudio-square-dark-flat-large-1024.png` / `-dark-flat-1024.png` | The same two, without the violet light. |
 | `square/gitstudio-square-black-1024.png` | Plain black — crispest at tiny sizes. |
 | `square/gitstudio-square-violet-1024.png` | The white mark on brand violet — the loudest. |
 | `square/gitstudio-square-light-1024.png` | The cube on a light ground. |
