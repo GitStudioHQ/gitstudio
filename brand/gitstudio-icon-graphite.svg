@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<!-- The GRAPHITE tile: what macOS 26 draws for the closed app from
+     apps/desktop/build/AppIcon.icon (icon.json's automatic-gradient seeded
+     #2B2B30, the cube layer placed at its native 900px, centred). The cube is
+     that file's own artwork, framed by the same viewBox zoom; the ground and
+     rim are sampled from the system's render of the packaged bundle
+     (NSWorkspace iconForFile). Rasterise with brand/rasterise.sh, then
+     brand/margined.py puts it on Apple's grid (gitstudio-dock-graphite-1024.png). -->
+<defs>
+<linearGradient id="gTile" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0%" stop-color="#34343A"/><stop offset="100%" stop-color="#2B2B30"/></linearGradient>
+<linearGradient id="gRim" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.34"/><stop offset="18%" stop-color="#FFFFFF" stop-opacity="0.07"/>
+  <stop offset="82%" stop-color="#FFFFFF" stop-opacity="0.04"/><stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.16"/></linearGradient>
+</defs>
+<rect width="1024" height="1024" rx="229" fill="url(#gTile)"/>
+<rect x="3" y="3" width="1018" height="1018" rx="226" fill="none" stroke="url(#gRim)" stroke-width="6"/>
+<svg x="62" y="62" width="900" height="900" viewBox="33 33 446 446"><defs>
+<linearGradient id="fTop" x1="0.1" y1="0" x2="0.7" y2="1">
+  <stop offset="0%" stop-color="#7B79A6"/><stop offset="100%" stop-color="#5D5B82"/></linearGradient>
+<linearGradient id="fLeft" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0%" stop-color="#39375A"/><stop offset="100%" stop-color="#2A2845"/></linearGradient>
+<linearGradient id="fRight" x1="0" y1="0" x2="0.4" y2="1">
+  <stop offset="0%" stop-color="#55527C"/><stop offset="100%" stop-color="#403E63"/></linearGradient>
+<linearGradient id="lane" gradientUnits="userSpaceOnUse" x1="256.0" y1="66.0" x2="256.0" y2="446.0">
+  <stop offset="0%" stop-color="#C4ADFF"/><stop offset="100%" stop-color="#9A78FF"/></linearGradient></defs><g>
+<path d="M256.0,66.0 L420.5,161.0 L256.0,256.0 L91.5,161.0 Z" fill="url(#fTop)"/>
+<path d="M420.5,161.0 L420.5,351.0 L256.0,446.0 L256.0,256.0 Z" fill="url(#fRight)"/>
+<path d="M91.5,161.0 L256.0,256.0 L256.0,446.0 L91.5,351.0 Z" fill="url(#fLeft)"/>
+<path d="M256.0,66.0 L420.5,161.0 L256.0,256.0 L91.5,161.0 Z" fill="none" stroke="#FFFFFF" stroke-opacity="0.42" stroke-width="4.6" stroke-linejoin="round"/>
+<path d="M256.0,66.0 L420.5,161.0 L420.5,351.0 L256.0,446.0 L91.5,351.0 L91.5,161.0 Z" fill="none" stroke="#FFFFFF" stroke-opacity="0.26" stroke-width="4.6" stroke-linejoin="round"/>
+<g fill="none" stroke-width="33" stroke-linecap="round">
+<path d="M256.0,256.0 L91.5,161.0" stroke="url(#lane)"/>
+<path d="M256.0,256.0 L420.5,161.0" stroke="url(#lane)"/>
+<path d="M256.0,256.0 L256.0,446.0" stroke="url(#lane)"/></g>
+<circle cx="91.5" cy="161.0" r="37" fill="#B49BFF"/><circle cx="420.5" cy="161.0" r="37" fill="#B49BFF"/><circle cx="256.0" cy="446.0" r="37" fill="#B49BFF"/><circle cx="256.0" cy="256.0" r="41.5" fill="#C2ABFF"/><circle cx="91.5" cy="161.0" r="17.0" fill="#2A2845"/><circle cx="420.5" cy="161.0" r="17.0" fill="#2A2845"/><circle cx="256.0" cy="446.0" r="17.0" fill="#2A2845"/><circle cx="256.0" cy="256.0" r="19.0" fill="#2A2845"/></g></svg>
+</svg>

@@ -12,6 +12,14 @@ but they share the same engine, so most Git behaviour lands in both at once.
 ## [2.4.0] - 2026-09-29
 
 ### Added
+- **Dark style: Graphite or Neon.** Settings ▸ Appearance has a new *Dark
+  style* choice, shown as each style's Dock icon beside a swatch of its
+  window, and it sets both at once. **Graphite** (the default) is the grey
+  icon macOS shows while GitStudio is closed, with the familiar dark theme, so
+  opening the app no longer changes the Dock icon. **Neon** is the
+  near-black icon with a deeper, more violet dark theme; its Dock icon applies
+  while GitStudio runs, and macOS still shows the Graphite icon while it is
+  closed. The launch screen opens in the chosen style from its first frame.
 - **A launch screen.** GitStudio's window now opens straight onto the
   whole GitStudio mark — the app icon's cube, its commit graph and the name,
   settling gently into place — instead of appearing late and painting itself

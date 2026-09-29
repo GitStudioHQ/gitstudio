@@ -2895,14 +2895,16 @@ export interface IpcChannels {
   "actions:setVariable": [{ name: string; value: string }, CommitActionResult];
   "actions:deleteVariable": [string, CommitActionResult];
   // ── Appearance ──
-  /** Set the macOS dock icon to the light/dark brand mark. Renderer resolves
-   *  the effective variant (it alone knows the in-app theme override). */
-  "appearance:dockIcon": [{ variant: "dark" | "light" }, void];
+  /** Set the macOS dock icon to the light/dark brand mark, in the dark style
+   *  picked in Settings (shared/darkStyle.ts). Renderer resolves the effective
+   *  variant (it alone knows the in-app theme override). `style` is optional
+   *  so an older page's call still reads as the default, Graphite. */
+  "appearance:dockIcon": [{ variant: "dark" | "light"; style?: "graphite" | "neon" }, void];
   // ── Window ──
   /** The launch screen is painted and the bundle has started (launch-reveal.js;
    *  theme-boot.js as a fallback): show the still-hidden window now, in that
    *  screen's theme, instead of after the whole bundle. */
-  "window:launchPainted": [{ theme: "dark" | "light" }, void];
+  "window:launchPainted": [{ theme: "dark" | "light"; style?: "graphite" | "neon" }, void];
 }
 
 export type IpcChannel = keyof IpcChannels;

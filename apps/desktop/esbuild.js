@@ -163,6 +163,11 @@ function copyStaticAssets() {
     // dockIconPath) so a runtime theme swap never shrinks the icon.
     "brand/gitstudio-dock-1024.png": "dock.png",
     "brand/gitstudio-dock-light-1024.png": "dock-light.png",
+    // Dark style ▸ Graphite (shared/darkStyle.ts): the tile macOS draws for
+    // the closed app, for a dev build's Dock (its bundle icon is Electron's)
+    // and Settings' preview.
+    "brand/gitstudio-dock-graphite-1024.png": "dock-graphite.png",
+    "brand/gitstudio-icon-graphite-512.png": "icon-graphite.png",
     "brand/gitstudio-icon.svg": "brand-icon.svg",
     "brand/gitstudio-icon-light.svg": "brand-icon-light.svg",
     "brand/gitstudio-wordmark-light.svg": "brand-wordmark-light.svg",

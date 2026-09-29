@@ -22,6 +22,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { join, basename, extname, dirname, resolve as resolvePath } from "node:path";
 import { readFile, writeFile, mkdir, stat, readdir, rename, rmdir, rm } from "node:fs/promises";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { DEFAULT_DARK_STYLE, parseDarkStyle, windowBackgroundFor, type DarkStyle } from "../shared/darkStyle";
+import { DockAppearance } from "./dockAppearance";
 import { redactCredentials } from "@gitstudio/host-bridge/scrub";
 import { RepoStore, repoScope } from "./repoStore";
 import { cannotOpenNotice, droppedTabsNotice, gitMissingNotice, tabsFullNotice, missingFolderError, missingFolderResult } from "./repoNotice";
@@ -336,16 +338,17 @@ async function createWindow(): Promise<void> {
 }
 
 /** The window's own background for a theme: the renderer's --app-bg, which
- *  is also the launch screen's ground (test/launchScreen.test.ts). */
-function windowBackground(theme: "dark" | "light"): string {
-  return theme === "light" ? "#eef1f5" : "#0d1016";
+ *  is also the launch screen's ground (test/launchScreen.test.ts) — in the
+ *  dark style picked in Settings (shared/darkStyle.ts). */
+function windowBackground(theme: "dark" | "light", style: DarkStyle = darkStyleNow()): string {
+  return windowBackgroundFor(theme, style);
 }
 
 /** Show a window that is still hidden, once — in `theme`'s colour when the
  *  renderer said which theme its first frame was painted in. */
-function revealWindow(win: BrowserWindow | undefined, theme?: "dark" | "light"): void {
+function revealWindow(win: BrowserWindow | undefined, theme?: "dark" | "light", style?: DarkStyle): void {
   if (!win || win.isDestroyed() || win.isVisible()) return;
-  if (theme) win.setBackgroundColor(windowBackground(theme));
+  if (theme) win.setBackgroundColor(windowBackground(theme, style ?? darkStyleNow()));
   win.show();
 }
 
@@ -355,15 +358,6 @@ function iconPath(variant: "dark" | "light"): string {
   return join(__dirname, variant === "light" ? "../renderer/icon-light.png" : "../renderer/icon.png");
 }
 
-/** The DOCK tile for a theme variant: the same artwork on Apple's icon grid
- *  (the tile is 824/1024 of the canvas, transparent margins), so it sits at
- *  the size of every other icon in the Dock. The window icon above stays
- *  full-bleed — Windows and Linux taskbars expect that. */
-function dockIconPath(variant: "dark" | "light"): string {
-  return join(__dirname, variant === "light" ? "../renderer/dock-light.png" : "../renderer/dock.png");
-}
-
-
 /** Brand icon for the window `icon:`; electron-builder embeds the platform icon,
  *  this is the dev/window one. Tracks the OS scheme so it isn't visibly wrong. */
 function appIcon(): string {
@@ -371,26 +365,28 @@ function appIcon(): string {
 }
 
 /**
- * Swap the macOS dock icon to the given brand variant (best-effort).
- *
- * This used to return early on macOS 26 — the system renders the bundle's Icon
- * Composer icon itself, and the worry was that handing `dock.setIcon` a PNG
- * would get it framed as a smaller "legacy" icon on its own backing. The result
- * was a Settings control that did nothing: the dock never matched what the
- * selector said was picked.
- *
- * The framing concern is already answered by the artwork. `brand/margined.py`
- * puts the tile on Apple's grid (824px of a 1024 canvas, transparent margins),
- * which is exactly the geometry the legacy path expects — that script exists
- * because a full-bleed PNG rendered visibly larger than its neighbours. So the
- * swap runs everywhere now, and a picked icon is the icon you get.
+ * The Dock tile, and the appearance the page last reported (dockAppearance.ts):
+ * remembered in userData so a start paints the right tile and window ground
+ * before the page has said anything. Graphite, the default, in a packaged
+ * macOS build is the bundle's own icon — nothing is drawn over it, so opening
+ * GitStudio does not change what the Dock showed while it was closed.
  */
-function setDockIcon(variant: "dark" | "light"): void {
-  try {
-    app.dock?.setIcon(dockIconPath(variant));
-  } catch {
-    /* non-macOS or missing — harmless */
-  }
+let dockAppearance: DockAppearance | undefined;
+/** The dark style the page last reported (this run, or the last). */
+function darkStyleNow(): DarkStyle {
+  return dockAppearance?.style ?? DEFAULT_DARK_STYLE;
+}
+
+function initDockAppearance(): DockAppearance {
+  const dock = new DockAppearance(join(app.getPath("userData"), "gitstudio-appearance.json"), {
+    // Typed NativeImage | string, but Electron's DockSetIcon takes null as "no
+    // image" and AppKit restores the bundle's icon for a nil one.
+    setIcon: (image) => app.dock?.setIcon(image as string),
+    rendererDir: join(__dirname, "../renderer"),
+    bundleIsGraphite: app.isPackaged && process.platform === "darwin",
+  });
+  dock.load();
+  return dock;
 }
 
 // ── Menu ─────────────────────────────────────────────────────────────────────
@@ -1478,14 +1474,15 @@ function registerIpc(): void {
   // Appearance: the renderer owns the in-app theme override, so it tells us
   // which brand variant the dock should wear.
   handle("appearance:dockIcon", async (payload) => {
-    setDockIcon(payload.variant);
+    dockAppearance?.report(payload.variant, payload.style);
   });
 
   // The launch screen is painted in the page and the bundle is running: show
   // its window (src/renderer/launch-reveal.js says why not earlier).
   handle("window:launchPainted", async (payload, event) => {
     const theme = payload?.theme === "light" || payload?.theme === "dark" ? payload.theme : undefined;
-    revealWindow(BrowserWindow.fromWebContents(event.sender) ?? undefined, theme);
+    const style = payload?.style === undefined ? undefined : parseDarkStyle(payload.style);
+    revealWindow(BrowserWindow.fromWebContents(event.sender) ?? undefined, theme, style);
   });
 }
 
@@ -1521,6 +1518,9 @@ async function boot(): Promise<void> {
   app.on("web-contents-created", (_e, contents) => hardenWebContents(contents));
 
   const state = await loadState();
+  // Before the window exists: its background and the Dock tile are both the
+  // dark style the last run's page chose.
+  dockAppearance = initDockAppearance();
   repos = new RepoStore(state.recent);
   appSettings = await AppSettings.load(app.getPath("userData"), {
     defaultCloneDir: managedReposDir(),
@@ -1618,10 +1618,12 @@ async function boot(): Promise<void> {
 
   registerIpc();
   buildMenu();
-  // Dev builds show Electron's dock icon; force the GitStudio brand mark. Pick a
-  // sensible initial variant from the OS scheme so it doesn't flash the wrong
-  // tile before the renderer reports its (possibly overridden) theme.
-  setDockIcon(nativeTheme.shouldUseDarkColors ? "dark" : "light");
+  // The Dock tile before the page has reported anything: what the LAST run's
+  // page resolved (gitstudio-appearance.json), else the OS scheme in the
+  // default style. On Graphite in a packaged build that is the bundle's own
+  // icon — nothing is set, so the Dock shows exactly what it showed while the
+  // app was closed. Dev builds need a tile: their bundle icon is Electron's.
+  dockAppearance.apply(dockAppearance.variant ?? (nativeTheme.shouldUseDarkColors ? "dark" : "light"));
   // Bring back the tabs the last session had open, with the one that was in
   // front (issue #32). A tab whose folder is gone — deleted, moved, an
   // unmounted drive — is left out, and ONE quiet notice names what was.

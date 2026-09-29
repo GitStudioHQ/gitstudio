@@ -207,6 +207,11 @@ const CASES = [
   ["row-meta-columns-align", "explore~type:git~key:Enter"],
   ["the-dock-reserve-tracks-the-dock", "changes~click:.dock-chevron"],
   ["changing-the-theme-keeps-what-you-typed", "settings"],
+  // Settings ▸ Appearance ▸ Dark style: Graphite (default) or Neon, for the
+  // window and the Dock; and a window opened on Neon is Neon throughout.
+  ["the-dark-style-picks-the-window-and-the-dock", "settings"],
+  ["the-neon-style-paints-from-its-tokens", "graph", { extra: "darkstyle=neon" }],
+  ["the-launch-screen-covers-the-start-and-hands-off", "dashboard", { extra: "darkstyle=neon" }],
   ["a-compare-diff-that-fails-says-so", "compare~text:Changed%20files"],
   ["placeholders-fit-their-field", "orgs"],
   ["placeholders-fit-their-field", "branches"],

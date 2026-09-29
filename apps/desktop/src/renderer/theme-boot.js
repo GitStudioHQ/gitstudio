@@ -20,22 +20,35 @@
   // what stops a window pinned to Light from opening on a dark frame when the
   // OS is dark — the launch screen below is the first thing anyone sees.
   var saved = null;
-  if (forced !== "light" && forced !== "dark") {
-    try {
-      var prefs = JSON.parse(localStorage.getItem("gitstudio.ui.prefs") || "null");
-      var mode = prefs && prefs.themeMode;
-      if (mode === "light" || mode === "dark") saved = mode;
-    } catch (e) {
-      /* no storage, or a blob that does not parse — follow the OS */
-    }
+  // Settings ▸ Appearance ▸ Dark style (shared/darkStyle.ts): "neon" puts the
+  // Neon token block's class on <body> beside the theme's, so the first frame
+  // is painted on that ground; anything else is Graphite, the default. The
+  // harness passes ?darkstyle= the way it passes ?theme=.
+  var style = "graphite";
+  var prefs = null;
+  try {
+    prefs = JSON.parse(localStorage.getItem("gitstudio.ui.prefs") || "null");
+  } catch (e) {
+    /* no storage, or a blob that does not parse — follow the OS */
   }
+  if (forced !== "light" && forced !== "dark") {
+    var mode = prefs && prefs.themeMode;
+    if (mode === "light" || mode === "dark") saved = mode;
+  }
+  var forcedStyle = null;
+  try {
+    forcedStyle = new URLSearchParams(location.search).get("darkstyle");
+  } catch (e) {
+    /* as above */
+  }
+  if (forcedStyle === "neon" || (forcedStyle !== "graphite" && prefs && prefs.darkStyle === "neon")) style = "neon";
   var light =
     forced === "light" ||
     (forced !== "dark" &&
       (saved
         ? saved === "light"
         : !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches)));
-  document.body.className = light ? "vscode-light" : "vscode-dark";
+  document.body.className = (light ? "vscode-light" : "vscode-dark") + (style === "neon" ? " gs-neon" : "");
 
   // Tag the OS on <html> so the topbar can reserve room for the macOS traffic
   // lights ONLY on macOS (Windows/Linux draw their window controls elsewhere).
@@ -73,7 +86,7 @@
     var bridge = window.gitstudio;
     if (bridge && typeof bridge.invoke === "function") {
       try {
-        var p = bridge.invoke("window:launchPainted", { theme: light ? "light" : "dark" });
+        var p = bridge.invoke("window:launchPainted", { theme: light ? "light" : "dark", style: style });
         if (p && typeof p.catch === "function") p.catch(function () {});
       } catch (e) {
         /* main shows the window on ready-to-show regardless */

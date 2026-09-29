@@ -28,9 +28,12 @@
   var bridge = window.gitstudio;
   if (!bridge || typeof bridge.invoke !== "function") return;
   // The launch screen's theme: theme-boot.js put it on <body> before it painted.
-  var light = /(^|\s)vscode-light(\s|$)/.test((document.body && document.body.className) || "");
+  var cls = (document.body && document.body.className) || "";
+  var light = /(^|\s)vscode-light(\s|$)/.test(cls);
+  // …and its dark style (the Neon class, or Graphite), for the window's ground.
+  var style = /(^|\s)gs-neon(\s|$)/.test(cls) ? "neon" : "graphite";
   try {
-    var p = bridge.invoke("window:launchPainted", { theme: light ? "light" : "dark" });
+    var p = bridge.invoke("window:launchPainted", { theme: light ? "light" : "dark", style: style });
     if (p && typeof p.catch === "function") p.catch(function () {});
   } catch (e) {
     /* main shows the window on ready-to-show regardless */

@@ -75,6 +75,11 @@
         /* Ease-in: the ground holds while the mark leaves (below), then goes. */
         transition: opacity 220ms cubic-bezier(0.4, 0, 1, 1);
       }
+      /* Dark style ▸ Neon: the Neon block's --app-bg, and a stronger glow. */
+      body.vscode-dark.gs-neon #launch {
+        --lc-bg: #09090e;
+        --lc-glow: rgba(124, 92, 240, 0.28);
+      }
       body.vscode-light #launch {
         --lc-bg: #eef1f5;
         --lc-edge: rgba(27, 31, 42, 0.16);

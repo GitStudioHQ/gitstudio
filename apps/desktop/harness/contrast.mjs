@@ -15,6 +15,7 @@
 //
 //   node harness/contrast.mjs <scene> [--theme=light] [--width=1600] [--all]
 //   node harness/contrast.mjs --sweep [--theme=light]     every default scene
+//   node harness/contrast.mjs --sweep --theme=dark --darkstyle=neon   …in a dark style
 //
 // Exit code is 1 when anything fails, so it can gate a run.
 
@@ -73,6 +74,8 @@ const flags = Object.fromEntries(
 const positional = argv.filter((a) => !a.startsWith("--"));
 const theme = flags.theme ?? "light";
 const width = Number(flags.width ?? 1600);
+// --darkstyle=neon|graphite: Settings ▸ Appearance ▸ Dark style (dark theme only).
+const darkStyle = flags.darkstyle === "neon" || flags.darkstyle === "graphite" ? flags.darkstyle : "";
 
 /** The scenes worth sweeping: one per surface, plus the detail pages. */
 const SCENES = [
@@ -333,7 +336,7 @@ function run(scene) {
   // wrapping here produced an expression statement whose value was discarded
   // and every scene came back null.
   const probe = probeFile(PAGE, AUDIT);
-  const url = `file://${PAGE}?scene=${encodeURIComponent(scene)}&theme=${theme}&probe=${probe.param}`;
+  const url = `file://${PAGE}?scene=${encodeURIComponent(scene)}&theme=${theme}&probe=${probe.param}${darkStyle ? `&darkstyle=${darkStyle}` : ""}`;
   return new Promise((done) => {
     execFile(
       CHROME,

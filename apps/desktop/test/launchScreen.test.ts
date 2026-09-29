@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import { LAUNCH_FADE_MS } from "../src/renderer/launchScreen";
+import { WINDOW_BACKGROUND, windowBackgroundFor } from "../src/shared/darkStyle";
 
 // The launch screen is the window's first frame: inline CSS + inline SVG in
 // index.html, painted before the bundle runs, faded out by launchScreen.ts.
@@ -65,15 +66,20 @@ test("the bundle is deferred, so the launch screen paints while it compiles", ()
   assert.match(html, /<script src="\.\/theme-boot\.js"><\/script>/, "theme-boot stays synchronous: it sets the theme before paint");
 });
 
-test("its ground is the app's canvas and the window's own background, in both themes", () => {
+test("its ground is the app's canvas and the window's own background, in both themes and both dark styles", () => {
   const darkApp = tokenIn(appCss, "body.vscode-dark", "--app-bg");
+  const neonApp = tokenIn(appCss, "body.vscode-dark.gs-neon", "--app-bg");
   const lightApp = tokenIn(appCss, "body.vscode-light", "--app-bg");
-  assert.equal(tokenIn(style, "#launch", "--lc-bg"), darkApp, "dark launch ground = dark --app-bg");
+  assert.notEqual(neonApp, darkApp, "Neon has a ground of its own");
+  assert.equal(tokenIn(style, "#launch", "--lc-bg"), darkApp, "dark launch ground = dark (Graphite) --app-bg");
+  assert.equal(tokenIn(style, "body.vscode-dark.gs-neon #launch", "--lc-bg"), neonApp, "Neon launch ground = Neon --app-bg");
   assert.equal(tokenIn(style, "body.vscode-light #launch", "--lc-bg"), lightApp, "light launch ground = light --app-bg");
-  const win = /function windowBackground[\s\S]*?return theme === "light" \? "(#[0-9a-f]+)" : "(#[0-9a-f]+)";/.exec(mainTs);
-  assert.ok(win, "main.ts windowBackground()");
-  assert.equal(win[1], lightApp, "main's light window background");
-  assert.equal(win[2], darkApp, "main's dark window background");
+  // main paints the window from shared/darkStyle.ts before the page has.
+  assert.match(mainTs, /function windowBackground\([^)]*\)[^{]*\{\s*return windowBackgroundFor\(theme, style\);/, "main.ts windowBackground() is the shared table");
+  assert.equal(WINDOW_BACKGROUND.light, lightApp, "main's light window background");
+  assert.equal(WINDOW_BACKGROUND.graphite, darkApp, "main's Graphite window background");
+  assert.equal(WINDOW_BACKGROUND.neon, neonApp, "main's Neon window background");
+  assert.equal(windowBackgroundFor("light", "neon"), lightApp, "Light ignores the dark style");
 });
 
 test("it animates only transform and opacity, and reduced motion is a plain fade", () => {
@@ -273,11 +279,36 @@ test("the first frame is painted in the theme the person picked", () => {
   assert.equal(boot({ osLight: true, prefs: '{"themeMode":"dark"}', search: "?theme=light" }).theme, "vscode-light", "?theme= (the harness) wins");
 });
 
+test("the first frame is painted in the dark style the person picked", () => {
+  assert.equal(boot({ osLight: false }).theme, "vscode-dark", "nothing picked: Graphite, the plain dark block");
+  assert.equal(boot({ osLight: false, prefs: '{"darkStyle":"graphite"}' }).theme, "vscode-dark", "Graphite");
+  assert.equal(boot({ osLight: false, prefs: '{"darkStyle":"neon"}' }).theme, "vscode-dark gs-neon", "Neon");
+  assert.equal(boot({ osLight: true, prefs: '{"themeMode":"dark","darkStyle":"neon"}' }).theme, "vscode-dark gs-neon", "Neon, dark pinned on a light OS");
+  assert.equal(boot({ osLight: false, prefs: '{"darkStyle":"magenta"}' }).theme, "vscode-dark", "an unknown style is Graphite");
+  assert.equal(boot({ osLight: false, prefs: "{not json" }).theme, "vscode-dark", "a broken blob is Graphite");
+  assert.equal(boot({ osLight: false, search: "?darkstyle=neon" }).theme, "vscode-dark gs-neon", "?darkstyle= (the harness)");
+  assert.equal(boot({ osLight: false, prefs: '{"darkStyle":"neon"}', search: "?darkstyle=graphite" }).theme, "vscode-dark", "?darkstyle= wins");
+  // The class sits beside the theme's in Light too — no light rule reads it,
+  // so a flip to Dark needs nothing more.
+  assert.equal(boot({ osLight: true, prefs: '{"darkStyle":"neon"}' }).theme, "vscode-light gs-neon");
+});
+
 test("the window is asked for as the bundle starts, in the launch screen's theme — once", () => {
   // The usual start: the bundle runs 30ms after the branded frame.
   const t = boot({ osLight: false, prefs: '{"themeMode":"light"}', bundleAt: 30 });
-  assert.deepEqual(t.told, [["window:launchPainted", { theme: "light" }, 30]], "asked once, from the bundle, in Light");
-  assert.deepEqual(boot({ osLight: false, bundleAt: 30 }).told, [["window:launchPainted", { theme: "dark" }, 30]]);
+  assert.deepEqual(t.told, [["window:launchPainted", { theme: "light", style: "graphite" }, 30]], "asked once, from the bundle, in Light");
+  assert.deepEqual(boot({ osLight: false, bundleAt: 30 }).told, [["window:launchPainted", { theme: "dark", style: "graphite" }, 30]]);
+  // …and in its dark style, so main's window ground is the page's.
+  assert.deepEqual(
+    boot({ osLight: false, prefs: '{"darkStyle":"neon"}', bundleAt: 30 }).told,
+    [["window:launchPainted", { theme: "dark", style: "neon" }, 30]],
+    "from the bundle (launch-reveal.js), Neon",
+  );
+  assert.deepEqual(
+    boot({ osLight: false, prefs: '{"darkStyle":"neon"}', until: 1000 }).told,
+    [["window:launchPainted", { theme: "dark", style: "neon" }, 150]],
+    "from theme-boot.js's fallback, Neon",
+  );
 });
 
 test("a bundle slow to arrive still gets its window 150ms after the branded frame", () => {

@@ -9,6 +9,8 @@
 //
 // We honor `prefers-color-scheme` and react to OS theme changes live.
 
+import { NEON_CLASS, type DarkStyle } from "../shared/darkStyle";
+
 export type AppTheme = "dark" | "light";
 /** The user's choice: follow the OS, or pin light/dark. */
 export type ThemeMode = "system" | "light" | "dark";
@@ -21,6 +23,19 @@ export function applyTheme(theme: AppTheme): void {
   body.classList.remove("vscode-dark", "vscode-light");
   body.classList.add(theme === "light" ? "vscode-light" : "vscode-dark");
   body.dataset.theme = theme;
+}
+
+/**
+ * Apply the dark style (Settings ▸ Appearance ▸ Dark style). A class beside
+ * the theme's, not instead of it: every `body.vscode-dark` rule still applies,
+ * and app.css's `body.vscode-dark.gs-neon` token block re-points the tokens.
+ * Harmless in Light — no light rule reads it — so switching theme never has
+ * to remember it.
+ */
+export function applyDarkStyle(style: DarkStyle): void {
+  const body = document.body;
+  body.classList.toggle(NEON_CLASS, style === "neon");
+  body.dataset.darkStyle = style;
 }
 
 /** Resolve the current OS color-scheme preference. */

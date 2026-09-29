@@ -50,6 +50,7 @@ text outlined to paths, so they render without Inter installed.)
 | File | What it is |
 |---|---|
 | `gitstudio-icon.svg` | **Master mark** — the app icon (dark squircle). Source of truth. |
+| `gitstudio-icon-graphite.svg` | The **Graphite** tile — the macOS 26 closed-app icon (apps/desktop/build/AppIcon.icon) as a flat file. Rasterised by `rasterise.sh` to `-graphite-1024/-512.png`; `margined.py` makes `gitstudio-dock-graphite-1024.png`, which is also the macOS 11–15 icns. |
 | `gitstudio-favicon.svg` | Same mark, for favicon use. |
 | `gitstudio-mark.svg` | Mark only, transparent background — for dark surfaces. |
 | `gitstudio-mark-mono-white.svg` / `-ink.svg` | One-color mark (white on dark, ink on light). |

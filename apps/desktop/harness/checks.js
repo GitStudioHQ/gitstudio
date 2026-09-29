@@ -1036,7 +1036,8 @@
       if (!b) return;
       const light = new URLSearchParams(location.search).get("theme") === "light";
       c.ok(b.bundleNotRun, "…and was captured before any app code ran (#boot still in #root)");
-      c.eq(b.theme, light ? "vscode-light" : "vscode-dark", "painted in the right theme from the first frame");
+      const neonStyle = new URLSearchParams(location.search).get("darkstyle") === "neon";
+      c.eq(b.theme, (light ? "vscode-light" : "vscode-dark") + (neonStyle ? " gs-neon" : ""), "painted in the right theme and dark style from the first frame");
       c.eq(b.display, "grid", "it is displayed");
       c.eq(b.opacity, "1", "the ground is opaque (only the mark animates in)");
       c.ok(b.covers, "it covers the whole window");
@@ -1045,7 +1046,7 @@
       c.eq(b.pointerEvents, "auto", "while it is up, clicks do not fall through to an invisible app");
       c.eq(b.appRegion, "drag", "while it is up, it drags the window like a title bar");
       c.eq(b.bg, getComputedStyle(document.body).backgroundColor, "its ground is the app's own canvas (--app-bg)");
-      c.eq(b.bg, light ? "rgb(238, 241, 245)" : "rgb(13, 16, 22)", "…which is the theme's canvas");
+      c.eq(b.bg, light ? "rgb(238, 241, 245)" : neonStyle ? "rgb(9, 9, 14)" : "rgb(13, 16, 22)", "…which is the theme's canvas, in its dark style");
       c.eq(b.ink, light ? "rgb(27, 31, 42)" : "rgb(245, 243, 255)", "the wordmark's 'Git' is the theme's ink");
       c.eq(b.cubeTop, "rgb(123, 121, 166)", "the cube wears the Dock icon's slate, in both themes");
       c.eq(b.node, "rgb(180, 155, 255)", "the commit graph is the icon's violet");
@@ -2421,6 +2422,93 @@
         !!document.querySelector(`[data-gs-marker="${marker}"]`),
         "the OTHER cards were not rebuilt — nothing typed into them is lost",
       );
+    },
+
+    // Settings ▸ Appearance ▸ Dark style. The owner: "both dark themes are
+    // cool (iconwise) … an option to choose between the neon dark theme and
+    // the grayish dark theme, both for the app and for the icon". One control,
+    // two looks, each previewed as its Dock tile and a swatch of its window,
+    // and a pick moves the window AND the Dock. Graphite is the default — it
+    // is the icon macOS shows for the closed app, so opening it changes nothing.
+    "the-dark-style-picks-the-window-and-the-dock": async (f) => {
+      const c = check(f);
+      const opts = $$(".settings-style-opt");
+      c.eq(opts.map((o) => o.dataset.style).join(","), "graphite,neon", "two looks, Graphite first");
+      c.eq(opts.map((o) => o.querySelector(".settings-style-name")?.textContent).join(","), "Graphite,Neon", "named");
+      if (opts.length !== 2) return;
+      const [graphite, neon] = opts;
+      const group = graphite.parentElement;
+      c.eq(group?.getAttribute("role"), "group", "a labelled group");
+      c.eq(document.getElementById(group?.getAttribute("aria-labelledby") ?? "")?.textContent, "Dark style", "…labelled Dark style");
+      for (const o of opts) {
+        const img = o.querySelector("img.settings-style-icon");
+        c.ok(!!img && img.complete && img.naturalWidth > 0, `${o.dataset.style}: its Dock tile preview loads (${img?.getAttribute("src")})`);
+        c.ok(!!o.querySelector(".settings-style-swatch .sw-sel"), `${o.dataset.style}: a swatch of its window`);
+      }
+      c.eq(graphite.querySelector("img")?.getAttribute("src"), "./icon-graphite.png", "Graphite previews the graphite tile");
+      c.eq(neon.querySelector("img")?.getAttribute("src"), "./icon.png", "Neon previews the neon tile");
+      // Each swatch in its OWN colours, whichever style is on.
+      const ground = (o) => getComputedStyle(o.querySelector(".settings-style-swatch")).backgroundColor;
+      c.eq(ground(graphite), "rgb(13, 16, 22)", "the Graphite swatch is Graphite's ground");
+      c.eq(ground(neon), "rgb(9, 9, 14)", "the Neon swatch is Neon's ground");
+
+      const appBg = () => getComputedStyle(document.body).backgroundColor;
+      const dockCalls = () => (window.__GS_INVOKED ?? []).filter((r) => r.channel === "appearance:dockIcon");
+      const prefs = () => JSON.parse(localStorage.getItem("gitstudio.ui.prefs") || "{}");
+      // Nothing picked: Graphite.
+      c.eq(graphite.getAttribute("aria-pressed"), "true", "Graphite is the default");
+      c.eq(neon.getAttribute("aria-pressed"), "false", "…and Neon is not");
+      c.ok(!document.body.classList.contains("gs-neon"), "the window is Graphite");
+      c.eq(appBg(), "rgb(13, 16, 22)", "…on Graphite's ground");
+      const boot = dockCalls().at(-1)?.payload;
+      c.eq(JSON.stringify(boot), JSON.stringify({ variant: "dark", style: "graphite" }), "and the Dock was told Graphite");
+      // Picked like every selected thing here: lit, never lined.
+      const lit = (o) => getComputedStyle(o);
+      c.ok(/rgba?\(/.test(lit(graphite).boxShadow) && lit(graphite).boxShadow.split("rgb").length > 2, `the picked one glows (${lit(graphite).boxShadow})`);
+      c.eq(lit(graphite).borderStyle, "none", "…with no border");
+      c.ok(lit(graphite).backgroundColor !== lit(neon).backgroundColor, "…and a tinted fill the other has not");
+
+      neon.click();
+      await settle(300);
+      c.eq(neon.getAttribute("aria-pressed"), "true", "Neon is picked");
+      c.eq(graphite.getAttribute("aria-pressed"), "false", "…and Graphite is not");
+      c.ok(document.body.classList.contains("gs-neon"), "the window wears Neon's class");
+      c.eq(appBg(), "rgb(9, 9, 14)", "…and Neon's ground, from the tokens");
+      c.eq(getComputedStyle(document.body).getPropertyValue("--app-panel").trim(), "#0e0e15", "…every token re-pointed (--app-panel)");
+      c.eq(prefs().darkStyle, "neon", "persisted for the next launch's first frame");
+      c.eq(JSON.stringify(dockCalls().at(-1)?.payload), JSON.stringify({ variant: "dark", style: "neon" }), "the Dock is told Neon");
+      c.eq($(".settings-logo-preview")?.getAttribute("src"), "./icon.png", "the App icon preview shows the neon tile");
+
+      graphite.click();
+      await settle(300);
+      c.ok(!document.body.classList.contains("gs-neon"), "back to Graphite");
+      c.eq(appBg(), "rgb(13, 16, 22)", "…on Graphite's ground");
+      c.eq(prefs().darkStyle, "graphite", "persisted");
+      c.eq(JSON.stringify(dockCalls().at(-1)?.payload), JSON.stringify({ variant: "dark", style: "graphite" }), "the Dock is told Graphite");
+      c.eq($(".settings-logo-preview")?.getAttribute("src"), "./icon-graphite.png", "the App icon preview shows the graphite tile");
+    },
+
+    // A window opened on Neon is Neon from its first frame to the app: the
+    // launch screen's ground, the body class the renderer keeps, and the
+    // tokens every surface paints from.
+    "the-neon-style-paints-from-its-tokens": async (f) => {
+      const c = check(f);
+      c.eq(launchAtBoot?.theme, "vscode-dark gs-neon", "the first frame is already Neon");
+      c.eq(launchAtBoot?.bg, "rgb(9, 9, 14)", "…on Neon's ground");
+      await settle(300);
+      c.ok(document.body.classList.contains("gs-neon") && document.body.classList.contains("vscode-dark"), "the renderer kept it beside the theme");
+      c.eq(document.body.dataset.darkStyle, "neon", "and says so on <body>");
+      const cs = getComputedStyle(document.body);
+      c.eq(cs.backgroundColor, "rgb(9, 9, 14)", "the canvas is Neon's");
+      for (const [name, want] of [["--app-panel", "#0e0e15"], ["--app-border", "#221f31"], ["--vscode-editor-background", "#0e0e15"], ["--gs-accent-ink", "#b39bff"]]) {
+        c.eq(cs.getPropertyValue(name).trim(), want, `${name} is Neon's`);
+      }
+      // A real surface, not just the token: the top bar paints from --app-panel.
+      const bar = $(".topbar");
+      c.ok(!!bar, "the top bar is up");
+      if (bar) c.eq(getComputedStyle(bar).backgroundColor, "rgb(14, 14, 21)", "the top bar is Neon's panel");
+      const dock = (window.__GS_INVOKED ?? []).filter((r) => r.channel === "appearance:dockIcon").at(-1);
+      c.eq(JSON.stringify(dock?.payload), JSON.stringify({ variant: "dark", style: "neon" }), "the Dock was told Neon at launch");
     },
 
     // The dock is an overlay footer: it does not shrink the scrollers above it,

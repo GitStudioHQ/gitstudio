@@ -177,6 +177,67 @@ body.vscode-dark {
     var(--app-bg);
 }
 
+/* ── Neon dark tokens ──────────────────────────────────────────────────────
+   Settings ▸ Appearance ▸ Dark style ▸ Neon (shared/darkStyle.ts): the dark
+   theme on the neon icon's own ground — the near-black tile of
+   brand/gitstudio-icon.svg (#08080C–#1B1B27) — with the brand violet carried
+   further into selection, focus and the canvas glow. Graphite, the default, is
+   the block above, unchanged.
+
+   Only tokens move. Every surface already paints from these names, so the
+   whole app follows without one rule of its own; theme-boot.js puts the class
+   on <body> before the first frame and index.html's #launch reads the same
+   ground (test/launchScreen.test.ts), as does main's window background
+   (shared/darkStyle.ts WINDOW_BACKGROUND.neon).
+
+   Contrast is held to Graphite's (harness/contrast.mjs over both): the ground
+   is darker, so text and muted ink keep or gain ratio; the lifted surfaces
+   carry a violet cast instead of slate blue. */
+body.vscode-dark.gs-neon {
+  --vscode-foreground: #dddbe8;
+  --vscode-descriptionForeground: #938fab;
+  --vscode-editor-background: #0e0e15;
+  --vscode-editor-foreground: #dddbe8;
+  --vscode-editorLineNumber-foreground: #7f7b99;
+  --vscode-editorLineNumber-activeForeground: #938fab;
+  --vscode-editorCursor-foreground: #dddbe8;
+  --vscode-editor-selectionBackground: #33295e;
+  --vscode-editor-inactiveSelectionBackground: #272042;
+  --vscode-editorWidget-background: #16141f;
+  --vscode-editorWidget-border: #292539;
+  --vscode-scrollbarSlider-background: #4d476955;
+  --vscode-scrollbarSlider-hoverBackground: #5d577c88;
+  --vscode-scrollbarSlider-activeBackground: #6c6690aa;
+  --vscode-editorIndentGuide-background: #201d2e;
+
+  --app-bg: #09090e;
+  --app-panel: #0e0e15;
+  --app-elevated: #14131d;
+  --app-border: #221f31;
+  --app-hover: #1b1929;
+  --app-active: #28213f;
+  --app-muted: #938fab;
+
+  --gs-accent-ink: #b39bff;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.40), 0 1px 1px rgba(0, 0, 0, 0.28);
+  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.50), 0 1px 3px rgba(0, 0, 0, 0.36);
+  --shadow-lg: 0 18px 44px rgba(0, 0, 0, 0.60), 0 4px 12px rgba(0, 0, 0, 0.38);
+  --shadow-pop: 0 20px 56px rgba(0, 0, 0, 0.68), 0 2px 10px rgba(0, 0, 0, 0.46);
+  /* The violet, more present: a lit selection is lit a little brighter and
+     glows a little wider, and the focus ring and washes carry more of it. */
+  --ring: 0 0 0 3px color-mix(in srgb, var(--gs-accent) 34%, transparent);
+  --accent-soft: color-mix(in srgb, var(--gs-accent) 19%, transparent);
+  --accent-line: color-mix(in srgb, var(--gs-accent) 48%, var(--app-border));
+  --sel-fill: color-mix(in srgb, var(--gs-accent) 22%, transparent);
+  --sel-fill-strong: color-mix(in srgb, var(--gs-accent) 32%, transparent);
+  --sel-glow: 0 0 20px -4px color-mix(in srgb, var(--gs-accent) 85%, transparent);
+  --sel-glow-soft: 0 0 14px -5px color-mix(in srgb, var(--gs-accent) 75%, transparent);
+  --canvas: radial-gradient(1200px 560px at 50% -340px,
+      color-mix(in srgb, var(--gs-accent) 13%, transparent), transparent 70%),
+    var(--app-bg);
+}
+
 /* ── Light theme tokens ────────────────────────────────────────────────────── */
 /* ── The VS Code vocabulary the SHARED packages speak ─────────────────────
    On `body`, unqualified, so BOTH themes match it. It lived in the
@@ -4349,6 +4410,81 @@ body.resizing-h .cmp-diffpane .monaco-editor { pointer-events: none; }
   object-fit: contain;
   pointer-events: none;
 }
+
+/* Dark style: two option cards, each its Dock tile and a swatch of its
+   window. Picked = lit (tinted fill + soft glow), never outlined — the owner's
+   rule for every selected thing. The swatch paints in ITS style's colours,
+   not the live tokens, so both read correctly whichever one is on; the values
+   are the two dark token blocks' (--app-bg, --app-panel, --app-hover, and the
+   selection's accent tint). */
+.settings-style-row { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+.settings-card-body > * + .settings-style-row { margin-top: 10px; }
+.settings-card-body > .settings-field-label + .settings-style-row { margin-top: 0; }
+.settings-style-opt {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+  padding: 10px 14px 10px 10px;
+  border: none;
+  border-radius: var(--r-lg);
+  background: var(--app-elevated);
+  box-shadow: var(--sheen);
+  color: var(--vscode-foreground);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease), box-shadow var(--dur-2) var(--ease), transform var(--dur-1) var(--ease);
+}
+.settings-style-opt:hover { background: var(--app-hover); }
+.settings-style-opt:active { transform: translateY(0.5px); }
+.settings-style-opt.active { background: var(--sel-fill); box-shadow: var(--sheen), var(--sel-glow); }
+.settings-style-opt:focus-visible { outline: none; box-shadow: var(--sheen), var(--ring); }
+.settings-style-icon { width: 44px; height: 44px; flex: none; pointer-events: none; }
+.settings-style-swatch {
+  --sw-bg: #0d1016;
+  --sw-panel: #12151c;
+  --sw-row: #232c40;
+  --sw-sel: color-mix(in srgb, #7c5cf0 18%, #0d1016);
+  --sw-glow: 0 0 10px -3px color-mix(in srgb, #7c5cf0 70%, transparent);
+  position: relative;
+  width: 76px;
+  height: 46px;
+  flex: none;
+  border-radius: var(--r-sm);
+  background: var(--sw-bg);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), 0 1px 3px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.settings-style-swatch[data-style="neon"] {
+  --sw-bg: #09090e;
+  --sw-panel: #0e0e15;
+  --sw-row: #28213f;
+  --sw-sel: color-mix(in srgb, #7c5cf0 22%, #09090e);
+  --sw-glow: 0 0 12px -3px color-mix(in srgb, #7c5cf0 85%, transparent);
+  background:
+    radial-gradient(90px 40px at 50% -22px, color-mix(in srgb, #7c5cf0 22%, transparent), transparent 70%),
+    var(--sw-bg);
+}
+.settings-style-swatch .sw-rail { position: absolute; inset: 0 auto 0 0; width: 18px; background: var(--sw-panel); }
+.settings-style-swatch .sw-row {
+  position: absolute;
+  left: 24px;
+  right: 8px;
+  height: 7px;
+  border-radius: 3px;
+  background: var(--sw-row);
+}
+.settings-style-swatch .sw-row:nth-child(2) { top: 8px; }
+.settings-style-swatch .sw-row:nth-child(3) { top: 20px; }
+.settings-style-swatch .sw-row:nth-child(4) { top: 32px; }
+.settings-style-swatch .sw-sel { background: var(--sw-sel); box-shadow: var(--sw-glow); }
+.settings-style-swatch .sw-short { right: 26px; }
+.settings-style-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.settings-style-name { font-size: 13px; font-weight: 600; }
+.settings-style-blurb { font-size: 12px; color: var(--app-muted); }
+.settings-style-opt.active .settings-style-name { color: var(--sel-ink); }
+.settings-style-opt.active .settings-style-blurb { color: var(--sel-muted); }
 
 /* Account */
 .settings-account-who { display: flex; align-items: center; gap: 9px; }

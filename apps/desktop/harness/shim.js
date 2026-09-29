@@ -94,6 +94,11 @@
     JSON.stringify({
       ...(firstRun ? {} : { currentView: view === "inbox" ? "notifications" : view }),
       themeMode: theme,
+      // ?darkstyle=neon: Settings ▸ Appearance ▸ Dark style ▸ Neon. theme-boot.js
+      // reads the same switch for the first frame, as it does ?theme=.
+      ...(params.get("darkstyle") === "neon" || params.get("darkstyle") === "graphite"
+        ? { darkStyle: params.get("darkstyle") }
+        : {}),
       railWidth: 216,
       railCollapsed: false,
       terminalOpen: false,

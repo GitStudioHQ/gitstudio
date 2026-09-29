@@ -49,7 +49,8 @@ import "./styles/app.css";
 // imported last so its correct codepoints override any legacy hand-typed one.
 import "./styles/codicons-full.css";
 import { host } from "./bridge";
-import { applyTheme, followSystemTheme, resolveTheme } from "./desktopTheme";
+import { applyDarkStyle, applyTheme, followSystemTheme, resolveTheme } from "./desktopTheme";
+import { DARK_STYLES, DEFAULT_DARK_STYLE, parseDarkStyle, previewIconFor, type DarkStyle } from "../shared/darkStyle";
 import type { AppTheme, ThemeMode, LogoMode } from "./desktopTheme";
 import { dismissLaunchScreen } from "./launchScreen";
 import { GraphMount } from "./graphMount";
@@ -585,6 +586,9 @@ class App {
   private themeMode: ThemeMode = "system";
   /** Dock icon preference: "auto" follows the resolved theme, or pin light/dark. */
   private logoMode: LogoMode = "auto";
+  /** Settings ▸ Appearance ▸ Dark style: which dark look, in the window and
+   *  in the Dock (shared/darkStyle.ts). Graphite unless picked. */
+  private darkStyle: DarkStyle = DEFAULT_DARK_STYLE;
   /** Sidebar rail: persisted width (px) + collapsed-to-icons state. */
   private railWidth = 188;
   private railCollapsed = false;
@@ -781,6 +785,8 @@ class App {
     if (prefs.logoMode === "auto" || prefs.logoMode === "light" || prefs.logoMode === "dark") {
       this.logoMode = prefs.logoMode;
     }
+    // Shared like the theme: a style picked in one tab is every tab's.
+    this.darkStyle = parseDarkStyle(prefs.darkStyle);
     if (typeof prefs.railWidth === "number" && prefs.railWidth >= 168 && prefs.railWidth <= 360) {
       this.railWidth = prefs.railWidth;
     }
@@ -1403,6 +1409,7 @@ class App {
       branchTab: this.branchTab,
       themeMode: this.themeMode,
       logoMode: this.logoMode,
+      darkStyle: this.darkStyle,
       railWidth: this.railWidth,
       railCollapsed: this.railCollapsed,
       changesListW: this.changesListW,
@@ -1423,6 +1430,27 @@ class App {
     this.syncDockIcon();
     this.invalidateAppearanceCard();
     this.persist();
+  }
+
+  /**
+   * Change the dark style: re-point the tokens, repaint what reads them once
+   * (Monaco's theme, the terminals), move the Dock to the style's tile, and
+   * persist — theme-boot.js reads it back to paint the next launch's first
+   * frame in it.
+   */
+  private setDarkStyle(style: DarkStyle): void {
+    this.darkStyle = style;
+    applyDarkStyle(style);
+    refreshHighlightTheme();
+    this.terminalDock?.applyTheme();
+    this.syncDockIcon();
+    this.invalidateAppearanceCard();
+    this.persist();
+  }
+
+  /** The dark style a tab was built with — the shell applies it at launch. */
+  get darkStylePref(): DarkStyle {
+    return this.darkStyle;
   }
 
   /** Change the dock icon mode: push to the dock + persist. */
@@ -1553,7 +1581,7 @@ class App {
 
   /** Push the resolved dock icon variant to the main process (best-effort). */
   private syncDockIcon(): void {
-    void host.invoke("appearance:dockIcon", { variant: this.dockVariant() }).catch(() => {});
+    void host.invoke("appearance:dockIcon", { variant: this.dockVariant(), style: this.darkStyle }).catch(() => {});
   }
 
   /** Step back in the in-app navigation history (⌘[ / topbar chevron). */
@@ -5526,6 +5554,51 @@ class App {
     }
     markSegment(seg, "Theme");
 
+    // Dark style: the two dark looks, each shown as what it IS — its Dock
+    // tile beside a swatch of its window — and applying to both at once.
+    const styleLabel = el("div", "settings-field-label");
+    styleLabel.textContent = "Dark style";
+    const styleSub = el("div", "settings-sub");
+    styleSub.textContent =
+      "The dark window and the Dock icon, together. Graphite matches the icon macOS shows while " +
+      "GitStudio is closed. With Neon the Dock icon turns neon while GitStudio runs; macOS still " +
+      "shows the Graphite icon while it is closed.";
+    const styleRow = el("div", "settings-style-row");
+    const styleInfo: Record<DarkStyle, { name: string; blurb: string }> = {
+      graphite: { name: "Graphite", blurb: "Soft grey, the icon macOS shows" },
+      neon: { name: "Neon", blurb: "Near-black, more violet" },
+    };
+    const styleBtns: HTMLElement[] = [];
+    for (const id of DARK_STYLES) {
+      const b = el("button", "settings-style-opt" + (this.darkStyle === id ? " active" : ""));
+      b.dataset.style = id;
+      const icon = el("img", "settings-style-icon") as HTMLImageElement;
+      icon.src = previewIconFor(id);
+      icon.alt = "";
+      // A few painted boxes in the style's own colours (app.css
+      // .settings-style-swatch[data-style]): the ground, the sidebar, a row,
+      // and a lit selected row — what the window will look like.
+      const swatch = el("div", "settings-style-swatch");
+      swatch.dataset.style = id;
+      swatch.setAttribute("aria-hidden", "true");
+      swatch.append(el("div", "sw-rail"), el("div", "sw-row sw-sel"), el("div", "sw-row"), el("div", "sw-row sw-short"));
+      const text = el("div", "settings-style-text");
+      const name = el("div", "settings-style-name");
+      name.textContent = styleInfo[id].name;
+      const blurb = el("div", "settings-style-blurb");
+      blurb.textContent = styleInfo[id].blurb;
+      text.append(name, blurb);
+      b.append(icon, swatch, text);
+      b.addEventListener("click", () => {
+        this.setDarkStyle(id);
+        styleBtns.forEach((x) => x.classList.toggle("active", x === b));
+        syncLogoPreview();
+      });
+      styleBtns.push(b);
+      styleRow.appendChild(b);
+    }
+    markSegment(styleRow, styleLabel);
+
     // App icon: sits right next to the theme control, same card. "Auto" matches
     // the theme; the others pin the dock mark regardless of the in-app theme.
     const logoLabel = el("div", "settings-field-label");
@@ -5538,7 +5611,7 @@ class App {
     const preview = el("img", "settings-logo-preview") as HTMLImageElement;
     const syncLogoPreview = (): void => {
       const light = this.dockVariant() === "light";
-      preview.src = light ? "./icon-light.png" : "./icon.png";
+      preview.src = light ? "./icon-light.png" : previewIconFor(this.darkStyle);
       preview.alt = `Dock icon preview — the ${light ? "light" : "dark"} mark`;
       preview.title = preview.alt;
     };
@@ -5598,11 +5671,12 @@ class App {
       // keep-alive view fires on precisely the path that matters.
       btns.forEach((b, i) => b.classList.toggle("active", modes[i].id === this.themeMode));
       logoBtns.forEach((b, i) => b.classList.toggle("active", logoModes[i].id === this.logoMode));
+      styleBtns.forEach((b) => b.classList.toggle("active", b.dataset.style === this.darkStyle));
       // `aria-pressed` too, not just the class. `markSegment` keeps it in step
       // from a delegated CLICK listener, so a theme changed from anywhere else
       // — ⌘K, the menu, an OS flip — moved the highlight while leaving the
       // announced state on the button that is no longer chosen.
-      for (const b of [...btns, ...logoBtns]) {
+      for (const b of [...btns, ...logoBtns, ...styleBtns]) {
         b.setAttribute("aria-pressed", String(b.classList.contains("active")));
       }
       syncLogoPreview();
@@ -5614,7 +5688,7 @@ class App {
     // so it lost the border, gained a plinth, and stands off by --sp-4.
     logoRow.append(logoSeg, preview);
 
-    body.append(sub, seg, logoLabel, logoSub, logoRow, picRow);
+    body.append(sub, seg, styleLabel, styleSub, styleRow, logoLabel, logoSub, logoRow, picRow);
     return card;
   }
 
@@ -11112,6 +11186,9 @@ class TabShell {
         ? prefs.themeMode
         : "system";
     applyTheme(resolveTheme(mode));
+    // theme-boot.js already put the style's class on <body> for the first
+    // frame; this is the renderer agreeing with it.
+    applyDarkStyle(parseDarkStyle(prefs.darkStyle));
     followSystemTheme((osTheme) => {
       if ((this.active?.themeModePref ?? "system") !== "system") return;
       applyTheme(osTheme);

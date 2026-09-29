@@ -29,8 +29,12 @@
 # Apple's grid expects — at dock size the old framing read as a small mark
 # floating in a large empty square.
 #
-# NOTE: build/icon.icns comes from brand/gitstudio-dock-1024.png, NOT from this
-# SVG, so it does not inherit the zoom. It is only used on macOS 11-15.
+# NOTE: build/icon.icns comes from brand/gitstudio-dock-graphite-1024.png — the
+# Graphite tile, which is this icon as macOS 26 draws it (see
+# brand/gitstudio-icon-graphite.svg) — so a closed GitStudio looks the same on
+# 11-15 as on 26, and the same as the running app in the default dark style
+# (Settings ▸ Appearance ▸ Dark style; main.ts setDockIcon leaves the bundle's
+# icon alone for Graphite). It is only used on macOS 11-15.
 
 set -e
 cd "$(dirname "$0")"
@@ -49,7 +53,7 @@ ISET="$OUT/icon.iconset"; mkdir -p "$ISET"
 python3 - "$ISET" <<'PY'
 import sys
 from PIL import Image
-src = Image.open("../../../brand/gitstudio-dock-1024.png").convert("RGBA")
+src = Image.open("../../../brand/gitstudio-dock-graphite-1024.png").convert("RGBA")
 for n in (16, 32, 128, 256, 512):
     src.resize((n, n), Image.LANCZOS).save(f"{sys.argv[1]}/icon_{n}x{n}.png")
     src.resize((n * 2, n * 2), Image.LANCZOS).save(f"{sys.argv[1]}/icon_{n}x{n}@2x.png")
