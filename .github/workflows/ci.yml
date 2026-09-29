@@ -44,14 +44,16 @@ jobs:
 
       # Coverage is collected on the Ubuntu leg only: c8 records V8's own
       # coverage from every process the tests start (tsx, child node, git
-      # helpers), so the tests run exactly as they do on the other legs.
+      # helpers), so the tests run exactly as they do on the other legs. One
+      # c8 run per workspace, merged by line (scripts/test/coverage.mjs says
+      # why a single run over the whole repo reported shared files wrong).
       - name: Test
         if: matrix.os != 'ubuntu-latest'
         run: npm test
 
       - name: Test (with coverage)
         if: matrix.os == 'ubuntu-latest'
-        run: npx --yes c8@10 --reporter=lcov --report-dir=coverage --include='apps/*/src/**' --include='packages/*/src/**' npm test
+        run: node scripts/test/coverage.mjs
 
       - name: Upload coverage reports to Codecov
         if: matrix.os == 'ubuntu-latest' && !cancelled()
