@@ -112,7 +112,7 @@ test("a hostile ref name reaches the card as text, in the row and in its attribu
   ]);
   tip.handleOver(over(pill));
   tick(90);
-  assert.doesNotMatch(card.innerHTML, /<img|<script>|data-full="refs\/tags\/"x"/);
+  for (const raw of ["<img", "<script>", 'data-full="refs/tags/"x"']) assert.ok(!card.innerHTML.includes(raw), raw);
   assert.match(card.innerHTML, /data-ref="&quot;&gt;&lt;img src=x onerror=alert\(1\)&gt;"/);
   assert.match(card.innerHTML, /also on &lt;script&gt;/);
 });
