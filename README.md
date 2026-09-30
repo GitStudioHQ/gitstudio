@@ -21,6 +21,28 @@
 
 <p align="center"><sub>Logo &amp; brand assets live in <a href="brand/">brand/</a>.</sub></p>
 
+<p align="center">
+  <img src="docs/media/desktop-commits.png" width="1200" alt="GitStudio Desktop on its own repository: three repositories open in tabs, the commit graph with Anton Arnaudov's recent commits, three of them selected, and the details pane offering Cherry-pick, Revert, Squash and Drop for all three.">
+</p>
+
+<p align="center"><b>In VS Code and Cursor</b> — the same engine, as an extension:</p>
+
+<p align="center">
+  <img src="apps/extension/media/shots/hero.gif" width="1200" alt="GitStudio in VS Code: three commits picked in the Commit Graph with Cherry-Pick, Revert, Squash and Drop offered for all three; a stash opened in the Changes view; one of two changes in a file ticked so it shows as partly staged; a commit message typed and committed to the top of the graph.">
+</p>
+
+<table>
+  <tr>
+    <td width="50%" valign="top"><img src="docs/media/desktop-merge.png" alt="The three-pane merge editor mid-rebase: yours on the left, the result in the middle, theirs on the right, each change coloured by kind with an arrow and a cross to take or ignore it."><br><sub><b>A three-pane merge editor</b> — yours, the result, theirs.</sub></td>
+    <td width="50%" valign="top"><img src="docs/media/desktop-prs.png" alt="A merged pull request open in GitStudio Desktop: its conversation, reviewers, checks, branches and labels."><br><sub><b>Pull requests and issues</b> — read, review and merge.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top"><img src="docs/media/desktop-assistant.png" alt="The Assistant answering What did the last three commits change, after reading the log and three commits with read-only git tools, running on a local model in LM Studio."><br><sub><b>An optional assistant</b> — your own key or a local model.</sub></td>
+    <td width="50%" valign="top"><img src="docs/media/desktop-terminal.png" alt="The commit graph above a real terminal, open in the repository's folder."><br><sub><b>A real terminal</b>, in every repository tab.</sub></td>
+  </tr>
+</table>
+
+
 ---
 
 ## Get GitStudio

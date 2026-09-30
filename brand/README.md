@@ -57,6 +57,7 @@ text outlined to paths, so they render without Inter installed.)
 | `gitstudio-wordmark-dark.svg` / `-light.svg` | Horizontal lockup (mark + GitStudio); dark = light text, light = dark text. |
 | `alt/gitstudio-icon-g.svg` | Alternate **G** monogram mark. |
 | `generate.py` | Rebuilds every SVG above (and exports PNGs). |
+| `square/` | **Square, full-bleed** versions for avatars — the GitHub organisation, social profiles. Below. |
 
 ### Generating PNGs
 
@@ -70,6 +71,28 @@ This writes the icon at 1024/512/256/128 px, a 1024 px **org-avatar** export
 32/16 px. Edit the coordinates in [`generate.py`](generate.py) to iterate on the
 mark — it's plain geometry in a 512×512 box. (The wordmark lockups embed outlined
 Inter SemiBold and are not rebuilt by that script.)
+
+### Square avatars
+
+For anywhere that crops the picture itself — a GitHub organisation (rounded
+square), X or LinkedIn (circle). No transparent corners and no baked-in
+squircle; the cube and graph are the app icon's own. 1024 px PNGs beside each SVG.
+
+| File | Use it for |
+|---|---|
+| `square/gitstudio-square-dark-large-1024.png` | **The GitHub organisation.** The icon's dark tile with its violet light, the mark filling the square. |
+| `square/gitstudio-square-dark-1024.png` | Circle crops (X, LinkedIn, Bluesky): the same, with room around the mark. |
+| `square/gitstudio-square-dark-flat-large-1024.png` / `-dark-flat-1024.png` | The same two, without the violet light. |
+| `square/gitstudio-square-black-1024.png` | Plain black — crispest at tiny sizes. |
+| `square/gitstudio-square-violet-1024.png` | The white mark on brand violet — the loudest. |
+| `square/gitstudio-square-light-1024.png` | The cube on a light ground. |
+
+Rebuild with `python3 square/generate.py`, then render each SVG with
+[`rasterise.sh`](rasterise.sh) (Chrome — the renderer the app itself uses):
+
+```bash
+for f in square/*.svg; do ./rasterise.sh "$f" "${f%.svg}-1024.png" 1024; done
+```
 
 ## Usage
 
