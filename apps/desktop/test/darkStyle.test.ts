@@ -105,7 +105,7 @@ function dock(bundleIsGraphite = true) {
   const file = join(dir, "sub", "gitstudio-appearance.json");
   const calls: Array<string | null> = [];
   const make = () =>
-    new DockAppearance(file, { setIcon: (i) => calls.push(i === null ? null : i.replace(/^.*\//, "")), rendererDir: "/r", bundleIsGraphite });
+    new DockAppearance(file, { setIcon: (i) => calls.push(i === null ? null : i.replace(/^.*[\\/]/, "")), rendererDir: "/r", bundleIsGraphite });
   return { dir, file, calls, make, done: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
