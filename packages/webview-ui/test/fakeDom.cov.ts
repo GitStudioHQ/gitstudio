@@ -69,7 +69,15 @@ export class FakeElement {
   }
 
   get textContent(): string {
-    if (this.rawHtml) return this.rawHtml.replace(/<[^>]*>/g, "");
+    if (this.rawHtml) {
+      // Until nothing changes: one pass over "<<b>b>" leaves a "<b>" behind.
+      let text = this.rawHtml;
+      for (let prev = ""; prev !== text; ) {
+        prev = text;
+        text = text.replace(/<[^>]*>/g, "");
+      }
+      return text;
+    }
     return this.childNodes.map((n) => n.textContent).join("");
   }
   set textContent(v: string) {

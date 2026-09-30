@@ -93,7 +93,7 @@ test("a photo that already loaded once renders visible straight away", () => {
 
 test("the avatar markup escapes the name, the ring and the URL", () => {
   const html = avatarHtml("<b", "x@y", 0, 'red" onmouseover="x', 'https://e/"><script>', false);
-  assert.doesNotMatch(html, /<script>|<b|onmouseover="x/);
+  for (const raw of ["<script>", "<b", 'onmouseover="x']) assert.ok(!html.includes(raw), raw);
   assert.match(html, /<span class="fallback">&lt;B<\/span>/);
   assert.match(html, /--gs-av-ring:red&quot; onmouseover=&quot;x"/);
   assert.match(html, /src="https:\/\/e\/&quot;&gt;&lt;script&gt;"/);
