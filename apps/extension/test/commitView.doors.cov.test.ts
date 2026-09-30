@@ -7,7 +7,7 @@
 import { test, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, normalize } from "node:path";
 import {
   answerWith,
   asked,
@@ -240,7 +240,9 @@ test("an unstaged row's diff is the working tree against the index", async () =>
   const diff = commandsRun.find((c) => c.id === "vscode.diff");
   assert.ok(diff, "a diff opened");
   assert.equal(diff.args[2], "a.txt (Working Tree)");
-  assert.equal((diff.args[1] as U).fsPath, join(r.dir, "a.txt"));
+  // The host spells it root + "/" + path, as real VS Code's Uri.file accepts on
+  // every OS; the stand-in Uri keeps the spelling, so compare the path itself.
+  assert.equal(normalize((diff.args[1] as U).fsPath), join(r.dir, "a.txt"));
 });
 
 test("a conflicted row opens in the resolver, not as a diff full of markers", async () => {

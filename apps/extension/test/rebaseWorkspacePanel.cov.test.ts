@@ -185,7 +185,7 @@ test("the workspace lists the commits after the base, newest first, under the br
   const f = fixture();
   f.commit("base");
   const a = f.commit("A");
-  f.commit("B <script>");
+  f.commit("B <script>", "b.txt"); // < and > cannot be in a Windows file name
   const { p, data } = await open(f, a);
   assert.equal(p.title, "Interactive Rebase");
   assert.deepEqual(data.commits.map((c) => c.subject), ["B <script>", "A"]);

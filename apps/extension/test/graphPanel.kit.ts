@@ -458,9 +458,31 @@ export function mkRepo(opts: { empty?: boolean } = {}): Repo {
     ctx,
     dispose: () => {
       ctx.dispose();
-      rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      removeScratch(dir);
     },
   };
+}
+
+/**
+ * Remove a scratch repository without ever failing the test that used it. On
+ * Windows a git the host started (a graph load, the context's batch reader) can
+ * still be exiting when the test ends, and its directory is then EBUSY: retry
+ * for a while, then leave the rest to a later sweep instead of throwing — a
+ * throw here skipped resetRecords() and every later test read stale records.
+ */
+export function removeScratch(dir: string): void {
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  } catch {
+    const again = setTimeout(() => {
+      try {
+        rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+      } catch {
+        /* the OS temp dir is cleaned eventually; a leftover never fails a test */
+      }
+    }, 2_000);
+    again.unref();
+  }
 }
 
 /** Wait until `check` holds (polling), failing with `what` after a generous cap. */
