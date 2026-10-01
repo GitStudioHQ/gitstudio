@@ -9,6 +9,7 @@
 
 import { registerLayer, holdBackground } from "./overlays";
 import { cleanErr } from "./ui";
+import * as l10n from "@vscode/l10n";
 
 function mk(tag: string, cls = ""): HTMLElement {
   const n = document.createElement(tag);
@@ -196,8 +197,8 @@ export function openPeek(card: PeekCard): void {
     const head = mk("div", "peek-head");
     if (stack.length > 1) {
       const back = mk("button", "peek-nav-btn");
-      back.setAttribute("aria-label", "Back");
-      back.title = "Back (Esc)";
+      back.setAttribute("aria-label", l10n.t("Back"));
+      back.title = l10n.t("Back (Esc)");
       back.appendChild(gl("arrow-left"));
       back.addEventListener("click", () => ctx.back());
       head.appendChild(back);
@@ -237,8 +238,8 @@ export function openPeek(card: PeekCard): void {
       acts.appendChild(b);
     }
     const closeBtn = mk("button", "peek-nav-btn peek-close");
-    closeBtn.setAttribute("aria-label", "Close");
-    closeBtn.title = "Close";
+    closeBtn.setAttribute("aria-label", l10n.t("Close"));
+    closeBtn.title = l10n.t("Close");
     closeBtn.appendChild(gl("close"));
     closeBtn.addEventListener("click", dispose);
     acts.appendChild(closeBtn);
@@ -318,11 +319,11 @@ function peekError(e?: unknown, retry?: () => void): HTMLElement {
   const wrap = mk("div", "peek-empty");
   wrap.appendChild(gl("warning"));
   const t = mk("div");
-  t.textContent = cleanErr(e) || "Couldn't load this.";
+  t.textContent = cleanErr(e) || l10n.t("Couldn't load this.");
   wrap.appendChild(t);
   if (retry) {
     const again = mk("button", "btn btn-soft");
-    again.append(gl("sync"), (() => { const s2 = mk("span"); s2.textContent = "Try again"; return s2; })());
+    again.append(gl("sync"), (() => { const s2 = mk("span"); s2.textContent = l10n.t("Try again"); return s2; })());
     again.addEventListener("click", retry);
     wrap.appendChild(again);
   }

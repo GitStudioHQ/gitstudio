@@ -19,6 +19,7 @@
 
 import { el, span, glyph } from "./ui";
 import { renderMarkdown } from "./markdown";
+import * as l10n from "@vscode/l10n";
 
 export interface MdEditorOpts {
   value?: string;
@@ -62,14 +63,14 @@ interface Tool {
 }
 
 const TOOLS: Tool[] = [
-  { icon: "bold", title: "Bold  ⌘B", wrap: "**", key: "b" },
-  { icon: "italic", title: "Italic  ⌘I", wrap: "_", key: "i" },
-  { icon: "code", title: "Code", wrap: "`" },
-  { icon: "link", title: "Link  ⌘K", wrap: "[](url)", key: "k" },
-  { icon: "quote", title: "Quote", linePrefix: "> " },
-  { icon: "list-unordered", title: "Bulleted list", linePrefix: "- " },
-  { icon: "list-ordered", title: "Numbered list", linePrefix: "1. " },
-  { icon: "tasklist", title: "Task list", linePrefix: "- [ ] " },
+  { icon: "bold", title: l10n.t("Bold  ⌘B"), wrap: "**", key: "b" },
+  { icon: "italic", title: l10n.t("Italic  ⌘I"), wrap: "_", key: "i" },
+  { icon: "code", title: l10n.t("Code"), wrap: "`" },
+  { icon: "link", title: l10n.t("Link  ⌘K"), wrap: "[](url)", key: "k" },
+  { icon: "quote", title: l10n.t("Quote"), linePrefix: "> " },
+  { icon: "list-unordered", title: l10n.t("Bulleted list"), linePrefix: "- " },
+  { icon: "list-ordered", title: l10n.t("Numbered list"), linePrefix: "1. " },
+  { icon: "tasklist", title: l10n.t("Task list"), linePrefix: "- [ ] " },
 ];
 
 /** Apply a tool to the current selection, keeping the caret sensible. */
@@ -130,10 +131,10 @@ export function mdEditor(opts: MdEditorOpts = {}): MdEditor {
   // ── Write | Preview ───────────────────────────────────────────────────────
   const tabs = el("div", "md-tabs");
   const writeTab = el("button", "md-tab is-active") as HTMLButtonElement;
-  writeTab.textContent = "Write";
+  writeTab.textContent = l10n.t("Write");
   writeTab.setAttribute("role", "tab");
   const previewTab = el("button", "md-tab") as HTMLButtonElement;
-  previewTab.textContent = "Preview";
+  previewTab.textContent = l10n.t("Preview");
   previewTab.setAttribute("role", "tab");
   tabs.append(writeTab, previewTab);
 
@@ -141,7 +142,7 @@ export function mdEditor(opts: MdEditorOpts = {}): MdEditor {
   const ta = document.createElement("textarea");
   ta.className = "md-text";
   ta.rows = opts.rows ?? 10;
-  ta.placeholder = opts.placeholder ?? "Write something…";
+  ta.placeholder = opts.placeholder ?? l10n.t("Write something…");
   ta.value = opts.value ?? "";
   if (opts.label) ta.setAttribute("aria-label", opts.label);
 
@@ -180,7 +181,7 @@ export function mdEditor(opts: MdEditorOpts = {}): MdEditor {
       const text = ta.value.trim();
       preview.innerHTML = text
         ? renderMarkdown(text)
-        : `<p class="md-preview-empty">Nothing to preview yet.</p>`;
+        : `<p class="md-preview-empty">${l10n.t("Nothing to preview yet.")}</p>`;
       // Match the text area's height so switching tabs does not jump the form.
       preview.style.minHeight = `${ta.offsetHeight}px`;
     } else {

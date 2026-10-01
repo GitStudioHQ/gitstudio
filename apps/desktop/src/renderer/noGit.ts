@@ -13,6 +13,7 @@
 import { shellHost } from "./bridge";
 import { el, glyph, span, copyText } from "./ui";
 import { gitInstallHelp, type GitMissing } from "./noGitHelp";
+import * as l10n from "@vscode/l10n";
 
 /**
  * Ask main whether Git works, and when it does not, fill `root` with what to
@@ -65,9 +66,9 @@ function render(root: HTMLElement, git: GitMissing, done: () => void): void {
       const code = el("code", "no-git-code");
       code.textContent = command;
       const copy = el("button", "mini-btn no-git-copy") as HTMLButtonElement;
-      copy.append(glyph("copy"), span("Copy"));
-      copy.setAttribute("aria-label", `Copy ${command}`);
-      copy.addEventListener("click", () => void copyText(command, "Command copied."));
+      copy.append(glyph("copy"), span(l10n.t("Copy")));
+      copy.setAttribute("aria-label", l10n.t("Copy {0}", command));
+      copy.addEventListener("click", () => void copyText(command, l10n.t("Command copied.")));
       row.append(code, copy);
       li.appendChild(row);
     }
@@ -77,7 +78,7 @@ function render(root: HTMLElement, git: GitMissing, done: () => void): void {
 
   const actions = el("div", "no-git-actions");
   const retry = el("button", "btn btn-primary no-git-retry") as HTMLButtonElement;
-  retry.append(glyph("refresh"), span("Check again"));
+  retry.append(glyph("refresh"), span(l10n.t("Check again")));
   const get = el("button", "btn btn-soft no-git-download") as HTMLButtonElement;
   get.append(glyph("link-external"), span(help.download.label));
   get.addEventListener("click", () => window.open(help.download.url, "_blank", "noopener"));
@@ -88,11 +89,11 @@ function render(root: HTMLElement, git: GitMissing, done: () => void): void {
 
   retry.addEventListener("click", async () => {
     retry.disabled = true;
-    status.textContent = "Looking for Git…";
+    status.textContent = l10n.t("Looking for Git…");
     const again = await shellHost.invoke("app:gitCheck", { recheck: true }).catch(() => undefined);
     retry.disabled = false;
     if (again && again.ok) {
-      status.textContent = `Found Git ${again.version}.`;
+      status.textContent = l10n.t("Found Git {0}.", again.version);
       done();
       return;
     }
@@ -102,8 +103,9 @@ function render(root: HTMLElement, git: GitMissing, done: () => void): void {
       render(root, again, done);
       return;
     }
-    status.textContent =
-      "Still no working Git. If you installed it somewhere unusual, add it to your PATH and restart GitStudio.";
+    status.textContent = l10n.t(
+      "Still no working Git. If you installed it somewhere unusual, add it to your PATH and restart GitStudio.",
+    );
   });
 
   screen.appendChild(card);

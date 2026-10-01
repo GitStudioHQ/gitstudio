@@ -18,6 +18,7 @@
 // content — so opening the dock never shrinks the view above it.
 
 import { el, glyph, wireResizerKeys } from "./ui";
+import * as l10n from "@vscode/l10n";
 
 export interface BottomDockOptions {
   /** Start collapsed (just the footer bar) vs expanded (footer + body). */
@@ -76,8 +77,8 @@ export class BottomDock {
       // and interpolating it verbatim produced the app's only Title Case
       // accessible name, "Resize Panel".
       label: opts.label
-        ? `Resize ${opts.label.charAt(0).toLowerCase()}${opts.label.slice(1)}`
-        : "Resize panel",
+        ? l10n.t("Resize {0}", `${opts.label.charAt(0).toLowerCase()}${opts.label.slice(1)}`)
+        : l10n.t("Resize panel"),
       min: opts.minHeight ?? 120,
       max: () => BottomDock.clampHeight(Number.MAX_SAFE_INTEGER, opts.minHeight ?? 120),
       get: () => this.heightPx,
@@ -168,7 +169,7 @@ export class BottomDock {
   /** Point the chevron the right way (up = expand, down = collapse). */
   private syncChevron(): void {
     this.chevron.replaceChildren(glyph(this.collapsed ? "chevron-up" : "chevron-down"));
-    const what = this.collapsed ? "Expand panel" : "Collapse panel";
+    const what = this.collapsed ? l10n.t("Expand panel") : l10n.t("Collapse panel");
     this.chevron.title = what;
     // The label moves with the state, and the state is announced.
     //

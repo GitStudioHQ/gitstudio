@@ -5,6 +5,8 @@
 // renderer.ts; main's RepoStore holds the same order and decides the same
 // "who is active after a close" rule (tested there too).
 
+import * as l10n from "@vscode/l10n";
+
 /** The tab after (dir 1) or before (dir -1) `active`, wrapping at both ends.
  *  Undefined only when there is no tab to go to. */
 export function stepTab(order: readonly string[], active: string | undefined, dir: 1 | -1): string | undefined {
@@ -107,8 +109,10 @@ export function tabLabel(
   gone = false,
 ): string {
   const parts = [name];
-  if (gone) parts.push("folder not found");
-  else if (dirty && dirty > 0) parts.push(`${dirty} changed ${dirty === 1 ? "file" : "files"}`);
-  if (running) parts.push(`${running} running`);
+  if (gone) parts.push(l10n.t("folder not found"));
+  else if (dirty && dirty > 0) {
+    parts.push(dirty === 1 ? l10n.t("{0} changed file", dirty) : l10n.t("{0} changed files", dirty));
+  }
+  if (running) parts.push(l10n.t("{0} running", running));
   return parts.join(", ");
 }

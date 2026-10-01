@@ -20,6 +20,7 @@
 // views ask through here.
 
 import type { SectionTarget } from "./views/common";
+import * as l10n from "@vscode/l10n";
 
 export interface NavEntry {
   view: string;
@@ -90,31 +91,31 @@ const VIEW_LABELS: Record<string, string> = {
   // Home IS a place: a detail reached from a dashboard door pops back to it,
   // and a back button with no name for it fell back to naming the LIST — so
   // it said "Pull requests" and landed on Home, a button that lies.
-  dashboard: "Home",
-  changes: "Changes",
-  graph: "Commits",
-  branches: "Branches",
-  code: "Code",
-  compare: "Compare",
-  rebase: "Rebase",
-  issues: "Issues",
-  prs: "Pull Requests",
-  actions: "Actions",
-  releases: "Releases",
-  orgs: "Organizations",
-  projects: "Projects",
-  gists: "Gists",
-  notifications: "Inbox",
-  mywork: "My Work",
-  explore: "Search",
-  settings: "Settings",
-  assistant: "Assistant",
-  commit: "Commit",
-  joblog: "Job log",
-  releasenew: "Release composer",
-  issuenew: "Issue composer",
-  refdetail: "Ref",
-  predit: "Pull request composer",
+  dashboard: l10n.t("Home"),
+  changes: l10n.t("Changes"),
+  graph: l10n.t("Commits"),
+  branches: l10n.t("Branches"),
+  code: l10n.t("Code"),
+  compare: l10n.t("Compare"),
+  rebase: l10n.t("Rebase"),
+  issues: l10n.t("Issues"),
+  prs: l10n.t("Pull Requests"),
+  actions: l10n.t("Actions"),
+  releases: l10n.t("Releases"),
+  orgs: l10n.t("Organizations"),
+  projects: l10n.t("Projects"),
+  gists: l10n.t("Gists"),
+  notifications: l10n.t("Inbox"),
+  mywork: l10n.t("My Work"),
+  explore: l10n.t("Search"),
+  settings: l10n.t("Settings"),
+  assistant: l10n.t("Assistant"),
+  commit: l10n.t("Commit"),
+  joblog: l10n.t("Job log"),
+  releasenew: l10n.t("Release composer"),
+  issuenew: l10n.t("Issue composer"),
+  refdetail: l10n.t("Ref"),
+  predit: l10n.t("Pull request composer"),
 };
 
 /** The label a back button should show for an entry. */

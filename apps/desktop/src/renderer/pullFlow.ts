@@ -20,6 +20,7 @@
 
 import type { PullActionResult, PullDivergence, PullMode } from "../shared/ipc";
 import { promptChoice } from "./dialogs";
+import * as l10n from "@vscode/l10n";
 
 /** What `pullWithChoice` needs from the outside world. */
 export interface PullFlowDeps {
@@ -75,24 +76,34 @@ export async function askPullMode(
   d: PullDivergence,
   holdWhile?: () => boolean,
 ): Promise<PullMode | undefined> {
-  const mine = `${d.ahead} commit${d.ahead === 1 ? "" : "s"}`;
-  const theirs = `${d.behind} commit${d.behind === 1 ? "" : "s"}`;
+  const mine = d.ahead === 1 ? l10n.t("{0} commit", d.ahead) : l10n.t("{0} commits", d.ahead);
+  const theirs = d.behind === 1 ? l10n.t("{0} commit", d.behind) : l10n.t("{0} commits", d.behind);
   const pick = await promptChoice({
-    title: `'${d.branch}' and ${d.upstream} have diverged`,
-    hint:
-      `You have ${mine} ${d.upstream} doesn't, and it has ${theirs} you don't. ` +
-      `Git needs to know how to combine them — this choice applies to this pull only.`,
+    title: l10n.t("'{0}' and {1} have diverged", d.branch, d.upstream),
+    hint: l10n.t(
+      "You have {0} {1} doesn't, and it has {2} you don't. Git needs to know how to combine them — this choice applies to this pull only.",
+      mine,
+      d.upstream,
+      theirs,
+    ),
     choices: [
       {
         id: "merge",
-        label: "Merge",
-        sub: `Bring ${theirs} in and record a merge commit. Your commits keep their shas and their place in history.`,
+        label: l10n.t("Merge"),
+        sub: l10n.t(
+          "Bring {0} in and record a merge commit. Your commits keep their shas and their place in history.",
+          theirs,
+        ),
         icon: "git-merge",
       },
       {
         id: "rebase",
-        label: "Rebase",
-        sub: `Replay your ${mine} on top of ${d.upstream}. Linear history, but your commits are rewritten with new shas.`,
+        label: l10n.t("Rebase"),
+        sub: l10n.t(
+          "Replay your {0} on top of {1}. Linear history, but your commits are rewritten with new shas.",
+          mine,
+          d.upstream,
+        ),
         icon: "git-pull-request",
       },
     ],
@@ -104,9 +115,9 @@ export async function askPullMode(
 
 /** The message for a pull that succeeded, naming what it actually did. */
 export function pulledMessage(mode: PullMode | undefined): string {
-  if (mode === "merge") return "Pulled and merged.";
-  if (mode === "rebase") return "Pulled and rebased your commits on top.";
-  return "Pulled successfully.";
+  if (mode === "merge") return l10n.t("Pulled and merged.");
+  if (mode === "rebase") return l10n.t("Pulled and rebased your commits on top.");
+  return l10n.t("Pulled successfully.");
 }
 
 /**
@@ -154,13 +165,17 @@ export function pullVerdict(out: PullOutcome, fallback: string): PullVerdict {
       kind: "stopped",
       message:
         r.message ||
-        `The pull stopped on conflicts in ${n === 1 ? "1 file" : `${n} files`}. Resolve them in Changes.`,
+        (n === 1
+          ? l10n.t("The pull stopped on conflicts in 1 file. Resolve them in Changes.")
+          : l10n.t("The pull stopped on conflicts in {0} files. Resolve them in Changes.", n)),
     };
   }
   if (r.blocked) {
     return {
       kind: "blocked",
-      message: r.message || "An operation is still in progress. Finish or abort it in Changes before pulling again.",
+      message:
+        r.message ||
+        l10n.t("An operation is still in progress. Finish or abort it in Changes before pulling again."),
     };
   }
   // The user's uncommitted work was in the way. Nothing ran — settled like a
@@ -168,7 +183,9 @@ export function pullVerdict(out: PullOutcome, fallback: string): PullVerdict {
   if (r.dirty) {
     return {
       kind: "blocked",
-      message: r.message || "Your uncommitted changes are in the way. Commit or stash them in Changes, then pull again.",
+      message:
+        r.message ||
+        l10n.t("Your uncommitted changes are in the way. Commit or stash them in Changes, then pull again."),
     };
   }
   if (!r.ok) {

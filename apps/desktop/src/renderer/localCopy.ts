@@ -14,6 +14,7 @@ import { loadEditors } from "./openIn";
 import { betterCopy } from "../shared/repoGrouping";
 import type { LocalCopy } from "../shared/ipc";
 import type { SectionNav } from "./views/common";
+import * as l10n from "@vscode/l10n";
 
 /** A copy on disk, plus how much uncommitted work is waiting in it. */
 export interface HaveCopy {
@@ -108,19 +109,27 @@ export async function openLocalCopy(
     return;
   }
   const choices = [
-    { id: "code", label: "Open the code", sub: "Browse the files at this checkout.", icon: "code" },
+    {
+      id: "code",
+      label: l10n.t("Open the code"),
+      sub: l10n.t("Browse the files at this checkout."),
+      icon: "code",
+    },
     {
       id: "changes",
-      label: "Open the changes",
-      sub: `${dirty} uncommitted ${dirty === 1 ? "file" : "files"} waiting in this repository.`,
+      label: l10n.t("Open the changes"),
+      sub:
+        dirty === 1
+          ? l10n.t("{0} uncommitted file waiting in this repository.", dirty)
+          : l10n.t("{0} uncommitted files waiting in this repository.", dirty),
       icon: "request-changes",
     },
     ...(fav
       ? [
           {
             id: "editor",
-            label: `Open in ${fav.name}`,
-            sub: `Hand the folder to ${fav.name} and stay here.`,
+            label: l10n.t("Open in {0}", fav.name),
+            sub: l10n.t("Hand the folder to {0} and stay here.", fav.name),
             icon: "link-external",
           },
         ]
@@ -129,8 +138,8 @@ export async function openLocalCopy(
       ? [
           {
             id: "browse",
-            label: "Browse it on GitHub",
-            sub: "Read the repository without opening it.",
+            label: l10n.t("Browse it on GitHub"),
+            sub: l10n.t("Read the repository without opening it."),
             icon: "globe",
           },
         ]
@@ -138,7 +147,7 @@ export async function openLocalCopy(
   ];
   const pick = await promptChoice({
     title: fullName,
-    hint: `You have this one at ${middlePath(local.root)}.`,
+    hint: l10n.t("You have this one at {0}.", middlePath(local.root)),
     choices,
     cancelId: "cancel",
   });
@@ -147,6 +156,6 @@ export async function openLocalCopy(
   else if (pick === "browse") opts?.onBrowse?.();
   else if (pick === "editor" && fav) {
     const res = await host.invoke("editors:open", { id: fav.id, root: local.root });
-    if (!res.ok) toast(res.message ?? "Couldn't open the editor.", "error");
+    if (!res.ok) toast(res.message ?? l10n.t("Couldn't open the editor."), "error");
   }
 }

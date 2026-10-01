@@ -36,6 +36,7 @@ import {
   willDropText,
 } from "@gitstudio/webview-ui/conflicts/opText";
 import type { ConflictModel, GitOpState, GitStudioBridge } from "../shared/ipc";
+import * as l10n from "@vscode/l10n";
 
 export type Invoke = GitStudioBridge["invoke"];
 export type Notify = (
@@ -63,7 +64,7 @@ function restoreResult(
   path: string,
 ): string | { info: string } | void {
   if (r.ok) return undefined;
-  const message = r.message || `Couldn't bring the conflict in ${path} back.`;
+  const message = r.message || l10n.t("Couldn't bring the conflict in {0} back.", path);
   return r.expected ? { info: message } : message;
 }
 
@@ -226,11 +227,11 @@ export function outcomeLine(
       text:
         o.message ||
         (verb === "abort"
-          ? `${cap} ended. The repository is back where it was before it started.`
+          ? l10n.t("{0} ended. The repository is back where it was before it started.", cap)
           : verb === "skip"
             ? // Which one it left out, and whether git applied the rest after it.
-              `${skipEndedText(before)}.`
-            : `${cap} complete.`),
+              l10n.t("{0}.", skipEndedText(before))
+            : l10n.t("{0} complete.", cap)),
     };
   }
   if (o.stopped) {
@@ -242,17 +243,23 @@ export function outcomeLine(
         (o.view.pause
           ? o.view.pause.detail
           : step
-            ? `Stopped at ${step}: there is more to resolve.`
-            : "Stopped again: there is more to resolve."),
+            ? l10n.t("Stopped at {0}: there is more to resolve.", step)
+            : l10n.t("Stopped again: there is more to resolve.")),
     };
   }
   if (o.refused === "blocked") {
-    return { kind: "failed", text: continueBlockedText(o.view, o.remainingConflicts) || o.message || "Not yet." };
+    return {
+      kind: "failed",
+      text: continueBlockedText(o.view, o.remainingConflicts) || o.message || l10n.t("Not yet."),
+    };
   }
   if (o.refused === "confirm-drop") {
-    return { kind: "failed", text: willDropText(o.view) || o.message || "Confirm dropping the empty commit first." };
+    return {
+      kind: "failed",
+      text: willDropText(o.view) || o.message || l10n.t("Confirm dropping the empty commit first."),
+    };
   }
-  return { kind: "failed", text: o.message || `The ${noun} did not ${verb}.` };
+  return { kind: "failed", text: o.message || l10n.t("The {0} did not {1}.", noun, verb) };
 }
 
 /** Unmerged paths in a snapshot (rows not yet resolved). */
@@ -351,14 +358,22 @@ export class DesktopMergeAdapter {
             // (expected: no longer conflicted, not UTF-8 text, deleted on both
             // sides) writes nothing — say it failed, and leave Apply live.
             if (r.expected) {
-              deliver({ type: "outcome", kind: "failed", text: r.message || `Nothing was written to ${path}.` });
+              deliver({
+                type: "outcome",
+                kind: "failed",
+                text: r.message || l10n.t("Nothing was written to {0}.", path),
+              });
               return;
             }
-            deliver({ type: "applied", staged: false, message: r.message || `Couldn't save the merge of ${path}.` });
+            deliver({
+              type: "applied",
+              staged: false,
+              message: r.message || l10n.t("Couldn't save the merge of {0}.", path),
+            });
             return;
           }
           deliver({ type: "applied", staged: true });
-          this.offerUndo(`Resolved ${path}.`);
+          this.offerUndo(l10n.t("Resolved {0}.", path));
           await this.refreshOp();
           this.deps.onResolved();
           return;
@@ -377,11 +392,17 @@ export class DesktopMergeAdapter {
           );
           if (!r) return;
           if (!r.ok) {
-            deliver({ type: "applied", staged: false, message: r.message || `Couldn't resolve ${path}.` });
+            deliver({
+              type: "applied",
+              staged: false,
+              message: r.message || l10n.t("Couldn't resolve {0}.", path),
+            });
             return;
           }
           deliver({ type: "applied", staged: true });
-          this.offerUndo(message.type === "deleteFile" ? `Deleted ${path}.` : `Resolved ${path}.`);
+          this.offerUndo(
+            message.type === "deleteFile" ? l10n.t("Deleted {0}.", path) : l10n.t("Resolved {0}.", path),
+          );
           await this.refreshOp();
           this.deps.onResolved();
           return;
@@ -461,26 +482,27 @@ export class DesktopMergeAdapter {
     const same = (a: string, b: string): boolean => a.replace(/\r\n?/g, "\n") === b.replace(/\r\n?/g, "\n");
     if (resolvedOutsideMerge(model.result, model.base) && !same(text, model.result)) {
       const go = await ask({
-        title: `Replace the resolution already in ${name}?`,
-        message:
-          `${name} had no conflict markers left when the merge editor opened: it was already resolved, by hand or ` +
-          `by git rerere. Apply replaces that with the Result shown here, and stages it.`,
-        confirmLabel: "Replace and stage",
+        title: l10n.t("Replace the resolution already in {0}?", name),
+        message: l10n.t(
+          "{0} had no conflict markers left when the merge editor opened: it was already resolved, by hand or by git rerere. Apply replaces that with the Result shown here, and stages it.",
+          name,
+        ),
+        confirmLabel: l10n.t("Replace and stage"),
         danger: true,
       });
-      if (!go) return `Nothing was written. ${name} keeps the resolution it had.`;
+      if (!go) return l10n.t("Nothing was written. {0} keeps the resolution it had.", name);
     }
     const now = await this.deps.invoke("conflict:model", model.path).catch(() => undefined);
     if (now && now.result !== model.result) {
       const go = await ask({
-        title: `${name} changed outside the merge editor`,
-        message:
-          `It was edited in another editor or on disk since the merge editor opened it. Apply replaces that edit ` +
-          `with the Result shown here, and stages it.`,
-        confirmLabel: "Replace and stage",
+        title: l10n.t("{0} changed outside the merge editor", name),
+        message: l10n.t(
+          "It was edited in another editor or on disk since the merge editor opened it. Apply replaces that edit with the Result shown here, and stages it.",
+        ),
+        confirmLabel: l10n.t("Replace and stage"),
         danger: true,
       });
-      if (!go) return `Nothing was written. ${name} keeps the edit made outside the merge editor.`;
+      if (!go) return l10n.t("Nothing was written. {0} keeps the edit made outside the merge editor.", name);
     }
     return undefined;
   }
@@ -489,7 +511,7 @@ export class DesktopMergeAdapter {
   private offerUndo(message: string): void {
     const path = this.model.path;
     this.deps.undoable(message, {
-      label: `Bring back the conflict in ${path}`,
+      label: l10n.t("Bring back the conflict in {0}", path),
       undo: async () => restoreResult(await this.deps.invoke("conflict:restore", { path }), path),
       after: () => this.deps.onResolved(),
     });
@@ -626,7 +648,7 @@ export class DesktopConflicts {
     const doneAtRead = this.done;
     try {
       const s = await this.deps.invoke("conflict:state", undefined);
-      if (!s) throw new Error("The conflict state came back empty.");
+      if (!s) throw new Error(l10n.t("The conflict state came back empty."));
       if (read < this.shownRead) return this.snapshot; // a later read is already on screen
       this.shownRead = read;
       this.snapshot = s;
@@ -642,7 +664,10 @@ export class DesktopConflicts {
       this.paint();
       return s;
     } catch (e) {
-      this.readError = `Couldn't read the conflicts: ${e instanceof Error ? e.message : String(e)}`;
+      this.readError = l10n.t(
+        "Couldn't read the conflicts: {0}",
+        e instanceof Error ? e.message : String(e),
+      );
       this.paint();
       return undefined;
     }
@@ -806,10 +831,10 @@ export class DesktopConflicts {
                 : invoke("conflict:restore", { path }),
           async (res) => {
             if (!res.ok) {
-              this.notice = { kind: "error", text: res.message || `Couldn't change ${path}.` };
+              this.notice = { kind: "error", text: res.message || l10n.t("Couldn't change {0}.", path) };
             } else if (action.type !== "restore") {
               const undo = {
-                label: `Bring back the conflict in ${path}`,
+                label: l10n.t("Bring back the conflict in {0}", path),
                 undo: async () => restoreResult(await invoke("conflict:restore", { path }), path),
                 after: () => {
                   void this.refresh();
@@ -817,7 +842,12 @@ export class DesktopConflicts {
                 },
               };
               if (this.deps.pushUndo) this.deps.pushUndo(undo);
-              else this.deps.undoable(action.type === "delete" ? `Deleted ${path}.` : `Resolved ${path}.`, undo);
+              else {
+                this.deps.undoable(
+                  action.type === "delete" ? l10n.t("Deleted {0}.", path) : l10n.t("Resolved {0}.", path),
+                  undo,
+                );
+              }
             }
             this.rowBusy.delete(path);
             this.finish(action.seq);
@@ -916,35 +946,39 @@ export function opIndicator(op: GitOpState | undefined): { badge: string; label:
   if (!op.kind && op.conflicts === 0) return undefined;
   const verb =
     op.kind === "merge"
-      ? "Merging"
+      ? l10n.t("Merging")
       : op.kind === "rebase"
-        ? "Rebasing"
+        ? l10n.t("Rebasing")
         : op.kind === "cherry-pick"
-          ? "Cherry-picking"
+          ? l10n.t("Cherry-picking")
           : op.kind === "revert"
-            ? "Reverting"
+            ? l10n.t("Reverting")
             : op.kind === "am"
-              ? "Applying patches"
-              : "Conflicts";
+              ? l10n.t("Applying patches")
+              : l10n.t("Conflicts");
   if (op.conflicts > 0) {
-    const files = `${op.conflicts} conflict${op.conflicts === 1 ? "" : "s"}`;
+    const files = op.conflicts === 1 ? l10n.t("{0} conflict", op.conflicts) : l10n.t("{0} conflicts", op.conflicts);
+    const filesHave =
+      op.conflicts === 1
+        ? l10n.t("{0} file has conflicts — open Changes to resolve", op.conflicts)
+        : l10n.t("{0} files have conflicts — open Changes to resolve", op.conflicts);
     return {
       badge: String(op.conflicts),
-      label: op.kind ? `${verb} · ${files}` : files,
-      title: `${op.kind ? `${verb}: ` : ""}${op.conflicts} file${op.conflicts === 1 ? " has" : "s have"} conflicts — open Changes to resolve`,
+      label: op.kind ? l10n.t("{0} · {1}", verb, files) : files,
+      title: op.kind ? l10n.t("{0}: {1}", verb, filesHave) : filesHave,
     };
   }
   if (op.kind && op.canContinue) {
     return {
       badge: "•",
-      label: "Ready to continue",
-      title: `${verb}: every conflict is resolved — open Changes to continue`,
+      label: l10n.t("Ready to continue"),
+      title: l10n.t("{0}: every conflict is resolved — open Changes to continue", verb),
     };
   }
   return {
     badge: "•",
-    label: `${verb} · paused`,
-    title: `${verb} is paused — open Changes to continue or abort`,
+    label: l10n.t("{0} · paused", verb),
+    title: l10n.t("{0} is paused — open Changes to continue or abort", verb),
   };
 }
 

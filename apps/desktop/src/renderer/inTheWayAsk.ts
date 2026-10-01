@@ -5,6 +5,7 @@
 import type { InTheWayInfo } from "../shared/ipc";
 import { answerInTheWayWith } from "./bridge";
 import { promptChoice, toast } from "./dialogs";
+import * as l10n from "@vscode/l10n";
 
 /**
  * The question. True for Stash & Retry.
@@ -24,23 +25,28 @@ export async function askStashRetry(
   openRoot: () => string | undefined = () => way.root,
 ): Promise<boolean> {
   const n = way.files.length;
-  const it = n === 1 ? "it" : "them";
   const askedIn = openRoot();
   const pick = await promptChoice({
-    title: "Your uncommitted changes are in the way",
+    title: l10n.t("Your uncommitted changes are in the way"),
     // main's sentence names the files and what they are in the way of.
     hint: message,
     choices: [
       {
         id: "stash",
-        label: "Stash & Retry",
-        sub: `Stash ${n === 1 ? "it" : `these ${n} files`}, run it again, and put ${it} back.`,
+        label: l10n.t("Stash & Retry"),
+        sub:
+          n === 1
+            ? l10n.t("Stash it, run it again, and put it back.")
+            : l10n.t("Stash these {0} files, run it again, and put them back.", n),
         icon: "archive",
       },
       {
         id: "cancel",
-        label: "Cancel",
-        sub: `Nothing runs. Commit or stash ${it} yourself first.`,
+        label: l10n.t("Cancel"),
+        sub:
+          n === 1
+            ? l10n.t("Nothing runs. Commit or stash it yourself first.")
+            : l10n.t("Nothing runs. Commit or stash them yourself first."),
         icon: "close",
       },
     ],

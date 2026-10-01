@@ -16,6 +16,7 @@ import { parseGitHubItemUrl } from "./ui";
 import { openExternalItem } from "./views/notifications";
 import type { SectionNav } from "./views/common";
 import { HAS_ISSUE_REF, splitIssueRefs } from "../shared/issueRefs";
+import * as l10n from "@vscode/l10n";
 
 /** Wire a rendered-markdown container — ONCE, on a stable pane. A
  *  MutationObserver keeps re-rendered bodies linkified, so callers never
@@ -204,8 +205,8 @@ function linkifyIssueRefs(container: HTMLElement): void {
         if (part.ref.repo) a.dataset.ghrepo = part.ref.repo;
         a.textContent = part.text;
         a.title = part.ref.repo
-          ? `Open ${part.text} — in ${part.ref.repo}, not this repository`
-          : `Open ${part.text} in GitStudio`;
+          ? l10n.t("Open {0} — in {1}, not this repository", part.text, part.ref.repo)
+          : l10n.t("Open {0} in GitStudio", part.text);
         frag.appendChild(a);
       } else {
         frag.appendChild(document.createTextNode(part.text));
