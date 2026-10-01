@@ -13,7 +13,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { SUPPORT_LEAD, SUPPORT_LINKS, SUPPORT_SENTENCE } from "../src/shared/support";
+import { SUPPORT_LINKS, supportLead, supportSentence } from "../src/shared/support";
 import { supportMenuItems } from "../src/main/supportMenu";
 
 const SPONSOR = "https://github.com/sponsors/antonarnaudov";
@@ -27,8 +27,8 @@ test("the two ways, in the READMEs' words, to exactly the two pages", () => {
       ["coffee", COFFEE, "coffee", "Buy me a coffee", "a one-off tip"],
     ],
   );
-  assert.equal(SUPPORT_SENTENCE, "GitStudio is free and open source. If it saves you time, you can support it.");
-  assert.equal(SUPPORT_LEAD, "GitStudio is free and open source.");
+  assert.equal(supportSentence(), "GitStudio is free and open source. If it saves you time, you can support it.");
+  assert.equal(supportLead(), "GitStudio is free and open source.");
   // The same pages as the repository's own Sponsor button.
   const funding = readFileSync(join(__dirname, "..", "..", "..", ".github", "FUNDING.yml"), "utf8");
   assert.match(funding, /^github: \[antonarnaudov\]$/m);

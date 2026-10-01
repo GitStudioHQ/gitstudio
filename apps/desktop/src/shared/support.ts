@@ -77,18 +77,12 @@ export const SUPPORT_LINKS: readonly SupportLink[] = [
   },
 ];
 
-/**
- * Settings ▸ About's one sentence, and Home's foot line.
- *
- * NOT wrapped in l10n.t() here: both are plain exported constants read
- * directly by the renderer (renderer.ts, views/dashboard.ts) as string values,
- * not through a function call or a property access — unlike SUPPORT_LINKS
- * above, turning them into a lazy getter would mean every READER changing how
- * it reads them, and those readers are outside this file's scope. Left as
- * English constants; the renderer-side l10n pass is the right place to either
- * wrap these at their point of use or change this export's shape.
- */
-export const SUPPORT_SENTENCE = "GitStudio is free and open source. If it saves you time, you can support it.";
+/** Settings ▸ About's support line. A function: read after the language loads. */
+export function supportSentence(): string {
+  return l10n.t("GitStudio is free and open source. If it saves you time, you can support it.");
+}
 
 /** Home's foot line, before its two links. */
-export const SUPPORT_LEAD = "GitStudio is free and open source.";
+export function supportLead(): string {
+  return l10n.t("GitStudio is free and open source.");
+}

@@ -1387,7 +1387,7 @@ function remoteRow(
     // 121000 is not a number anyone reads; 121k is. Same rule the Explore
     // footer already follows.
     s.append(glyph("star-full"), span(compactCount(r.stars)));
-    s.title = plural(r.stars, l10n.t("star"), l10n.t("stars"));
+    s.title = plural(r.stars, "star");
     meta.push(s);
   }
 

@@ -1,6 +1,8 @@
 // Pure text-fitting helpers — DOM-free so they unit-test under plain node
 // (ui.ts touches `window` at import time and cannot be imported from a test).
 
+import * as l10n from "@vscode/l10n";
+
 /**
  * Shorten a filesystem path from the MIDDLE.
  *
@@ -26,8 +28,24 @@ export function middleTruncate(text: string, max = 44): string {
  * reads as unfinished software, because it is.
  */
 export function plural(n: number, one: string, many = `${one}s`): string {
-  return `${n.toLocaleString()} ${n === 1 ? one : many}`;
+  const count = n.toLocaleString();
+  const whole = COUNTED[one];
+  if (whole) return whole(n, count);
+  return `${count} ${n === 1 ? one : many}`;
 }
+
+/**
+ * The nouns the app counts, as whole translated messages: a translation needs
+ * the number and its noun together (Czech, Polish and Russian change the noun
+ * with the number, and some languages put the number after it).
+ */
+const COUNTED: Record<string, (n: number, count: string) => string> = {
+  commit: (n, c) => (n === 1 ? l10n.t("{0} commit", c) : l10n.t("{0} commits", c)),
+  file: (n, c) => (n === 1 ? l10n.t("{0} file", c) : l10n.t("{0} files", c)),
+  "changed file": (n, c) => (n === 1 ? l10n.t("{0} changed file", c) : l10n.t("{0} changed files", c)),
+  star: (n, c) => (n === 1 ? l10n.t("{0} star", c) : l10n.t("{0} stars", c)),
+  download: (n, c) => (n === 1 ? l10n.t("{0} download", c) : l10n.t("{0} downloads", c)),
+};
 
 /**
  * Split a file into the lines a reader would count.

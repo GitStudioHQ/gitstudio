@@ -39,7 +39,7 @@ import type {
   SyncStatus,
   WorkflowRun,
 } from "../../shared/ipc";
-import { SUPPORT_LEAD, SUPPORT_LINKS } from "../../shared/support";
+import { SUPPORT_LINKS, supportLead } from "../../shared/support";
 import { perTab } from "../tabState";
 
 /**
@@ -111,7 +111,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
  */
 function supportLine(): HTMLElement {
   const foot = el("p", "dash-support");
-  foot.appendChild(span(SUPPORT_LEAD, "dash-support-lead"));
+  foot.appendChild(span(supportLead(), "dash-support-lead"));
   SUPPORT_LINKS.forEach((link, i) => {
     if (i > 0) {
       const dot = span("·", "dash-support-sep");

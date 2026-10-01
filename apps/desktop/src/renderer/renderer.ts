@@ -81,7 +81,7 @@ import { worktreeRemovalQuestion, worktreeRemovalRefusal } from "@gitstudio/host
 import { checkedOutElsewhereMessage } from "@gitstudio/host-bridge/branchElsewhere";
 import { createBranchFlow } from "./branchCreate";
 import type { BranchStart } from "../shared/branchStart";
-import { SUPPORT_LINKS, SUPPORT_SENTENCE } from "../shared/support";
+import { SUPPORT_LINKS, supportSentence } from "../shared/support";
 import { TerminalDock } from "./terminalDock";
 import { openCloneDialog } from "./cloneDialog";
 import { gget, peek, bust, bustEverywhere, dropCacheScope, setCacheScope, swr, sameData} from "./cache";
@@ -3983,12 +3983,12 @@ class App {
     // from main" but "what will Push and Pull do".
     if (b.ahead) {
       const p = span(`↑ ${b.ahead}`, "ab-pill ahead");
-      p.title = `${plural(b.ahead, "commit")} to push to ${up ?? "upstream"}`;
+      p.title = l10n.t("{0} to push to {1}", plural(b.ahead, "commit"), up ?? l10n.t("upstream"));
       track.appendChild(p);
     }
     if (b.behind) {
       const p = span(`↓ ${b.behind}`, "ab-pill behind");
-      p.title = `${plural(b.behind, "commit")} to pull from ${up ?? "upstream"}`;
+      p.title = l10n.t("{0} to pull from {1}", plural(b.behind, "commit"), up ?? l10n.t("upstream"));
       track.appendChild(p);
     }
     // Only when it HAS a count. The slot is a fixed 78px so the pairs line up
@@ -4027,10 +4027,10 @@ class App {
     if (b.behind) {
       const pull = el("button", "row-btn") as HTMLButtonElement;
       pull.textContent = l10n.t("Pull");
-      pull.setAttribute("aria-label", `Pull ${bn}`);
+      pull.setAttribute("aria-label", l10n.t("Pull {0}", bn));
       pull.title = b.current
-        ? `Pull ${plural(b.behind, "commit")} from ${up ?? "upstream"}`
-        : `Pull ${plural(b.behind, "commit")} into ${bn} — fast-forward, no checkout`;
+        ? l10n.t("Pull {0} from {1}", plural(b.behind, "commit"), up ?? l10n.t("upstream"))
+        : l10n.t("Pull {0} into {1} — fast-forward, no checkout", plural(b.behind, "commit"), bn);
       pull.addEventListener("click", () => void this.pullBranchLive(b, pull));
       actions.push(pull);
     } else if (!b.upstream) {
@@ -6275,7 +6275,7 @@ class App {
     const supportLabel = el("div", "settings-field-label");
     supportLabel.textContent = l10n.t("Support GitStudio");
     const supportSub = el("div", "settings-sub");
-    supportSub.textContent = SUPPORT_SENTENCE;
+    supportSub.textContent = supportSentence();
     const supportRow = el("div", "settings-actions settings-support");
     supportRow.setAttribute("role", "group");
     supportRow.setAttribute("aria-label", l10n.t("Support GitStudio"));

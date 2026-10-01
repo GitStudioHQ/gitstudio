@@ -630,7 +630,7 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
       subT.textContent = l10n.t(
         "{0} · {1}",
         fmtBytes(a.size),
-        plural(a.downloadCount, l10n.t("download"), l10n.t("downloads")),
+        plural(a.downloadCount, "download"),
       );
       m.append(t, subT);
       row.append(m);

@@ -6,16 +6,18 @@
  *   node scripts/i18n/todo.mjs <locale> [--batch 250]   # write the batches
  *   node scripts/i18n/todo.mjs <locale> --merge         # fold answers in
  *
- * Batches go to `l10n/.todo/<locale>/batch-NNN.json` as `[[id, english], …]`:
- * every message some product asks for that `l10n/<locale>.json` lacks. A
+ * Batches go to `l10n/.todo/<locale>/batch-NNN.json` as `[[id, english, where], …]`:
+ * every message some product asks for that `l10n/<locale>.json` lacks, with
+ * `where` the first line of source that asks for it (file:line and the code),
+ * so a translator can tell "a one-off tip" (money) from a branch tip. A
  * translator answers each with `answer-NNN.json`, `{ "<id>": "<translation>" }`
  * — the English is never written back, so an answer costs only its own words.
  * `--merge` adds every answer whose placeholders match its English to the
  * catalog (sorted), reports the rest, and removes the batches it finished.
  * `l10n/.todo/` is git-ignored.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -40,12 +42,40 @@ const count = (text, ch) => String(text).split(ch).length - 1;
 /** A translation may not add a character markup or an attribute reads (bundle-nls's gate). */
 const addsMarkup = (text, key) => ["<", ">", "&", '"'].some((ch) => count(text, ch) > count(key, ch));
 
+/** Every TypeScript source file of the apps and packages, read once. */
+function sources() {
+  const files = [];
+  const walk = (dir) => {
+    for (const name of existsSync(dir) ? readdirSync(dir) : []) {
+      const path = join(dir, name);
+      if (name === "node_modules" || name === "dist") continue;
+      if (statSync(path).isDirectory()) walk(path);
+      else if (/\.ts$/.test(name) && !/\.d\.ts$/.test(name)) files.push({ path: relative(ROOT, path), lines: readFileSync(path, "utf8").split("\n") });
+    }
+  };
+  for (const top of ["apps", "packages"]) {
+    for (const name of readdirSync(join(ROOT, top))) walk(join(ROOT, top, name, "src"));
+  }
+  return files;
+}
+
+/** "file:line: code" for the first line that asks for `key`. */
+function whereOf(files, key) {
+  const quoted = [JSON.stringify(key), `'${key.replace(/'/g, "\\'")}'`];
+  for (const f of files) {
+    const at = f.lines.findIndex((line) => quoted.some((q) => line.includes(q)));
+    if (at >= 0) return `${f.path}:${at + 1}: ${f.lines[at].trim().slice(0, 200)}`;
+  }
+  return "";
+}
+
 if (!merge) {
   rmSync(work, { recursive: true, force: true });
   mkdirSync(work, { recursive: true });
   const todo = keys.filter((key) => !(key in catalog));
+  const files = sources();
   for (let i = 0; i * size < todo.length; i++) {
-    const batch = todo.slice(i * size, (i + 1) * size).map((key, j) => [i * size + j, key]);
+    const batch = todo.slice(i * size, (i + 1) * size).map((key, j) => [i * size + j, key, whereOf(files, key)]);
     writeFileSync(join(work, `batch-${String(i).padStart(3, "0")}.json`), `${JSON.stringify(batch, null, 1)}\n`);
   }
   console.log(`todo: ${locale}: ${todo.length} message(s) in ${Math.ceil(todo.length / size)} batch(es) under l10n/.todo/${locale}/`);

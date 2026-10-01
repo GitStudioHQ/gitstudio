@@ -1793,7 +1793,7 @@ export class GitBridge {
       }
       // One whose folder is gone deletes nothing from under its tab: forgetting it goes on.
       if (existsSync(opts.path) && heldByAnotherTab(opts.path, this.otherTabRoots(ctx))) {
-        return { ok: false, expected: true, message: worktreeRemovalRefusal("openInTab", "That worktree") };
+        return { ok: false, expected: true, message: worktreeRemovalRefusal("openInTab", l10n.t("That worktree")) };
       }
       // The lock's reason, to put back if git refuses (see removeAsAgreed).
       const entry = (await ctx.worktrees.list()).find((e) => sameFolder(e.path, opts.path));
