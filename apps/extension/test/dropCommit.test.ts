@@ -421,7 +421,7 @@ test("the reorder's carry is undone with its branches too (graphPanel cannot loa
   // "Reorder and move those branches" carries go back with it, as a drop's
   // do above. The behaviour is the Undo state table's E37 (undoStateTable).
   const src = readFileSync(join(__dirname, "../src/graph/graphPanel.ts"), "utf8");
-  assert.match(src, /ledger\.runWithUndo\(active, `Reorder \$\{order\.length\} commits`, run\)/);
+  assert.match(src, /ledger\.runWithUndo\(active, l10n\.t\("Reorder \{0\} commits", order\.length\), run\)/);
 });
 
 test("Undo restores the original tip after dropping a middle commit", async () => {

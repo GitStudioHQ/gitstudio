@@ -14,9 +14,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { readManifest } from "./manifest";
 
 const ROOT = join(__dirname, "..");
-const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as {
+const pkg = readManifest() as {
   contributes: {
     commands: { command: string; title: string; category?: string }[];
     walkthroughs: { steps: { id: string; description: string; completionEvents?: string[] }[] }[];

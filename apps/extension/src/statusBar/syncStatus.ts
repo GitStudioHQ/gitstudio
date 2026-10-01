@@ -9,6 +9,7 @@ import { stoppedByThisCommand } from "../git/pausedForUser";
 import { detectOperation, notifyPaused } from "../git/pauseNotice";
 import { headBranchName } from "@gitstudio/git-service/RefProvider";
 import { syncAccessibleLabel, syncBranchLabel } from "./syncLabel";
+import * as l10n from "@vscode/l10n";
 
 // A compact left status-bar segment for the active repo's sync state:
 //   $(git-branch) <branch> $(arrow-down)<behind> $(arrow-up)<ahead>
@@ -43,7 +44,7 @@ export class SyncStatusItem implements vscode.Disposable {
       // own SCM segment rather than fighting it for the leftmost slot.
       -5,
     );
-    this.item.name = "GitStudio Branch Sync";
+    this.item.name = l10n.t("GitStudio Branch Sync");
     this.item.command = COMMAND_ID;
 
     this.disposables.push(
@@ -93,7 +94,7 @@ export class SyncStatusItem implements vscode.Disposable {
         return; // a newer update superseded this one
       }
 
-      const parts = [`$(git-branch) ${branch}`];
+      const parts = [l10n.t("$(git-branch) {0}", branch)];
       // A detached HEAD has no branch, so no publish cloud: it offered a
       // Publish that answers "cannot publish a detached HEAD".
       if (upstream && !head.detached) {
@@ -180,22 +181,22 @@ export class SyncStatusItem implements vscode.Disposable {
     md.appendMarkdown(`**${branch}**\n\n`);
     md.appendMarkdown(
       detached
-        ? "Detached HEAD: commits made here are on no branch\n\n"
+        ? l10n.t("Detached HEAD: commits made here are on no branch\n\n")
         : upstream
-          ? `$(git-branch) tracking \`${upstream}\` · ${behind} in, ${ahead} out\n\n`
-          : "No upstream set\n\n",
+          ? l10n.t("$(git-branch) tracking `{0}` · {1} in, {2} out\n\n", upstream, behind, ahead)
+          : l10n.t("No upstream set\n\n"),
     );
     md.appendMarkdown("---\n\n");
     if (detached) {
-      md.appendMarkdown("[$(repo-fetch) Fetch](command:gitstudio.sync.fetch)");
+      md.appendMarkdown(l10n.t("[$(repo-fetch) Fetch](command:gitstudio.sync.fetch)"));
     } else if (upstream) {
       md.appendMarkdown("[$(sync) Sync](command:gitstudio.sync.sync) &nbsp; ");
       md.appendMarkdown("[$(repo-fetch) Fetch](command:gitstudio.sync.fetch) &nbsp; ");
       md.appendMarkdown("[$(arrow-down) Pull](command:gitstudio.sync.pull) &nbsp; ");
-      md.appendMarkdown("[$(arrow-up) Push](command:gitstudio.sync.push)");
+      md.appendMarkdown(l10n.t("[$(arrow-up) Push](command:gitstudio.sync.push)"));
     } else {
       md.appendMarkdown("[$(cloud-upload) Publish Branch](command:gitstudio.sync.publish) &nbsp; ");
-      md.appendMarkdown("[$(repo-fetch) Fetch](command:gitstudio.sync.fetch)");
+      md.appendMarkdown(l10n.t("[$(repo-fetch) Fetch](command:gitstudio.sync.fetch)"));
     }
     this.item.tooltip = md;
   }
@@ -228,7 +229,7 @@ export class SyncStatusItem implements vscode.Disposable {
         const seen = await active.ctx.sync.upstreamTip();
         const fetched = await active.ctx.sync.fetch({ prune: pruneOnFetch() });
         if (!fetched.ok) {
-          reportSync(fetched, "Fetch");
+          reportSync(fetched, l10n.t("Fetch"));
           return;
         }
         // Do NOT pull over a rewrite of our own tip. After amending a pushed
@@ -282,7 +283,7 @@ export class SyncStatusItem implements vscode.Disposable {
           if (settlePushUnseen(pushed)) {
             return;
           }
-          reportSync(pushed, "Push", "Pushed");
+          reportSync(pushed, l10n.t("Push"), l10n.t("Pushed"));
           break;
         }
         // What git had stopped on BEFORE this pull: a stop the engine does not
@@ -324,14 +325,14 @@ export class SyncStatusItem implements vscode.Disposable {
           if (await this.offerUpstreamRepair(active, pull.stderr)) {
             return;
           }
-          reportSync(pull, "Pull", undefined, stoppedByThisCommand(before, await detectOperation(active.ctx)));
+          reportSync(pull, l10n.t("Pull"), undefined, stoppedByThisCommand(before, await detectOperation(active.ctx)));
           return;
         }
         // push-force-reviewed: only reached once the pull SUCCEEDED, so the
         // remote tip is an ancestor of HEAD — by fast-forward, by the merge
         // commit, or by the rebase. Either way this push is a fast-forward by
         // construction, and the rewrite case returned before getting here.
-        reportSync(await active.ctx.sync.push(), "Push", "Synced");
+        reportSync(await active.ctx.sync.push(), l10n.t("Push"), l10n.t("Synced"));
         break;
       }
       case "pull": {
@@ -377,8 +378,8 @@ export class SyncStatusItem implements vscode.Disposable {
         }
         reportSync(
           pulled,
-          "Pull",
-          "Pulled",
+          l10n.t("Pull"),
+          l10n.t("Pulled"),
           !pulled.ok && stoppedByThisCommand(before, await detectOperation(active.ctx)),
         );
         break;
@@ -392,7 +393,7 @@ export class SyncStatusItem implements vscode.Disposable {
         if (settlePushUnseen(pushed)) {
           return;
         }
-        reportSync(pushed, "Push", "Pushed");
+        reportSync(pushed, l10n.t("Push"), l10n.t("Pushed"));
         break;
       }
       case "publish": {
@@ -405,16 +406,16 @@ export class SyncStatusItem implements vscode.Disposable {
           // push-force-reviewed: publish — the remote has no such branch yet, so
           // there is nothing there to overwrite.
           await active.ctx.sync.push({ remote, branch, setUpstream: true }),
-          "Publish",
-          `Published ${branch}`,
+          l10n.t("Publish"),
+          l10n.t("Published {0}", branch),
         );
         break;
       }
       case "fetch":
         reportSync(
           await active.ctx.sync.fetch({ prune: pruneOnFetch() }),
-          "Fetch",
-          "Fetched",
+          l10n.t("Fetch"),
+          l10n.t("Fetched"),
         );
         break;
       default:
@@ -458,22 +459,22 @@ export class SyncStatusItem implements vscode.Disposable {
       ? tracked.remote === "."
         ? tracked.branch
         : `${tracked.remote}/${tracked.branch}`
-      : "its upstream";
+      : l10n.t("its upstream");
     const choice = await promptPick({
-      title: `"${branch}" tracks ${upstream}, which no longer exists`,
-      hint: "Someone deleted or renamed that remote branch.",
+      title: l10n.t("\"{0}\" tracks {1}, which no longer exists", branch, upstream),
+      hint: l10n.t("Someone deleted or renamed that remote branch."),
       choices: [
         {
           id: "republish",
-          label: "Republish Branch",
+          label: l10n.t("Republish Branch"),
           icon: "cloud-upload",
-          description: "Recreate the remote branch from your local commits.",
+          description: l10n.t("Recreate the remote branch from your local commits."),
         },
         {
           id: "unset",
-          label: "Stop Tracking",
+          label: l10n.t("Stop Tracking"),
           icon: "debug-disconnect",
-          description: "Leave the branch local-only; set a new upstream later.",
+          description: l10n.t("Leave the branch local-only; set a new upstream later."),
         },
       ],
     });
@@ -486,8 +487,8 @@ export class SyncStatusItem implements vscode.Disposable {
         // push-force-reviewed: publish — the remote has no such branch yet, so
         // there is nothing there to overwrite.
         await active.ctx.sync.push({ remote, branch, setUpstream: true }),
-        "Publish",
-        `Published ${branch}`,
+        l10n.t("Publish"),
+        l10n.t("Published {0}", branch),
       );
       return true;
     }
@@ -499,8 +500,8 @@ export class SyncStatusItem implements vscode.Disposable {
       ]);
       reportSync(
         { ok: r.code === 0, stderr: r.stderr },
-        "Unset upstream",
-        `"${branch}" no longer tracks a remote branch`,
+        l10n.t("Unset upstream"),
+        l10n.t("\"{0}\" no longer tracks a remote branch", branch),
       );
       return true;
     }
@@ -519,29 +520,29 @@ export class SyncStatusItem implements vscode.Disposable {
     behind: number;
   }): Promise<boolean | undefined> {
     const choice = await promptPick({
-      title: "This branch was rewritten",
-      hint:
-        `Your ${ab.ahead === 1 ? "commit" : "commits"} replaced ` +
-        `${ab.behind === 1 ? "the version" : "versions"} the remote still has ` +
-        "— amending a pushed commit does this. Pulling would bring the old " +
-        "one back.",
+      title: l10n.t("This branch was rewritten"),
+      hint: l10n.t(
+        "Your {0} replaced the {1} the remote still has — amending a pushed commit does this. Pulling would bring the old one back.",
+        ab.ahead === 1 ? l10n.t("commit") : l10n.t("commits"),
+        ab.behind === 1 ? l10n.t("version") : l10n.t("versions"),
+      ),
       choices: [
         {
           id: "force",
-          label: "Force push",
+          label: l10n.t("Force push"),
           icon: "repo-force-push",
           danger: true,
           // Not "the lease refuses if someone else pushed": Sync has just
           // fetched, so the lease cannot. What makes this safe is the check
           // that routed here — every commit being replaced is one of yours.
           description:
-            "Replaces only the versions you rewrote — nobody else's commits are on the remote branch.",
+            l10n.t("Replaces only the versions you rewrote — nobody else's commits are on the remote branch."),
         },
         {
           id: "cancel",
-          label: "Leave it alone",
+          label: l10n.t("Leave it alone"),
           icon: "close",
-          description: "Nothing is pushed and nothing is pulled.",
+          description: l10n.t("Nothing is pushed and nothing is pulled."),
         },
       ],
     });
@@ -553,21 +554,21 @@ export class SyncStatusItem implements vscode.Disposable {
 
   private async askForce(): Promise<boolean | undefined> {
     const choice = await promptPick({
-      title: "Push to the upstream branch?",
+      title: l10n.t("Push to the upstream branch?"),
       choices: [
         {
           id: "push",
-          label: "Push",
+          label: l10n.t("Push"),
           icon: "arrow-up",
-          description: "A normal push. Refused if the remote has commits you don't have.",
+          description: l10n.t("A normal push. Refused if the remote has commits you don't have."),
         },
         {
           id: "force",
-          label: "Force push",
+          label: l10n.t("Force push"),
           icon: "warning",
           danger: true,
           // Every force push is leased (SyncOps.push) — there is no raw --force.
-          description: "Uses --force-with-lease, which still refuses to overwrite remote work you haven't seen.",
+          description: l10n.t("Uses --force-with-lease, which still refuses to overwrite remote work you haven't seen."),
         },
       ],
     });
@@ -578,7 +579,7 @@ export class SyncStatusItem implements vscode.Disposable {
     const head = await active.ctx.refs.getHead();
     if (head.detached) {
       void vscode.window.showInformationMessage(
-        "GitStudio: cannot publish a detached HEAD — check out a branch first.",
+        l10n.t("GitStudio: cannot publish a detached HEAD — check out a branch first."),
       );
       return undefined;
     }
@@ -591,7 +592,7 @@ export class SyncStatusItem implements vscode.Disposable {
     const remotes = await active.ctx.remotes.list();
     if (remotes.length === 0) {
       void vscode.window.showInformationMessage(
-        "GitStudio: no remotes configured.",
+        l10n.t("GitStudio: no remotes configured."),
       );
       return undefined;
     }
@@ -599,7 +600,7 @@ export class SyncStatusItem implements vscode.Disposable {
       return remotes[0].name;
     }
     return promptPick({
-      title: "Publish this branch to which remote?",
+      title: l10n.t("Publish this branch to which remote?"),
       choices: remotes.map((r) => ({
         id: r.name,
         label: r.name,
@@ -636,13 +637,13 @@ function reportSync(
 ): void {
   if (result.ok) {
     void vscode.window.setStatusBarMessage(
-      `$(check) ${success ?? `${verb} done`}`,
+      l10n.t("$(check) {0}", success ?? l10n.t("{0} done", verb)),
       2500,
     );
     return;
   }
   if (paused) {
-    notifyPaused(`${verb} hit conflicts. Resolve them, then continue or abort.`);
+    notifyPaused(l10n.t("{0} hit conflicts. Resolve them, then continue or abort.", verb));
     return;
   }
   void vscode.window.showErrorMessage(failed(verb, result.stderr));

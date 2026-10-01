@@ -18,6 +18,8 @@
 // The component itself (dashboard.ts) is host-agnostic; the desktop mounts the
 // same class natively in its Changes view.
 
+import "@gitstudio/l10n/webview";
+
 import { installSolidAccent } from "../styles/solidAccent";
 import "../styles/conflicts.css";
 import type {

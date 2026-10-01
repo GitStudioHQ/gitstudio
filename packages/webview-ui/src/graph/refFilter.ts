@@ -10,14 +10,15 @@
 
 import type { GraphRefEntry, GraphRefFilter, RefPreset, WireRef } from "@gitstudio/host-bridge/graphProtocol";
 import { refLabel } from "@gitstudio/host-bridge/graphRefFilter";
+import * as l10n from "@vscode/l10n";
 
 export type { RefPreset };
 
 export const REF_PRESETS: ReadonlyArray<{ id: RefPreset; label: string }> = [
-  { id: "current", label: "Current branch" },
-  { id: "currentUpstream", label: "Current + upstream" },
-  { id: "local", label: "Local only" },
-  { id: "all", label: "All" },
+  { id: "current", label: l10n.t("Current branch") },
+  { id: "currentUpstream", label: l10n.t("Current + upstream") },
+  { id: "local", label: l10n.t("Local only") },
+  { id: "all", label: l10n.t("All") },
 ];
 
 /**
@@ -54,11 +55,11 @@ export function presetUnavailable(id: RefPreset, refs: readonly GraphRefEntry[])
   const current = refs.find((r) => r.kind === "head" && r.isCurrent);
   switch (id) {
     case "current":
-      return "HEAD is detached — there is no current branch";
+      return l10n.t("HEAD is detached — there is no current branch");
     case "currentUpstream":
-      return current ? `${current.name} has no upstream` : "HEAD is detached — there is no current branch";
+      return current ? `${current.name} has no upstream` : l10n.t("HEAD is detached — there is no current branch");
     case "local":
-      return "No local branches";
+      return l10n.t("No local branches");
     default:
       return "";
   }
@@ -104,12 +105,12 @@ export function refFilterLabel(
 ): string {
   if (preset === "current" || preset === "currentUpstream") {
     const cur = refs.find((r) => r.kind === "head" && r.isCurrent);
-    if (!cur) return "Detached HEAD";
+    if (!cur) return l10n.t("Detached HEAD");
     const on = refDisplayName(cur.fullName);
-    return preset === "current" ? `${on} (current)` : `${on} + upstream`;
+    return preset === "current" ? l10n.t("{0} (current)", on) : l10n.t("{0} + upstream", on);
   }
-  if (preset === "local") return "Local branches";
-  if (!filter || filter.length === 0) return "All branches";
+  if (preset === "local") return l10n.t("Local branches");
+  if (!filter || filter.length === 0) return l10n.t("All branches");
   if (filter.length <= 2) return filter.map((f) => refDisplayName(f)).join(", ");
   const anyTag = filter.some((f) => f.startsWith("refs/tags/"));
   return `${filter.length} ${anyTag ? "refs" : "branches"}`;
@@ -131,10 +132,10 @@ export function refFilterHint(
   refs: readonly GraphRefEntry[],
   preset?: RefPreset,
 ): string {
-  if (preset === "current" || preset === "currentUpstream") return "Follows the branch you are on · All for every branch";
-  if (preset === "local") return "Follows your local branches · All for every branch";
-  if (filter) return `${filter.length} of ${refs.length} ticked · untick the last for all`;
-  return refs.length ? "Showing every branch and tag · tick one to narrow" : "No branches or tags";
+  if (preset === "current" || preset === "currentUpstream") return l10n.t("Follows the branch you are on · All for every branch");
+  if (preset === "local") return l10n.t("Follows your local branches · All for every branch");
+  if (filter) return l10n.t("{0} of {1} ticked · untick the last for all", filter.length, refs.length);
+  return refs.length ? l10n.t("Showing every branch and tag · tick one to narrow") : l10n.t("No branches or tags");
 }
 
 /** The selection after ticking `fullName`: null narrows to it alone; a list
@@ -189,9 +190,9 @@ export function groupRefs(
   const q = query.trim().toLowerCase();
   const matches = q ? refs.filter((r) => r.name.toLowerCase().includes(q)) : [...refs];
   const spec: Array<[RefGroup["id"], string, GraphRefEntry["kind"]]> = [
-    ["local", "Local", "head"],
-    ["remote", "Remote", "remoteHead"],
-    ["tag", "Tags", "tag"],
+    ["local", l10n.t("Local"), "head"],
+    ["remote", l10n.t("Remote"), "remoteHead"],
+    ["tag", l10n.t("Tags"), "tag"],
   ];
   const out: RefGroup[] = [];
   for (const [id, label, kind] of spec) {
@@ -222,7 +223,7 @@ export function chipCheckout(chip: {
   sha: string;
 }): { label: string; icon: string } | undefined {
   if (!chip.sha || chip.kind === "currentHead" || chip.name.endsWith("/HEAD")) return undefined;
-  if (chip.kind === "tag") return { label: `Checkout ${chip.name}…`, icon: "tag" };
-  if (chip.kind === "remoteHead") return { label: `Checkout ${chip.name}`, icon: "cloud" };
-  return { label: `Checkout ${chip.name}`, icon: "git-branch" };
+  if (chip.kind === "tag") return { label: l10n.t("Checkout {0}…", chip.name), icon: "tag" };
+  if (chip.kind === "remoteHead") return { label: l10n.t("Checkout {0}", chip.name), icon: "cloud" };
+  return { label: l10n.t("Checkout {0}", chip.name), icon: "git-branch" };
 }

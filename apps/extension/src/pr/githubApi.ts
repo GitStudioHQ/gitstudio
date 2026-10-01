@@ -18,6 +18,7 @@ import {
   type CiState,
   type ReviewPayload,
 } from "@gitstudio/engine/forge/pullRequests";
+import * as l10n from "@vscode/l10n";
 
 const API_BASE = "https://api.github.com";
 const GRAPHQL = `${API_BASE}/graphql`;
@@ -190,7 +191,7 @@ export class GitHubApi {
     });
     if (!token) {
       throw new GitHubApiError(
-        "Connect GitHub to use pull requests.",
+        l10n.t("Connect GitHub to use pull requests."),
         "auth",
         401,
       );
@@ -201,7 +202,8 @@ export class GitHubApi {
       res = await fetch(url, {
         method,
         headers: {
-          Authorization: `Bearer ${token}`,
+          // English on purpose: an HTTP header value, spoken to GitHub.
+      Authorization: `Bearer ${token}`,
           Accept: init?.accept ?? "application/vnd.github+json",
           "X-GitHub-Api-Version": "2022-11-28",
           "User-Agent": "GitStudio",
@@ -215,7 +217,7 @@ export class GitHubApi {
         throw err;
       }
       throw new GitHubApiError(
-        "Couldn't reach GitHub. Check your network connection.",
+        l10n.t("Couldn't reach GitHub. Check your network connection."),
         "network",
       );
     }
@@ -296,7 +298,7 @@ export class GitHubApi {
     const json = (await res.json()) as { data?: T; errors?: { message?: string }[] };
     if (!json.data) {
       throw new GitHubApiError(
-        json.errors?.[0]?.message || "GitHub couldn't answer the query.",
+        json.errors?.[0]?.message || l10n.t("GitHub couldn't answer the query."),
         "server",
       );
     }
@@ -766,12 +768,12 @@ async function toError(res: Response): Promise<GitHubApiError> {
     if (Number.isFinite(after)) {
       return new Date(Date.now() + after * 1000).toLocaleTimeString();
     }
-    return reset ? new Date(Number(reset) * 1000).toLocaleTimeString() : "a few minutes";
+    return reset ? new Date(Number(reset) * 1000).toLocaleTimeString() : l10n.t("a few minutes");
   };
 
   if (res.status === 401) {
     return new GitHubApiError(
-      "Your GitHub session expired. Sign in again to continue.",
+      l10n.t("Your GitHub session expired. Sign in again to continue."),
       "auth",
       401,
     );
@@ -784,7 +786,7 @@ async function toError(res: Response): Promise<GitHubApiError> {
         /rate limit/i.test(detail)))
   ) {
     return new GitHubApiError(
-      `GitHub rate limit reached. Try again after ${retryAt()}.`,
+      l10n.t("GitHub rate limit reached. Try again after {0}.", retryAt()),
       "rate-limit",
       res.status,
     );
@@ -794,7 +796,7 @@ async function toError(res: Response): Promise<GitHubApiError> {
     // which names the page that authorizes this sign-in for it.
     const sso = /\burl=(https:\/\/github\.com\/\S+)/.exec(res.headers.get("x-github-sso") ?? "")?.[1];
     return new GitHubApiError(
-      detail || "GitHub denied the request (insufficient permissions).",
+      detail || l10n.t("GitHub denied the request (insufficient permissions)."),
       "auth",
       403,
       sso,
@@ -802,18 +804,18 @@ async function toError(res: Response): Promise<GitHubApiError> {
   }
   if (res.status === 404) {
     return new GitHubApiError(
-      detail || "Not found on GitHub.",
+      detail || l10n.t("Not found on GitHub."),
       "not-found",
       404,
     );
   }
   if (res.status === 422) {
     const why = reasons.length > 0 ? reasons.join("; ") : "";
-    const head = detail && detail !== "Unprocessable Entity" ? detail : "GitHub rejected the request";
+    const head = detail && detail !== "Unprocessable Entity" ? detail : l10n.t("GitHub rejected the request");
     return new GitHubApiError(why ? `${head}: ${why}` : `${head}.`, "validation", 422);
   }
   return new GitHubApiError(
-    detail || `GitHub request failed (HTTP ${res.status}).`,
+    detail || l10n.t("GitHub request failed (HTTP {0}).", res.status),
     "server",
     res.status,
   );

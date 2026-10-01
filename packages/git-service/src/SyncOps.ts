@@ -3,6 +3,7 @@ import { parseUnmergedPaths } from "./ConflictProvider";
 import { rebaseInProgress } from "./rebaseInProgress";
 import { parseV2 } from "./StatusProvider";
 import { operationInTheWayMessage, stoppedIn, type StoppedOperation } from "./stoppedOperation";
+import * as l10n from "@vscode/l10n";
 
 /** How far the branch is ahead of / behind its upstream. */
 export interface AheadBehind {
@@ -64,9 +65,9 @@ export interface PushResult extends SyncOpResult {
 /** What to tell the user when a force push was refused as `PushResult.unseen`. */
 export function pushUnseenMessage(): string {
   return (
-    "The remote branch has commits this branch has never had — fetched in the background, " +
-    "from another machine or someone else — and a force push would delete them. " +
-    "Pull them in first, then push."
+    l10n.t("The remote branch has commits this branch has never had — fetched in the background, ") +
+    l10n.t("from another machine or someone else — and a force push would delete them. ") +
+    l10n.t("Pull them in first, then push.")
   );
 }
 
@@ -175,15 +176,15 @@ export interface PullDirty {
 /** What to tell the user when uncommitted work stopped a pull (`PullDirty`). */
 export function pullDirtyMessage(d: PullDirty): string {
   const n = d.paths.length;
-  const which = n === 1 ? d.paths[0] : `${n} files`;
-  const them = n === 1 ? "it" : "them";
+  const which = n === 1 ? d.paths[0] : l10n.t("{0} files", n);
+  const them = n === 1 ? l10n.t("it") : l10n.t("them");
   if (d.rebase) {
     return (
-      `Pulling with rebase needs a clean working tree, and you have uncommitted changes to ${which}. ` +
-      `Commit or stash ${them}, then pull again.`
+      l10n.t("Pulling with rebase needs a clean working tree, and you have uncommitted changes to {0}. ", which) +
+      l10n.t("Commit or stash {0}, then pull again.", them)
     );
   }
-  return `The pull would overwrite your uncommitted changes to ${which}. Commit or stash ${them}, then pull again.`;
+  return l10n.t("The pull would overwrite your uncommitted changes to {0}. Commit or stash {1}, then pull again.", which, them);
 }
 
 /**
@@ -251,7 +252,7 @@ export interface PullResult extends SyncOpResult {
 
 /** What to tell the user when a pull found HEAD detached (`PullResult.detached`). */
 export function pullDetachedMessage(): string {
-  return "HEAD is detached, so there is no branch to pull into. Check out a branch first.";
+  return l10n.t("HEAD is detached, so there is no branch to pull into. Check out a branch first.");
 }
 
 /**
@@ -264,11 +265,11 @@ export function pullDetachedMessage(): string {
  */
 export function pullStoppedMessage(stop: PullStop): string {
   const n = stop.conflicted.length;
-  const files = n === 1 ? "1 file" : `${n} files`;
-  const next = stop.operation === "rebase" ? "continue the rebase" : "commit the merge";
+  const files = n === 1 ? l10n.t("1 file") : l10n.t("{0} files", n);
+  const next = stop.operation === "rebase" ? l10n.t("continue the rebase") : l10n.t("commit the merge");
   return (
-    `The pull stopped on conflicts in ${files}. Resolve ${n === 1 ? "it" : "them"}, ` +
-    `then ${next} — or abort to go back to where you were.`
+    l10n.t("The pull stopped on conflicts in {0}. Resolve {1}, ", files, n === 1 ? l10n.t("it") : l10n.t("them")) +
+    l10n.t("then {0} — or abort to go back to where you were.", next)
   );
 }
 
@@ -429,7 +430,7 @@ export class SyncOps {
       if (!remote || !branch || !opts.dest || opts.force) {
         return {
           ok: false,
-          stderr: "A push to a named destination needs its remote and branch, and is never forced.",
+          stderr: l10n.t("A push to a named destination needs its remote and branch, and is never forced."),
         };
       }
       refspec = `refs/heads/${branch}:refs/heads/${opts.dest}`;
@@ -1230,7 +1231,7 @@ export class SyncOps {
     );
     const [remote, remoteRef] = up.stdout.trim().split("\t");
     if (up.code !== 0 || !remote || !remoteRef) {
-      return { ok: false, stderr: `'${branch}' has no upstream to pull from.` };
+      return { ok: false, stderr: l10n.t("'{0}' has no upstream to pull from.", branch) };
     }
     const r = await this.proc.run(
       ["fetch", remote, `${remoteRef}:refs/heads/${branch}`],

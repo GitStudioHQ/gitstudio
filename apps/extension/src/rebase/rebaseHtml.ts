@@ -1,4 +1,6 @@
 import * as vscode from "vscode";
+import * as l10n from "@vscode/l10n";
+import { l10nWebviewScript } from "@gitstudio/l10n/index";
 
 /**
  * Builds the interactive-rebase webview HTML with a locked-down CSP and the
@@ -20,7 +22,7 @@ export function getRebaseHtml(
   const styleUri = dist("webview", "rebase.css");
 
   const csp = [
-    `default-src 'none'`,
+    "default-src 'none'",
     `img-src ${webview.cspSource} https: data:`,
     `style-src ${webview.cspSource} 'unsafe-inline'`,
     `font-src ${webview.cspSource} data:`,
@@ -34,10 +36,11 @@ export function getRebaseHtml(
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link href="${styleUri}" rel="stylesheet" />
-  <title>Interactive Rebase</title>
+  <title>${l10n.t("Interactive Rebase")}</title>
 </head>
 <body>
-  <div id="root"><div id="boot">Loading rebase plan…</div></div>
+  <div id="root"><div id="boot">${l10n.t("Loading rebase plan…")}</div></div>
+  ${l10nWebviewScript(nonce)}
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

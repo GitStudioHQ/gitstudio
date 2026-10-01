@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@gitstudio/host-bridge": "*",
+    "@vscode/l10n": "^0.0.18",
     "vscode-diff": "^3.0.1"
   }
 }

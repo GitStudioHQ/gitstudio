@@ -20,6 +20,7 @@ import {
 } from "@gitstudio/engine/staging/blockStaging";
 import { computeHunks, applySelectedChanges } from "@gitstudio/engine/staging/applyLineChanges";
 import type { StagingProvider } from "./StagingProvider";
+import * as l10n from "@vscode/l10n";
 
 export type { ChangeBlock, BlockState } from "@gitstudio/engine/staging/blockStaging";
 
@@ -103,11 +104,11 @@ export async function listChangeBlocks(
 
 /** What a refused write says, and why the caller should not treat it as failure. */
 const GONE =
-  "That change is no longer there — the file moved underneath. Refresh and try again.";
+  l10n.t("That change is no longer there — the file moved underneath. Refresh and try again.");
 
 /** What a file that cannot be staged change-by-change says. */
 const NOT_STAGEABLE =
-  "This file can only be staged whole — it is binary or too large to stage change by change.";
+  l10n.t("This file can only be staged whole — it is binary or too large to stage change by change.");
 
 export interface SetBlockResult {
   ok: boolean;

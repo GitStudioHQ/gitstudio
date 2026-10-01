@@ -28,6 +28,7 @@ import { worktreeEntry } from "../git/worktreeContext";
 import { pullOrAsk } from "../git/inTheWay";
 import { askPullMode } from "../git/pullMode";
 import { notice, NO_REPOSITORY } from "../ui/notify";
+import * as l10n from "@vscode/l10n";
 
 // The Worktrees pillar's commands — also absent from free VS Code. The view
 // (worktreesWebview.ts) calls them with a worktree's folder; the palette with
@@ -67,7 +68,7 @@ export interface WorktreeUi {
  */
 export function worktreeLabel(entry: WorktreeEntry): string {
   const folder = path.basename(entry.path);
-  return entry.bare ? `${folder} (bare)` : folder;
+  return entry.bare ? l10n.t("{0} (bare)", folder) : folder;
 }
 
 /**
@@ -157,7 +158,7 @@ async function resolveTarget(
         description: `${e.branch ?? `detached at ${e.head.slice(0, 7)}`} — ${shownPath(e)}`,
       }));
     if (choices.length === 0) {
-      void vscode.window.showInformationMessage("GitStudio: no worktree this can be done to.");
+      void vscode.window.showInformationMessage(l10n.t("GitStudio: no worktree this can be done to."));
       return undefined;
     }
     at = await promptPick({ title: pickTitle, choices });
@@ -168,7 +169,7 @@ async function resolveTarget(
   const index = list.findIndex((e) => sameFolder(e.path, at!));
   if (index < 0) {
     void vscode.window.showInformationMessage(
-      `GitStudio: ${worktreeRemovalRefusal("notListed", path.basename(at))}`,
+      l10n.t("GitStudio: {0}", worktreeRemovalRefusal("notListed", path.basename(at))),
     );
     return undefined;
   }
@@ -196,7 +197,7 @@ function saidFolderGone(entry: WorktreeEntry): boolean {
     return false;
   }
   void vscode.window.showWarningMessage(
-    `GitStudio: ${worktreeLabel(entry)}'s folder is gone — ${shownPath(entry)}. Forget the worktree in Worktrees to clear it from the list.`,
+    l10n.t("GitStudio: {0}'s folder is gone — {1}. Forget the worktree in Worktrees to clear it from the list.", worktreeLabel(entry), shownPath(entry)),
   );
   return true;
 }
@@ -214,7 +215,7 @@ function saidNotAWorktree(entry: WorktreeEntry): boolean {
     return false;
   }
   void vscode.window.showWarningMessage(
-    `GitStudio: ${worktreeLabel(entry)}'s folder isn't a worktree any more — ${shownPath(entry)}. Forget the worktree in Worktrees to clear it from the list.`,
+    l10n.t("GitStudio: {0}'s folder isn't a worktree any more — {1}. Forget the worktree in Worktrees to clear it from the list.", worktreeLabel(entry), shownPath(entry)),
   );
   return true;
 }
@@ -234,7 +235,7 @@ export async function openWorktreeIn(
   const r = await resolveTarget(
     repos,
     t,
-    where === "new" ? "Open a worktree in a new window" : "Open a worktree in this window",
+    where === "new" ? l10n.t("Open a worktree in a new window") : l10n.t("Open a worktree in this window"),
     (e, _m, here) => !e.bare && !here && existsSync(e.path) && !isUnlinked(e),
   );
   if (!r || r.entry.bare || saidNotAWorktree(r.entry) || r.here) {
@@ -247,7 +248,7 @@ export async function openWorktreeIn(
 
 /** Show the worktree's folder in the system's file manager. */
 export async function revealWorktree(repos: RepoManager, t: WorktreeTarget): Promise<void> {
-  const r = await resolveTarget(repos, t, "Reveal a worktree", (e) => existsSync(e.path));
+  const r = await resolveTarget(repos, t, l10n.t("Reveal a worktree"), (e) => existsSync(e.path));
   if (!r || saidFolderGone(r.entry)) {
     return;
   }
@@ -256,7 +257,7 @@ export async function revealWorktree(repos: RepoManager, t: WorktreeTarget): Pro
 
 /** A terminal in the worktree's folder, named for it. */
 export async function openWorktreeTerminal(repos: RepoManager, t: WorktreeTarget): Promise<void> {
-  const r = await resolveTarget(repos, t, "Open a terminal in a worktree", (e) => !e.bare && existsSync(e.path) && !isUnlinked(e));
+  const r = await resolveTarget(repos, t, l10n.t("Open a terminal in a worktree"), (e) => !e.bare && existsSync(e.path) && !isUnlinked(e));
   if (!r || r.entry.bare || saidNotAWorktree(r.entry)) {
     return;
   }
@@ -266,12 +267,12 @@ export async function openWorktreeTerminal(repos: RepoManager, t: WorktreeTarget
 
 /** Copy the worktree's folder, whole. */
 export async function copyWorktreePath(repos: RepoManager, t: WorktreeTarget): Promise<void> {
-  const r = await resolveTarget(repos, t, "Copy a worktree's path", () => true);
+  const r = await resolveTarget(repos, t, l10n.t("Copy a worktree's path"), () => true);
   if (!r) {
     return;
   }
   await vscode.env.clipboard.writeText(nativePath(r.entry.path));
-  flash(`Copied ${shownPath(r.entry)}`);
+  flash(l10n.t("Copied {0}", shownPath(r.entry)));
 }
 
 // ── New worktree ─────────────────────────────────────────────────────────────
@@ -305,9 +306,9 @@ export async function addWorktree(
   const choices: DialogChoice[] = [
     {
       id: NEW,
-      label: "New branch…",
+      label: l10n.t("New branch…"),
       icon: "add",
-      description: "Create a new branch from the current HEAD.",
+      description: l10n.t("Create a new branch from the current HEAD."),
     },
   ];
   for (const r of refs) {
@@ -328,8 +329,8 @@ export async function addWorktree(
   }
 
   const picked = await promptPick({
-    title: "New worktree — pick a ref",
-    hint: "What should the new worktree be based on?",
+    title: l10n.t("New worktree — pick a ref"),
+    hint: l10n.t("What should the new worktree be based on?"),
     choices,
   });
   if (!picked) {
@@ -339,7 +340,7 @@ export async function addWorktree(
   if (picked === NEW) {
     const name = await askNewBranchName(
       a,
-      "The branch is created at the current HEAD and checked out in the new worktree.",
+      l10n.t("The branch is created at the current HEAD and checked out in the new worktree."),
     );
     if (!name) {
       return;
@@ -378,7 +379,7 @@ export async function worktreeFromRef(
   const resolved = await worktreeRefFor(a.ctx, ref);
   if (!resolved) {
     void vscode.window.showErrorMessage(
-      `GitStudio: couldn't find ${ref.name} in this repository's refs — refresh and try again.`,
+      l10n.t("GitStudio: couldn't find {0} in this repository's refs — refresh and try again.", ref.name),
     );
     return;
   }
@@ -399,22 +400,22 @@ export async function worktreeFromRef(
   const mode = holder || optionLike
     ? "new"
     : await promptPick({
-        title: `Worktree from '${label}'`,
-        hint: "Check it out directly, or as a new named branch?",
+        title: l10n.t("Worktree from '{0}'", label),
+        hint: l10n.t("Check it out directly, or as a new named branch?"),
         choices: [
           {
             id: "direct",
-            label: isLocal ? label : `${label} (detached)`,
+            label: isLocal ? label : l10n.t("{0} (detached)", label),
             icon: isLocal ? "git-branch" : "git-commit",
             description: isLocal
-              ? `Check out the existing local branch ${label}.`
-              : `Check out ${label} as a detached HEAD.`,
+              ? l10n.t("Check out the existing local branch {0}.", label)
+              : l10n.t("Check out {0} as a detached HEAD.", label),
           },
           {
             id: "new",
-            label: "New branch…",
+            label: l10n.t("New branch…"),
             icon: "add",
-            description: `Create a new local branch starting from ${label}.`,
+            description: l10n.t("Create a new local branch starting from {0}.", label),
           },
         ],
       });
@@ -435,11 +436,11 @@ export async function worktreeFromRef(
     return;
   }
 
-  const created = `A new local branch is created from ${label} and checked out in the new worktree.`;
+  const created = l10n.t("A new local branch is created from {0} and checked out in the new worktree.", label);
   const name = await askNewBranchName(
     a,
     holder
-      ? `${label} is checked out in the worktree at ${shownPath(holder)}, and a branch can be checked out in only one worktree at a time. ${created}`
+      ? l10n.t("{0} is checked out in the worktree at {1}, and a branch can be checked out in only one worktree at a time. {2}", label, shownPath(holder), created)
       : optionLike
         ? `${optionLike.message} ${created}`
         : created,
@@ -477,11 +478,11 @@ async function askNewBranchName(a: RepoEntry, hint: string): Promise<string | un
   let value: string | undefined;
   for (;;) {
     const name = await promptInput({
-      title: "New worktree branch",
+      title: l10n.t("New worktree branch"),
       hint: why,
       placeholder: "feature/worktree",
       value,
-      confirmLabel: "Continue",
+      confirmLabel: l10n.t("Continue"),
       validate: "refName",
     });
     if (!name) {
@@ -491,7 +492,7 @@ async function askNewBranchName(a: RepoEntry, hint: string): Promise<string | un
     if (taken.code !== 0) {
       return name;
     }
-    why = `A branch named ${name} already exists — choose another name. ${hint}`;
+    why = l10n.t("A branch named {0} already exists — choose another name. {1}", name, hint);
     value = name;
   }
 }
@@ -579,17 +580,17 @@ async function askFolderAndCreate(
   const mainPath = list[0]?.path ?? a.root;
   const bare = !!list[0]?.bare;
   const suggested = suggestWorktreeFolder(mainPath, opts.folderName, folderIsFree, bare);
-  const intro = `The new worktree's folder. Suggested ${bareInsideProject(mainPath, bare) ? "in the project's folder" : "beside the main worktree"}, as ${path.basename(suggested)}; change it if you like — it must not exist yet, or be empty.`;
+  const intro = l10n.t("The new worktree's folder. Suggested {0}, as {1}; change it if you like — it must not exist yet, or be empty.", bareInsideProject(mainPath, bare) ? l10n.t("in the project's folder") : l10n.t("beside the main worktree"), path.basename(suggested));
   let hint = intro;
   let value = suggested;
   let target: string;
   for (;;) {
     const typed = await promptInput({
-      title: `New worktree for ${opts.branchName}`,
+      title: l10n.t("New worktree for {0}", opts.branchName),
       hint,
       value,
       placeholder: suggested,
-      confirmLabel: "Create Worktree",
+      confirmLabel: l10n.t("Create Worktree"),
       validate: "nonEmpty",
     });
     if (typed === undefined) {
@@ -600,7 +601,7 @@ async function askFolderAndCreate(
     // git refuses a folder that has anything in it — and with -b it has made
     // the branch by then. Said before anything runs.
     if (!folderIsFree(target)) {
-      hint = `${tildify(target)} already exists and isn't empty — choose another folder. ${intro}`;
+      hint = l10n.t("{0} already exists and isn't empty — choose another folder. {1}", tildify(target), intro);
       continue;
     }
     // Free on disk, but still a worktree to git — the "folder missing" row
@@ -609,7 +610,12 @@ async function askFolderAndCreate(
     const holder = (await a.ctx.worktrees.list()).find((e) => sameFolder(e.path, target));
     if (holder) {
       const gone = !existsSync(holder.path);
-      hint = `git still has a worktree at ${tildify(target)} (${holder.branch ?? `detached at ${holder.head.slice(0, 7)}`})${gone ? ", though its folder is gone" : ""} — ${gone ? "forget" : "remove"} that worktree in Worktrees, or choose another folder. ${intro}`;
+      const where = holder.branch ?? l10n.t("detached at {0}", holder.head.slice(0, 7));
+      // Whole messages: the clause sits mid-sentence, where a spliced fragment
+      // reads wrong once the sentence is Chinese (see the i18n notes).
+      hint = gone
+        ? l10n.t("git still has a worktree at {0} ({1}), though its folder is gone — {2} that worktree in Worktrees, or choose another folder. {3}", tildify(target), where, l10n.t("forget"), intro)
+        : l10n.t("git still has a worktree at {0} ({1}) — {2} that worktree in Worktrees, or choose another folder. {3}", tildify(target), where, l10n.t("remove"), intro);
       continue;
     }
     break;
@@ -622,16 +628,17 @@ async function askFolderAndCreate(
   });
   if (!result.ok) {
     void vscode.window.showErrorMessage(
-      `GitStudio: couldn't create the worktree — ${result.stderr.trim() || "git worktree add failed."}`,
+      l10n.t("GitStudio: couldn't create the worktree — {0}", result.stderr.trim() || l10n.t("git worktree add failed.")),
     );
     return;
   }
   refresh();
+  const openLabel = l10n.t("Open in New Window");
   const open = await vscode.window.showInformationMessage(
-    notice(`Created the worktree ${path.basename(target)} at ${tildify(target)}`),
-    "Open in New Window",
+    notice(l10n.t("Created the worktree {0} at {1}", path.basename(target), tildify(target))),
+    openLabel,
   );
-  if (open === "Open in New Window") {
+  if (open === openLabel) {
     await vscode.commands.executeCommand("vscode.openFolder", vscode.Uri.file(target), {
       forceNewWindow: true,
     });
@@ -655,7 +662,7 @@ export async function removeWorktree(
   refresh: () => void,
   ui: WorktreeUi = {},
 ): Promise<void> {
-  const r = await resolveTarget(repos, t, "Remove a worktree", (e, main, here) => !e.bare && !main && !here);
+  const r = await resolveTarget(repos, t, l10n.t("Remove a worktree"), (e, main, here) => !e.bare && !main && !here);
   if (!r) {
     refresh();
     return;
@@ -685,7 +692,7 @@ export async function forgetWorktree(
   const r = await resolveTarget(
     repos,
     t,
-    "Forget a worktree",
+    l10n.t("Forget a worktree"),
     (e, main) => !e.bare && !main && (!existsSync(e.path) || isUnlinked(e)),
   );
   if (!r) {
@@ -695,7 +702,7 @@ export async function forgetWorktree(
   const removal = await r.a.ctx.worktrees.removal(r.entry.path);
   if (removal.kind === "present") {
     void vscode.window.showInformationMessage(
-      `GitStudio: ${worktreeLabel(r.entry)}'s folder is there, so there's nothing to forget. Remove Worktree… removes it, folder and all.`,
+      l10n.t("GitStudio: {0}'s folder is there, so there's nothing to forget. Remove Worktree… removes it, folder and all.", worktreeLabel(r.entry)),
     );
     return;
   }
@@ -734,7 +741,7 @@ async function askAndRemove(
   const openHere = [...worktreesOpenHere(list, a.root)].some((p) => sameFolder(p, at));
   const removal = plan ?? (await a.ctx.worktrees.removal(at));
   if (removal.kind === "notListed") {
-    void vscode.window.showInformationMessage(`GitStudio: ${worktreeRemovalRefusal("notListed", label)}`);
+    void vscode.window.showInformationMessage(l10n.t("GitStudio: {0}", worktreeRemovalRefusal("notListed", label)));
     ui.drop?.(at);
     refresh();
     return;
@@ -743,7 +750,7 @@ async function askAndRemove(
   label = worktreeLabel(entry);
   if (removal.kind === "main" || openHere) {
     void vscode.window.showInformationMessage(
-      `GitStudio: ${worktreeRemovalRefusal(removal.kind === "main" ? "main" : "current", label)}`,
+      l10n.t("GitStudio: {0}", worktreeRemovalRefusal(removal.kind === "main" ? "main" : "current", label)),
     );
     return;
   }
@@ -787,7 +794,7 @@ async function askAndRemove(
   // a path the question did not list runs nothing — see removeAsAgreed.
   const listed = removal.kind === "present" ? removal.changes : undefined;
   const pastLock = entry.locked ? { reason: entry.lockReason } : undefined;
-  ui.busy?.(entry.path, removal.kind === "present" ? "Removing…" : "Forgetting…");
+  ui.busy?.(entry.path, removal.kind === "present" ? l10n.t("Removing…") : l10n.t("Forgetting…"));
   let res;
   try {
     res = await a.ctx.worktrees.removeAsAgreed(entry.path, {
@@ -803,15 +810,15 @@ async function askAndRemove(
   }
   if (res.ok) {
     ui.drop?.(entry.path);
-    let said = `${removal.kind === "present" ? "Removed" : "Forgot"} the worktree ${label}`;
+    let said = l10n.t("{0} the worktree {1}", removal.kind === "present" ? l10n.t("Removed") : l10n.t("Forgot"), label);
     if (res.stashed) {
-      said += ` — its changes are in the stash “${worktreeStashMessage(label, shownPath(entry))}”`;
+      said += l10n.t(" — its changes are in the stash “{0}”", worktreeStashMessage(label, shownPath(entry)));
     }
     if (deleteBranch && merged && entry.branch) {
       said += await deleteMergedBranch(repos, a, entry.branch, merged);
     }
     if (res.stashed) {
-      void vscode.window.showInformationMessage(`GitStudio: ${said}.`);
+      void vscode.window.showInformationMessage(l10n.t("GitStudio: {0}.", said));
     } else {
       flash(said);
     }
@@ -829,13 +836,16 @@ async function askAndRemove(
     }
   }
   if (res.changedSince) {
-    void vscode.window.showInformationMessage(`GitStudio: ${worktreeChangedSinceAsked(label)}`);
+    void vscode.window.showInformationMessage(l10n.t("GitStudio: {0}", worktreeChangedSinceAsked(label)));
     refresh();
     return;
   }
   const verb = removal.kind === "present" ? "remove" : "forget";
+  const why = res.stderr.trim() || "git worktree failed.";
   void vscode.window.showErrorMessage(
-    `GitStudio: couldn't ${verb} the worktree ${label}${res.stashed ? " — its changes were stashed first, and are in the stash list" : ""} — ${res.stderr.trim() || "git worktree failed."}`,
+    res.stashed
+      ? l10n.t("GitStudio: couldn't {0} the worktree {1} — its changes were stashed first, and are in the stash list — {2}", verb, label, why)
+      : l10n.t("GitStudio: couldn't {0} the worktree {1} — {2}", verb, label, why),
   );
   refresh();
 }
@@ -853,19 +863,19 @@ async function askAndRemove(
 async function deleteMergedBranch(repos: RepoManager, a: RepoEntry, branch: string, into: MergedInto): Promise<string> {
   const still = await a.ctx.process.run(["merge-base", "--is-ancestor", `refs/heads/${branch}`, into.ref]);
   if (still.code === 1) {
-    return `; the branch ${branch} was kept — a commit was made on it while you were asked, and ${into.name} doesn't have it`;
+    return l10n.t("; the branch {0} was kept — a commit was made on it while you were asked, and {1} doesn't have it", branch, into.name);
   }
   if (still.code !== 0) {
-    return `; the branch ${branch} was kept — git couldn't tell whether it is still merged into ${into.name}`;
+    return l10n.t("; the branch {0} was kept — git couldn't tell whether it is still merged into {1}", branch, into.name);
   }
   const run = async () => a.ctx.process.run(["branch", "-D", "--", branch]);
   const ledger = repos.getUndoLedger?.();
   const r = ledger
-    ? await ledger.runWithUndo(a, `Delete branch ${branch}`, run, { refsOnly: true })
+    ? await ledger.runWithUndo(a, l10n.t("Delete branch {0}", branch), run, { refsOnly: true })
     : await run();
   return r.code === 0
-    ? ` and deleted the branch ${branch}`
-    : `; the branch ${branch} was kept — ${r.stderr.trim() || "git couldn't delete it"}`;
+    ? l10n.t(" and deleted the branch {0}", branch)
+    : `; the branch ${branch} was kept — ${r.stderr.trim() || l10n.t("git couldn't delete it")}`;
 }
 
 // ── Lock ─────────────────────────────────────────────────────────────────────
@@ -881,7 +891,7 @@ export async function lockWorktree(
   const r = await resolveTarget(
     repos,
     t,
-    lock ? "Lock a worktree" : "Unlock a worktree",
+    lock ? l10n.t("Lock a worktree") : l10n.t("Unlock a worktree"),
     (e, main) => !e.bare && !main && (lock ? !e.locked : !!e.locked),
   );
   if (!r) {
@@ -893,23 +903,23 @@ export async function lockWorktree(
     // The view has already painted it unlocked; git's no puts the lock back.
     const res = await a.ctx.worktrees.unlock(entry.path);
     if (res.ok) {
-      flash(`Unlocked the worktree ${label}`);
+      flash(l10n.t("Unlocked the worktree {0}", label));
     } else {
       ui.patch?.(entry.path, { locked: true, lockReason: entry.lockReason });
-      void vscode.window.showErrorMessage(`GitStudio: couldn't unlock the worktree ${label} — ${res.stderr.trim()}`);
+      void vscode.window.showErrorMessage(l10n.t("GitStudio: couldn't unlock the worktree {0} — {1}", label, res.stderr.trim()));
     }
     refresh();
     return;
   }
   if (r.main) {
-    void vscode.window.showInformationMessage(`GitStudio: ${label} is the main worktree, which git can't lock.`);
+    void vscode.window.showInformationMessage(l10n.t("GitStudio: {0} is the main worktree, which git can't lock.", label));
     return;
   }
   const reason = await promptInput({
-    title: `Lock worktree ${label}`,
-    hint: "Git won't prune, move or remove it until it is unlocked. Say why, so whoever sees the lock knows — or leave it empty.",
-    placeholder: "Reason (optional)",
-    confirmLabel: "Lock",
+    title: l10n.t("Lock worktree {0}", label),
+    hint: l10n.t("Git won't prune, move or remove it until it is unlocked. Say why, so whoever sees the lock knows — or leave it empty."),
+    placeholder: l10n.t("Reason (optional)"),
+    confirmLabel: l10n.t("Lock"),
   });
   if (reason === undefined) {
     return;
@@ -918,10 +928,10 @@ export async function lockWorktree(
   ui.patch?.(entry.path, { locked: true, lockReason: said });
   const res = await a.ctx.worktrees.lock(entry.path, { reason });
   if (res.ok) {
-    flash(`Locked the worktree ${label}`);
+    flash(l10n.t("Locked the worktree {0}", label));
   } else {
     ui.patch?.(entry.path, { locked: false, lockReason: undefined });
-    void vscode.window.showErrorMessage(`GitStudio: couldn't lock the worktree ${label} — ${res.stderr.trim()}`);
+    void vscode.window.showErrorMessage(l10n.t("GitStudio: couldn't lock the worktree {0} — {1}", label, res.stderr.trim()));
   }
   refresh();
 }
@@ -957,11 +967,11 @@ export async function pruneWorktrees(
   const allGone = prunable.every((e) => !existsSync(e.path));
   const lockedNote =
     locked.length > 0
-      ? ` ${names(locked)} ${locked.length === 1 ? "is" : "are"} locked, so prune keeps ${locked.length === 1 ? "it" : "them"} though ${locked.every((e) => !existsSync(e.path)) ? "the folder is gone" : locked.length === 1 ? "it isn't a worktree any more" : "they aren't worktrees any more"} — forget ${locked.length === 1 ? "it" : "them"} in Worktrees.`
+      ? l10n.t(" {0} {1} locked, so prune keeps {2} though {3} — forget {4} in Worktrees.", names(locked), locked.length === 1 ? l10n.t("is") : l10n.t("are"), locked.length === 1 ? l10n.t("it") : l10n.t("them"), locked.every((e) => !existsSync(e.path)) ? l10n.t("the folder is gone") : locked.length === 1 ? l10n.t("it isn't a worktree any more") : l10n.t("they aren't worktrees any more"), locked.length === 1 ? l10n.t("it") : l10n.t("them"))
       : "";
   if (prunable.length === 0) {
     void vscode.window.showInformationMessage(
-      `GitStudio: Nothing to prune: ${locked.length > 0 ? "the only worktrees git could prune are locked." : "every worktree's folder is still there."}${lockedNote}`,
+      l10n.t("GitStudio: Nothing to prune: {0}{1}", locked.length > 0 ? l10n.t("the only worktrees git could prune are locked.") : l10n.t("every worktree's folder is still there."), lockedNote),
     );
     return;
   }
@@ -969,26 +979,26 @@ export async function pruneWorktrees(
   const ok = await promptConfirm({
     // The words of the view's link and its title menu ("Prune Missing
     // Worktrees…"); the message says which are gone and which aren't worktrees.
-    title: `Prune ${n} missing worktree${n === 1 ? "" : "s"}?`,
+    title: n === 1 ? l10n.t("Prune 1 missing worktree?") : l10n.t("Prune {0} missing worktrees?", n),
     message:
       (allGone
-        ? `Git forgets ${n === 1 ? "the worktree whose folder is gone" : `the ${n} worktrees whose folders are gone`}:\n`
-        : `Git forgets ${n === 1 ? "the worktree whose folder is gone or isn't a worktree any more" : `the ${n} worktrees whose folders are gone or aren't worktrees any more`}:\n`) +
+        ? l10n.t("Git forgets {0}:\n", n === 1 ? l10n.t("the worktree whose folder is gone") : l10n.t("the {0} worktrees whose folders are gone", n))
+        : l10n.t("Git forgets {0}:\n", n === 1 ? l10n.t("the worktree whose folder is gone or isn't a worktree any more") : l10n.t("the {0} worktrees whose folders are gone or aren't worktrees any more", n))) +
       prunable
         .slice(0, 8)
-        .map((e) => `  ${path.basename(e.path)} — ${shownPath(e)}${allGone ? "" : existsSync(e.path) ? " (not a worktree any more)" : " (folder gone)"}`)
+        .map((e) => `  ${path.basename(e.path)} — ${shownPath(e)}${allGone ? "" : existsSync(e.path) ? l10n.t(" (not a worktree any more)") : l10n.t(" (folder gone)")}`)
         .join("\n") +
       (n > 8 ? `\n  and ${n - 8} more` : "") +
-      "\n\nNothing on disk changes, and their branches stay." +
+      l10n.t("\n\nNothing on disk changes, and their branches stay.") +
       (locked.length > 0 ? `\n\n${lockedNote.trim()}` : ""),
-    confirmLabel: `Prune ${n}`,
+    confirmLabel: l10n.t("Prune {0}", n),
   });
   if (!ok) {
     return;
   }
   const result = await a.ctx.worktrees.prune();
   if (!result.ok) {
-    void vscode.window.showErrorMessage(`GitStudio: couldn't prune — ${result.stderr.trim()}`);
+    void vscode.window.showErrorMessage(l10n.t("GitStudio: couldn't prune — {0}", result.stderr.trim()));
     refresh();
     return;
   }
@@ -996,8 +1006,14 @@ export async function pruneWorktrees(
   const pruned = before.filter((e) => !after.some((x) => sameFolder(x.path, e.path)));
   flash(
     pruned.length > 0
-      ? `Pruned ${pruned.length} worktree${pruned.length === 1 ? "" : "s"}${allGone ? " whose folder was gone" : ""}: ${names(pruned)}`
-      : "Nothing was pruned",
+      ? pruned.length === 1
+        ? allGone
+          ? l10n.t("Pruned 1 worktree whose folder was gone: {0}", names(pruned))
+          : l10n.t("Pruned 1 worktree: {0}", names(pruned))
+        : allGone
+          ? l10n.t("Pruned {0} worktrees whose folder was gone: {1}", pruned.length, names(pruned))
+          : l10n.t("Pruned {0} worktrees: {1}", pruned.length, names(pruned))
+      : l10n.t("Nothing was pruned"),
   );
   refresh();
 }
@@ -1022,7 +1038,7 @@ export async function pullWorktree(
   refresh: () => void,
   ui: WorktreeUi = {},
 ): Promise<void> {
-  const r = await resolveTarget(repos, t, "Pull into a worktree", (e) => !e.bare && !!e.branch && existsSync(e.path) && !isUnlinked(e));
+  const r = await resolveTarget(repos, t, l10n.t("Pull into a worktree"), (e) => !e.bare && !!e.branch && existsSync(e.path) && !isUnlinked(e));
   if (!r || saidNotAWorktree(r.entry)) {
     return;
   }
@@ -1036,27 +1052,27 @@ export async function pullWorktree(
   if (!w) {
     return;
   }
-  const inIt = `in the worktree ${name}`;
-  const open = "Open in New Window";
+  const inIt = l10n.t("in the worktree {0}", name);
+  const open = l10n.t("Open in New Window");
   const sayThere = (text: string, level: "warning" | "error" = "warning"): void => {
     const show = level === "error" ? vscode.window.showErrorMessage : vscode.window.showWarningMessage;
-    void show(`GitStudio: ${text}`, open).then((pick) => {
+    void show(l10n.t("GitStudio: {0}", text), open).then((pick) => {
       if (pick === open) {
         void vscode.commands.executeCommand("vscode.openFolder", vscode.Uri.file(r.entry.path), { forceNewWindow: true });
       }
     });
   };
-  ui.busy?.(r.entry.path, "Pulling…");
+  ui.busy?.(r.entry.path, l10n.t("Pulling…"));
   try {
     const ctx = w.entry.ctx;
     const paused = await ctx.sync.pausedOperation();
     if (paused) {
-      sayThere(`Pull ${inIt} didn't run: ${pullPauseMessage({ blocked: paused })}`);
+      sayThere(l10n.t("Pull {0} didn't run: {1}", inIt, pullPauseMessage({ blocked: paused }) ?? ""));
       return;
     }
     const head = await ctx.refs.getHead();
     if (head.detached) {
-      sayThere(`Pull ${inIt} didn't run: ${pullDetachedMessage()}`);
+      sayThere(l10n.t("Pull {0} didn't run: {1}", inIt, pullDetachedMessage()));
       return;
     }
     // pull-stop-reviewed: pull-detached-reviewed: in another worktree — a
@@ -1077,18 +1093,18 @@ export async function pullWorktree(
     }
     const paused2 = pullPauseMessage(pulled);
     if (paused2) {
-      sayThere(`Pull ${inIt}: ${paused2}`);
+      sayThere(l10n.t("Pull {0}: {1}", inIt, paused2));
       return;
     }
     if (pulled.detached) {
-      sayThere(`Pull ${inIt} didn't run: ${pullDetachedMessage()}`);
+      sayThere(l10n.t("Pull {0} didn't run: {1}", inIt, pullDetachedMessage()));
       return;
     }
     if (!pulled.ok) {
-      sayThere(`Pull ${inIt} failed — ${pulled.stderr.trim() || "git pull failed."}`, "error");
+      sayThere(l10n.t("Pull {0} failed — {1}", inIt, pulled.stderr.trim() || "git pull failed."), "error");
       return;
     }
-    flash(`Pulled the worktree ${name}`);
+    flash(l10n.t("Pulled the worktree {0}", name));
   } finally {
     ui.busy?.(r.entry.path, undefined);
     w.release();
@@ -1102,7 +1118,7 @@ export async function pushTargetFor(
   repos: RepoManager,
   t: WorktreeTarget,
 ): Promise<{ entry: RepoEntry; name: string; shownPath: string; release(): void } | "active" | undefined> {
-  const r = await resolveTarget(repos, t, "Push from a worktree", (e) => !e.bare && !!e.branch && existsSync(e.path) && !isUnlinked(e));
+  const r = await resolveTarget(repos, t, l10n.t("Push from a worktree"), (e) => !e.bare && !!e.branch && existsSync(e.path) && !isUnlinked(e));
   if (!r || saidNotAWorktree(r.entry)) {
     return undefined;
   }
@@ -1119,5 +1135,5 @@ export async function pushTargetFor(
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function flash(message: string): void {
-  void vscode.window.setStatusBarMessage(`$(check) ${message}`, 3000);
+  void vscode.window.setStatusBarMessage(l10n.t("$(check) {0}", message), 3000);
 }

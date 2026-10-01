@@ -16,6 +16,7 @@ import {
   sideBlockSpan,
 } from "@gitstudio/engine/types";
 import { paintTone, type PaintTone, type SideFate } from "./paint";
+import * as l10n from "@vscode/l10n";
 
 type Editor = monaco.editor.IStandaloneCodeEditor;
 type Deco = monaco.editor.IModelDeltaDecoration;
@@ -59,10 +60,10 @@ export interface DecorationOptions {
 }
 
 /** What a seeded Result says on hover (isSeeded). */
-export const SEEDED_WORDS = "Already merged in the file, outside the conflict markers (by git, or by hand): check it";
+export const SEEDED_WORDS = l10n.t("Already merged in the file, outside the conflict markers (by git, or by hand): check it");
 
 /** What a whitespace-only change says on hover: it has no word tints, and no mark of its own. */
-export const WHITESPACE_WORDS = "Only whitespace changed here";
+export const WHITESPACE_WORDS = l10n.t("Only whitespace changed here");
 
 /**
  * Applies the JetBrains-style merge decorations, by colour CATEGORY

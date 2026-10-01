@@ -83,6 +83,7 @@ import {
   stepText,
   willDropText,
 } from "./conflicts/opText";
+import * as l10n from "@vscode/l10n";
 
 /** The one seam between the shell and whatever hosts it. */
 export interface MergeHostAdapter {
@@ -155,12 +156,12 @@ export function toolbarSeparator(): HTMLElement {
 export function whitespaceSelect(onChange: (mode: WhitespaceMode) => void): HTMLSelectElement {
   const select = document.createElement("select");
   select.className = "jb-toolbar-select";
-  select.title = "Whitespace handling";
-  select.setAttribute("aria-label", "Whitespace handling");
+  select.title = l10n.t("Whitespace handling");
+  select.setAttribute("aria-label", l10n.t("Whitespace handling"));
   const options: Array<[WhitespaceMode, string]> = [
-    ["none", "Do not ignore"],
-    ["trailing", "Trim whitespaces"],
-    ["all", "Ignore whitespaces"],
+    ["none", l10n.t("Do not ignore")],
+    ["trailing", l10n.t("Trim whitespaces")],
+    ["all", l10n.t("Ignore whitespaces")],
   ];
   for (const [value, text] of options) {
     const opt = document.createElement("option");
@@ -175,11 +176,11 @@ export function whitespaceSelect(onChange: (mode: WhitespaceMode) => void): HTML
 export function granularitySelect(onChange: (showWords: boolean) => void): HTMLSelectElement {
   const select = document.createElement("select");
   select.className = "jb-toolbar-select";
-  select.title = "Highlight granularity";
-  select.setAttribute("aria-label", "Highlight granularity");
+  select.title = l10n.t("Highlight granularity");
+  select.setAttribute("aria-label", l10n.t("Highlight granularity"));
   for (const [value, text] of [
-    ["words", "Highlight words"],
-    ["lines", "Highlight lines"],
+    ["words", l10n.t("Highlight words")],
+    ["lines", l10n.t("Highlight lines")],
   ]) {
     const opt = document.createElement("option");
     opt.value = value;
@@ -197,8 +198,9 @@ export function toolbarNote(): HTMLElement {
   return span;
 }
 
-function plural(n: number, word: string): string {
-  return `${n} ${word}${n === 1 ? "" : "s"}`;
+/** "3 unresolved changes" — the count and the plural noun, in either language. */
+function plural(n: number, one: string, many: string): string {
+  return l10n.t("{0} {1}", n, n === 1 ? one : many);
 }
 
 /**
@@ -210,10 +212,11 @@ export function unresolvedWords(counts: Pick<MergeCountsView, "pending" | "pendi
   const n = counts.pending;
   const changed = Math.max(0, Math.min(counts.pendingChanged ?? 0, n));
   const kept = n - changed;
-  const asShown = (k: number): string => `will be saved as the Result shows ${k === 1 ? "it" : "them"}`;
-  if (changed === 0) return `${plural(n, "unresolved change")} will keep the original text.`;
-  if (kept === 0) return `${plural(n, "unresolved change")} ${asShown(n)}.`;
-  return `${plural(n, "unresolved change")}: ${kept} will keep the original text, ${changed} ${asShown(changed)}.`;
+  const asShown = (k: number): string => l10n.t("will be saved as the Result shows {0}", k === 1 ? l10n.t("it") : l10n.t("them"));
+  const what = plural(n, l10n.t("unresolved change"), l10n.t("unresolved changes"));
+  if (changed === 0) return l10n.t("{0} will keep the original text.", what);
+  if (kept === 0) return l10n.t("{0} {1}.", what, asShown(n));
+  return l10n.t("{0}: {1} will keep the original text, {2} {3}.", what, kept, changed, asShown(changed));
 }
 
 /**
@@ -231,18 +234,18 @@ export function displayPath(fileName: string): string {
 
 /** The counter's words — unchanged from the extension's toolbar. */
 export function counterText(counts: MergeCountsView): { text: string; done: boolean } {
-  if (counts.total === 0) return { text: "No changes", done: false };
-  if (counts.pending === 0) return { text: "All changes have been processed", done: true };
-  const changes = `${plural(counts.pending, "change")}.`;
-  const conflicts = counts.conflictsPending ? ` ${plural(counts.conflictsPending, "conflict")}.` : "";
+  if (counts.total === 0) return { text: l10n.t("No changes"), done: false };
+  if (counts.pending === 0) return { text: l10n.t("All changes have been processed"), done: true };
+  const changes = `${plural(counts.pending, l10n.t("change"), l10n.t("changes"))}.`;
+  const conflicts = counts.conflictsPending ? ` ${plural(counts.conflictsPending, l10n.t("conflict"), l10n.t("conflicts"))}.` : "";
   return { text: changes + conflicts, done: false };
 }
 
 /** The EOL notice's sentence ("Yours uses CRLF, theirs LF: the result keeps CRLF"). */
 export function eolText(info: EolMismatchInfo): string {
-  const says = (e: EolMismatchInfo["yours"]): string => (e === "none" ? "has no line breaks" : `uses ${e}`);
-  const theirs = info.theirs === "none" ? "has none" : info.theirs;
-  return `Yours ${says(info.yours)}, theirs ${theirs}: the result keeps ${info.result}.`;
+  const says = (e: EolMismatchInfo["yours"]): string => (e === "none" ? l10n.t("has no line breaks") : l10n.t("uses {0}", e));
+  const theirs = info.theirs === "none" ? l10n.t("has none") : info.theirs;
+  return l10n.t("Yours {0}, theirs {1}: the result keeps {2}.", says(info.yours), theirs, info.result);
 }
 
 /**
@@ -250,24 +253,26 @@ export function eolText(info: EolMismatchInfo): string {
  * from, and that every change is still marked for checking.
  */
 export function seedText(info: SeedInfo): string {
-  const n = plural(info.changes, "change");
+  const n = plural(info.changes, l10n.t("change"), l10n.t("changes"));
   const one = info.changes === 1;
   return info.kind === "working"
-    ? `This file was already resolved outside the merge editor (by hand, or by git rerere): the Result starts from it. ` +
-        `Its ${n} ${one ? "is" : "are"} still marked so you can check each; Apply saves the Result as shown.`
+    ? l10n.t("This file was already resolved outside the merge editor (by hand, or by git rerere): the Result starts from it. ") +
+        (one
+          ? l10n.t("Its {0} is still marked so you can check each; Apply saves the Result as shown.", n)
+          : l10n.t("Its {0} are still marked so you can check each; Apply saves the Result as shown.", n))
     : // One line, in plain words (the critic: "settled in the file outside its
       // conflict markers" was jargon, and never said which change).
-      `${one ? "1 change in this file was" : `${n} in this file were`} already merged, outside the conflict markers. ` +
-        `${one ? "It's" : "They're"} in the Result, marked so you can check ${one ? "it" : "them"}.`;
+      l10n.t("{0} already merged, outside the conflict markers. ", one ? l10n.t("1 change in this file was") : l10n.t("{0} in this file were", n)) +
+        l10n.t("{0} in the Result, marked so you can check {1}.", one ? l10n.t("It's") : l10n.t("They're"), one ? l10n.t("it") : l10n.t("them"));
 }
 
 /** The one-line note for a conflict with no common ancestor. */
 function conflictTypeNote(payload: MergeInitPayload): string {
   if (payload.conflictType === "add-add" || payload.shape === "added-both") {
-    return "Added on both sides, with no earlier version: every line is compared against an empty file.";
+    return l10n.t("Added on both sides, with no earlier version: every line is compared against an empty file.");
   }
   if (!payload.hasBase) {
-    return "No common version was found, so both sides are compared against an empty file.";
+    return l10n.t("No common version was found, so both sides are compared against an empty file.");
   }
   return "";
 }
@@ -383,29 +388,29 @@ export class MergeShell {
     const toolbar = document.createElement("div");
     toolbar.className = "jb-toolbar";
     toolbar.setAttribute("role", "toolbar");
-    toolbar.setAttribute("aria-label", "Merge");
+    toolbar.setAttribute("aria-label", l10n.t("Merge"));
     this.toolbar = toolbar;
     const mod = this.isMac ? "⌘" : "Ctrl+";
-    this.undoBtn = toolbarIconButton(undoIcon, `Undo (${mod}Z)`);
-    this.redoBtn = toolbarIconButton(redoIcon, `Redo (${this.isMac ? "⇧⌘Z" : "Ctrl+Shift+Z"})`);
+    this.undoBtn = toolbarIconButton(undoIcon, l10n.t("Undo ({0}Z)", mod));
+    this.redoBtn = toolbarIconButton(redoIcon, l10n.t("Redo ({0})", this.isMac ? "⇧⌘Z" : "Ctrl+Shift+Z"));
     this.undoBtn.disabled = true;
     this.redoBtn.disabled = true;
 
     this.historyWrap = document.createElement("span");
     this.historyWrap.className = "jb-history-wrap";
-    this.historyBtn = toolbarIconButton(historyIcon, "Action history");
+    this.historyBtn = toolbarIconButton(historyIcon, l10n.t("Action history"));
     this.historyBtn.disabled = true;
     this.historyPop = document.createElement("div");
     this.historyPop.className = "jb-history-pop";
     this.historyPop.hidden = true;
     this.historyWrap.append(this.historyBtn, this.historyPop);
 
-    this.prevBtn = toolbarIconButton(arrowUp, "Previous change (Shift+F7)");
-    this.nextBtn = toolbarIconButton(arrowDown, "Next change (F7)");
+    this.prevBtn = toolbarIconButton(arrowUp, l10n.t("Previous change (Shift+F7)"));
+    this.nextBtn = toolbarIconButton(arrowDown, l10n.t("Next change (F7)"));
     // Left is always Yours (D1), so the toolbar can name the roles.
-    this.applyYoursBtn = toolbarIconTextButton(chevronDoubleRight, "Yours", "Apply non-conflicting changes from yours");
-    this.applyAllBtn = toolbarIconTextButton(chevronsInward, "All", "Apply all non-conflicting changes");
-    this.applyTheirsBtn = toolbarIconTextButton(chevronDoubleLeft, "Theirs", "Apply non-conflicting changes from theirs");
+    this.applyYoursBtn = toolbarIconTextButton(chevronDoubleRight, l10n.t("Yours"), l10n.t("Apply non-conflicting changes from yours"));
+    this.applyAllBtn = toolbarIconTextButton(chevronsInward, l10n.t("All"), l10n.t("Apply all non-conflicting changes"));
+    this.applyTheirsBtn = toolbarIconTextButton(chevronDoubleLeft, l10n.t("Theirs"), l10n.t("Apply non-conflicting changes from theirs"));
     this.applyYoursBtn.classList.add("ms-apply-yours");
     this.applyAllBtn.classList.add("ms-apply-all");
     this.applyTheirsBtn.classList.add("ms-apply-theirs");
@@ -415,27 +420,27 @@ export class MergeShell {
     // name, in a narrow shell).
     this.wandBtn = toolbarButton("");
     this.wandBtn.classList.add("ms-wand");
-    this.wandBtn.title = "Resolve simple conflicts (apply both sides where their edits don't overlap)";
-    this.wandBtn.setAttribute("aria-label", "Resolve simple conflicts");
+    this.wandBtn.title = l10n.t("Resolve simple conflicts (apply both sides where their edits don't overlap)");
+    this.wandBtn.setAttribute("aria-label", l10n.t("Resolve simple conflicts"));
     const wandLabel = document.createElement("span");
     wandLabel.className = "ms-wand-label";
-    wandLabel.textContent = "Resolve simple";
+    wandLabel.textContent = l10n.t("Resolve simple");
     this.wandBtn.append(iconElement(magicWand), wandLabel);
     this.wandBtn.disabled = true;
 
     this.wsSelect = whitespaceSelect((mode) => this.requestWhitespace(mode));
     this.wsSelect.classList.add("ms-ws");
     this.granSelect = granularitySelect((showWords) => this.viewApi?.setRenderOptions({ showInner: showWords }));
-    this.syncBtn = toolbarIconButton(syncScroll, "Synchronized scrolling");
+    this.syncBtn = toolbarIconButton(syncScroll, l10n.t("Synchronized scrolling"));
     this.syncBtn.classList.add("jb-toggled");
     this.syncBtn.setAttribute("aria-pressed", "true");
-    this.resetBtn = toolbarIconButton(resetIcon, "Reset the merge to where it started");
+    this.resetBtn = toolbarIconButton(resetIcon, l10n.t("Reset the merge to where it started"));
     this.largeNote = toolbarNote();
     const spacer = document.createElement("span");
     spacer.className = "jb-spacer";
     this.counter = document.createElement("span");
     this.counter.className = "jb-counter";
-    this.counter.textContent = "Loading…";
+    this.counter.textContent = l10n.t("Loading…");
     this.counter.setAttribute("role", "status");
 
     toolbar.append(
@@ -446,7 +451,7 @@ export class MergeShell {
       this.prevBtn,
       this.nextBtn,
       toolbarSeparator(),
-      toolbarLabel("Apply non-conflicting changes:"),
+      toolbarLabel(l10n.t("Apply non-conflicting changes:")),
       this.applyYoursBtn,
       this.applyAllBtn,
       this.applyTheirsBtn,
@@ -467,7 +472,7 @@ export class MergeShell {
     this.strip = document.createElement("div");
     this.strip.className = "ms-opstrip";
     this.strip.setAttribute("role", "group");
-    this.strip.setAttribute("aria-label", "Operation in progress");
+    this.strip.setAttribute("aria-label", l10n.t("Operation in progress"));
     this.strip.hidden = true;
 
     this.outcomeLine = document.createElement("div");
@@ -492,9 +497,9 @@ export class MergeShell {
     // ── bottom bar ──
     this.bottom = document.createElement("div");
     this.bottom.className = "jb-bottom-bar";
-    this.acceptYoursBtn = toolbarButton("Accept Yours", "bordered");
+    this.acceptYoursBtn = toolbarButton(l10n.t("Accept Yours"), "bordered");
     this.acceptYoursBtn.classList.add("ms-accept-yours");
-    this.acceptTheirsBtn = toolbarButton("Accept Theirs", "bordered");
+    this.acceptTheirsBtn = toolbarButton(l10n.t("Accept Theirs"), "bordered");
     this.acceptTheirsBtn.classList.add("ms-accept-theirs");
     const bottomSpacer = document.createElement("span");
     bottomSpacer.className = "jb-spacer";
@@ -505,18 +510,18 @@ export class MergeShell {
 
     // Close: ONLY closes the merge editor. Nothing is written, and the
     // operation stays paused; ending it is the conflicts list's to offer.
-    this.closeBtn = toolbarButton("Close", "bordered");
+    this.closeBtn = toolbarButton(l10n.t("Close"), "bordered");
     this.closeBtn.classList.add("ms-close");
 
     // After an Apply the host can take back: the conflict comes back.
-    this.undoApplyBtn = toolbarButton("Undo", "bordered");
+    this.undoApplyBtn = toolbarButton(l10n.t("Undo"), "bordered");
     this.undoApplyBtn.classList.add("ms-undo-apply");
-    this.undoApplyBtn.title = "Undo the Apply: bring the conflict back into the file";
+    this.undoApplyBtn.title = l10n.t("Undo the Apply: bring the conflict back into the file");
     this.undoApplyBtn.hidden = true;
 
-    this.applyBtn = toolbarButton("Apply", "primary");
+    this.applyBtn = toolbarButton(l10n.t("Apply"), "primary");
     this.applyBtn.classList.add("ms-apply");
-    this.applyBtn.title = "Save the result and mark the conflict resolved";
+    this.applyBtn.title = l10n.t("Save the result and mark the conflict resolved");
     this.continueBtn = toolbarButton("", "primary");
     this.continueBtn.classList.add("ms-continue");
     this.continueBtn.hidden = true;
@@ -715,7 +720,7 @@ export class MergeShell {
       if (next.hasProgress || this.lastPosted) this.scheduleResultPost();
     };
     view.onLargeFile = (large) => {
-      const words = large ? "Large file: word-level highlights disabled" : "";
+      const words = large ? l10n.t("Large file: word-level highlights disabled") : "";
       this.largeNote.hidden = !large;
       this.largeNote.textContent = words;
       // The note gives way before the counter does (ellipsis); the whole of
@@ -773,16 +778,16 @@ export class MergeShell {
     // progress).
     const withName = (label: string, name: string | undefined): string =>
       name && op && op.kind !== "stash" && op.kind !== "none" ? `${label} · ${shortName(name)}` : label;
-    this.acceptYoursBtn.textContent = withName("Accept Yours", yours?.name);
-    this.acceptTheirsBtn.textContent = withName("Accept Theirs", theirs?.name);
+    this.acceptYoursBtn.textContent = withName(l10n.t("Accept Yours"), yours?.name);
+    this.acceptTheirsBtn.textContent = withName(l10n.t("Accept Theirs"), theirs?.name);
     this.acceptYoursBtn.title = yours?.description
-      ? `Resolve every change with yours — ${yours.description}`
-      : `Resolve every change with ${this.payload.oursLabel || "the left version"}`;
+      ? l10n.t("Resolve every change with yours — {0}", yours.description)
+      : l10n.t("Resolve every change with {0}", this.payload.oursLabel || "the left version");
     this.acceptTheirsBtn.title = theirs?.description
-      ? `Resolve every change with theirs — ${theirs.description}`
-      : `Resolve every change with ${this.payload.theirsLabel || "the right version"}`;
-    this.applyYoursBtn.title = `Apply non-conflicting changes from ${named("yours", yours?.name)}`;
-    this.applyTheirsBtn.title = `Apply non-conflicting changes from ${named("theirs", theirs?.name)}`;
+      ? l10n.t("Resolve every change with theirs — {0}", theirs.description)
+      : l10n.t("Resolve every change with {0}", this.payload.theirsLabel || "the right version");
+    this.applyYoursBtn.title = l10n.t("Apply non-conflicting changes from {0}", named("yours", yours?.name));
+    this.applyTheirsBtn.title = l10n.t("Apply non-conflicting changes from {0}", named("theirs", theirs?.name));
   }
 
   // ── the operation strip ──
@@ -848,9 +853,9 @@ export class MergeShell {
       const list = document.createElement("button");
       list.type = "button";
       list.className = "ms-op-list";
-      list.textContent = "All conflicts";
+      list.textContent = l10n.t("All conflicts");
       const noun = opNoun(op.kind);
-      list.title = `The conflicts list: every conflicted file of this ${noun}, and ${op.verbs.continue ? `${op.verbs.continue} or ` : ""}${op.verbs.abort}`;
+      list.title = l10n.t("The conflicts list: every conflicted file of this {0}, and {1}{2}", noun, op.verbs.continue ? l10n.t("{0} or ", op.verbs.continue) : "", op.verbs.abort);
       list.addEventListener("click", () => this.adapter.post({ type: "showConflicts" }));
       this.strip.appendChild(list);
     }
@@ -862,9 +867,9 @@ export class MergeShell {
     if (tip && !this.tipsDismissed.has(tip.id)) {
       // POLISH A5.9: once, for an upgrader — which side is Yours changed.
       const n = notice("info", tip.text, "ms-note-tip");
-      const got = toolbarButton("Got it", "bordered");
+      const got = toolbarButton(l10n.t("Got it"), "bordered");
       got.classList.add("ms-tip-dismiss");
-      got.title = "Don't show this again";
+      got.title = l10n.t("Don't show this again");
       got.addEventListener("click", () => {
         this.tipsDismissed.add(tip.id);
         this.adapter.post({ type: "dismissTip", id: tip.id });
@@ -887,7 +892,7 @@ export class MergeShell {
         const show = document.createElement("button");
         show.type = "button";
         show.className = "ms-notice-link ms-seed-show";
-        show.textContent = this.seeded.changes === 1 ? "Show it" : "Show the first";
+        show.textContent = this.seeded.changes === 1 ? l10n.t("Show it") : l10n.t("Show the first");
         show.addEventListener("click", () => this.viewApi?.revealSeeded?.());
         n.appendChild(show);
       }
@@ -908,7 +913,7 @@ export class MergeShell {
     if (state === "kept") {
       return notice(
         "info",
-        `${name} keeps the edit made outside the merge editor until you Apply. Apply replaces it with the Result.`,
+        l10n.t("{0} keeps the edit made outside the merge editor until you Apply. Apply replaces it with the Result.", name),
         "ms-note-outside",
       );
     }
@@ -920,17 +925,17 @@ export class MergeShell {
     text.append(
       glyphEl(warningIcon),
       document.createTextNode(
-        `${name} changed outside the merge editor (in another editor, by a formatter, or on disk). ` +
-          `Nothing is written to it until you choose.`,
+        l10n.t("{0} changed outside the merge editor (in another editor, by a formatter, or on disk). ", name) +
+          l10n.t("Nothing is written to it until you choose."),
       ),
     );
-    const reload = toolbarButton("Reload the merge", "bordered");
+    const reload = toolbarButton(l10n.t("Reload the merge"), "bordered");
     reload.classList.add("ms-outside-reload");
-    reload.title = `Start the merge over from ${name} as it is now. The work in this editor is not kept.`;
+    reload.title = l10n.t("Start the merge over from {0} as it is now. The work in this editor is not kept.", name);
     reload.addEventListener("click", () => this.answerOutside("reload"));
-    const keep = toolbarButton("Keep what's here", "bordered");
+    const keep = toolbarButton(l10n.t("Keep what's here"), "bordered");
     keep.classList.add("ms-outside-keep");
-    keep.title = `Leave that edit in ${name}, and keep working here. Apply replaces it with the Result.`;
+    keep.title = l10n.t("Leave that edit in {0}, and keep working here. Apply replaces it with the Result.", name);
     keep.addEventListener("click", () => this.answerOutside("keep"));
     box.append(text, reload, keep);
     return box;
@@ -1003,7 +1008,7 @@ export class MergeShell {
     if (history.undo.length === 0 && history.redo.length === 0) {
       const empty = document.createElement("div");
       empty.className = "jb-history-empty";
-      empty.textContent = "No actions yet";
+      empty.textContent = l10n.t("No actions yet");
       this.historyPop.appendChild(empty);
       return;
     }
@@ -1013,7 +1018,7 @@ export class MergeShell {
       const item = document.createElement("div");
       item.className = "jb-history-item jb-history-redo";
       item.textContent = history.redo[i];
-      item.title = "Undone — click to re-apply up to here";
+      item.title = l10n.t("Undone — click to re-apply up to here");
       item.addEventListener("click", () => {
         for (let n = 0; n < steps; n++) view.redo();
         this.historyPop.hidden = true;
@@ -1026,7 +1031,7 @@ export class MergeShell {
       const item = document.createElement("div");
       item.className = "jb-history-item";
       item.textContent = history.undo[i];
-      item.title = "Click to undo back to before this action";
+      item.title = l10n.t("Click to undo back to before this action");
       item.addEventListener("click", () => {
         view.undoTo(index);
         this.historyPop.hidden = true;
@@ -1055,14 +1060,14 @@ export class MergeShell {
     text.append(
       glyphEl(warningIcon),
       document.createTextNode(
-        "Changing whitespace handling compares the files again, and the changes you have resolved so far " +
+        l10n.t("Changing whitespace handling compares the files again, and the changes you have resolved so far ") +
           "start over.",
       ),
     );
-    const keep = toolbarButton("Keep my changes", "bordered");
+    const keep = toolbarButton(l10n.t("Keep my changes"), "bordered");
     keep.classList.add("ms-ws-keep");
     keep.addEventListener("click", () => this.hideWsConfirm(true));
-    const go = toolbarButton("Change anyway", "bordered");
+    const go = toolbarButton(l10n.t("Change anyway"), "bordered");
     go.classList.add("ms-ws-go", "ms-danger");
     go.addEventListener("click", () => {
       const next = this.wsPending;
@@ -1098,7 +1103,7 @@ export class MergeShell {
       this.armTimer = 0;
     }
     this.applyBtn.classList.remove("jb-warn");
-    this.applyBtn.textContent = "Apply";
+    this.applyBtn.textContent = l10n.t("Apply");
     this.applyBtn.removeAttribute("aria-describedby");
   }
 
@@ -1111,7 +1116,7 @@ export class MergeShell {
       // they are saving: an untouched block keeps the ORIGINAL text, one with
       // a side already taken is saved as shown (unresolvedWords).
       this.applyBtn.classList.add("jb-warn");
-      this.applyBtn.textContent = `Apply with ${pending} unresolved`;
+      this.applyBtn.textContent = l10n.t("Apply with {0} unresolved", pending);
       this.armTimer = window.setTimeout(() => {
         this.armTimer = 0;
         this.disarmApply();
@@ -1158,7 +1163,7 @@ export class MergeShell {
   private onApplied(staged: boolean, message?: string, undoable = false): void {
     this.setBusy("");
     this.applied = true;
-    this.appliedWarn = staged ? "" : message || "The file was saved but could not be staged.";
+    this.appliedWarn = staged ? "" : message || l10n.t("The file was saved but could not be staged.");
     // The host can take this Apply back: Undo waits beside Apply, in place,
     // until the next change in the editor.
     this.undoable = staged && undoable && !this.panel;
@@ -1166,13 +1171,13 @@ export class MergeShell {
       const take = this.lastTake;
       const done =
         take === "delete"
-          ? "Deleted the file and staged the deletion."
+          ? l10n.t("Deleted the file and staged the deletion.")
           : take
-            ? `Kept ${take}${this.op ? ` (${take === "yours" ? this.op.yours.name : this.op.theirs.name})` : ""} and staged it.`
-            : "Resolved.";
+            ? l10n.t("Kept {0}{1} and staged it.", take, this.op ? ` (${take === "yours" ? this.op.yours.name : this.op.theirs.name})` : "")
+            : l10n.t("Resolved.");
       this.panel.setResolved(staged ? (message ? `${done} ${message}` : done) : this.appliedWarn, staged);
     } else {
-      this.counter.textContent = staged ? "Merge applied and staged" : "Merge applied";
+      this.counter.textContent = staged ? l10n.t("Merge applied and staged") : l10n.t("Merge applied");
       this.counter.classList.add("jb-done");
     }
     this.syncBottom();
@@ -1288,18 +1293,18 @@ export class MergeShell {
     // the settled changes (the rest keep their markers), and Close never
     // reverts the saved file — "what you resolved here is not kept" said the
     // opposite after a save.
-    const where = this.op && this.endable() ? `The ${opNoun(this.op.kind)} stays paused, and ` : "";
+    const where = this.op && this.endable() ? l10n.t("The {0} stays paused, and ", opNoun(this.op.kind)) : "";
     text.append(
       glyphEl(warningIcon),
       document.createTextNode(
-        `Close without applying? ${where}${name} keeps its conflict markers; ` +
-          `anything settled here and not saved is not kept.`,
+        l10n.t("Close without applying? {0}{1} keeps its conflict markers; ", where, name) +
+          l10n.t("anything settled here and not saved is not kept."),
       ),
     );
-    const keep = toolbarButton("Keep editing", "bordered");
+    const keep = toolbarButton(l10n.t("Keep editing"), "bordered");
     keep.classList.add("ms-close-keep");
     keep.addEventListener("click", () => this.closeCloseConfirm());
-    const go = toolbarButton("Close without applying", "bordered");
+    const go = toolbarButton(l10n.t("Close without applying"), "bordered");
     go.classList.add("ms-close-go", "ms-danger");
     go.addEventListener("click", () => this.clickClose());
     // The two answers stay together at the end of the row; only the sentence
@@ -1316,7 +1321,7 @@ export class MergeShell {
     // The walkthrough's sample has no operation behind it (kind "none",
     // nothing unmerged); its one verb is how it closes.
     if (op && op.episode === "sample" && op.verbs.abort) return op.verbs.abort;
-    return "Close";
+    return l10n.t("Close");
   }
 
   // ── bottom bar ──
@@ -1354,16 +1359,16 @@ export class MergeShell {
       this.acceptTheirsBtn.disabled = nothingPending || busy;
       this.applyBtn.disabled = busy || this.applied || outsideOpen;
       this.applyBtn.title = outsideOpen
-        ? "Answer the question above first: the file changed outside the merge editor"
-        : "Save the result and mark the conflict resolved";
+        ? l10n.t("Answer the question above first: the file changed outside the merge editor")
+        : l10n.t("Save the result and mark the conflict resolved");
     }
     this.closeBtn.disabled = busy;
     this.closeBtn.textContent = this.closeLabel();
     const name = displayPath(this.payload.fileName);
     this.closeBtn.title =
       this.op && this.endable()
-        ? `Close the merge editor (Escape). Nothing is written: the ${opNoun(this.op.kind)} stays paused and ${name} keeps its conflict markers.`
-        : `Close the merge editor (Escape). Nothing is written.`;
+        ? l10n.t("Close the merge editor (Escape). Nothing is written: the {0} stays paused and {1} keeps its conflict markers.", opNoun(this.op.kind), name)
+        : l10n.t("Close the merge editor (Escape). Nothing is written.");
     this.undoApplyBtn.hidden = !this.undoable || noText;
     this.undoApplyBtn.disabled = busy;
 
@@ -1371,7 +1376,7 @@ export class MergeShell {
     this.continueBtn.hidden = !showContinue;
     this.continueBtn.disabled = busy;
     if (showContinue && this.op) {
-      this.continueBtn.replaceChildren(glyphEl(continueIcon), document.createTextNode(this.op.verbs.continue ?? "Continue"));
+      this.continueBtn.replaceChildren(glyphEl(continueIcon), document.createTextNode(this.op.verbs.continue ?? l10n.t("Continue")));
       this.continueBtn.title = this.op.title ? `${this.op.verbs.continue} — ${this.op.title}` : (this.op.verbs.continue ?? "");
     } else {
       this.dropConfirming = false;
@@ -1399,13 +1404,13 @@ export class MergeShell {
       return;
     }
     if (this.armTimer) {
-      text = `${unresolvedWords(this.counts)} Click Apply again to save anyway.`;
+      text = l10n.t("{0} Click Apply again to save anyway.", unresolvedWords(this.counts));
       kind = "warn";
     } else if (this.appliedWarn) {
       text = this.appliedWarn;
       kind = "warn";
     } else if (this.op && this.applied && this.remaining !== undefined && this.remaining > 0) {
-      text = `This file is done. ${plural(this.remaining, "file")} still ${this.remaining === 1 ? "has" : "have"} conflicts.`;
+      text = l10n.t("This file is done. {0} still {1} conflicts.", plural(this.remaining, l10n.t("file"), l10n.t("files")), this.remaining === 1 ? l10n.t("has") : l10n.t("have"));
       kind = "info";
     } else if (this.op && this.remaining === 0 && !this.op.canContinue && this.op.verbs.continue) {
       text = continueBlockedText(this.op, 0);
@@ -1430,10 +1435,10 @@ export class MergeShell {
     const text = document.createElement("span");
     text.className = "ms-confirm-text";
     text.append(glyphEl(warningIcon), document.createTextNode(willDropText(op)));
-    const keep = toolbarButton("Keep editing", "bordered");
+    const keep = toolbarButton(l10n.t("Keep editing"), "bordered");
     keep.classList.add("ms-drop-keep");
     keep.addEventListener("click", () => this.closeDropConfirm());
-    const go = toolbarButton("Drop it and continue", "bordered");
+    const go = toolbarButton(l10n.t("Drop it and continue"), "bordered");
     go.classList.add("ms-drop-go", "ms-danger");
     go.addEventListener("click", () => this.clickContinue());
     note.append(text, keep, go);

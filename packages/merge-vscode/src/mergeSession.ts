@@ -36,6 +36,7 @@ import type { HostMessage, MergeInitPayload } from "@gitstudio/host-bridge/proto
 import { outcomeLine, type OperationVerb } from "./outcome";
 import { markersOnlyPayload, readMergePayload, type SidesReader } from "./payload";
 import { stageResolvedPath, type GitRunner } from "./stageResolved";
+import * as l10n from "@vscode/l10n";
 
 /** The git surface one session needs — a GitContext satisfies it. */
 export interface SessionGit {
@@ -117,7 +118,7 @@ export class MergeSession {
           ? await readMergePayload(d.git.conflictOps, d.rel, input)
           : markersOnlyPayload(input);
     } catch (error) {
-      d.notify("error", `couldn't read the conflict versions — ${reason(error)}`);
+      d.notify("error", l10n.t("couldn't read the conflict versions — {0}", reason(error)));
       return;
     }
     const tip = d.tip?.(payload.op);
@@ -146,7 +147,7 @@ export class MergeSession {
       try {
         await d.save(text);
       } catch (error) {
-        const message = `couldn't save the resolved file — ${reason(error)}`;
+        const message = l10n.t("couldn't save the resolved file — {0}", reason(error));
         d.notify("error", message);
         d.post({ type: "applied", staged: false, message: capitalise(message) });
         return;
@@ -155,7 +156,7 @@ export class MergeSession {
         d.post({
           type: "applied",
           staged: false,
-          message: "Saved. This file is not in a Git repository, so there is nothing to stage.",
+          message: l10n.t("Saved. This file is not in a Git repository, so there is nothing to stage."),
         });
         return;
       }
@@ -183,19 +184,19 @@ export class MergeSession {
         d.notify("info", "resolved file saved and staged.");
       }
     };
-    await (d.withUndo && !resolving ? d.withUndo("Apply merge resolution", run) : run());
+    await (d.withUndo && !resolving ? d.withUndo(l10n.t("Apply merge resolution"), run) : run());
   }
 
   /** The no-text panel's Accept Yours / Accept Theirs (or "Delete the file" for the missing role). */
   async takeRole(role: SideRole): Promise<void> {
-    await this.resolveWhole(`Accept ${role === "yours" ? "Yours" : "Theirs"}`, (git, rel) =>
+    await this.resolveWhole(l10n.t("Accept {0}", role === "yours" ? l10n.t("Yours") : l10n.t("Theirs")), (git, rel) =>
       git.conflictOps.takeRole(rel, role),
     );
   }
 
   /** A both-deleted file's only resolution. */
   async deleteFile(): Promise<void> {
-    await this.resolveWhole("Delete the conflicted file", (git, rel) =>
+    await this.resolveWhole(l10n.t("Delete the conflicted file"), (git, rel) =>
       git.conflictOps.deleteFile(rel),
     );
   }
@@ -242,7 +243,7 @@ export class MergeSession {
     }
     const result = await d.git.conflictOps.restore(d.rel);
     if (!result.ok) {
-      const message = result.message ?? "couldn't restore the conflict.";
+      const message = result.message ?? l10n.t("couldn't restore the conflict.");
       d.notify(result.expected ? "warn" : "error", message);
       d.post({ type: "outcome", kind: "failed", text: capitalise(message) });
       return;
@@ -289,10 +290,10 @@ export class MergeSession {
       d.diskText ? d.diskText().catch(() => undefined) : Promise.resolve(undefined),
     ]);
     if (!op || op.episode !== token.episode || head !== token.head) {
-      return "git has moved on since that Apply, so there is no conflict to bring back. Nothing was changed.";
+      return l10n.t("git has moved on since that Apply, so there is no conflict to bring back. Nothing was changed.");
     }
     if (text !== token.text) {
-      return `${baseName(d.fileName)} changed after the Apply — undoing it now would throw those edits away. Nothing was changed.`;
+      return l10n.t("{0} changed after the Apply — undoing it now would throw those edits away. Nothing was changed.", baseName(d.fileName));
     }
     return undefined;
   }
@@ -306,7 +307,7 @@ export class MergeSession {
       d.post({
         type: "applied",
         staged: false,
-        message: "This file is not in a Git repository, so there is no conflict to resolve.",
+        message: l10n.t("This file is not in a Git repository, so there is no conflict to resolve."),
       });
       return;
     }
@@ -336,7 +337,7 @@ export class MergeSession {
     const d = this.deps;
     const git = d.git;
     if (!git) {
-      d.post({ type: "outcome", kind: "failed", text: "This file is not in a Git repository." });
+      d.post({ type: "outcome", kind: "failed", text: l10n.t("This file is not in a Git repository.") });
       return;
     }
     let before: OperationView;

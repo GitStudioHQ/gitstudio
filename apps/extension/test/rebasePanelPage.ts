@@ -21,6 +21,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import ts from "typescript";
+
+import { fillHole, l10nHoles } from "./pageHoles";
 import { findChrome } from "../../../packages/webview-ui/test/headless";
 import { Browser, type Page } from "../../../scripts/merge-e2e/cdp";
 import { BODY_CLASS, VSCODE_THEMES, type VsCodeTheme } from "../../../scripts/merge-e2e/themes";
@@ -183,6 +185,8 @@ export async function rebasePanelHtml(
     planUri: pathToFileURL(planFile).href,
     dataJson: JSON.stringify({ base: data.base, branch: data.branch, baseCommit: data.baseCommit, commits: data.commits }).replace(/</g, "\\u003c"),
     REBASE_JS: js,
+    // The words and the bundle: see pageHoles.ts.
+    ...l10nHoles("n"),
   };
   // A cooked template: .text is each part with its escapes applied. The
   // theme goes onto the page's OWN tags, so the skeleton is edited before the
@@ -207,9 +211,7 @@ export async function rebasePanelHtml(
   }
   let html = parts[0];
   tpl.templateSpans.forEach((span, i) => {
-    const name = span.expression.getText(sf);
-    if (!(name in holes)) throw new Error(`rebaseWorkspacePanel.ts render(): a hole this page cannot fill: \${${name}}`);
-    html += holes[name] + parts[i + 1];
+    html += fillHole("rebaseWorkspacePanel.ts render()", span, sf, holes) + parts[i + 1];
   });
   return html;
 }

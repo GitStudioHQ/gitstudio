@@ -1,4 +1,5 @@
 import type { GitProcess, GitRunOptions } from "./GitProcess";
+import * as l10n from "@vscode/l10n";
 
 // Putting a dropped stash back WHERE IT WAS — for both products' Undo.
 //
@@ -77,12 +78,12 @@ export async function restoreStash(
   opts?: GitRunOptions,
 ): Promise<StashRestoreResult> {
   if (!/^[0-9a-f]{40,64}$/i.test(entry.sha)) {
-    return { ok: false, message: "That isn't a stash this app recorded." };
+    return { ok: false, message: l10n.t("That isn't a stash this app recorded.") };
   }
   // A sha that is not a commit would become a stash ref pointing at nothing.
   const kind = await proc.run(["cat-file", "-t", entry.sha], opts);
   if (kind.code !== 0 || kind.stdout.trim() !== "commit") {
-    return { ok: false, expected: true, message: "That stash is no longer in the repository." };
+    return { ok: false, expected: true, message: l10n.t("That stash is no longer in the repository.") };
   }
   const stack = await stashStack(proc, opts);
   const at = stack.findIndex((s) => s.sha === entry.sha);
@@ -100,7 +101,7 @@ export async function restoreStash(
         ok: false,
         message:
           `Couldn't make room for the stash at stash@{${n}} (${d.stderr.trim() || "git stash drop failed"}).` +
-          (back ? "" : ` Some stashes may need putting back: ${lifted.slice(0, i).map((s) => `git stash store ${s.sha}`).join("; ")}.`),
+          (back ? "" : l10n.t(" Some stashes may need putting back: {0}.", lifted.slice(0, i).map((s) => `git stash store ${s.sha}`).join("; "))),
       };
     }
   }
@@ -109,15 +110,15 @@ export async function restoreStash(
   if (!stored) {
     return {
       ok: false,
-      message: `Couldn't put the stash back. \`git stash store ${entry.sha}\` brings it back by hand.`,
+      message: l10n.t("Couldn't put the stash back. `git stash store {0}` brings it back by hand.", entry.sha),
     };
   }
   if (!back) {
     return {
       ok: false,
       message:
-        `The stash is back, but the ones that were above it couldn't all be put back on top: ` +
-        `${lifted.map((s) => `git stash store ${s.sha}`).join("; ")} brings them back.`,
+        l10n.t("The stash is back, but the ones that were above it couldn't all be put back on top: ") +
+        l10n.t("{0} brings them back.", lifted.map((s) => `git stash store ${s.sha}`).join("; ")),
     };
   }
   return { ok: true, index: n };

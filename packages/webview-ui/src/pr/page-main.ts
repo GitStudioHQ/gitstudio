@@ -13,6 +13,8 @@
 // The component itself (prPage.ts) is host-agnostic; the desktop can mount
 // the same class.
 
+import "@gitstudio/l10n/webview";
+
 import { installSolidAccent } from "../styles/solidAccent";
 import "../styles/pr-page.css";
 import type { PrMergeMethod, PrPageHostMessage, PrPageMessageToHost } from "@gitstudio/host-bridge/prProtocol";

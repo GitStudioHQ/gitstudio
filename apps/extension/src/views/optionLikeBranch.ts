@@ -6,6 +6,7 @@ import {
 } from "@gitstudio/git-service/checkoutRef";
 import { promptInput } from "../ui/dialogs";
 import { failed, notice } from "../ui/notify";
+import * as l10n from "@vscode/l10n";
 
 // A checkout refused because the branch's NAME reads as an option (issue #30's
 // follow-up, after 4c72977): planRefCheckout will not hand git "-f", because
@@ -18,7 +19,7 @@ import { failed, notice } from "../ui/notify";
 // name (renameArgs: `git branch -m -- -f <new>`), never a short form.
 
 /** The one action the warning offers, for a local branch. */
-export const RENAME_OPTION_LIKE = "Rename…";
+export const RENAME_OPTION_LIKE = l10n.t("Rename…");
 
 /** What a door needs to run the rename: something that runs git. */
 export interface OptionLikeRenameContext {
@@ -46,10 +47,10 @@ export async function explainOptionLikeCheckout(
   }
   const neu = (
     await promptInput({
-      title: `Rename branch ${refusal.name}`,
-      hint: "A name that does not start with \"-\" — git can check that out like any other branch.",
+      title: l10n.t("Rename branch {0}", refusal.name),
+      hint: l10n.t("A name that does not start with \"-\" — git can check that out like any other branch."),
       value: suggestedRename(refusal.name),
-      confirmLabel: "Rename",
+      confirmLabel: l10n.t("Rename"),
       validate: "refName",
     })
   )?.trim();
@@ -62,10 +63,10 @@ export async function explainOptionLikeCheckout(
   }
   const r = await ctx.process.run(args);
   if (r.code === 0) {
-    void vscode.window.setStatusBarMessage(`$(check) Renamed ${refusal.name} to ${neu}`, 2500);
+    void vscode.window.setStatusBarMessage(l10n.t("$(check) Renamed {0} to {1}", refusal.name, neu), 2500);
     refresh();
     return true;
   }
-  void vscode.window.showErrorMessage(failed(`Rename of '${refusal.name}'`, r.stderr));
+  void vscode.window.showErrorMessage(failed(l10n.t("Rename of '{0}'", refusal.name), r.stderr));
   return false;
 }

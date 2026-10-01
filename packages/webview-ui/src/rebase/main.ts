@@ -3,6 +3,8 @@
 // rows, and forwards the user's Start/Abort intent back to the extension host
 // (which serializes via the engine and writes the git-rebase-todo).
 
+import "@gitstudio/l10n/webview";
+
 import { installSolidAccent } from "../styles/solidAccent";
 import "./rebase.css";
 import "./rebase-view";

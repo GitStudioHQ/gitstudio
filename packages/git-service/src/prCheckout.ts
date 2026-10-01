@@ -34,6 +34,7 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { nativePath } from "./folderPath";
 import type { GitRunResult } from "./GitProcess";
+import * as l10n from "@vscode/l10n";
 
 /** All this needs from a GitProcess. */
 export interface PrGitRunner {
@@ -62,7 +63,7 @@ export interface PrHeadPlan {
 /** `pr/<n>` for a PR number — the only names this module ever writes. */
 export function prBranchName(n: number): string {
   if (!Number.isSafeInteger(n) || n <= 0) {
-    throw new Error(`not a pull request number: ${String(n)}`);
+    throw new Error(l10n.t("not a pull request number: {0}", String(n)));
   }
   return `pr/${n}`;
 }
@@ -95,25 +96,25 @@ export async function fetchRefTip(
   opts?: { signal?: AbortSignal },
 ): Promise<{ sha: string } | { error: string }> {
   if (!remote || remote.startsWith("-")) {
-    return { error: `"${remote}" isn't a remote name.` };
+    return { error: l10n.t("\"{0}\" isn't a remote name.", remote) };
   }
   if (!/^refs\/[A-Za-z0-9._/-]+$/.test(ref) || ref.includes("..") || ref.includes("//")) {
-    return { error: `"${ref}" isn't a ref git can fetch.` };
+    return { error: l10n.t("\"{0}\" isn't a ref git can fetch.", ref) };
   }
   const f = await proc.run(["fetch", "--no-tags", "--", remote, ref], opts);
   if (f.code !== 0) {
-    return { error: firstLine(f.stderr) || `git fetch exited with ${f.code}` };
+    return { error: firstLine(f.stderr) || l10n.t("git fetch exited with {0}", f.code) };
   }
   const where = await proc.run(["rev-parse", "--git-path", "FETCH_HEAD"], opts);
   const rel = where.stdout.trim();
   if (where.code !== 0 || !rel) {
-    return { error: "Couldn't find what was fetched (FETCH_HEAD)." };
+    return { error: l10n.t("Couldn't find what was fetched (FETCH_HEAD).") };
   }
   let text = "";
   try {
     text = await readFile(isAbsolute(rel) ? rel : join(proc.cwd, rel), "utf8");
   } catch {
-    return { error: "Couldn't read what was fetched (FETCH_HEAD)." };
+    return { error: l10n.t("Couldn't read what was fetched (FETCH_HEAD).") };
   }
   for (const line of text.split("\n")) {
     const m = /^([0-9a-f]{40,64})\t[^\t]*\t'([^']+)'/.exec(line);
@@ -129,7 +130,7 @@ export async function fetchRefTip(
       if (m && m[2] === short) return { sha: m[1] };
     }
   }
-  return { error: ref.startsWith("refs/pull/") ? "Couldn't find the pull request's head in what was fetched." : `Couldn't find ${ref} in what was fetched.` };
+  return { error: ref.startsWith("refs/pull/") ? l10n.t("Couldn't find the pull request's head in what was fetched.") : l10n.t("Couldn't find {0} in what was fetched.", ref) };
 }
 
 /** What checking out `pr/<n>` at `sha` means for the branch that is there. */
@@ -183,9 +184,10 @@ export async function movePrBranch(
   opts?: { signal?: AbortSignal },
 ): Promise<GitRunResult> {
   if (!plan.localSha) {
-    return { code: 1, stdout: "", stderr: `${plan.local} doesn't exist yet.` };
+    return { code: 1, stdout: "", stderr: l10n.t("{0} doesn't exist yet.", plan.local) };
   }
   return proc.run(
+    // English on purpose: the `-m` text is the reflog entry git stores.
     ["update-ref", "-m", `GitStudio: update ${plan.local} to pull request head`, plan.ref, plan.sha, plan.localSha],
     opts,
   );
@@ -196,8 +198,8 @@ export function divergedMessage(n: number, plan: PrHeadPlan): string {
   const k = plan.localOnly;
   const commits = k === undefined ? "commits" : k === 1 ? "1 commit" : `${k} commits`;
   return (
-    `${plan.local} has ${commits} that pull request #${n} doesn't — made here, or from before ` +
-    `the PR was force-pushed.`
+    l10n.t("{0} has {1} that pull request #{2} doesn't — made here, or from before ", plan.local, commits, n) +
+    l10n.t("the PR was force-pushed.")
   );
 }
 

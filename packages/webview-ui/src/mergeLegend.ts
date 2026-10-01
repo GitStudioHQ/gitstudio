@@ -32,6 +32,7 @@
 import type { MergeCategory, MergeCountsView } from "./mergeViewApi";
 import type { PaintTone } from "./paint";
 import { iconElement, questionIcon } from "./icons";
+import * as l10n from "@vscode/l10n";
 
 /** One legend item: a colour the merge paints with (paint.ts's tone of the same name). */
 export type LegendItem = PaintTone;
@@ -93,30 +94,30 @@ interface ItemWords {
  */
 export const LEGEND_WORDS: Record<LegendItem, ItemWords> = {
   conflict: {
-    label: "Conflict",
-    note: "you choose",
-    why: "Both sides changed these lines, differently",
+    label: l10n.t("Conflict"),
+    note: l10n.t("you choose"),
+    why: l10n.t("Both sides changed these lines, differently"),
     one: "conflict",
     many: "conflicts",
   },
   same: {
-    label: "Same on both sides",
-    note: "either arrow takes it",
-    why: "Both sides added or changed these lines the same way: nothing to choose",
+    label: l10n.t("Same on both sides"),
+    note: l10n.t("either arrow takes it"),
+    why: l10n.t("Both sides added or changed these lines the same way: nothing to choose"),
     one: "change made the same on both sides",
     many: "changes made the same on both sides",
   },
   "one-sided": {
-    label: "One side only",
-    note: "safe to take",
-    why: "Only one side added or changed these lines",
+    label: l10n.t("One side only"),
+    note: l10n.t("safe to take"),
+    why: l10n.t("Only one side added or changed these lines"),
     one: "change made on one side only",
     many: "changes made on one side only",
   },
   removed: {
-    label: "Removed lines",
+    label: l10n.t("Removed lines"),
     note: "",
-    why: "Lines removed on one side only, or the same lines removed on both: no conflict, safe to take",
+    why: l10n.t("Lines removed on one side only, or the same lines removed on both: no conflict, safe to take"),
     one: "removal",
     many: "removals",
   },
@@ -145,16 +146,16 @@ interface KeyRow {
 }
 
 const KEY: KeyRow[] = [
-  { dots: ["conflict"], text: "Conflict — you choose (orange): both sides changed these lines, differently — even when one of them removed lines. Accept one side, both, or edit the result." },
-  { dots: ["same"], text: "Same on both sides — either arrow takes it (green): both sides added or changed these lines the same way. Nothing to choose." },
-  { dots: ["one-sided"], text: "One side only — safe to take (blue): only one side added or changed these lines." },
-  { dots: ["removed"], text: "Removed lines (grey): lines removed on one side only, or the same lines removed on both. No conflict: safe to take." },
-  { sample: "column", text: "A change still to decide: its line numbers and its link to the Result in the full colour, its lines lighter with the words that changed in the full colour." },
-  { sample: "point", text: "A band that meets a line between two rows on the other side: lines added there, or removed." },
-  { sample: "word", text: "A stronger tint on some words: exactly what changed within the line. A change of whitespace only has none; its tooltip says so." },
-  { sample: "half", text: "A lighter band in the Result, line numbers too: a conflict with one side in, the other still to decide." },
-  { sample: "trace", text: "A lighter band, line numbers too, linked to the Result: the side you took. A settled Result keeps it too." },
-  { sample: "done", text: "A thin outline with no link: the side you discarded." },
+  { dots: ["conflict"], text: l10n.t("Conflict — you choose (orange): both sides changed these lines, differently — even when one of them removed lines. Accept one side, both, or edit the result.") },
+  { dots: ["same"], text: l10n.t("Same on both sides — either arrow takes it (green): both sides added or changed these lines the same way. Nothing to choose.") },
+  { dots: ["one-sided"], text: l10n.t("One side only — safe to take (blue): only one side added or changed these lines.") },
+  { dots: ["removed"], text: l10n.t("Removed lines (grey): lines removed on one side only, or the same lines removed on both. No conflict: safe to take.") },
+  { sample: "column", text: l10n.t("A change still to decide: its line numbers and its link to the Result in the full colour, its lines lighter with the words that changed in the full colour.") },
+  { sample: "point", text: l10n.t("A band that meets a line between two rows on the other side: lines added there, or removed.") },
+  { sample: "word", text: l10n.t("A stronger tint on some words: exactly what changed within the line. A change of whitespace only has none; its tooltip says so.") },
+  { sample: "half", text: l10n.t("A lighter band in the Result, line numbers too: a conflict with one side in, the other still to decide.") },
+  { sample: "trace", text: l10n.t("A lighter band, line numbers too, linked to the Result: the side you took. A settled Result keeps it too.") },
+  { sample: "done", text: l10n.t("A thin outline with no link: the side you discarded.") },
 ];
 
 function dot(tone: string): HTMLElement {
@@ -181,11 +182,11 @@ export function halfDoneWords(detail: LegendDetail | undefined, pendingConflicts
   if (half.length === 0) return undefined;
   if (half.length === 1 && pendingConflicts === 1) {
     const [{ done, taken }] = half;
-    const doneWord = done === "yours" ? "Yours" : "Theirs";
-    const otherWord = done === "yours" ? "Theirs" : "Yours";
-    return `${doneWord} ${taken ? "taken" : "ignored"}, ${otherWord} to decide`;
+    const doneWord = done === "yours" ? l10n.t("Yours") : l10n.t("Theirs");
+    const otherWord = done === "yours" ? l10n.t("Theirs") : l10n.t("Yours");
+    return l10n.t("{0} {1}, {2} to decide", doneWord, taken ? l10n.t("taken") : l10n.t("ignored"), otherWord);
   }
-  return `${half.length} with one side in, the other to decide`;
+  return l10n.t("{0} with one side in, the other to decide", half.length);
 }
 
 export class MergeLegend {
@@ -205,7 +206,7 @@ export class MergeLegend {
     const root = document.createElement("div");
     root.className = "jb-legend";
     root.setAttribute("role", "group");
-    root.setAttribute("aria-label", "What the colours mean");
+    root.setAttribute("aria-label", l10n.t("What the colours mean"));
     this.element = root;
 
     for (const item of LEGEND_ITEMS) {
@@ -247,8 +248,8 @@ export class MergeLegend {
     const help = document.createElement("button");
     help.type = "button";
     help.className = "jb-legend-help";
-    help.setAttribute("aria-label", "What the colours and lines mean");
-    help.title = "What the colours and lines mean";
+    help.setAttribute("aria-label", l10n.t("What the colours and lines mean"));
+    help.title = l10n.t("What the colours and lines mean");
     help.setAttribute("aria-expanded", "false");
     help.appendChild(iconElement(questionIcon));
     this.helpButton = help;
@@ -257,7 +258,7 @@ export class MergeLegend {
     pop.className = "jb-legend-pop";
     pop.id = `jb-legend-pop-${Math.random().toString(36).slice(2)}`;
     pop.setAttribute("role", "dialog");
-    pop.setAttribute("aria-label", "What the merge colours and lines mean");
+    pop.setAttribute("aria-label", l10n.t("What the merge colours and lines mean"));
     pop.hidden = true;
     for (const row of KEY) {
       const line = document.createElement("div");
@@ -321,7 +322,7 @@ export class MergeLegend {
       chip.note.textContent =
         pending === 0
           ? ""
-          : half ?? (resolvable > 0 ? `${words.note} · ${resolvable} can be merged automatically` : words.note);
+          : half ?? (resolvable > 0 ? l10n.t("{0} · {1} can be merged automatically", words.note, resolvable) : words.note);
       chip.note.hidden = chip.note.textContent === "";
       chip.dash.hidden = chip.note.textContent === "";
 
@@ -329,7 +330,7 @@ export class MergeLegend {
         total === 0
           ? `No ${words.many}`
           : pending === 0
-            ? `${total === 1 ? `The ${words.one} is` : `All ${total} ${words.many} are`} dealt with`
+            ? `${total === 1 ? l10n.t("The {0} is", words.one) : l10n.t("All {0} {1} are", total, words.many)} dealt with`
             : `${plural(pending, words.one, words.many)} left${pending < total ? ` of ${total}` : ""}`;
       if (item === "conflict") {
         if (half) text += ` (${half})`;
@@ -337,20 +338,21 @@ export class MergeLegend {
         // "0 can be resolved", nor any count of nothing.
         const k = Math.min(counts.resolvableConflictsPending, pending);
         if (k > 0) {
-          text += `; ${k === pending ? (k === 1 ? "it" : "all") : k} can be resolved automatically (Resolve simple conflicts)`;
+          const how = k === pending ? (k === 1 ? l10n.t("it") : l10n.t("all")) : String(k);
+          text += l10n.t("; {0} can be resolved automatically (Resolve simple conflicts)", how);
         }
       } else if (item === "one-sided" && pending > 0) {
-        text += ` (${tally.yours} in Yours, ${tally.theirs} in Theirs)`;
+        text += l10n.t(" ({0} in Yours, {1} in Theirs)", tally.yours, tally.theirs);
       } else if (item === "removed" && pending > 0) {
         const where = [
-          tally.yours > 0 ? `${tally.yours} in Yours` : "",
-          tally.theirs > 0 ? `${tally.theirs} in Theirs` : "",
+          tally.yours > 0 ? l10n.t("{0} in Yours", tally.yours) : "",
+          tally.theirs > 0 ? l10n.t("{0} in Theirs", tally.theirs) : "",
           tally.both > 0 ? `${tally.both} the same on both sides` : "",
         ].filter(Boolean);
         text += ` (${where.join(", ")})`;
       }
       if (pending > 0) {
-        text += `. ${words.why}. Go to the next one.`;
+        text += l10n.t(". {0}. Go to the next one.", words.why);
       }
       const name = legendName(item);
       chip.button.title = `${name}\n${text}`;

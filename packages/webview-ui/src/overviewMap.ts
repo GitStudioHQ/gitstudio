@@ -3,6 +3,7 @@ import type { ChangeBlock, LineSpan, MergeModel } from "@gitstudio/engine/types"
 import { isEmptySpan } from "@gitstudio/engine/types";
 import { PAINT_TONES, paintTone, type PaintTone } from "./paint";
 import { scheduleFrame } from "./ribbons";
+import * as l10n from "@vscode/l10n";
 
 type Editor = monaco.editor.IStandaloneCodeEditor;
 
@@ -87,7 +88,7 @@ export class OverviewMap {
     // A mouse affordance: the keyboard has F7 / Shift+F7 and the editor's own
     // scrolling, and a screen reader the legend's counts.
     strip.setAttribute("aria-hidden", "true");
-    strip.title = "Overview of the changes still to resolve — press to go there";
+    strip.title = l10n.t("Overview of the changes still to resolve — press to go there");
     this.thumb = document.createElement("div");
     this.thumb.className = "jb-map-thumb";
     this.canvas = document.createElement("canvas");

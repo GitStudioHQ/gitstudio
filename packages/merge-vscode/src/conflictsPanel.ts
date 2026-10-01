@@ -20,6 +20,7 @@ import { saveConflictedDocuments, saveDocumentAt } from "./mergeEditorProvider";
 import { outcomeLine, type OperationVerb } from "./outcome";
 import type { MergeRepo } from "./product";
 import { conflictsWebviewHtml } from "./webviewHtml";
+import * as l10n from "@vscode/l10n";
 
 export class ConflictsDashboard implements vscode.Disposable {
   private panel: vscode.WebviewPanel | undefined;
@@ -124,7 +125,7 @@ export class ConflictsDashboard implements vscode.Disposable {
   private create(focus: boolean): void {
     const panel = vscode.window.createWebviewPanel(
       this.host.product.viewTypes.conflicts,
-      "Conflicts",
+      l10n.t("Conflicts"),
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: !focus },
       {
         enableScripts: true,
@@ -310,7 +311,7 @@ export class ConflictsDashboard implements vscode.Disposable {
         await this.openConflict(fileUri(repo, action.path));
         return;
       case "accept":
-        await this.fileAction(repo, action.path, action.seq, `Accept ${action.role === "yours" ? "Yours" : "Theirs"}`, () =>
+        await this.fileAction(repo, action.path, action.seq, l10n.t("Accept {0}", action.role === "yours" ? l10n.t("Yours") : l10n.t("Theirs")), () =>
           repo.ctx.conflictOps.takeRole(action.path, action.role),
         );
         return;
@@ -318,7 +319,7 @@ export class ConflictsDashboard implements vscode.Disposable {
         await this.fileAction(repo, action.path, action.seq, undefined, () => repo.ctx.conflictOps.restore(action.path));
         return;
       case "delete":
-        await this.fileAction(repo, action.path, action.seq, "Delete the conflicted file", () =>
+        await this.fileAction(repo, action.path, action.seq, l10n.t("Delete the conflicted file"), () =>
           repo.ctx.conflictOps.deleteFile(action.path),
         );
         return;
@@ -467,7 +468,7 @@ export class ConflictsDashboard implements vscode.Disposable {
           void closeMergeEditorTabs(this.host.product.viewTypes.mergeEditor);
         }
       } else {
-        controller.setOutcome({ kind: "failed", text: failure ?? `Git refused to ${verb}.` });
+        controller.setOutcome({ kind: "failed", text: failure ?? l10n.t("Git refused to {0}.", verb) });
       }
       this.finish(seq, page);
       this.host.changed(repo);

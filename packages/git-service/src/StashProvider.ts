@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { GitProcess, GitRunOptions } from "./GitProcess";
 import { restoreStash, stashStack } from "./stashRestore";
+import * as l10n from "@vscode/l10n";
 
 /** Unit separator — frames the stash-list fields (robust to messages). */
 const FIELD_SEP = "\x1f";
@@ -59,7 +60,7 @@ export interface StashOpResult {
 }
 
 /** What the user is told when the stash they acted on has left the list. */
-export const STASH_GONE_MESSAGE = "That stash is no longer in the list, so nothing was changed.";
+export const STASH_GONE_MESSAGE = l10n.t("That stash is no longer in the list, so nothing was changed.");
 
 // ── What a stash holds ───────────────────────────────────────────────────────
 
@@ -120,9 +121,9 @@ export function stashTitle(message: string): StashTitle {
     // GitHub Desktop stashes with a marker instead of words.
     const desktop = /^!!GitHub_Desktop<(.+)>$/.exec(words);
     if (desktop) {
-      return { text: "Stashed by GitHub Desktop", branch: desktop[1] };
+      return { text: l10n.t("Stashed by GitHub Desktop"), branch: desktop[1] };
     }
-    return { text: words || "(no message)", ...optional("branch", branchOf(typed[1])) };
+    return { text: words || l10n.t("(no message)"), ...optional("branch", branchOf(typed[1])) };
   }
   if (wip) {
     const subject = wip[2].trim();
@@ -140,7 +141,7 @@ export function stashTitle(message: string): StashTitle {
     // when it could not be put back.
     return { text: "Autostash", auto: true };
   }
-  return { text: message.trim() || "(no message)" };
+  return { text: message.trim() || l10n.t("(no message)") };
 }
 
 function optional<K extends string, V>(key: K, value: V | undefined): { [P in K]?: V } {
@@ -243,16 +244,16 @@ export function stashBlockerMessage(
     case "cleanTree":
       switch (scope) {
         case "selection":
-          return "Nothing to stash — the files you selected have no changes.";
+          return l10n.t("Nothing to stash — the files you selected have no changes.");
         case "staged":
-          return "Nothing to stash — nothing is staged.";
+          return l10n.t("Nothing to stash — nothing is staged.");
         default:
-          return "Nothing to stash — the working tree is clean.";
+          return l10n.t("Nothing to stash — the working tree is clean.");
       }
     case "untrackedOnly":
       return scope === "selection"
-        ? "Nothing was stashed — the files you selected are new ones git isn't tracking yet. Stash again with \"Include untracked files\" to put those away too."
-        : "Nothing was stashed — the only changes are new files git isn't tracking yet. Stash again with \"Include untracked files\" to put those away too.";
+        ? l10n.t("Nothing was stashed — the files you selected are new ones git isn't tracking yet. Stash again with \"Include untracked files\" to put those away too.")
+        : l10n.t("Nothing was stashed — the only changes are new files git isn't tracking yet. Stash again with \"Include untracked files\" to put those away too.");
   }
 }
 
@@ -317,8 +318,8 @@ export class StashProvider {
         ok: false,
         created: false,
         stderr:
-          "Stashing the staged changes of specific files is not supported by git — " +
-          "stash the whole staged section, or stash those files entirely.",
+          l10n.t("Stashing the staged changes of specific files is not supported by git — ") +
+          l10n.t("stash the whole staged section, or stash those files entirely."),
       };
     }
 
@@ -669,12 +670,12 @@ export class StashProvider {
     const signal = opts?.signal;
     const c = await this.contents(stash, opts);
     if (!c) {
-      return { ok: false, stderr: `“${stash}” is not a stash git can read.` };
+      return { ok: false, stderr: l10n.t("“{0}” is not a stash git can read.", stash) };
     }
     const wanted = new Set(paths);
     const picked = c.files.filter((f) => wanted.has(f.path) || (f.oldPath !== undefined && wanted.has(f.oldPath)));
     if (picked.length === 0) {
-      return { ok: false, stderr: "None of those files are in the stash." };
+      return { ok: false, stderr: l10n.t("None of those files are in the stash.") };
     }
     // Every name the picked files have on either side: a rename's old name too.
     const names = new Set<string>();
@@ -708,7 +709,7 @@ export class StashProvider {
     const env = { GIT_INDEX_FILE: join(dir, "index") };
     const fail = (what: string, r: { stderr: string }): StashSubsetResult => ({
       ok: false,
-      stderr: `Couldn't take those files out of the stash (${what}): ${r.stderr.trim() || "git refused"}`,
+      stderr: l10n.t("Couldn't take those files out of the stash ({0}): {1}", what, r.stderr.trim() || "git refused"),
     });
     try {
       // One side's tree: `start` (a commit, or nothing), with each name set as
@@ -795,7 +796,7 @@ export class StashProvider {
       // them back rather than lose them quietly.
       return {
         ok: false,
-        stderr: `${put.message} The files left in the stash are in commit ${replacement}: \`git stash store ${replacement}\` brings them back.`,
+        stderr: l10n.t("{0} The files left in the stash are in commit {1}: `git stash store {2}` brings them back.", put.message, replacement, replacement),
       };
     }
     return { ok: true, stderr: "", index: put.index };
@@ -842,13 +843,13 @@ export async function stashBranchNameRefusal(
   signal?: AbortSignal,
 ): Promise<string | undefined> {
   if (name.length === 0 || name.startsWith("-")) {
-    return `“${name}” is not a branch name git can use.`;
+    return l10n.t("“{0}” is not a branch name git can use.", name);
   }
   if ((await proc.run(["check-ref-format", "--branch", name], { signal })).code !== 0) {
-    return `“${name}” is not a branch name git can use.`;
+    return l10n.t("“{0}” is not a branch name git can use.", name);
   }
   const exists = await proc.run(["rev-parse", "--verify", "--quiet", `refs/heads/${name}`], { signal });
-  return exists.code === 0 ? `A branch named “${name}” already exists.` : undefined;
+  return exists.code === 0 ? l10n.t("A branch named “{0}” already exists.", name) : undefined;
 }
 
 /** One `diff-tree --raw` record: the new side's mode and blob, and git's letter. */
@@ -945,7 +946,7 @@ function gone(): StashOpResult {
 }
 
 function notAStash(name: string): StashOpResult {
-  return { ok: false, stderr: `“${name}” is not a stash.` };
+  return { ok: false, stderr: l10n.t("“{0}” is not a stash.", name) };
 }
 
 /**

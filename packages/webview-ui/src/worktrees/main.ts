@@ -7,6 +7,8 @@
 // `<div id="root">`. Messages: host-bridge/worktreesProtocol.ts — the page
 // posts `ready` on load and the host answers with `rows`.
 
+import "@gitstudio/l10n/webview";
+
 import { installSolidAccent } from "../styles/solidAccent";
 import "./worktrees.css";
 import type { WorktreesToHost, WorktreesToPage } from "@gitstudio/host-bridge/worktreesProtocol";

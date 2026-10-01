@@ -14,6 +14,7 @@ import type {
   OperationOutcome,
   OperationView,
 } from "@gitstudio/host-bridge/conflictsProtocol";
+import * as l10n from "@vscode/l10n";
 
 /**
  * What git is in the middle of, named and driven (PLAN §3.2 W1 + §3.3 W3).
@@ -360,16 +361,16 @@ export class OperationProvider implements OperationSource, OperationControl {
     const before = await this.inspect(opts);
     const v = before.view;
     if (v.kind === "none" || v.kind === "stash" || !v.verbs.continue) {
-      return this.refused(before, "not-allowed", "There is nothing to continue.");
+      return this.refused(before, "not-allowed", l10n.t("There is nothing to continue."));
     }
     if (!v.canContinue) {
-      return this.refused(before, "blocked", v.continueBlocked ?? "Continue isn't possible yet.");
+      return this.refused(before, "blocked", v.continueBlocked ?? l10n.t("Continue isn't possible yet."));
     }
     if (v.willDrop && !opts?.confirmDrop) {
       return this.refused(
         before,
         "confirm-drop",
-        `Continuing will drop ${v.willDrop.sha.slice(0, 7)} “${v.willDrop.subject}” from ${v.willDrop.branch}: ` +
+        l10n.t("Continuing will drop {0} “{1}” from {2}: ", v.willDrop.sha.slice(0, 7), v.willDrop.subject, v.willDrop.branch) +
           `the resolution left it with no changes.`,
       );
     }
@@ -417,7 +418,7 @@ export class OperationProvider implements OperationSource, OperationControl {
         ran = await this.git(["am", "--continue"], opts);
         break;
       default:
-        return this.refused(before, "not-allowed", "There is nothing to continue.");
+        return this.refused(before, "not-allowed", l10n.t("There is nothing to continue."));
     }
     return this.settle(before, ran, "continue", opts);
   }
@@ -427,7 +428,7 @@ export class OperationProvider implements OperationSource, OperationControl {
     const before = await this.inspect(opts);
     const v = before.view;
     if (!v.canSkip) {
-      return this.refused(before, "not-allowed", "Skip isn't offered here.");
+      return this.refused(before, "not-allowed", l10n.t("Skip isn't offered here."));
     }
     let ran: Ran;
     switch (v.kind) {
@@ -444,7 +445,7 @@ export class OperationProvider implements OperationSource, OperationControl {
         ran = await this.git(["am", "--skip"], opts);
         break;
       default:
-        return this.refused(before, "not-allowed", "Skip isn't offered here.");
+        return this.refused(before, "not-allowed", l10n.t("Skip isn't offered here."));
     }
     return this.settle(before, ran, "skip", opts);
   }
@@ -459,7 +460,7 @@ export class OperationProvider implements OperationSource, OperationControl {
     const before = await this.inspect(opts);
     const v = before.view;
     if (v.kind === "none" && before.unmerged.length === 0) {
-      return this.refused(before, "not-allowed", "There is nothing to abort.");
+      return this.refused(before, "not-allowed", l10n.t("There is nothing to abort."));
     }
     let ran: Ran;
     let warning: string | undefined;
@@ -487,9 +488,9 @@ export class OperationProvider implements OperationSource, OperationControl {
         const head = start ? await this.revParse("HEAD", opts?.signal) : undefined;
         if (ran.code === 0 && start && head && head !== start) {
           warning =
-            `The ${v.kind === "revert" ? "revert" : "cherry-pick"} was stopped, but HEAD had moved since its ` +
-            "last commit, so git left the branch where it is rather than rewinding — the commits it had " +
-            "already made are still there. Check the log before carrying on.";
+            l10n.t("The {0} was stopped, but HEAD had moved since its ", v.kind === "revert" ? l10n.t("revert") : l10n.t("cherry-pick")) +
+            l10n.t("last commit, so git left the branch where it is rather than rewinding — the commits it had ") +
+            l10n.t("already made are still there. Check the log before carrying on.");
         }
         break;
       }
@@ -502,8 +503,8 @@ export class OperationProvider implements OperationSource, OperationControl {
         const head = await this.revParse("HEAD", opts?.signal);
         if (safety && head && safety !== head) {
           warning =
-            "The patch series was abandoned, but HEAD had moved since it started, so git left it " +
-            "where it is rather than rewinding. Check the log before carrying on.";
+            l10n.t("The patch series was abandoned, but HEAD had moved since it started, so git left it ") +
+            l10n.t("where it is rather than rewinding. Check the log before carrying on.");
         }
         ran = await this.git(["am", "--abort"], opts);
         break;
@@ -532,7 +533,7 @@ export class OperationProvider implements OperationSource, OperationControl {
       signal: opts?.signal,
     });
     if (r.code !== 0) {
-      throw new Error(r.stderr.trim() || `git rev-parse --git-path ${name} failed (${r.code}).`);
+      throw new Error(r.stderr.trim() || l10n.t("git rev-parse --git-path {0} failed ({1}).", name, r.code));
     }
     return resolve(this.root, r.stdout.trim());
   }
@@ -546,7 +547,7 @@ export class OperationProvider implements OperationSource, OperationControl {
     const r = await this.proc.run(args, { signal: opts?.signal });
     const lines = r.stdout.split("\n").map((l) => l.replace(/\r$/, ""));
     if (r.code !== 0 || lines.length < GIT_PATHS.length) {
-      throw new Error(r.stderr.trim() || `git rev-parse --git-path failed (${r.code}).`);
+      throw new Error(r.stderr.trim() || l10n.t("git rev-parse --git-path failed ({0}).", r.code));
     }
     const out = {} as Record<GitPathName, string>;
     GIT_PATHS.forEach((name, i) => {
@@ -582,7 +583,7 @@ export class OperationProvider implements OperationSource, OperationControl {
   private async unmergedPaths(opts?: OperationReadOptions): Promise<string[]> {
     const r = await this.proc.run(["ls-files", "-u", "-z"], { signal: opts?.signal });
     if (r.code !== 0) {
-      throw new Error(r.stderr.trim() || `git ls-files -u failed (${r.code}), so the unmerged files are unknown.`);
+      throw new Error(r.stderr.trim() || l10n.t("git ls-files -u failed ({0}), so the unmerged files are unknown.", r.code));
     }
     const seen = new Set<string>();
     const out: string[] = [];
@@ -848,7 +849,7 @@ export class OperationProvider implements OperationSource, OperationControl {
       // really fetched this commit.
       const pull = /^Merge (?:remote-tracking )?branch '([^']+)' of (\S.*?)(?: into .*)?$/.exec(msg);
       if (pull && (await this.fetchedFor(sha, paths))) {
-        names.push(`${pull[1]} (from ${await this.remoteNameFor(pull[2], signal)})`);
+        names.push(l10n.t("{0} (from {1})", pull[1], await this.remoteNameFor(pull[2], signal)));
         continue;
       }
       const prefer: string[] = [];
@@ -899,7 +900,7 @@ export class OperationProvider implements OperationSource, OperationControl {
     // killed process, a locked index) is not "no markers are staged".
     const ru = await this.proc.run(["ls-files", "--resolve-undo", "-z"], { signal });
     if (ru.code !== 0) {
-      throw new Error(ru.stderr.trim() || `git ls-files --resolve-undo failed (${ru.code}).`);
+      throw new Error(ru.stderr.trim() || l10n.t("git ls-files --resolve-undo failed ({0}).", ru.code));
     }
     const resolved = new Set<string>();
     for (const rec of ru.stdout.split("\0")) {
@@ -917,7 +918,7 @@ export class OperationProvider implements OperationSource, OperationControl {
     // error, or killed by a signal) rather than reporting findings.
     if (r.code === 0) return [];
     if (r.code >= 128) {
-      throw new Error(r.stderr.trim() || `git diff --cached --check failed (${r.code}).`);
+      throw new Error(r.stderr.trim() || l10n.t("git diff --cached --check failed ({0}).", r.code));
     }
     const files: string[] = [];
     for (const line of r.stdout.split("\n")) {
@@ -932,7 +933,7 @@ export class OperationProvider implements OperationSource, OperationControl {
     const r = await this.proc.run(["diff", "--name-only", "-z", "--ignore-submodules"], { signal });
     if (r.code !== 0) {
       // Fails closed like the marker gate: unknown is not "nothing unstaged".
-      throw new Error(r.stderr.trim() || `git diff --name-only failed (${r.code}).`);
+      throw new Error(r.stderr.trim() || l10n.t("git diff --name-only failed ({0}).", r.code));
     }
     return r.stdout.split("\0").filter(Boolean);
   }
@@ -983,11 +984,11 @@ export class OperationProvider implements OperationSource, OperationControl {
       const message =
         v.kind !== kindBefore && !(kindBefore === "rebase" && v.kind === "rebase-merge-step") &&
         !(kindBefore === "rebase-merge-step" && v.kind === "rebase")
-          ? `${doneMessage(before.view, verb)}. Then: ${v.title}`
+          ? l10n.t("{0}. Then: {1}", doneMessage(before.view, verb), v.title)
           : stoppedMessage(v, remainingConflicts);
       return { ok: false, stopped: true, expected: true, message, view: v, remainingConflicts };
     }
-    const why = explain(ran) || `git exited with code ${ran.code ?? "unknown"}.`;
+    const why = explain(ran) || l10n.t("git exited with code {0}.", ran.code ?? l10n.t("unknown"));
     return {
       ok: false,
       message: why,
@@ -1154,35 +1155,40 @@ function infoField(info: string | undefined, field: string): string | undefined 
 }
 
 function list(paths: string[]): string {
-  return paths.length === 1 ? paths[0] : `${paths[0]} and ${paths.length - 1} more`;
+  return paths.length === 1 ? paths[0] : l10n.t("{0} and {1} more", paths[0], paths.length - 1);
 }
 
 function stillConflicted(paths: string[]): string {
   return paths.length === 1
-    ? `${paths[0]} still has conflicts`
-    : `${paths.length} files still have conflicts`;
+    ? l10n.t("{0} still has conflicts", paths[0])
+    : l10n.t("{0} files still have conflicts", paths.length);
 }
 
 function stagedMarkersMessage(files: string[]): string | undefined {
   if (files.length === 0) return undefined;
   return files.length === 1
-    ? `${files[0]} still has conflict markers staged`
-    : `${list(files)} still have conflict markers staged`;
+    ? l10n.t("{0} still has conflict markers staged", files[0])
+    : l10n.t("{0} still have conflict markers staged", list(files));
 }
 
 function unstagedMessage(files: string[]): string | undefined {
   if (files.length === 0) return undefined;
-  return (
-    `${list(files)} ${files.length === 1 ? "has" : "have"} changes that aren't staged. ` +
-    `Stage or stash them first — git won't continue a rebase with unstaged changes.`
-  );
+  return files.length === 1
+    ? l10n.t(
+        "{0} has changes that aren't staged. Stage or stash them first — git won't continue a rebase with unstaged changes.",
+        list(files),
+      )
+    : l10n.t(
+        "{0} have changes that aren't staged. Stage or stash them first — git won't continue a rebase with unstaged changes.",
+        list(files),
+      );
 }
 
 function nothingLeftMessage(kind: OperationKind): string {
   if (kind === "am") {
-    return "Nothing is staged for this patch. Apply it by hand and stage the result, or skip the patch.";
+    return l10n.t("Nothing is staged for this patch. Apply it by hand and stage the result, or skip the patch.");
   }
-  return "The resolution leaves nothing to commit for this commit. Skip it instead.";
+  return l10n.t("The resolution leaves nothing to commit for this commit. Skip it instead.");
 }
 
 const OP_NOUN: Record<OperationKind, string> = {
@@ -1191,7 +1197,7 @@ const OP_NOUN: Record<OperationKind, string> = {
   "rebase-merge-step": "Rebase",
   "cherry-pick": "Cherry-pick",
   revert: "Revert",
-  am: "Patch series",
+  am: l10n.t("Patch series"),
   stash: "Stash",
   none: "Operation",
 };
@@ -1200,9 +1206,9 @@ const OP_NOUN: Record<OperationKind, string> = {
 function doneMessage(before: OperationView, verb: "continue" | "skip" | "abort"): string {
   const kind = before.kind;
   if (verb === "abort") {
-    if (kind === "stash") return "Cancelled. Your stashed changes are still in the stash.";
-    if (kind === "none") return "Cancelled. The conflicted files are back to their last commit.";
-    if (kind === "am") return "Patch series abandoned";
+    if (kind === "stash") return l10n.t("Cancelled. Your stashed changes are still in the stash.");
+    if (kind === "none") return l10n.t("Cancelled. The conflicted files are back to their last commit.");
+    if (kind === "am") return l10n.t("Patch series abandoned");
     return `${OP_NOUN[kind]} aborted`;
   }
   // A Skip that ENDED the operation: "All patches applied" of a series whose
@@ -1210,17 +1216,17 @@ function doneMessage(before: OperationView, verb: "continue" | "skip" | "abort")
   // commit 2 of 3 when git went on and applied commit 3. Which one it was,
   // and whether anything came after it, is read off the stop it ended.
   if (verb === "skip") return skipEndedText(before);
-  if (kind === "am") return "All patches applied";
+  if (kind === "am") return l10n.t("All patches applied");
   return `${OP_NOUN[kind]} complete`;
 }
 
 function stoppedMessage(v: OperationView, remaining: number): string {
   if (v.pause) return v.pause.detail;
   const where = v.step
-    ? `Stopped at ${v.step.unit} ${v.step.n} of ${v.step.m}`
+    ? l10n.t("Stopped at {0} {1} of {2}", v.step.unit, v.step.n, v.step.m)
     : "Stopped";
   const what = v.commit && v.commit.sha ? `: ${v.commit.sha.slice(0, 7)} ${v.commit.subject}`.trimEnd() : "";
-  const left = remaining > 0 ? ` — ${remaining} ${remaining === 1 ? "file" : "files"} to resolve` : "";
+  const left = remaining > 0 ? l10n.t(" — {0} {1} to resolve", remaining, remaining === 1 ? l10n.t("file") : l10n.t("files")) : "";
   return `${where}${what}${left}`;
 }
 

@@ -14,6 +14,7 @@
 
 import { statusWords, type ChangeCommit, type ChangeFile } from "@gitstudio/host-bridge/changeRows";
 import { relTime } from "../graph/format";
+import * as l10n from "@vscode/l10n";
 
 export type { ChangeCommit, ChangeFile };
 
@@ -108,15 +109,15 @@ export function fileRow(f: ChangeFile, o: FileRowOptions = {}): HTMLElement {
     row.appendChild(nums);
   }
   const words = statusWords(st, f.area);
-  const was = f.oldPath ? `, was ${f.oldPath}` : "";
+  const was = f.oldPath ? l10n.t(", was {0}", f.oldPath) : "";
   if (o.onOpen) {
     const open = o.onOpen;
     row.classList.add("clickable");
     row.setAttribute("role", o.role ?? "button");
     row.tabIndex = o.tabIndex ?? 0;
-    const tip = `Open changes — ${f.path}${f.oldPath ? ` (was ${f.oldPath})` : ""}`;
+    const tip = l10n.t("Open changes — {0}{1}", f.path, f.oldPath ? l10n.t(" (was {0})", f.oldPath) : "");
     row.dataset.tip = tip;
-    row.setAttribute("aria-label", `${name}, ${words}${was}${dir ? `, in ${dir}` : ""}. Open changes`);
+    row.setAttribute("aria-label", l10n.t("{0}, {1}{2}{3}. Open changes", name, words, was, dir ? l10n.t(", in {0}", dir) : ""));
     row.addEventListener("click", () => open(f));
     row.addEventListener("keydown", (e) => {
       if (e.target !== row) return;
@@ -128,8 +129,8 @@ export function fileRow(f: ChangeFile, o: FileRowOptions = {}): HTMLElement {
   } else {
     if (o.role) row.setAttribute("role", o.role);
     if (o.tabIndex !== undefined) row.tabIndex = o.tabIndex;
-    row.dataset.tip = `${f.path}${f.oldPath ? ` (was ${f.oldPath})` : ""}`;
-    row.setAttribute("aria-label", `${name}, ${words}${was}${dir ? `, in ${dir}` : ""}`);
+    row.dataset.tip = `${f.path}${f.oldPath ? l10n.t(" (was {0})", f.oldPath) : ""}`;
+    row.setAttribute("aria-label", `${name}, ${words}${was}${dir ? l10n.t(", in {0}", dir) : ""}`);
   }
   if (o.indent) row.style.paddingLeft = `${o.indent}px`;
   return row;
@@ -190,7 +191,7 @@ export function commitRow(c: ChangeCommit, o: CommitRowOptions = {}): HTMLElemen
     row.setAttribute("role", o.role ?? "button");
     row.tabIndex = o.tabIndex ?? 0;
     row.setAttribute("aria-expanded", "false");
-    row.setAttribute("aria-label", `${c.subject} — ${c.sha.slice(0, 7)} by ${c.author}, ${when}. Show its files`);
+    row.setAttribute("aria-label", l10n.t("{0} — {1} by {2}, {3}. Show its files", c.subject, c.sha.slice(0, 7), c.author, when));
     const files = el("div", "cr-commit-files");
     files.hidden = true;
     files.setAttribute("role", "group");
@@ -234,7 +235,7 @@ export function toggleCommit(item: HTMLElement, open?: boolean): void {
   files.hidden = !next;
   if (next && !it._asked) {
     it._asked = true;
-    files.replaceChildren(el("div", "cr-loading", "Loading files…"));
+    files.replaceChildren(el("div", "cr-loading", l10n.t("Loading files…")));
     if (it._commit) it._opts?.loadFiles?.(it._commit);
   }
 }
@@ -248,11 +249,11 @@ export function setCommitFiles(item: HTMLElement, list: ChangeFile[] | null): vo
   const o = it._opts ?? {};
   const indent = (o.indent ?? 8) + 18;
   if (list === null) {
-    files.replaceChildren(el("div", "cr-loading", "Couldn't read this commit's files."));
+    files.replaceChildren(el("div", "cr-loading", l10n.t("Couldn't read this commit's files.")));
     return;
   }
   if (list.length === 0) {
-    files.replaceChildren(el("div", "cr-loading", "No file changes in this commit."));
+    files.replaceChildren(el("div", "cr-loading", l10n.t("No file changes in this commit.")));
     return;
   }
   files.replaceChildren(

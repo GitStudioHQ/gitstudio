@@ -35,6 +35,7 @@ import {
   squashCarryQuestion,
   squashQuestion,
 } from "@gitstudio/engine/rebase/many";
+import * as l10n from "@vscode/l10n";
 
 /** The commit actions as plain items for the IN-GRAPH popover (no vscode types
  * / codicon markup) — the webview renders these; ids match runCommitAction.
@@ -44,23 +45,23 @@ import {
  * where it cannot, the way the per-ref items leave out the branch you are on. */
 export function commitMenuItems(opts: { drop?: boolean } = {}): GraphMenuItem[] {
   return [
-    { id: "checkout", label: "Checkout Commit", icon: "git-commit" },
+    { id: "checkout", label: l10n.t("Checkout Commit"), icon: "git-commit" },
     // Detaching stays a FIRST-CLASS action. "Checkout Commit" prefers the
     // branch a commit sits on (see checkout()), which is right for the common
     // case but silently removed the ability to detach at a commit that has one
     // — the old behaviour, and the whole point of checking a commit out for
     // some workflows. Making it a separate item keeps both reachable.
-    { id: "detach", label: "Detach HEAD Here…", icon: "git-commit" },
-    { id: "branch", label: "Create Branch Here…", icon: "git-branch" },
-    { id: "tag", label: "Create Tag Here…", icon: "tag" },
-    { id: "cherryPick", label: "Cherry-Pick Commit", icon: "git-pull-request" },
-    { id: "revert", label: "Revert Commit", icon: "history" },
-    ...(opts.drop ? [{ id: "drop", label: "Drop Commit…", icon: "trash", danger: true }] : []),
-    { id: "reset", label: "Reset Current Branch to Here…", icon: "discard", danger: true },
-    { id: "interactiveRebase", label: "Start Interactive Rebase Here…", icon: "git-merge" },
+    { id: "detach", label: l10n.t("Detach HEAD Here…"), icon: "git-commit" },
+    { id: "branch", label: l10n.t("Create Branch Here…"), icon: "git-branch" },
+    { id: "tag", label: l10n.t("Create Tag Here…"), icon: "tag" },
+    { id: "cherryPick", label: l10n.t("Cherry-Pick Commit"), icon: "git-pull-request" },
+    { id: "revert", label: l10n.t("Revert Commit"), icon: "history" },
+    ...(opts.drop ? [{ id: "drop", label: l10n.t("Drop Commit…"), icon: "trash", danger: true }] : []),
+    { id: "reset", label: l10n.t("Reset Current Branch to Here…"), icon: "discard", danger: true },
+    { id: "interactiveRebase", label: l10n.t("Start Interactive Rebase Here…"), icon: "git-merge" },
     { id: "", label: "", sep: true },
-    { id: "copySha", label: "Copy SHA", icon: "copy" },
-    { id: "copyMessage", label: "Copy Message", icon: "copy" },
+    { id: "copySha", label: l10n.t("Copy SHA"), icon: "copy" },
+    { id: "copyMessage", label: l10n.t("Copy Message"), icon: "copy" },
   ];
 }
 
@@ -123,7 +124,7 @@ export function refMenuItems(refs: readonly MenuRef[]): GraphMenuItem[] {
     if (ref.kind === "head") {
       items.push({
         id: refActionId(ref.fullName),
-        label: `Checkout ${refLabel(ref.fullName)}`,
+        label: l10n.t("Checkout {0}", refLabel(ref.fullName)),
         icon: "git-branch",
       });
     } else if (ref.kind === "remoteHead") {
@@ -134,14 +135,14 @@ export function refMenuItems(refs: readonly MenuRef[]): GraphMenuItem[] {
       // is for. The tag arm below keeps its ellipsis because it still asks.
       items.push({
         id: refActionId(ref.fullName),
-        label: `Checkout ${refLabel(ref.fullName)}`,
+        label: l10n.t("Checkout {0}", refLabel(ref.fullName)),
         icon: "cloud",
       });
     } else {
       // Ellipsis: checking out a tag confirms first, because it detaches HEAD.
       items.push({
         id: refActionId(ref.fullName),
-        label: `Checkout ${refLabel(ref.fullName)}…`,
+        label: l10n.t("Checkout {0}…", refLabel(ref.fullName)),
         icon: "tag",
       });
     }
@@ -199,23 +200,23 @@ export interface CommitActionItem extends vscode.QuickPickItem {
 /** The action menu, in the order GitLens presents them. */
 export function commitActionItems(): CommitActionItem[] {
   return [
-    { id: "checkout", label: "$(git-commit) Checkout Commit" },
-    { id: "detach", label: "$(git-commit) Detach HEAD Here…" },
-    { id: "branch", label: "$(git-branch) Create Branch Here…" },
-    { id: "tag", label: "$(tag) Create Tag Here…" },
-    { id: "cherryPick", label: "$(git-pull-request) Cherry-Pick Commit" },
-    { id: "revert", label: "$(history) Revert Commit" },
+    { id: "checkout", label: l10n.t("$(git-commit) Checkout Commit") },
+    { id: "detach", label: l10n.t("$(git-commit) Detach HEAD Here…") },
+    { id: "branch", label: l10n.t("$(git-branch) Create Branch Here…") },
+    { id: "tag", label: l10n.t("$(tag) Create Tag Here…") },
+    { id: "cherryPick", label: l10n.t("$(git-pull-request) Cherry-Pick Commit") },
+    { id: "revert", label: l10n.t("$(history) Revert Commit") },
     {
       id: "reset",
-      label: "$(discard) Reset Current Branch to Here…",
+      label: l10n.t("$(discard) Reset Current Branch to Here…"),
     },
     {
       id: "interactiveRebase",
-      label: "$(git-merge) Start Interactive Rebase Here…",
+      label: l10n.t("$(git-merge) Start Interactive Rebase Here…"),
     },
     { id: "", label: "", kind: vscode.QuickPickItemKind.Separator },
-    { id: "copySha", label: "$(copy) Copy SHA" },
-    { id: "copyMessage", label: "$(copy) Copy Message" },
+    { id: "copySha", label: l10n.t("$(copy) Copy SHA") },
+    { id: "copyMessage", label: l10n.t("$(copy) Copy Message") },
   ];
 }
 
@@ -248,11 +249,11 @@ export async function runCommitAction(
       return resetTo(ctx, commit, undo);
     case "copySha":
       await vscode.env.clipboard.writeText(commit.sha);
-      flash(`Copied ${short(commit.sha)}`);
+      flash(l10n.t("Copied {0}", short(commit.sha)));
       return false;
     case "copyMessage":
       await vscode.env.clipboard.writeText(commit.subject);
-      flash("Copied commit message");
+      flash(l10n.t("Copied commit message"));
       return false;
     default:
       // The per-ref checkout items carry their ref's FULL name in the id.
@@ -316,22 +317,22 @@ async function checkoutRef(
       // The switch is not an Undo entry of its own: undoing a checkout by
       // resetting HEAD would move the branch just reset. The reset's entry
       // undoes it where it stands (`reset --keep` on the checked-out branch).
-      return runCheckout(ctx, plan.args, plan.success, "Checkout");
+      return runCheckout(ctx, plan.args, plan.success, l10n.t("Checkout"));
     }
   }
   if (plan.detaches) {
     const ok = await promptConfirm({
-      title: `Check out tag ${fullName.replace(/^refs\/tags\//, "")}?`,
+      title: l10n.t("Check out tag {0}?", fullName.replace(/^refs\/tags\//, "")),
       message:
-        "A tag is a fixed point, so you'll be on a detached HEAD — not on any branch. Commits made here belong to nothing until you create a branch for them.",
-      confirmLabel: "Checkout",
+        l10n.t("A tag is a fixed point, so you'll be on a detached HEAD — not on any branch. Commits made here belong to nothing until you create a branch for them."),
+      confirmLabel: l10n.t("Checkout"),
     });
     if (!ok) {
       return false;
     }
   }
   return withUndo(undo, plan.undoLabel, () =>
-    runCheckout(ctx, plan.args, plan.success, "Checkout"),
+    runCheckout(ctx, plan.args, plan.success, l10n.t("Checkout")),
   );
 }
 
@@ -361,7 +362,7 @@ async function checkout(
   const target = resolveCheckoutTarget(commit.refs);
 
   if (target.kind === "already") {
-    flash(`Already on ${target.name}`);
+    flash(l10n.t("Already on {0}", target.name));
     return false;
   }
 
@@ -373,18 +374,18 @@ async function checkout(
   if (target.kind === "branch" || target.kind === "choose") {
     const branches = target.kind === "branch" ? [target.name] : target.branches;
     const picked = await promptPick({
-      title: `Check out ${short(commit.sha)}`,
+      title: l10n.t("Check out {0}", short(commit.sha)),
       choices: [
         ...branches.map((name) => ({
           id: name,
-          label: `Switch to ${ellipsizeMiddle(name)}`,
+          label: l10n.t("Switch to {0}", ellipsizeMiddle(name)),
           icon: "git-branch",
         })),
         {
           id: DETACH_CHOICE,
-          label: "Detach HEAD here",
+          label: l10n.t("Detach HEAD here"),
           icon: "git-commit",
-          description: "Not on any branch",
+          description: l10n.t("Not on any branch"),
         },
       ],
     });
@@ -406,7 +407,7 @@ async function checkout(
     )?.fullName;
     if (!fullName) {
       void vscode.window.showErrorMessage(
-        `GitStudio: ${picked} is not a branch on this commit any more — refresh and try again.`,
+        l10n.t("GitStudio: {0} is not a branch on this commit any more — refresh and try again.", picked),
       );
       return false;
     }
@@ -430,10 +431,10 @@ async function detachHere(
   undo?: UndoRunner,
 ): Promise<boolean> {
   const ok = await promptConfirm({
-    title: `Check out ${short(commit.sha)}?`,
+    title: l10n.t("Check out {0}?", short(commit.sha)),
     message:
-      "You'll be on a detached HEAD — not on any branch. Commits made here belong to nothing until you create a branch for them.",
-    confirmLabel: "Checkout",
+      l10n.t("You'll be on a detached HEAD — not on any branch. Commits made here belong to nothing until you create a branch for them."),
+    confirmLabel: l10n.t("Checkout"),
   });
   if (!ok) {
     return false;
@@ -451,8 +452,8 @@ function detachAt(
   commit: CommitContext,
   undo?: UndoRunner,
 ): Promise<boolean> {
-  return withUndo(undo, `Checkout ${short(commit.sha)}`, () =>
-    runCheckout(ctx, ["checkout", "--detach", commit.sha], "Checked out", "Checkout"),
+  return withUndo(undo, l10n.t("Checkout {0}", short(commit.sha)), () =>
+    runCheckout(ctx, ["checkout", "--detach", commit.sha], l10n.t("Checked out"), l10n.t("Checkout")),
   );
 }
 
@@ -461,16 +462,16 @@ async function createBranch(
   commit: CommitContext,
 ): Promise<boolean> {
   const name = await promptInput({
-    title: `Create branch at ${short(commit.sha)}`,
-    hint: `${commit.subject} — the branch starts here. You stay on the current branch.`,
+    title: l10n.t("Create branch at {0}", short(commit.sha)),
+    hint: l10n.t("{0} — the branch starts here. You stay on the current branch.", commit.subject),
     placeholder: "feature/my-branch",
-    confirmLabel: "Create Branch",
+    confirmLabel: l10n.t("Create Branch"),
     validate: "refName",
   });
   if (!name) {
     return false;
   }
-  return runGit(ctx, ["branch", name, commit.sha], `Created branch ${name}`, "Create branch");
+  return runGit(ctx, ["branch", name, commit.sha], l10n.t("Created branch {0}", name), l10n.t("Create branch"));
 }
 
 async function createTag(
@@ -478,16 +479,16 @@ async function createTag(
   commit: CommitContext,
 ): Promise<boolean> {
   const name = await promptInput({
-    title: `Create tag at ${short(commit.sha)}`,
-    hint: `${commit.subject} — the tag stays local until you push it.`,
+    title: l10n.t("Create tag at {0}", short(commit.sha)),
+    hint: l10n.t("{0} — the tag stays local until you push it.", commit.subject),
     placeholder: "v1.0.0",
-    confirmLabel: "Create Tag",
+    confirmLabel: l10n.t("Create Tag"),
     validate: "refName",
   });
   if (!name) {
     return false;
   }
-  return runGit(ctx, ["tag", name, commit.sha], `Created tag ${name}`, "Create tag");
+  return runGit(ctx, ["tag", name, commit.sha], l10n.t("Created tag {0}", name), l10n.t("Create tag"));
 }
 
 async function cherryPick(
@@ -495,7 +496,7 @@ async function cherryPick(
   commit: CommitContext,
   undo?: UndoRunner,
 ): Promise<boolean> {
-  return withUndo(undo, `Cherry-pick ${short(commit.sha)}`, async () => {
+  return withUndo(undo, l10n.t("Cherry-pick {0}", short(commit.sha)), async () => {
     // Through the one door every commit-applying action shares: uncommitted
     // work in the pick's way is said, with Stash & Retry, and never filed.
     const applied = await applyOrAsk(ctx, {
@@ -508,7 +509,7 @@ async function cherryPick(
     }
     const result = applied.result;
     if (result.code === 0) {
-      flash(`Cherry-picked ${short(commit.sha)}`);
+      flash(l10n.t("Cherry-picked {0}", short(commit.sha)));
       return true;
     }
     const stderr = result.stderr.trim();
@@ -522,12 +523,12 @@ async function cherryPick(
     // crash report. The marker file says the same thing in every language.
     if (await pausedForUser(ctx.process, result.code, "CHERRY_PICK_HEAD")) {
       notifyPaused(
-        `Cherry-pick of ${short(commit.sha)} needs a decision — resolve any ` +
-          `conflicts and continue, skip this commit, or abort.`,
+        l10n.t("Cherry-pick of {0} needs a decision — resolve any ", short(commit.sha)) +
+          l10n.t("conflicts and continue, skip this commit, or abort."),
       );
       return true;
     }
-    await showGitError(ctx, "Cherry-pick", stderr);
+    await showGitError(ctx, l10n.t("Cherry-pick"), stderr, "Cherry-pick failed");
     return true;
   });
 }
@@ -568,21 +569,21 @@ async function mainlineFor(
   // and offering a subset would silently make the others unrevertable.
   const pair = parents.length === 2;
   const chosen = await promptPick({
-    title: `Revert the merge ${short(commit.sha)}`,
+    title: l10n.t("Revert the merge {0}", short(commit.sha)),
     hint: pair
-      ? "A merge has two sides, so git needs to know which one to keep."
-      : `This merge has ${parents.length} parents. Which one should be kept as the mainline?`,
+      ? l10n.t("A merge has two sides, so git needs to know which one to keep.")
+      : l10n.t("This merge has {0} parents. Which one should be kept as the mainline?", parents.length),
     choices: parents.map((sha, i) => ({
       id: String(i + 1),
       label: pair
         ? i === 0
-          ? "Keep the branch this was merged into"
-          : "Keep the branch that was merged in"
-        : `Keep parent ${i + 1}`,
+          ? l10n.t("Keep the branch this was merged into")
+          : l10n.t("Keep the branch that was merged in")
+        : l10n.t("Keep parent {0}", i + 1),
       icon: i === 0 ? "git-branch" : "git-merge",
       detail: short(sha),
       description:
-        subjects[i] || (i === 0 ? "The first parent — usually what you want." : ""),
+        subjects[i] || (i === 0 ? l10n.t("The first parent — usually what you want.") : ""),
     })),
   });
   if (!chosen) {
@@ -604,7 +605,7 @@ async function revert(
   if (mainline === null) {
     return false;
   }
-  return withUndo(undo, `Revert ${short(commit.sha)}`, async () => {
+  return withUndo(undo, l10n.t("Revert {0}", short(commit.sha)), async () => {
     const args = ["revert", "--no-edit"];
     if (mainline !== undefined) {
       args.push("-m", String(mainline));
@@ -619,7 +620,7 @@ async function revert(
     }
     const result = applied.result;
     if (result.code === 0) {
-      flash(`Reverted ${short(commit.sha)}`);
+      flash(l10n.t("Reverted {0}", short(commit.sha)));
       return true;
     }
     const stderr = result.stderr.trim();
@@ -627,8 +628,8 @@ async function revert(
     // to ask, not that the revert failed.
     if (await pausedForUser(ctx.process, result.code, "REVERT_HEAD")) {
       notifyPaused(
-        `Revert of ${short(commit.sha)} needs a decision — resolve any ` +
-          `conflicts and continue, or abort the revert.`,
+        l10n.t("Revert of {0} needs a decision — resolve any ", short(commit.sha)) +
+          l10n.t("conflicts and continue, or abort the revert."),
       );
       return true;
     }
@@ -639,11 +640,11 @@ async function revert(
     // Reverting a merge twice is an easy thing to do now that it works at all.
     if (!stderr) {
       void vscode.window.showInformationMessage(
-        notice(`Nothing to revert — ${short(commit.sha)} is already undone on this branch.`),
+        notice(l10n.t("Nothing to revert — {0} is already undone on this branch.", short(commit.sha))),
       );
       return true;
     }
-    await showGitError(ctx, "Revert", stderr);
+    await showGitError(ctx, l10n.t("Revert"), stderr, "Revert failed");
     return true;
   });
 }
@@ -655,30 +656,30 @@ async function resetTo(
 ): Promise<boolean> {
   // Three named outcomes with real consequences — a dialog, not the search bar.
   const chosen = await promptPick({
-    title: `Reset current branch to ${short(commit.sha)}`,
+    title: l10n.t("Reset current branch to {0}", short(commit.sha)),
     hint: commit.subject,
     choices: [
       {
         id: "--soft",
-        label: "Soft",
+        label: l10n.t("Soft"),
         icon: "history",
         detail: "--soft",
-        description: "Move the branch. Keep your working tree AND everything staged.",
+        description: l10n.t("Move the branch. Keep your working tree AND everything staged."),
       },
       {
         id: "--mixed",
-        label: "Mixed",
+        label: l10n.t("Mixed"),
         icon: "list-flat",
         detail: "--mixed",
-        description: "Move the branch, keep the working tree, unstage everything. Git's default.",
+        description: l10n.t("Move the branch, keep the working tree, unstage everything. Git's default."),
       },
       {
         id: "--hard",
-        label: "Hard",
+        label: l10n.t("Hard"),
         icon: "trash",
         detail: "--hard",
         danger: true,
-        description: "Move the branch and DISCARD every working-tree and staged change.",
+        description: l10n.t("Move the branch and DISCARD every working-tree and staged change."),
       },
     ],
   });
@@ -695,28 +696,28 @@ async function resetTo(
     // index with a conflict in progress — exactly when a hard reset is most
     // often reached for — and then Undo can put the branch back and nothing
     // more. Asked of git before the question, so the question is true.
-    const discards = `Hard-resetting to ${short(commit.sha)} throws away every uncommitted edit in the working tree and the index.`;
+    const discards = l10n.t("Hard-resetting to {0} throws away every uncommitted edit in the working tree and the index.", short(commit.sha));
     const noCopy = undo ? await ctx.snapshot.whyNoCopy().catch(() => "other" as const) : undefined;
     const ok = await promptConfirm({
-      title: `Discard all uncommitted changes?`,
+      title: l10n.t("Discard all uncommitted changes?"),
       message: !undo
-        ? `${discards} git keeps no copy of them, so nothing can bring them back.`
+        ? l10n.t("{0} git keeps no copy of them, so nothing can bring them back.", discards)
         : noCopy
-          ? `${discards} git can't keep a copy of them ${noCopyClause(noCopy, "now")}, so GitStudio's Undo can put the branch back, but not those edits.`
-          : `${discards} GitStudio's Undo can put the branch back and bring those edits back with it — git itself keeps no copy of them.`,
-      confirmLabel: "Reset --hard",
+          ? l10n.t("{0} git can't keep a copy of them {1}, so GitStudio's Undo can put the branch back, but not those edits.", discards, noCopyClause(noCopy, "now"))
+          : l10n.t("{0} GitStudio's Undo can put the branch back and bring those edits back with it — git itself keeps no copy of them.", discards),
+      confirmLabel: l10n.t("Reset --hard"),
       danger: true,
     });
     if (!ok) {
       return false;
     }
   }
-  return withUndo(undo, `Reset to ${short(commit.sha)} (${mode.value})`, () =>
+  return withUndo(undo, l10n.t("Reset to {0} ({1})", short(commit.sha), mode.value), () =>
     runGit(
       ctx,
       ["reset", mode.value, commit.sha],
-      `Reset to ${short(commit.sha)}`,
-      "Reset",
+      l10n.t("Reset to {0}", short(commit.sha)),
+      l10n.t("Reset"),
     ),
   );
 }
@@ -742,12 +743,12 @@ async function dropCommitHere(
   // Re-read, never trust the menu: it may have been open while history moved.
   const plan = await planDropCommit(ctx.process, commit.sha);
   if (!plan.ok) {
-    void vscode.window.showWarningMessage(`GitStudio: ${plan.message}`);
+    void vscode.window.showWarningMessage(l10n.t("GitStudio: {0}", plan.message));
     return false;
   }
   const blocked = await dropBlocker(ctx.process);
   if (blocked) {
-    void vscode.window.showWarningMessage(`GitStudio: ${blocked}`);
+    void vscode.window.showWarningMessage(l10n.t("GitStudio: {0}", blocked));
     return false;
   }
 
@@ -761,19 +762,19 @@ async function dropCommitHere(
       choices: [
         {
           id: "carry",
-          label: "Drop and move those branches",
+          label: l10n.t("Drop and move those branches"),
           icon: "git-branch",
-          description: "They follow onto the replayed commits.",
+          description: l10n.t("They follow onto the replayed commits."),
           danger: true,
         },
         {
           id: "only",
-          label: "Drop from this branch only",
+          label: l10n.t("Drop from this branch only"),
           icon: "git-commit",
-          description: "They keep pointing at the commits as they are now.",
+          description: l10n.t("They keep pointing at the commits as they are now."),
           danger: true,
         },
-        { id: "no", label: "Cancel", icon: "close" },
+        { id: "no", label: l10n.t("Cancel"), icon: "close" },
       ],
     });
     if (picked !== "carry" && picked !== "only") {
@@ -784,7 +785,7 @@ async function dropCommitHere(
     const ok = await promptConfirm({
       title: question.title,
       message: question.message,
-      confirmLabel: "Drop Commit",
+      confirmLabel: l10n.t("Drop Commit"),
       danger: true,
     });
     if (!ok) {
@@ -794,7 +795,7 @@ async function dropCommitHere(
 
   const outcome = await withUndo(
     undo,
-    `Drop ${plan.shortSha}`,
+    l10n.t("Drop {0}", plan.shortSha),
     async () => {
       const out = await dropCommit(
         ctx.process,
@@ -817,13 +818,13 @@ async function dropCommitHere(
     // The rebase is left open and the conflict flow takes it from here: the
     // notice's Resolve Conflicts… opens the dashboard, and the Changes view's
     // banner offers Continue, Skip and Abort.
-    notifyPaused(`GitStudio: ${text}`);
+    notifyPaused(l10n.t("GitStudio: {0}", text));
     return true;
   }
   if (outcome.expected) {
-    void vscode.window.showWarningMessage(`GitStudio: ${text}`);
+    void vscode.window.showWarningMessage(l10n.t("GitStudio: {0}", text));
   } else {
-    void vscode.window.showErrorMessage(`GitStudio: ${text}`);
+    void vscode.window.showErrorMessage(l10n.t("GitStudio: {0}", text));
   }
   return false;
 }
@@ -849,20 +850,20 @@ export function multiCommitMenuItems(n: number, opts: ManyMenuOptions): GraphMen
   const acts: GraphMenuItem[] = [
     ...(opts.apply
       ? [
-          { id: "cherryPickMany", label: `Cherry-Pick ${n} Commits`, icon: "git-pull-request" },
-          { id: "revertMany", label: `Revert ${n} Commits`, icon: "history" },
+          { id: "cherryPickMany", label: l10n.t("Cherry-Pick {0} Commits", n), icon: "git-pull-request" },
+          { id: "revertMany", label: l10n.t("Revert {0} Commits", n), icon: "history" },
         ]
       : []),
-    ...(opts.squash ? [{ id: "squashMany", label: `Squash ${n} Commits…`, icon: "fold-down" }] : []),
-    ...(opts.drop ? [{ id: "dropMany", label: `Drop ${n} Commits…`, icon: "trash", danger: true }] : []),
+    ...(opts.squash ? [{ id: "squashMany", label: l10n.t("Squash {0} Commits…", n), icon: "fold-down" }] : []),
+    ...(opts.drop ? [{ id: "dropMany", label: l10n.t("Drop {0} Commits…", n), icon: "trash", danger: true }] : []),
   ];
   return [
     ...acts,
     // Between the two groups only: with none of the actions above (a merge
     // among them) the menu opened on a divider right under its title.
     ...(acts.length > 0 ? [{ id: "", label: "", sep: true }] : []),
-    ...(n === 2 ? [{ id: "compareTwo", label: "Compare These Two Commits", icon: "git-compare" }] : []),
-    { id: "copyShas", label: "Copy SHAs", icon: "copy" },
+    ...(n === 2 ? [{ id: "compareTwo", label: l10n.t("Compare These Two Commits"), icon: "git-compare" }] : []),
+    { id: "copyShas", label: l10n.t("Copy SHAs"), icon: "copy" },
   ];
 }
 
@@ -913,7 +914,7 @@ export async function runMultiCommitAction(
     case "compareTwo": {
       const ordered = shas.length === 2 ? await orderCommits(ctx.process, shas, "oldest-first") : undefined;
       if (!ordered) {
-        void vscode.window.showWarningMessage("GitStudio: select exactly two commits to compare them.");
+        void vscode.window.showWarningMessage(l10n.t("GitStudio: select exactly two commits to compare them."));
         return false;
       }
       await host.compare(ordered[0], ordered[1]);
@@ -921,7 +922,7 @@ export async function runMultiCommitAction(
     }
     case "copyShas":
       await vscode.env.clipboard.writeText(shas.join("\n"));
-      flash(`Copied ${shas.length} SHAs`);
+      flash(l10n.t("Copied {0} SHAs", shas.length));
       return false;
     default:
       return false;
@@ -929,7 +930,7 @@ export async function runMultiCommitAction(
 }
 
 /** The warning for a menu that went stale before its item was chosen. */
-const MANY_UNREADABLE = "those commits could not be read any more — refresh the graph and try again.";
+const MANY_UNREADABLE = l10n.t("those commits could not be read any more — refresh the graph and try again.");
 
 /**
  * Cherry-Pick N / Revert N: ONE git command over all of them — oldest first
@@ -948,17 +949,17 @@ async function applyMany(
     orderCommits(ctx.process, shas, verb === "cherry-pick" ? "oldest-first" : "newest-first"),
   ]);
   if (!merges || !ordered) {
-    void vscode.window.showWarningMessage(`GitStudio: ${MANY_UNREADABLE}`);
+    void vscode.window.showWarningMessage(l10n.t("GitStudio: {0}", MANY_UNREADABLE));
     return false;
   }
   if (merges.length > 0) {
     void vscode.window.showWarningMessage(
-      `GitStudio: ${short(merges[0])} is a merge commit — ${verb === "cherry-pick" ? "cherry-pick" : "revert"} it on its own, where you can choose which side to keep.`,
+      l10n.t("GitStudio: {0} is a merge commit — {1} it on its own, where you can choose which side to keep.", short(merges[0]), verb === "cherry-pick" ? l10n.t("cherry-pick") : l10n.t("revert")),
     );
     return false;
   }
   const n = ordered.length;
-  const label = verb === "cherry-pick" ? `Cherry-pick ${n} commits` : `Revert ${n} commits`;
+  const label = verb === "cherry-pick" ? l10n.t("Cherry-pick {0} commits", n) : l10n.t("Revert {0} commits", n);
   return withUndo(undo, label, async () => {
     const applied = await applyOrAsk(ctx, {
       kind: verb,
@@ -977,10 +978,15 @@ async function applyMany(
     // Stopped, not failed: git leaves its marker whenever it waits on a
     // conflict or an emptied commit — locale-independent, as for one commit.
     if (await pausedForUser(ctx.process, result.code, verb === "cherry-pick" ? "CHERRY_PICK_HEAD" : "REVERT_HEAD")) {
-      notifyPaused(`GitStudio: ${applyManyMessage(verb, n, "stopped")}`);
+      notifyPaused(l10n.t("GitStudio: {0}", applyManyMessage(verb, n, "stopped")));
       return true;
     }
-    await showGitError(ctx, `${verb === "cherry-pick" ? "Cherry-picking" : "Reverting"} ${n} commits`, result.stderr.trim());
+    await showGitError(
+      ctx,
+      verb === "cherry-pick" ? l10n.t("Cherry-picking {0} commits", n) : l10n.t("Reverting {0} commits", n),
+      result.stderr.trim(),
+      `${verb === "cherry-pick" ? "Cherry-picking" : "Reverting"} ${n} commits failed`,
+    );
     return true;
   });
 }
@@ -1002,12 +1008,12 @@ async function rewriteManyHere(
   // Re-read, never trust the menu: it may have been open while history moved.
   const plan = await planMany(ctx.process, verb, shas);
   if (!plan.ok) {
-    void vscode.window.showWarningMessage(`GitStudio: ${plan.message}`);
+    void vscode.window.showWarningMessage(l10n.t("GitStudio: {0}", plan.message));
     return false;
   }
   const blocked = await manyBlocker(ctx.process, verb);
   if (blocked) {
-    void vscode.window.showWarningMessage(`GitStudio: ${blocked}`);
+    void vscode.window.showWarningMessage(l10n.t("GitStudio: {0}", blocked));
     return false;
   }
   const n = plan.shas.length;
@@ -1022,7 +1028,7 @@ async function rewriteManyHere(
         multiline: true,
         selectOnOpen: false,
         validate: "nonEmpty",
-        confirmLabel: "Squash Commits",
+        confirmLabel: l10n.t("Squash Commits"),
       })
     )?.trim();
     if (!message) {
@@ -1031,7 +1037,10 @@ async function rewriteManyHere(
   }
 
   let carry = false;
+  // The undo entry's label goes into git (the reflog and the revert commit), so
+  // it stays English: only the words this dialog shows are translated.
   const Verb = verb === "drop" ? "Drop" : "Squash";
+  const verbWord = verb === "drop" ? l10n.t("Drop") : l10n.t("Squash");
   if (plan.carryable.length > 0) {
     // A squash's own words here: the editor's "with the message below" is
     // not what is below this question — its choices are.
@@ -1042,19 +1051,19 @@ async function rewriteManyHere(
       choices: [
         {
           id: "carry",
-          label: `${Verb} and move those branches`,
+          label: l10n.t("{0} and move those branches", verbWord),
           icon: "git-branch",
-          description: "They follow onto the rewritten commits.",
+          description: l10n.t("They follow onto the rewritten commits."),
           danger: true,
         },
         {
           id: "only",
-          label: `${Verb} on this branch only`,
+          label: l10n.t("{0} on this branch only", verbWord),
           icon: "git-commit",
-          description: "They keep pointing at the commits as they are now.",
+          description: l10n.t("They keep pointing at the commits as they are now."),
           danger: true,
         },
-        { id: "no", label: "Cancel", icon: "close" },
+        { id: "no", label: l10n.t("Cancel"), icon: "close" },
       ],
     });
     if (picked !== "carry" && picked !== "only") {
@@ -1066,7 +1075,7 @@ async function rewriteManyHere(
     const ok = await promptConfirm({
       title: q.title,
       message: q.message,
-      confirmLabel: "Drop Commits",
+      confirmLabel: l10n.t("Drop Commits"),
       danger: true,
     });
     if (!ok) {
@@ -1097,13 +1106,13 @@ async function rewriteManyHere(
     return true;
   }
   if (outcome.status === "stopped") {
-    notifyPaused(`GitStudio: ${text}`);
+    notifyPaused(l10n.t("GitStudio: {0}", text));
     return true;
   }
   if (outcome.expected) {
-    void vscode.window.showWarningMessage(`GitStudio: ${text}`);
+    void vscode.window.showWarningMessage(l10n.t("GitStudio: {0}", text));
   } else {
-    void vscode.window.showErrorMessage(`GitStudio: ${text}`);
+    void vscode.window.showErrorMessage(l10n.t("GitStudio: {0}", text));
   }
   return false;
 }
@@ -1196,7 +1205,7 @@ async function showGitError(
 }
 
 function flash(message: string): void {
-  void vscode.window.setStatusBarMessage(`$(check) ${message}`, 2500);
+  void vscode.window.setStatusBarMessage(l10n.t("$(check) {0}", message), 2500);
 }
 
 function short(sha: string): string {

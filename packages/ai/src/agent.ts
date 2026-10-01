@@ -18,6 +18,7 @@ import type {
   ToolSpec,
 } from "./types";
 import { AiError } from "./types";
+import * as l10n from "@vscode/l10n";
 
 export type AgentEvent =
   | { type: "assistant"; text: string }
@@ -128,7 +129,7 @@ export async function runAgent(goal: string, opts: AgentOptions): Promise<AgentR
         result = await opts.provider.chat(messages, chatOpts);
       }
     } catch (err) {
-      const text = err instanceof AiError ? err.message : "The model request failed.";
+      const text = err instanceof AiError ? err.message : l10n.t("The model request failed.");
       emit({ type: "error", text });
       return { text: finalText, steps: step, toolCalls: transcript, stopped: "error" };
     }
@@ -158,9 +159,9 @@ export async function runAgent(goal: string, opts: AgentOptions): Promise<AgentR
     }
   }
 
-  emit({ type: "done", text: finalText || "Reached the step limit.", steps: maxSteps });
+  emit({ type: "done", text: finalText || l10n.t("Reached the step limit."), steps: maxSteps });
   return {
-    text: finalText || "Reached the step limit before finishing.",
+    text: finalText || l10n.t("Reached the step limit before finishing."),
     steps: maxSteps,
     toolCalls: transcript,
     stopped: "max_steps",
@@ -175,6 +176,7 @@ async function runOneTool(
 ): Promise<{ text: string; isError: boolean }> {
   const tool = toolsByName.get(call.name);
   if (!tool) {
+    // English on purpose: this text goes back to the model, not to a person.
     const text = `Unknown tool: ${call.name}.`;
     emit({ type: "tool_result", id: call.id, name: call.name, text, isError: true });
     return { text, isError: true };
@@ -203,6 +205,7 @@ async function runOneTool(
     emit({ type: "tool_result", id: call.id, name: call.name, text: r.text, isError: r.isError === true });
     return { text: r.text, isError: r.isError === true };
   } catch (err) {
+    // English on purpose: this text goes back to the model, not to a person.
     const text = `Tool ${call.name} failed: ${err instanceof Error ? err.message : String(err)}`;
     emit({ type: "tool_result", id: call.id, name: call.name, text, isError: true });
     return { text, isError: true };

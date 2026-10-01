@@ -25,7 +25,7 @@ import { listFiles, MANIFEST_FILE, VENDOR_DIR } from "./check-parity.mjs";
 export { MANIFEST_FILE, VENDOR_DIR };
 
 export const SHELL_DIR = "apps/merge-studio";
-export const VENDORED_PACKAGES = ["engine", "git-service", "host-bridge", "webview-ui", "merge-vscode"];
+export const VENDORED_PACKAGES = ["engine", "git-service", "host-bridge", "webview-ui", "merge-vscode", "l10n"];
 
 /**
  * gitstudio path → merge-studio path, bytes unchanged. A path ending in "/" is

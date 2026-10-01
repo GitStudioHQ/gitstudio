@@ -15,12 +15,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { readManifest } from "./manifest";
 import { configurationProperties } from "@gitstudio/merge-vscode/contract";
 
 const ROOT = join(__dirname, "..");
 const readme = readFileSync(join(ROOT, "README.md"), "utf8");
 const manifestText = readFileSync(join(ROOT, "package.json"), "utf8");
-const pkg = JSON.parse(manifestText) as {
+const pkg = readManifest() as {
   contributes: {
     keybindings: { command: string; key: string; mac?: string }[];
     configuration: unknown;

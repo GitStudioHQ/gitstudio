@@ -23,6 +23,7 @@
 
 import type { BlockTone, ChangeBlock, Side } from "@gitstudio/engine/types";
 import { blockTone, category } from "@gitstudio/engine/types";
+import * as l10n from "@vscode/l10n";
 
 /** The four colours the merge paints with: orange, green, blue — by decision — and grey for removed lines. */
 export type PaintTone = BlockTone | "removed";
@@ -67,8 +68,8 @@ export function fateWords(
   const same = category(block) === "same";
   const word = (side: Side, fate: SideFate | undefined): string | undefined => {
     if (!fate || fate === "pending") return undefined;
-    if (same) return fate === "took" ? "Took the change (the same on both sides)" : "Discarded the change (the same on both sides)";
-    return `${fate === "took" ? "Took" : "Discarded"} ${side === "left" ? names.left : names.right}`;
+    if (same) return fate === "took" ? l10n.t("Took the change (the same on both sides)") : l10n.t("Discarded the change (the same on both sides)");
+    return `${fate === "took" ? l10n.t("Took") : l10n.t("Discarded")} ${side === "left" ? names.left : names.right}`;
   };
   out.left = word("left", fates.left);
   out.right = word("right", fates.right);
@@ -79,17 +80,17 @@ export function fateWords(
     const both = fates.left !== undefined && fates.right !== undefined;
     out.result = same
       ? tookLeft || tookRight
-        ? "Took the change (the same on both sides)"
-        : "Discarded the change (the same on both sides): the Result keeps the original"
+        ? l10n.t("Took the change (the same on both sides)")
+        : l10n.t("Discarded the change (the same on both sides): the Result keeps the original")
       : tookLeft && tookRight
-        ? "Took both"
+        ? l10n.t("Took both")
         : tookLeft
-          ? `Took ${names.left}`
+          ? l10n.t("Took {0}", names.left)
           : tookRight
-            ? `Took ${names.right}`
+            ? l10n.t("Took {0}", names.right)
             : both
-              ? "Discarded both: the Result keeps the original"
-              : `Discarded ${fates.left ? names.left : names.right}: the Result keeps the original`;
+              ? l10n.t("Discarded both: the Result keeps the original")
+              : l10n.t("Discarded {0}: the Result keeps the original", fates.left ? names.left : names.right);
   }
   return out;
 }

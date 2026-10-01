@@ -12,6 +12,7 @@ import type {
   SideRole,
 } from "@gitstudio/host-bridge/conflictsProtocol";
 import type { VersionsSource } from "@gitstudio/host-bridge/protocol";
+import * as l10n from "@vscode/l10n";
 
 /**
  * Whole-file conflict actions and per-file facts, stated in ROLE terms
@@ -273,14 +274,14 @@ export class ConflictOps {
     if (!guard.ok) return guard.result;
     const listing = await this.stageListing(opts?.signal);
     if (!listing) {
-      return refuse(`Couldn't read the conflict state for ${path}. Nothing was changed.`);
+      return refuse(l10n.t("Couldn't read the conflict state for {0}. Nothing was changed.", path));
     }
     const stages = listing.get(path);
     // "Not listed" is NOT "the side is missing". Answering it with `git rm`
     // made destruction the default outcome of not understanding the input.
-    if (!stages) return refuse(`${path} is no longer conflicted — nothing was changed.`);
+    if (!stages) return refuse(l10n.t("{0} is no longer conflicted — nothing was changed.", path));
     if (!stages.has(2) && !stages.has(3)) {
-      return refuse(`Both sides deleted ${path}. There is no side to take — delete the file to settle it.`);
+      return refuse(l10n.t("Both sides deleted {0}. There is no side to take — delete the file to settle it.", path));
     }
     // A file on one side and a FOLDER on the other (`rebase --apply` and
     // `am -3` leave the file unmerged at `path` beside the folder's files at
@@ -296,18 +297,18 @@ export class ConflictOps {
         // that also reaches every file in the folder; update-index takes the
         // one path, and the folder on disk is not the file's to delete.
         const ui = await this.git(["update-index", "--force-remove", "--", path], opts?.signal, false);
-        return ui.code === 0 ? done() : failed(ui.stderr, `Couldn't delete ${path}.`);
+        return ui.code === 0 ? done() : failed(ui.stderr, l10n.t("Couldn't delete {0}.", path));
       }
       const rm = await this.git(["rm", "-f", "-q", "--", path], opts?.signal);
-      return rm.code === 0 ? done() : failed(rm.stderr, `Couldn't delete ${path}.`);
+      return rm.code === 0 ? done() : failed(rm.stderr, l10n.t("Couldn't delete {0}.", path));
     }
     if (folder) {
       // Taking the file replaces the folder: `checkout` deleted it from disk
       // and `add` dropped its files from the index, with no word about it
       // (git's own `update-index --cacheinfo` refuses the same take).
       return refuse(
-        `${path} is a file on one side and a folder on the other (${folder} is in the folder). ` +
-          `git can't keep both at one path, and taking the file would delete the folder — nothing was changed. ` +
+        l10n.t("{0} is a file on one side and a folder on the other ({1} is in the folder). ", path, folder) +
+          l10n.t("git can't keep both at one path, and taking the file would delete the folder — nothing was changed. ") +
           `To keep the folder, take the side without the file; to keep both, rename one of them in a terminal.`,
       );
     }
@@ -320,15 +321,15 @@ export class ConflictOps {
       // submodule's own checkout is the user's to move, as git leaves it.
       // (update-index takes a path, not a pathspec.)
       const ui = await this.git(["update-index", "--cacheinfo", "160000", chosen.sha, path], opts?.signal, false);
-      return ui.code === 0 ? done() : failed(ui.stderr, `Couldn't take that version of ${path}. Nothing was changed.`);
+      return ui.code === 0 ? done() : failed(ui.stderr, l10n.t("Couldn't take that version of {0}. Nothing was changed.", path));
     }
     const co = await this.git(["checkout", stage === 2 ? "--ours" : "--theirs", "--", path], opts?.signal);
     if (co.code !== 0) {
       // A failed checkout says nothing about which side exists. The file stays.
-      return failed(co.stderr, `Couldn't take that version of ${path}. Nothing was changed.`);
+      return failed(co.stderr, l10n.t("Couldn't take that version of {0}. Nothing was changed.", path));
     }
     const add = await this.git(["add", "--", path], opts?.signal);
-    return add.code === 0 ? done() : failed(add.stderr, `Couldn't stage ${path}.`);
+    return add.code === 0 ? done() : failed(add.stderr, l10n.t("Couldn't stage {0}.", path));
   }
 
   /** Resolve a both-deleted (DD) path by deleting it (`rm --cached -- p`). */
@@ -336,16 +337,16 @@ export class ConflictOps {
     const guard = await this.guardPath(path);
     if (!guard.ok) return guard.result;
     const listing = await this.stageListing(opts?.signal);
-    if (!listing) return refuse(`Couldn't read the conflict state for ${path}. Nothing was changed.`);
+    if (!listing) return refuse(l10n.t("Couldn't read the conflict state for {0}. Nothing was changed.", path));
     const stages = listing.get(path);
-    if (!stages) return refuse(`${path} is no longer conflicted — nothing was changed.`);
+    if (!stages) return refuse(l10n.t("{0} is no longer conflicted — nothing was changed.", path));
     if (stages.has(2) || stages.has(3)) {
-      return refuse(`${path} still exists on one side. Accept Yours or Accept Theirs instead.`);
+      return refuse(l10n.t("{0} still exists on one side. Accept Yours or Accept Theirs instead.", path));
     }
     // `--cached`: git already removed the file from the working tree; a file
     // somebody created there since is theirs, and stays (untracked).
     const rm = await this.git(["rm", "--cached", "-q", "--", path], opts?.signal);
-    if (rm.code !== 0) return failed(rm.stderr, `Couldn't delete ${path}.`);
+    if (rm.code !== 0) return failed(rm.stderr, l10n.t("Couldn't delete {0}.", path));
     const op = opts?.op ?? (await this.operation.view({ signal: opts?.signal }).catch(() => undefined));
     this.remember(op?.episode, path, undefined);
     await this.noteResolved(path, opts?.signal);
@@ -369,8 +370,8 @@ export class ConflictOps {
     const guard = await this.guardPath(path);
     if (!guard.ok) return guard.result;
     const listing = await this.stageListing(opts?.signal);
-    if (!listing) return refuse(`Couldn't read the conflict state for ${path}. Nothing was changed.`);
-    if (listing.has(path)) return refuse(`${path} is still conflicted — there is nothing to undo.`);
+    if (!listing) return refuse(l10n.t("Couldn't read the conflict state for {0}. Nothing was changed.", path));
+    if (listing.has(path)) return refuse(l10n.t("{0} is still conflicted — there is nothing to undo.", path));
     if (listing.size === 0) {
       // git keeps the resolve-undo record after the merge (or the rebase's
       // last commit) is COMMITTED, and `checkout -m` then happily puts the
@@ -380,13 +381,13 @@ export class ConflictOps {
       // resolution belonged to is over.
       const op = opts?.op ?? (await this.operation.view({ signal: opts?.signal }));
       if (op.kind === "none") {
-        return refuse(`The operation ${path} was resolved in has finished — its conflict can't be brought back.`);
+        return refuse(l10n.t("The operation {0} was resolved in has finished — its conflict can't be brought back.", path));
       }
     }
     const undo = await this.git(["ls-files", "--resolve-undo", "-z"], opts?.signal, false);
     const stages = undo.code === 0 ? parseUnmergedStages(undo.stdout).get(path) : undefined;
     if (!stages) {
-      return refuse(`There is no earlier conflict to bring back for ${path}.`);
+      return refuse(l10n.t("There is no earlier conflict to bring back for {0}.", path));
     }
     // Edits made in the working copy SINCE the resolution are not part of it,
     // and bringing the conflict back rewrites the file — `checkout -m` puts
@@ -398,11 +399,11 @@ export class ConflictOps {
     const since = await this.git(["diff", "--quiet", "--no-ext-diff", "--ignore-submodules=all", "--", path], opts?.signal);
     if (since.code === 1) {
       return refuse(
-        `${path} has changes since it was resolved, and bringing the conflict back would overwrite them. Nothing was changed.`,
+        l10n.t("{0} has changes since it was resolved, and bringing the conflict back would overwrite them. Nothing was changed.", path),
       );
     }
     if (since.code !== 0) {
-      return refuse(`Couldn't tell whether ${path} has changed since it was resolved. Nothing was changed.`);
+      return refuse(l10n.t("Couldn't tell whether {0} has changed since it was resolved. Nothing was changed.", path));
     }
     // Staged ones too. Staging is how a conflict is marked resolved, so a
     // file polished and staged since is a NEW resolution — the user's, not
@@ -413,11 +414,11 @@ export class ConflictOps {
     if (made !== undefined) {
       const now = await this.stageZero(path, opts?.signal);
       if (now === undefined) {
-        return refuse(`Couldn't tell whether ${path} has changed since it was resolved. Nothing was changed.`);
+        return refuse(l10n.t("Couldn't tell whether {0} has changed since it was resolved. Nothing was changed.", path));
       }
       if (now !== made) {
         return refuse(
-          `${path} has changes since it was resolved, and bringing the conflict back would overwrite them. Nothing was changed.`,
+          l10n.t("{0} has changes since it was resolved, and bringing the conflict back would overwrite them. Nothing was changed.", path),
         );
       }
     }
@@ -427,15 +428,15 @@ export class ConflictOps {
     // left it (stage 2's) and a submodule's checkout untouched.
     if (stages.has(2) && stages.has(3) && !isLinkOrGitlink(stages)) {
       const r = await this.git(["checkout", "-m", "--", path], opts?.signal);
-      if (r.code !== 0) return failed(r.stderr, `Couldn't bring the conflict in ${path} back.`);
+      if (r.code !== 0) return failed(r.stderr, l10n.t("Couldn't bring the conflict in {0} back.", path));
     } else {
       // update-index takes a path, not a pathspec.
       const r = await this.git(["update-index", "--unresolve", "--", path], opts?.signal, false);
-      if (r.code !== 0) return failed(r.stderr, `Couldn't bring the conflict in ${path} back.`);
+      if (r.code !== 0) return failed(r.stderr, l10n.t("Couldn't bring the conflict in {0} back.", path));
       const kept: 2 | 3 | undefined = stages.has(2) ? 2 : stages.has(3) ? 3 : undefined;
       if (kept) {
         const co = await this.git(["checkout", kept === 2 ? "--ours" : "--theirs", "--", path], opts?.signal);
-        if (co.code !== 0) return failed(co.stderr, `The conflict is back, but ${path} couldn't be restored on disk.`);
+        if (co.code !== 0) return failed(co.stderr, l10n.t("The conflict is back, but {0} couldn't be restored on disk.", path));
       }
     }
     this.memory.choices.delete(path);
@@ -460,18 +461,18 @@ export class ConflictOps {
     const way = opts?.takeSideAdvice ?? "accept one side instead";
     const safe = await textWriteSafe(guard.abs, (what) =>
       what === "symlink"
-        ? `${path} is a symbolic link. Saving text here would overwrite whatever it points at, not the link — ${way}.`
-        : `${path} isn't UTF-8 text. Saving it as text would rewrite the bytes it can't represent — ${way}.`,
+        ? l10n.t("{0} is a symbolic link. Saving text here would overwrite whatever it points at, not the link — {1}.", path, way)
+        : l10n.t("{0} isn't UTF-8 text. Saving it as text would rewrite the bytes it can't represent — {1}.", path, way),
     );
     if (!safe.ok) return refuse(safe.why);
     const listing = await this.stageListing(opts?.signal);
     if (listing) {
       const stages = listing.get(path);
       if (!stages) {
-        return refuse(`${path} is no longer conflicted — nothing was written, so a resolution made elsewhere stays as it is.`);
+        return refuse(l10n.t("{0} is no longer conflicted — nothing was written, so a resolution made elsewhere stays as it is.", path));
       }
       if (!stages.has(2) && !stages.has(3)) {
-        return refuse(`Both sides deleted ${path}. There is nothing to merge — delete the file to settle it.`);
+        return refuse(l10n.t("Both sides deleted {0}. There is nothing to merge — delete the file to settle it.", path));
       }
     }
     try {
@@ -480,7 +481,7 @@ export class ConflictOps {
       return { ok: false, changed: false, message: err instanceof Error ? err.message : String(err) };
     }
     const add = await this.git(["add", "--", path], opts?.signal);
-    if (add.code !== 0) return failed(add.stderr, `Saved ${path}, but couldn't stage it.`);
+    if (add.code !== 0) return failed(add.stderr, l10n.t("Saved {0}, but couldn't stage it.", path));
     const op = opts?.op ?? (await this.operation.view({ signal: opts?.signal }).catch(() => undefined));
     this.remember(op?.episode, path, "merged");
     await this.noteResolved(path, opts?.signal);
@@ -531,7 +532,7 @@ export class ConflictOps {
   private async readableListing(signal?: AbortSignal): Promise<Listing> {
     const r = await this.proc.run(["ls-files", "--eol", "-u", "-z"], { signal });
     if (r.code !== 0) {
-      throw new Error(`Couldn't read the conflicted files: ${r.stderr.trim() || `git ls-files -u failed (${r.code})`}`);
+      throw new Error(l10n.t("Couldn't read the conflicted files: {0}", r.stderr.trim() || l10n.t("git ls-files -u failed ({0})", r.code)));
     }
     return parseUnmergedStagesEol(r.stdout);
   }
@@ -677,14 +678,14 @@ export class ConflictOps {
     rel: string,
   ): Promise<{ ok: true; abs: string } | { ok: false; result: ConflictOpResult }> {
     if (typeof rel !== "string" || rel.length === 0 || rel.includes("\0")) {
-      return { ok: false, result: { ok: false, changed: false, message: "That isn't a usable file path." } };
+      return { ok: false, result: { ok: false, changed: false, message: l10n.t("That isn't a usable file path.") } };
     }
     const base = resolve(this.root);
     const abs = resolve(base, rel);
     if (abs === base || !abs.startsWith(base + sep)) {
       return {
         ok: false,
-        result: { ok: false, changed: false, message: "That path escapes the repository — nothing was changed." },
+        result: { ok: false, changed: false, message: l10n.t("That path escapes the repository — nothing was changed.") },
       };
     }
     const realRoot = await realpath(base).catch(() => base);
@@ -702,7 +703,7 @@ export class ConflictOps {
     if (!realDir || (realDir !== realRoot && !realDir.startsWith(realRoot + sep))) {
       return {
         ok: false,
-        result: refuse(`${rel} resolves outside the repository — nothing was changed.`),
+        result: refuse(l10n.t("{0} resolves outside the repository — nothing was changed.", rel)),
       };
     }
     return { ok: true, abs };

@@ -5,6 +5,7 @@ import type { RepoManager } from "../git/repoManager";
 import { relativeTime } from "../util/relativeTime";
 import { runCommitAction } from "../graph/commitActions";
 import { promptPick } from "../ui/dialogs";
+import * as l10n from "@vscode/l10n";
 
 const FIELD_SEP = "\x1f";
 
@@ -36,17 +37,17 @@ export async function showReflog(repos: RepoManager): Promise<void> {
   try {
     entries = await loadReflog(active.ctx);
   } catch (err) {
-    void vscode.window.showErrorMessage(failed("Reflog", err instanceof Error ? err.message : String(err)));
+    void vscode.window.showErrorMessage(failed(l10n.t("Reflog"), err instanceof Error ? err.message : String(err)));
     return;
   }
   if (entries.length === 0) {
-    void notifyInfo("The reflog is empty");
+    void notifyInfo(l10n.t("The reflog is empty"));
     return;
   }
 
   const pickedIndex = await promptPick({
-    title: "Reflog — Time Machine",
-    hint: "Every position HEAD has held, including ones no branch points at any more.",
+    title: l10n.t("Reflog — Time Machine"),
+    hint: l10n.t("Every position HEAD has held, including ones no branch points at any more."),
     choices: entries.map((e, i) => ({
       id: String(i),
       label: e.action,
@@ -75,13 +76,13 @@ async function offerRecoveryActions(
   const commit = { sha, subject: entry.action };
 
   const chosen = await promptPick({
-    title: `Recover — ${entry.selector} (${entry.hash})`,
+    title: l10n.t("Recover — {0} ({1})", entry.selector, entry.hash),
     hint: entry.action,
     choices: [
-      { id: "branch", label: "Create Branch Here", icon: "git-branch", description: "Give this commit a name so it stops being unreachable." },
-      { id: "checkout", label: "Checkout", icon: "git-commit", description: "Go here on a detached HEAD to look around." },
-      { id: "reset", label: "Reset Branch to Here", icon: "history", description: "Move the current branch back to this commit." },
-      { id: "copySha", label: "Copy SHA", icon: "copy" },
+      { id: "branch", label: l10n.t("Create Branch Here"), icon: "git-branch", description: l10n.t("Give this commit a name so it stops being unreachable.") },
+      { id: "checkout", label: l10n.t("Checkout"), icon: "git-commit", description: l10n.t("Go here on a detached HEAD to look around.") },
+      { id: "reset", label: l10n.t("Reset Branch to Here"), icon: "history", description: l10n.t("Move the current branch back to this commit.") },
+      { id: "copySha", label: l10n.t("Copy SHA"), icon: "copy" },
     ],
   });
   if (!chosen) {
@@ -98,7 +99,7 @@ async function loadReflog(ctx: GitContext): Promise<ReflogEntry[]> {
     `--format=%h${FIELD_SEP}%gd${FIELD_SEP}%gs${FIELD_SEP}%ci`,
   ]);
   if (result.code !== 0) {
-    throw new Error(result.stderr.trim() || `git reflog exited ${result.code}`);
+    throw new Error(result.stderr.trim() || l10n.t("git reflog exited {0}", result.code));
   }
 
   const entries: ReflogEntry[] = [];

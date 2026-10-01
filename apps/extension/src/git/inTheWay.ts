@@ -17,6 +17,7 @@ import { STASH_GONE_MESSAGE } from "@gitstudio/git-service/StashProvider";
 import { promptPick } from "../ui/dialogs";
 import { notifyPaused } from "./pauseNotice";
 import { notice } from "../ui/notify";
+import * as l10n from "@vscode/l10n";
 
 /**
  * Every extension door that applies commits — the graph's Cherry-Pick, Revert
@@ -86,12 +87,12 @@ export async function applyOrAsk(ctx: GitContext, op: ApplyOp): Promise<Applied>
   }
   if (out.stashFailed) {
     void vscode.window.showWarningMessage(
-      `GitStudio: couldn't stash your changes, so nothing ran — ${out.stashFailed}`,
+      l10n.t("GitStudio: couldn't stash your changes, so nothing ran — {0}", out.stashFailed),
     );
     return { result: out.result, settled: true };
   }
   if (out.inTheWay) {
-    void vscode.window.showWarningMessage(`GitStudio: ${changesInTheWayMessage(out.inTheWay)}`);
+    void vscode.window.showWarningMessage(l10n.t("GitStudio: {0}", changesInTheWayMessage(out.inTheWay)));
     return { result: out.result, settled: true };
   }
   // What became of the stashed changes, when it is anything but "back where
@@ -99,7 +100,7 @@ export async function applyOrAsk(ctx: GitContext, op: ApplyOp): Promise<Applied>
   // finished, or kept because git will not pop over new changes.
   const note = stashRetryNote(out);
   if (note) {
-    void vscode.window.showWarningMessage(`GitStudio: ${note}`);
+    void vscode.window.showWarningMessage(l10n.t("GitStudio: {0}", note));
   }
   if (out.indexRefused) {
     return { result: out.result, staging: "refused" };
@@ -109,7 +110,7 @@ export async function applyOrAsk(ctx: GitContext, op: ApplyOp): Promise<Applied>
 
 /** A stash named by sha that left the list before git ran: nothing ran. */
 function sayStashGone(result: GitRunResult): Applied {
-  void vscode.window.showInformationMessage(`GitStudio: ${STASH_GONE_MESSAGE}`);
+  void vscode.window.showInformationMessage(l10n.t("GitStudio: {0}", STASH_GONE_MESSAGE));
   return { result, settled: true, gone: true };
 }
 
@@ -151,13 +152,13 @@ export async function pullOrAsk(ctx: GitContext, mode?: PullMode): Promise<PullR
   const out = await stashAndRetryPull(ctx.process, pull);
   if (out.stashFailed) {
     void vscode.window.showWarningMessage(
-      `GitStudio: couldn't stash your changes, so nothing ran — ${out.stashFailed}`,
+      l10n.t("GitStudio: couldn't stash your changes, so nothing ran — {0}", out.stashFailed),
     );
     return undefined;
   }
   const note = stashRetryNote(out);
   if (note) {
-    void vscode.window.showWarningMessage(`GitStudio: ${note}`);
+    void vscode.window.showWarningMessage(l10n.t("GitStudio: {0}", note));
   }
   return out.pulled;
 }
@@ -186,21 +187,21 @@ function sayBlocked(result: GitRunResult, blocked: OperationInTheWay): Applied {
 async function askStashRetry(v: ChangesInTheWay): Promise<boolean> {
   const n = v.paths.length;
   const choice = await promptPick({
-    title: "Your uncommitted changes are in the way",
+    title: l10n.t("Your uncommitted changes are in the way"),
     hint: changesInTheWayMessage(v),
     choices: [
       {
         id: "stash",
-        label: "Stash & Retry",
+        label: l10n.t("Stash & Retry"),
         icon: "git-stash",
         description:
-          `Stash ${n === 1 ? "it" : `these ${n} files`}, run it again, and put ${n === 1 ? "it" : "them"} back.`,
+          l10n.t("Stash {0}, run it again, and put {1} back.", n === 1 ? l10n.t("it") : l10n.t("these {0} files", n), n === 1 ? l10n.t("it") : l10n.t("them")),
       },
       {
         id: "cancel",
-        label: "Cancel",
+        label: l10n.t("Cancel"),
         icon: "close",
-        description: "Nothing runs. Commit or stash them yourself first.",
+        description: l10n.t("Nothing runs. Commit or stash them yourself first."),
       },
     ],
   });

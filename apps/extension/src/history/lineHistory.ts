@@ -6,6 +6,7 @@ import { relativeTime } from "../util/relativeTime";
 import { commitChangeSides, openSidesDiff } from "./revisionContentProvider";
 import { resolveActiveFile } from "./historyContext";
 import { promptPick } from "../ui/dialogs";
+import * as l10n from "@vscode/l10n";
 
 /**
  * `gitstudio.showLineHistory`: walks the evolution of the active selection's
@@ -34,7 +35,7 @@ export async function showLineHistory(repos: RepoManager): Promise<void> {
     entries = await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Window,
-        title: `Loading line history (${startLine}–${endLine})…`,
+        title: l10n.t("Loading line history ({0}–{1})…", startLine, endLine),
       },
       () =>
         active.entry.ctx.history.lineHistory(active.rel, startLine, endLine, {
@@ -42,19 +43,19 @@ export async function showLineHistory(repos: RepoManager): Promise<void> {
         }),
     );
   } catch (err) {
-    void vscode.window.showErrorMessage(failed("Line history", err instanceof Error ? err.message : String(err)));
+    void vscode.window.showErrorMessage(failed(l10n.t("Line history"), err instanceof Error ? err.message : String(err)));
     return;
   }
 
   if (entries.length === 0) {
     void vscode.window.showInformationMessage(
-      notice(`No history for lines ${startLine}–${endLine} of ${baseName(active.rel)}.`),
+      notice(l10n.t("No history for lines {0}–{1} of {2}.", startLine, endLine, baseName(active.rel))),
     );
     return;
   }
 
   const range =
-    startLine === endLine ? `line ${startLine}` : `lines ${startLine}–${endLine}`;
+    startLine === endLine ? `line ${startLine}` : l10n.t("lines {0}–{1}", startLine, endLine);
   const fileName = baseName(active.rel);
 
   // The walker: pick a commit → open its diff → reopen the QuickPick so the
@@ -103,8 +104,8 @@ async function pickCommit(
   title: string,
 ): Promise<LineHistoryEntry | undefined> {
   const picked = await promptPick({
-    title: `Line History — ${title}`,
-    hint: "Pick a commit to diff it against its parent.",
+    title: l10n.t("Line History — {0}", title),
+    hint: l10n.t("Pick a commit to diff it against its parent."),
     choices: entries.map((e, i) => ({
       id: String(i),
       label: e.subject,

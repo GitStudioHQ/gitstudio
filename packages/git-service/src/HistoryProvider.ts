@@ -1,4 +1,5 @@
 import type { GitProcess } from "./GitProcess";
+import * as l10n from "@vscode/l10n";
 
 /** US (unit separator) — field separator inside one record. */
 const FIELD_SEP = "\x1f";
@@ -104,7 +105,7 @@ export class HistoryProvider {
     const result = await this.proc.run(args, { signal: opts?.signal });
     if (result.code !== 0) {
       throw new Error(
-        `git log --follow failed for ${relPath} (exit ${result.code}): ` +
+        l10n.t("git log --follow failed for {0} (exit {1}): ", relPath, result.code) +
           `${result.stderr.trim()}`,
       );
     }
@@ -143,7 +144,7 @@ export class HistoryProvider {
 
     if (result.code !== 0) {
       throw new Error(
-        `git log -L failed for ${relPath} (exit ${result.code}): ` +
+        l10n.t("git log -L failed for {0} (exit {1}): ", relPath, result.code) +
           `${result.stderr.trim()}`,
       );
     }

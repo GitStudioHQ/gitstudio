@@ -24,10 +24,11 @@
 import * as vscode from "vscode";
 import type { MergeHostCore } from "./host";
 import { COMPETING_BUILT_INS, competingBuiltIns, type MergePeerApi, type MergeProduct } from "./product";
+import * as l10n from "@vscode/l10n";
 
-const TURN_OFF = "Turn them off";
-const NOT_NOW = "Not now";
-const NEVER = "Don't ask again";
+const TURN_OFF = l10n.t("Turn them off");
+const NOT_NOW = l10n.t("Not now");
+const NEVER = l10n.t("Don't ask again");
 
 /** Products with the question on screen right now (scans call in quick succession). */
 const onScreen = new WeakSet<object>();
@@ -84,9 +85,9 @@ export async function maybeOfferCoexistence(host: MergeHostCore): Promise<void> 
   try {
     choice = await host.notify(
       "info",
-      "conflicted files now open in its merge editor. Turn off VS Code's own merge editor and conflict " +
-        "highlights so they don't open alongside it? You can switch back any time with " +
-        `"${product.displayName}: Restore VS Code's Merge Editor".`,
+      l10n.t("conflicted files now open in its merge editor. Turn off VS Code's own merge editor and conflict ") +
+        l10n.t("highlights so they don't open alongside it? You can switch back any time with ") +
+        l10n.t("\"{0}: Restore VS Code's Merge Editor\".", product.displayName),
       TURN_OFF,
       NOT_NOW,
       NEVER,
@@ -114,8 +115,9 @@ export async function maybeOfferCoexistence(host: MergeHostCore): Promise<void> 
     await config.update(key, off, vscode.ConfigurationTarget.Global);
   }
   await context.globalState.update(product.coexistencePromptKey, true);
-  void host.notify("info", "VS Code's own merge editor and conflict highlights are off.", "Undo").then((c) => {
-    if (c === "Undo") {
+  const undo = l10n.t("Undo");
+  void host.notify("info", l10n.t("VS Code's own merge editor and conflict highlights are off."), undo).then((c) => {
+    if (c === undo) {
       void restoreBuiltIns(host);
     }
   });
@@ -166,11 +168,11 @@ export async function maybeSayPeerOutdated(host: MergeHostCore): Promise<boolean
     return false;
   }
   const remembered = context.globalState.update(peer.outdatedNoticeKey, version);
-  const show = `Show ${peer.displayName}`;
+  const show = l10n.t("Show {0}", peer.displayName);
   const choice = await host.notify(
     "info",
-    `${peer.displayName}${version ? ` ${version}` : ""} is installed too. It also opens your conflicts, and it ` +
-      `still shows a rebase's sides the old way round. Update ${peer.displayName} to use one Conflicts view, ` +
+    l10n.t("{0}{1} is installed too. It also opens your conflicts, and it ", peer.displayName, version ? ` ${version}` : "") +
+      l10n.t("still shows a rebase's sides the old way round. Update {0} to use one Conflicts view, ", peer.displayName) +
       "with the same sides.",
     show,
   );
@@ -207,11 +209,11 @@ export async function maybeSayDeferred(host: MergeHostCore): Promise<boolean> {
   // Set before the first await (a Memento's value is visible at once), so a
   // second scan in the same moment finds it and says nothing.
   const remembered = context.globalState.update(deferral.noticeKey, true);
-  const takeOver = `Let ${product.displayName} open conflicts`;
+  const takeOver = l10n.t("Let {0} open conflicts", product.displayName);
   const choice = await host.notify(
     "info",
-    `${deferral.owner} is installed, so ${deferral.owner} opens your conflicts, with the same merge editor and ` +
-      `Conflicts dashboard. ${product.displayName}'s own commands still work.`,
+    l10n.t("{0} is installed, so {1} opens your conflicts, with the same merge editor and ", deferral.owner, deferral.owner) +
+      l10n.t("Conflicts dashboard. {0}'s own commands still work.", product.displayName),
     OK,
     takeOver,
   );
@@ -234,10 +236,10 @@ export async function offerRestoreAfterAutoOpenOff(host: MergeHostCore): Promise
   const { context, product } = host;
   if (host.settings().autoOpen) return;
   if (!context.globalState.get(previousKey(product.coexistencePromptKey))) return;
-  const restore = "Restore";
+  const restore = l10n.t("Restore");
   const choice = await host.notify(
     "info",
-    "automatic opening is off. Turn VS Code's own merge editor and conflict highlights back on?",
+    l10n.t("automatic opening is off. Turn VS Code's own merge editor and conflict highlights back on?"),
     restore,
   );
   if (choice === restore) {
@@ -259,5 +261,5 @@ export async function restoreBuiltIns(host: MergeHostCore): Promise<void> {
     await config.update(key, value === null ? undefined : value, vscode.ConfigurationTarget.Global);
   }
   await context.globalState.update(previousKey(product.coexistencePromptKey), undefined);
-  void host.notify("info", "VS Code's own merge editor and conflict highlights are as they were.");
+  void host.notify("info", l10n.t("VS Code's own merge editor and conflict highlights are as they were."));
 }

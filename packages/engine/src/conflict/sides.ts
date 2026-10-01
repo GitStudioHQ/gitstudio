@@ -25,6 +25,7 @@ import type {
   SideRole,
   SideView,
 } from "@gitstudio/host-bridge/conflictsProtocol";
+import * as l10n from "@vscode/l10n";
 
 /**
  * The raw facts W1 derives from git (OperationProvider), before any wording.
@@ -116,11 +117,11 @@ export function pauseDetail(facts: Pick<OperationFacts, "pause" | "commit">): st
   if (!p) return "";
   if (p.reason === "edit") {
     return facts.commit
-      ? `Paused to edit ${sha7(facts.commit.sha)} ${facts.commit.subject}`.trimEnd()
-      : "Paused to edit a commit";
+      ? l10n.t("Paused to edit {0} {1}", sha7(facts.commit.sha), facts.commit.subject).trimEnd()
+      : l10n.t("Paused to edit a commit");
   }
-  if (p.reason === "break") return "Paused at a break in the rebase plan";
-  return p.command ? `Paused because the command “${p.command}” failed` : "Paused because a command in the rebase plan failed";
+  if (p.reason === "break") return l10n.t("Paused at a break in the rebase plan");
+  return p.command ? l10n.t("Paused because the command “{0}” failed", p.command) : l10n.t("Paused because a command in the rebase plan failed");
 }
 
 /**
@@ -142,16 +143,16 @@ export function skipEndedText(before: Pick<OperationView, "kind" | "step" | "que
   if (rest > 0) {
     const unit = before.step?.unit ?? "commit";
     const which = before.step
-      ? `${unit.charAt(0).toUpperCase()}${unit.slice(1)} ${before.step.n} of ${before.step.m}`
+      ? l10n.t("{0} {1} of {2}", cap(STEP_UNIT[unit]), before.step.n, before.step.m)
       : before.commit?.sha
-        ? `Commit ${sha7(before.commit.sha)}`
-        : "The current commit";
+        ? l10n.t("Commit {0}", sha7(before.commit.sha))
+        : l10n.t("The current commit");
     return am
-      ? `${which} skipped; the rest applied — the series is finished`
-      : `${which} skipped; the rest applied — ${noun} complete`;
+      ? l10n.t("{0} skipped; the rest applied — the series is finished", which)
+      : l10n.t("{0} skipped; the rest applied — {1} complete", which, noun);
   }
   if (am) {
-    return "Last patch skipped. The series is finished, without it";
+    return l10n.t("Last patch skipped. The series is finished, without it");
   }
   if ((before.kind === "cherry-pick" || before.kind === "revert") && !before.step && !before.range) {
     // A single pick or revert: skipping it ENDED the operation with nothing
@@ -159,22 +160,32 @@ export function skipEndedText(before: Pick<OperationView, "kind" | "step" | "que
     // reverted, after skipping the only revert there was. The last of a
     // RANGE is different — the ones before it are in — and keeps "Last
     // commit skipped. … complete, without it".
-    const which = before.commit?.sha ? `Commit ${sha7(before.commit.sha)}` : "The current commit";
-    return `${which} skipped. The ${noun} is over`;
+    const which = before.commit?.sha ? l10n.t("Commit {0}", sha7(before.commit.sha)) : l10n.t("The current commit");
+    return l10n.t("{0} skipped. The {1} is over", which, noun);
   }
-  return `Last commit skipped. ${noun.charAt(0).toUpperCase()}${noun.slice(1)} complete, without it`;
+  return l10n.t("Last commit skipped. {0} complete, without it", cap(noun));
 }
 
 /** The operation as the end of a sentence names it ("… — rebase complete"). */
+/** Uppercase the first character. English only — Chinese passes straight through. */
+const cap = (word: string): string => word.charAt(0).toUpperCase() + word.slice(1);
+
+/** Display word for the `unit` the facts carry ("commit" | "patch" | "step"). */
+const STEP_UNIT: Readonly<Record<string, string>> = {
+  commit: l10n.t("commit"),
+  patch: l10n.t("patch"),
+  step: l10n.t("step"),
+};
+
 const SKIP_NOUN: Readonly<Record<OperationKind, string>> = {
-  merge: "merge",
-  rebase: "rebase",
-  "rebase-merge-step": "rebase",
-  "cherry-pick": "cherry-pick",
-  revert: "revert",
-  am: "patch series",
-  stash: "stash",
-  none: "operation",
+  merge: l10n.t("merge"),
+  rebase: l10n.t("rebase"),
+  "rebase-merge-step": l10n.t("rebase"),
+  "cherry-pick": l10n.t("cherry-pick"),
+  revert: l10n.t("revert"),
+  am: l10n.t("patch series"),
+  stash: l10n.t("stash"),
+  none: l10n.t("operation"),
 };
 
 // ── Wording per operation (PLAN §3.1) ─────────────────────────────────────────
@@ -208,31 +219,31 @@ function here(facts: OperationFacts): string {
 }
 
 function stepText(step: OperationFacts["step"]): string {
-  return step ? ` · ${step.unit} ${step.n} of ${step.m}` : "";
+  return step ? l10n.t(" · {0} {1} of {2}", STEP_UNIT[step.unit], step.n, step.m) : "";
 }
 
 function queuedText(queued: number | undefined): string {
-  return queued && queued > 0 ? ` · ${queued} more queued` : "";
+  return queued && queued > 0 ? l10n.t(" · {0} more queued", queued) : "";
 }
 
 const WORDING: Record<OperationKind, (f: OperationFacts) => Words> = {
   merge(f) {
     const current = here(f);
-    const incoming = f.incoming || "the other branch";
+    const incoming = f.incoming || l10n.t("the other branch");
     return {
-      title: `Merging ${incoming} into ${current}`,
+      title: l10n.t("Merging {0} into {1}", incoming, current),
       direction: { from: "theirs", verb: "into", to: "yours" },
       yours: {
         name: current,
-        paneTitle: `Changes from ${current}`,
-        description: `Your branch ${current}, as it was before the merge`,
+        paneTitle: l10n.t("Changes from {0}", current),
+        description: l10n.t("Your branch {0}, as it was before the merge", current),
       },
       theirs: {
         name: incoming,
-        paneTitle: `Changes from ${incoming}`,
-        description: `What is being merged in: ${incoming}`,
+        paneTitle: l10n.t("Changes from {0}", incoming),
+        description: l10n.t("What is being merged in: {0}", incoming),
       },
-      verbs: { continue: "Continue Merge", abort: "Abort Merge" },
+      verbs: { continue: l10n.t("Continue Merge"), abort: l10n.t("Abort Merge") },
     };
   },
 
@@ -241,82 +252,82 @@ const WORDING: Record<OperationKind, (f: OperationFacts) => Words> = {
     const ontoText =
       f.onto ??
       (f.ontoIsRoot
-        ? "a new root"
+        ? l10n.t("a new root")
         : f.ontoCommit
           ? `${sha7(f.ontoCommit.sha)} (${f.ontoCommit.subject})`
-          : "the new base");
+          : l10n.t("the new base"));
     const ontoName =
-      f.onto ?? (f.ontoIsRoot ? "new root" : f.ontoCommit ? sha7(f.ontoCommit.sha) : "new base");
+      f.onto ?? (f.ontoIsRoot ? l10n.t("new root") : f.ontoCommit ? sha7(f.ontoCommit.sha) : l10n.t("new base"));
     const c = f.commit;
     return {
-      title: `Rebasing ${branch} onto ${ontoText}${stepText(f.step)}${c ? `: ${commitLine(c)}` : ""}`,
+      title: l10n.t("Rebasing {0} onto {1}{2}{3}", branch, ontoText, stepText(f.step), c ? `: ${commitLine(c)}` : ""),
       // The reporter's "test → onto → master".
       direction: { from: "yours", verb: "onto", to: "theirs" },
       yours: {
         name: branch,
-        paneTitle: c ? `Rebasing ${sha7(c.sha)} from ${branch}` : `Rebasing ${branch}`,
+        paneTitle: c ? l10n.t("Rebasing {0} from {1}", sha7(c.sha), branch) : l10n.t("Rebasing {0}", branch),
         description: c
-          ? `Your commit ${sha7(c.sha)} “${c.subject}” from ${branch}`
-          : `Your branch ${branch}`,
+          ? l10n.t("Your commit {0} “{1}” from {2}", sha7(c.sha), c.subject, branch)
+          : l10n.t("Your branch {0}", branch),
       },
       theirs: {
         name: ontoName,
         paneTitle: f.onto
-          ? `Already rebased commits and commits from ${f.onto}`
-          : "Already rebased commits",
-        description: `${ontoText}, plus the commits of ${branch} already rebased onto it`,
+          ? l10n.t("Already rebased commits and commits from {0}", f.onto)
+          : l10n.t("Already rebased commits"),
+        description: l10n.t("{0}, plus the commits of {1} already rebased onto it", ontoText, branch),
       },
       verbs: {
-        continue: "Continue Rebase",
+        continue: l10n.t("Continue Rebase"),
         // Only the apply backend ever offers Skip (and only for an emptied
         // patch): on the merge backend `rebase --skip` hard-resets a pause.
-        ...(f.backend === "apply" ? { skip: "Skip this commit" } : {}),
-        abort: "Abort Rebase",
+        ...(f.backend === "apply" ? { skip: l10n.t("Skip this commit") } : {}),
+        abort: l10n.t("Abort Rebase"),
       },
     };
   },
 
   "rebase-merge-step"(f) {
     const branch = f.branch || here(f);
-    const label = f.label || "the merged branch";
+    const label = f.label || l10n.t("the merged branch");
     return {
-      title: `Re-creating merge of ${label} into ${branch}${stepText(f.step)}`,
+      title: l10n.t("Re-creating merge of {0} into {1}{2}", label, branch, stepText(f.step)),
       direction: { from: "theirs", verb: "into", to: "yours" },
       yours: {
         name: branch,
-        paneTitle: `Changes from ${branch} (rewritten)`,
-        description: `${branch} as the rebase has rewritten it so far`,
+        paneTitle: l10n.t("Changes from {0} (rewritten)", branch),
+        description: l10n.t("{0} as the rebase has rewritten it so far", branch),
       },
       theirs: {
         name: label,
-        paneTitle: `Changes from ${label} (rewritten)`,
-        description: `${label} as the rebase has rewritten it so far`,
+        paneTitle: l10n.t("Changes from {0} (rewritten)", label),
+        description: l10n.t("{0} as the rebase has rewritten it so far", label),
       },
       // Rebase verbs, never `merge --*`: only the rebase can end this.
-      verbs: { continue: "Continue Rebase", abort: "Abort Rebase" },
+      verbs: { continue: l10n.t("Continue Rebase"), abort: l10n.t("Abort Rebase") },
     };
   },
 
   "cherry-pick"(f) {
     const current = here(f);
     const c = f.commit;
-    const what = c ? commitLine(c) : "a commit";
+    const what = c ? commitLine(c) : l10n.t("a commit");
     return {
-      title: `Cherry-picking ${what} onto ${current}${queuedText(f.queued)}`,
+      title: l10n.t("Cherry-picking {0} onto {1}{2}", what, current, queuedText(f.queued)),
       direction: { from: "theirs", verb: "onto", to: "yours" },
       yours: {
         name: current,
-        paneTitle: `Changes from ${current}`,
-        description: `Your branch ${current}`,
+        paneTitle: l10n.t("Changes from {0}", current),
+        description: l10n.t("Your branch {0}", current),
       },
       theirs: {
-        name: c ? sha7(c.sha) : "picked commit",
-        paneTitle: `Changes from cherry-pick ${what}`,
+        name: c ? sha7(c.sha) : l10n.t("picked commit"),
+        paneTitle: l10n.t("Changes from cherry-pick {0}", what),
         description: c
-          ? `The commit being cherry-picked: ${sha7(c.sha)} “${c.subject}”`
-          : "The commit being cherry-picked",
+          ? l10n.t("The commit being cherry-picked: {0} “{1}”", sha7(c.sha), c.subject)
+          : l10n.t("The commit being cherry-picked"),
       },
-      verbs: { continue: "Continue Cherry-pick", skip: "Skip this commit", abort: "Abort Cherry-pick" },
+      verbs: { continue: l10n.t("Continue Cherry-pick"), skip: l10n.t("Skip this commit"), abort: l10n.t("Abort Cherry-pick") },
     };
   },
 
@@ -324,22 +335,22 @@ const WORDING: Record<OperationKind, (f: OperationFacts) => Words> = {
     const current = here(f);
     const c = f.commit;
     return {
-      title: `Reverting ${c ? commitLine(c) : "a commit"} on ${current}${queuedText(f.queued)}`,
+      title: l10n.t("Reverting {0} on {1}{2}", c ? commitLine(c) : l10n.t("a commit"), current, queuedText(f.queued)),
       direction: { from: "theirs", verb: "on", to: "yours" },
       yours: {
         name: current,
-        paneTitle: `Changes from ${current}`,
-        description: `Your branch ${current}`,
+        paneTitle: l10n.t("Changes from {0}", current),
+        description: l10n.t("Your branch {0}", current),
       },
       theirs: {
         // Never "parent of …", which is how git's own marker reads.
         name: c ? `undo of ${sha7(c.sha)}` : "undo",
-        paneTitle: c ? `Undo of ${commitLine(c)}` : "Undo of the reverted commit",
+        paneTitle: c ? l10n.t("Undo of {0}", commitLine(c)) : l10n.t("Undo of the reverted commit"),
         description: c
-          ? `The reverse of commit ${sha7(c.sha)} “${c.subject}”`
-          : "The reverse of the commit being reverted",
+          ? l10n.t("The reverse of commit {0} “{1}”", sha7(c.sha), c.subject)
+          : l10n.t("The reverse of the commit being reverted"),
       },
-      verbs: { continue: "Continue Revert", skip: "Skip this commit", abort: "Abort Revert" },
+      verbs: { continue: l10n.t("Continue Revert"), skip: l10n.t("Skip this commit"), abort: l10n.t("Abort Revert") },
     };
   },
 
@@ -351,39 +362,39 @@ const WORDING: Record<OperationKind, (f: OperationFacts) => Words> = {
     const nm = s ? `${s.n}/${s.m}` : "";
     return {
       title:
-        `Applying ${s ? `patch ${s.n} of ${s.m}` : "a patch"}${subject ? `: ${subject}` : ""}` +
-        `${author ? ` (by ${author})` : ""} onto ${current}`,
+        l10n.t("Applying {0}{1}", s ? l10n.t("patch {0} of {1}", s.n, s.m) : l10n.t("a patch"), subject ? `: ${subject}` : "") +
+        `${author ? l10n.t(" (by {0})", author) : ""} onto ${current}`,
       direction: { from: "theirs", verb: "onto", to: "yours" },
       yours: {
         name: current,
-        paneTitle: `Changes from ${current}`,
-        description: `Your branch ${current}`,
+        paneTitle: l10n.t("Changes from {0}", current),
+        description: l10n.t("Your branch {0}", current),
       },
       theirs: {
         name: s ? `patch ${nm}` : "patch",
-        paneTitle: `${s ? `Patch ${nm}` : "Patch"}${subject ? `: ${subject}` : ""}`,
+        paneTitle: `${s ? l10n.t("Patch {0}", nm) : "Patch"}${subject ? `: ${subject}` : ""}`,
         description:
-          `${s ? `Patch ${s.n} of ${s.m}` : "The patch being applied"}` +
+          `${s ? l10n.t("Patch {0} of {1}", s.n, s.m) : l10n.t("The patch being applied")}` +
           `${subject ? `: “${subject}”` : ""}${author ? ` by ${author}` : ""}`,
       },
-      verbs: { continue: "Continue (git am)", skip: "Skip patch", abort: "Abort (git am)" },
+      verbs: { continue: l10n.t("Continue (git am)"), skip: l10n.t("Skip patch"), abort: l10n.t("Abort (git am)") },
     };
   },
 
   stash(f) {
     const current = here(f);
     return {
-      title: `Applying stashed changes on ${current}`,
+      title: l10n.t("Applying stashed changes on {0}", current),
       direction: { from: "yours", verb: "on", to: "theirs" },
       yours: {
         name: "stash",
-        paneTitle: "Your stashed changes",
-        description: "The changes you stashed, being put back",
+        paneTitle: l10n.t("Your stashed changes"),
+        description: l10n.t("The changes you stashed, being put back"),
       },
       theirs: {
         name: current,
-        paneTitle: `Committed on ${current}`,
-        description: `What is committed on ${current} now`,
+        paneTitle: l10n.t("Committed on {0}", current),
+        description: l10n.t("What is committed on {0} now", current),
       },
       // `git reset --merge`: the stash entry is kept, nothing is lost.
       verbs: { abort: "Cancel" },
@@ -393,16 +404,16 @@ const WORDING: Record<OperationKind, (f: OperationFacts) => Words> = {
   none(f) {
     const current = here(f);
     return {
-      title: f.unmerged && f.unmerged > 0 ? `Unmerged files on ${current}` : "",
+      title: f.unmerged && f.unmerged > 0 ? l10n.t("Unmerged files on {0}", current) : "",
       yours: {
         name: current,
-        paneTitle: `Current (${current})`,
-        description: `The version on ${current}`,
+        paneTitle: l10n.t("Current ({0})", current),
+        description: l10n.t("The version on {0}", current),
       },
       theirs: {
         name: "incoming",
         paneTitle: "Incoming",
-        description: "The other side of the conflict",
+        description: l10n.t("The other side of the conflict"),
       },
       verbs: { abort: "Cancel" },
     };

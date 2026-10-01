@@ -7,6 +7,7 @@ import { resolveModelId, type Connection } from "../connections";
 import type { ChatOptions, Provider } from "../types";
 import { AnthropicProvider } from "./anthropic";
 import { OpenAiCompatProvider } from "./openaiCompat";
+import * as l10n from "@vscode/l10n";
 
 export { AnthropicProvider } from "./anthropic";
 export { OpenAiCompatProvider } from "./openaiCompat";
@@ -40,7 +41,7 @@ export function makeProvider(
   if (conn.wire === "cli") {
     // CLI providers spawn a local process, so they're constructed by the host
     // (the desktop main process), not here in the fetch-only core.
-    throw new Error("CLI connections must be built by the host, not makeProvider().");
+    throw new Error(l10n.t("CLI connections must be built by the host, not makeProvider()."));
   }
   if (conn.wire === "anthropic") {
     return new AnthropicProvider(common);

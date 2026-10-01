@@ -20,6 +20,7 @@
     "test": "npm run test --workspaces --if-present",
     "check-types": "npm run check-types --workspaces --if-present",
     "check-purity": "bash scripts/check-engine-purity.sh",
+    "i18n": "node scripts/i18n/manifest-nls.mjs && node scripts/i18n/bundle-nls.mjs",
     "build": "npm run package --workspace apps/extension",
     "package": "npm run package --workspace apps/extension",
     "watch": "npm run watch --workspace apps/extension"

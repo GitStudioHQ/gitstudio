@@ -1,6 +1,7 @@
 import type { BlameResult } from "@gitstudio/host-bridge/blame";
 import { parseIncrementalBlame } from "@gitstudio/engine/blame/parse";
 import type { GitProcess } from "./GitProcess";
+import * as l10n from "@vscode/l10n";
 
 export interface BlameFileOptions {
   /** Blame a specific revision instead of the working tree. */
@@ -49,7 +50,7 @@ export class BlameProvider {
 
     if (result.code !== 0) {
       throw new Error(
-        `git blame failed for ${relPath} (exit ${result.code}): ${result.stderr.trim()}`,
+        l10n.t("git blame failed for {0} (exit {1}): {2}", relPath, result.code, result.stderr.trim()),
       );
     }
 

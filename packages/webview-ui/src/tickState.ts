@@ -3,6 +3,7 @@ import {
   type BlockState,
   type ChangeBlock,
 } from "@gitstudio/engine/staging/blockStaging";
+import * as l10n from "@vscode/l10n";
 
 /**
  * Tick state per rendered diff block — all of the correctness, none of the
@@ -55,11 +56,11 @@ export function deriveTickStates(
 export function tickLabel(state: BlockState): string {
   switch (state) {
     case "staged":
-      return "Staged — click to unstage this change";
+      return l10n.t("Staged — click to unstage this change");
     case "partial":
-      return "Partly staged — click to stage the rest of this change";
+      return l10n.t("Partly staged — click to stage the rest of this change");
     default:
-      return "Not staged — click to stage this change";
+      return l10n.t("Not staged — click to stage this change");
   }
 }
 

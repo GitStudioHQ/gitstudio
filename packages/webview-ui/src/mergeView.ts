@@ -44,6 +44,7 @@ import {
   type MergeViewApi,
   type SeedInfo,
 } from "./mergeViewApi";
+import * as l10n from "@vscode/l10n";
 
 // The public types live in the frozen API module; re-exported so existing
 // imports from "./mergeView" keep working.
@@ -65,27 +66,27 @@ let mergeViewSerial = 0;
  */
 const CATEGORY_WORDS: Record<MergeCategory, string> = {
   conflict: "this conflict",
-  same: "this change, made the same on both sides",
+  same: l10n.t("this change, made the same on both sides"),
   "yours-only": "this change",
   "theirs-only": "this change",
 };
 
 /** How a screen reader names a block before its place in its category ("Conflict 2 of 5"). */
 const CATEGORY_NOUNS: Record<MergeCategory, string> = {
-  conflict: "Conflict",
-  same: "Change made the same on both sides",
-  "yours-only": "Change on one side only",
-  "theirs-only": "Change on one side only",
+  conflict: l10n.t("Conflict"),
+  same: l10n.t("Change made the same on both sides"),
+  "yours-only": l10n.t("Change on one side only"),
+  "theirs-only": l10n.t("Change on one side only"),
 };
 
 /**
  * What a change made the same on both sides says on either of its arrows —
  * the legend's own words for its colour (green).
  */
-const SAME_ARROW_WORDS = "Same on both sides — either arrow takes it";
+const SAME_ARROW_WORDS = l10n.t("Same on both sides — either arrow takes it");
 
 /** What a change on one side only says after its side's name — the legend's words for blue. */
-const ONE_SIDE_WORDS = "one side only — safe to take";
+const ONE_SIDE_WORDS = l10n.t("one side only — safe to take");
 
 /**
  * Per-block runtime state. Each side of a block is processed (applied or
@@ -331,7 +332,7 @@ export class MergeView implements MergeViewApi {
 
     const leftBody = this.addPane(grid, 1, payload.oursLabel, true, payload.op?.yours.name);
     this.gutterA = this.addGutter(grid, 2, "a");
-    const resultBody = this.addPane(grid, 3, "Result", false);
+    const resultBody = this.addPane(grid, 3, l10n.t("Result"), false);
     this.gutterB = this.addGutter(grid, 4, "b");
     const rightBody = this.addPane(grid, 5, payload.theirsLabel, true, payload.op?.theirs.name);
 
@@ -452,7 +453,7 @@ export class MergeView implements MergeViewApi {
         this.suppressHistory = wasSuppressed;
       }
     }
-    this.baseline = this.captureSnapshot("Baseline");
+    this.baseline = this.captureSnapshot(l10n.t("Baseline"));
 
     this.refresh();
     this.revealFirstPending();
@@ -466,7 +467,7 @@ export class MergeView implements MergeViewApi {
       window.clearTimeout(this.typingTimer);
       this.typingTimer = 0;
     }
-    this.stableSnapshot = this.captureSnapshot("Edit result");
+    this.stableSnapshot = this.captureSnapshot(l10n.t("Edit result"));
     this.onHistoryChanged?.();
     this.onEolMismatch?.(this.model?.eolMismatch);
     this.onSeeded?.(this.seed ? { kind: this.seed.kind, changes: this.seed.changes } : undefined);
@@ -541,7 +542,7 @@ export class MergeView implements MergeViewApi {
     title.title = titleText;
     if (readOnly) {
       const lock = iconElement(lockIcon, "jb-svg jb-lock");
-      lock.title = "Read-only";
+      lock.title = l10n.t("Read-only");
       title.appendChild(lock);
     }
     const label = document.createElement("span");
@@ -793,14 +794,14 @@ export class MergeView implements MergeViewApi {
   /** "Yours (test)" / "Theirs (master)": the role, and the side's real name when the host knows it. */
   private sideTitle(side: Side): string {
     const { name } = this.sideWords(side);
-    const role = side === "left" ? "Yours" : "Theirs";
+    const role = side === "left" ? l10n.t("Yours") : l10n.t("Theirs");
     return name ? `${role} (${name})` : role;
   }
 
   /** " (2 of 5)": where the block stands in its category, for a screen reader. */
   private ordinalText(block: ChangeBlock): string {
     const ordinal = this.ordinals.get(block.id);
-    return ordinal && ordinal.total > 1 ? ` (${ordinal.index} of ${ordinal.total})` : "";
+    return ordinal && ordinal.total > 1 ? l10n.t(" ({0} of {1})", ordinal.index, ordinal.total) : "";
   }
 
   // --- interactions ---
@@ -815,7 +816,7 @@ export class MergeView implements MergeViewApi {
 
     const append = mode === "append" || (mode === "auto" && state.applied);
     this.pushHistory(
-      `${append ? "Append" : "Accept"} ${this.sideWords(side).role}, change ${block.id + 1}`,
+      l10n.t("{0} {1}, change {2}", append ? l10n.t("Append") : l10n.t("Accept"), this.sideWords(side).role, block.id + 1),
     );
     const lines = append ? [...this.readResultLines(span), ...sideLines] : sideLines;
     // Re-anchor the tracker onto the written lines so alignment, highlights
@@ -870,7 +871,7 @@ export class MergeView implements MergeViewApi {
     if (!state || this.isSideDone(block, side)) {
       return;
     }
-    this.pushHistory(`Ignore ${this.sideWords(side).role}, change ${block.id + 1}`);
+    this.pushHistory(l10n.t("Ignore {0}, change {1}", this.sideWords(side).role, block.id + 1));
     this.markSideDone(state, block, side, false);
     if (!this.batching) {
       this.refresh();
@@ -909,7 +910,7 @@ export class MergeView implements MergeViewApi {
     if (!state || !this.isWandable(block) || block.resolvedText === undefined) {
       return;
     }
-    this.pushHistory(`Apply both sides, change ${block.id + 1}`);
+    this.pushHistory(l10n.t("Apply both sides, change {0}", block.id + 1));
     const span = this.currentResultSpan(block);
     // Never empty: both sides' regions are non-empty for a resolvable block,
     // so "" here is one empty line, which splitLines says.
@@ -939,7 +940,7 @@ export class MergeView implements MergeViewApi {
         return block.left ? "left" : "right";
       },
       false,
-      "Apply non-conflicting changes: all",
+      l10n.t("Apply non-conflicting changes: all"),
     );
   }
 
@@ -963,7 +964,7 @@ export class MergeView implements MergeViewApi {
         return undefined;
       },
       false,
-      `Apply non-conflicting changes: ${this.sideWords(side).role}`,
+      l10n.t("Apply non-conflicting changes: {0}", this.sideWords(side).role),
     );
   }
 
@@ -976,7 +977,7 @@ export class MergeView implements MergeViewApi {
     this.bulkAccept(
       (block) => (block.left ? "left" : undefined),
       true,
-      "Accept yours everywhere",
+      l10n.t("Accept yours everywhere"),
     );
   }
 
@@ -985,7 +986,7 @@ export class MergeView implements MergeViewApi {
     this.bulkAccept(
       (block) => (block.right ? "right" : undefined),
       true,
-      "Accept theirs everywhere",
+      l10n.t("Accept theirs everywhere"),
     );
   }
 
@@ -1003,7 +1004,7 @@ export class MergeView implements MergeViewApi {
     if (targets.length === 0) {
       return;
     }
-    this.pushHistory("Resolve simple conflicts");
+    this.pushHistory(l10n.t("Resolve simple conflicts"));
     const wasSuppressed = this.suppressHistory;
     const wasBatching = this.batching;
     this.suppressHistory = true;
@@ -1033,7 +1034,7 @@ export class MergeView implements MergeViewApi {
   private bulkAccept(
     chooseSide: (block: ChangeBlock) => Side | undefined,
     settleUnchosen = false,
-    label = "Bulk accept",
+    label = l10n.t("Bulk accept"),
   ): void {
     if (!this.model) {
       return;
@@ -1228,7 +1229,7 @@ export class MergeView implements MergeViewApi {
     // Re-arm the typing-burst base: every gesture ends here, and the next
     // manual keystroke must snapshot the state as of NOW — a stale pre-action
     // snapshot would make its undo entry revert the action too.
-    this.stableSnapshot = this.captureSnapshot("Edit result");
+    this.stableSnapshot = this.captureSnapshot(l10n.t("Edit result"));
   }
 
   /** Re-applies the pane decorations (granularity changes need only this). */
@@ -1461,18 +1462,18 @@ export class MergeView implements MergeViewApi {
     const oneSided = cat === "yours-only" || cat === "theirs-only";
 
     const acceptWords = addAfter
-      ? `Add ${who} after ${other}`
+      ? l10n.t("Add {0} after {1}", who, other)
       : same
         ? SAME_ARROW_WORDS
         : oneSided
-          ? `Accept ${who}: ${ONE_SIDE_WORDS}`
-          : `Accept ${who} for ${what}`;
+          ? l10n.t("Accept {0}: {1}", who, ONE_SIDE_WORDS)
+          : l10n.t("Accept {0} for {1}", who, what);
     const accept = this.makeButton(
       `jb-gutter-btn jb-btn-accept jb-tone-${tone}`,
       side === "left" ? chevronDoubleRight : chevronDoubleLeft,
       addAfter || same
         ? acceptWords
-        : `${acceptWords}\nCtrl/⌘-click: add it after what the result has`,
+        : l10n.t("{0}\nCtrl/⌘-click: add it after what the result has", acceptWords),
       `${acceptWords}${ordinal}`,
       (event) => {
         const mode: AcceptMode =
@@ -1483,15 +1484,15 @@ export class MergeView implements MergeViewApi {
 
     const ignoreWords = otherIn
       ? addAfter
-        ? `Discard ${who}: keep ${other} as the result`
-        : `Discard ${who} too: the result keeps what it has`
+        ? l10n.t("Discard {0}: keep {1} as the result", who, other)
+        : l10n.t("Discard {0} too: the result keeps what it has", who)
       : same
-        ? "Discard this change on both sides"
-        : `Ignore ${who} for ${what}`;
+        ? l10n.t("Discard this change on both sides")
+        : l10n.t("Ignore {0} for {1}", who, what);
     const ignore = this.makeButton(
       "jb-gutter-btn jb-btn-ignore",
       cross,
-      otherIn ? ignoreWords : `${ignoreWords}\nThe result keeps what it has`,
+      otherIn ? ignoreWords : l10n.t("{0}\nThe result keeps what it has", ignoreWords),
       `${ignoreWords}${ordinal}`,
       () => this.ignoreSide(block, side),
     );
@@ -1751,7 +1752,7 @@ export class MergeView implements MergeViewApi {
    */
   public reset(): void {
     if (this.payload) {
-      this.pushHistory("Reset merge");
+      this.pushHistory(l10n.t("Reset merge"));
       this.build(this.payload);
     }
   }
@@ -1867,11 +1868,11 @@ export class MergeView implements MergeViewApi {
     if (this.typingTimer) {
       window.clearTimeout(this.typingTimer);
     } else if (this.stableSnapshot) {
-      this.pushUndoEntry({ ...this.stableSnapshot, label: "Edit result" });
+      this.pushUndoEntry({ ...this.stableSnapshot, label: l10n.t("Edit result") });
     }
     this.typingTimer = window.setTimeout(() => {
       this.typingTimer = 0;
-      this.stableSnapshot = this.captureSnapshot("Edit result");
+      this.stableSnapshot = this.captureSnapshot(l10n.t("Edit result"));
       this.onHistoryChanged?.();
     }, 600);
   }
@@ -1881,7 +1882,7 @@ export class MergeView implements MergeViewApi {
     if (this.typingTimer) {
       window.clearTimeout(this.typingTimer);
       this.typingTimer = 0;
-      this.stableSnapshot = this.captureSnapshot("Edit result");
+      this.stableSnapshot = this.captureSnapshot(l10n.t("Edit result"));
     }
   }
 
@@ -1921,7 +1922,7 @@ export class MergeView implements MergeViewApi {
     } finally {
       this.suppressHistory = false;
     }
-    this.stableSnapshot = this.captureSnapshot("Edit result");
+    this.stableSnapshot = this.captureSnapshot(l10n.t("Edit result"));
     this.refresh();
   }
 

@@ -185,7 +185,11 @@ test("a reveal into a filtered graph asks git before paging, and says so when th
   // the selection AS STORED (a preset stays its symbol); "Show all branches"
   // second. Both go through the store's one reload path and replay the reveal.
   assert.match(offer, /const contains = active \? await active\.ctx\.refs\.containingBranches\(sha\) : undefined;\s*add = revealCandidate\(contains\?\.refs \?\? \[\], this\.refList\);/);
-  assert.match(offer, /showInformationMessage\(\s*`GitStudio: \$\{sha\.slice\(0, 7\)\} is hidden by the branch filter\.`,\s*\.\.\.\(ADD \? \[ADD\] : \[\]\),\s*ALL,\s*\)/, "add first, all second");
+  assert.match(
+    offer,
+    /showInformationMessage\(\s*l10n\.t\("GitStudio: \{0\} is hidden by the branch filter\.", sha\.slice\(0, 7\)\),\s*\.\.\.\(ADD \? \[ADD\] : \[\]\),\s*ALL,\s*\)/,
+    "add first, all second",
+  );
   assert.match(
     offer,
     /this\.pendingReveal = sha;\s*void this\.setRefFilter\(pick === ADD && add \? withRef\(this\.refFilter, add\.fullName\) : null\);/,
@@ -209,7 +213,7 @@ test("the chip menu's checkout runs the commit menu's own ref-checkout arm, by t
   // …and the menu's own rows are built through it, so there is one id format.
   assert.equal((actions.match(/refActionId\(ref\.fullName\)/g) ?? []).length, 3);
   // …labelled by the full name shorn, never git's "heads/release" (#30).
-  assert.equal((actions.match(/label: `Checkout \$\{refLabel\(ref\.fullName\)\}…?`/g) ?? []).length, 3);
+  assert.equal((actions.match(/label: l10n\.t\("Checkout \{0\}…?", refLabel\(ref\.fullName\)\)/g) ?? []).length, 3);
   assert.doesNotMatch(actions, /label: `Checkout \$\{ref\.name\}/);
   // The arm itself plans from the full name, through git-service, so the
   // desktop's graph menu means the same thing.

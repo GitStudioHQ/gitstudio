@@ -29,6 +29,7 @@ import {
   trashIcon,
   warningIcon,
 } from "./shellIcons";
+import * as l10n from "@vscode/l10n";
 
 export interface NoTextPanelInput {
   path: string;
@@ -80,65 +81,65 @@ export function describeNoText(input: NoTextPanelInput): { title: string; detail
       // between two commits (the verifier found it called a binary file).
       const y = sha7("yours");
       const t = sha7("theirs");
-      const at = y && t ? `: yours at ${y}, theirs at ${t}` : "";
+      const at = y && t ? l10n.t(": yours at {0}, theirs at {1}", y, t) : "";
       return {
-        title: "Conflicted submodule",
+        title: l10n.t("Conflicted submodule"),
         detail:
-          `${path} is a submodule (a gitlink), and ${name("yours")} and ${name("theirs")} point it at different ` +
-          `commits${at}. Accept one side to record its commit. The submodule's own checkout is left as it is: run ` +
-          `git submodule update afterwards.`,
+          l10n.t("{0} is a submodule (a gitlink), and {1} and {2} point it at different ", path, name("yours"), name("theirs")) +
+          l10n.t("commits{0}. Accept one side to record its commit. The submodule's own checkout is left as it is: run ", at) +
+          l10n.t("git submodule update afterwards."),
       };
     }
     case "symlink":
       return {
-        title: "Conflicted symbolic link",
+        title: l10n.t("Conflicted symbolic link"),
         detail:
-          `${path} is a symbolic link, so there is no line-by-line merge: ${name("yours")} and ` +
-          `${name("theirs")} point it at different targets. Accept the side whose target you want.`,
+          l10n.t("{0} is a symbolic link, so there is no line-by-line merge: {1} and ", path, name("yours")) +
+          l10n.t("{0} point it at different targets. Accept the side whose target you want.", name("theirs")),
       };
     case "binary":
       return {
-        title: "Conflicted binary file",
+        title: l10n.t("Conflicted binary file"),
         detail:
-          `${path} is binary, so there is no line-by-line merge to make. Accept one side, or replace ` +
-          `the file yourself and stage it.`,
+          l10n.t("{0} is binary, so there is no line-by-line merge to make. Accept one side, or replace ", path) +
+          l10n.t("the file yourself and stage it."),
       };
     case "too-large":
       return {
-        title: "Too large to merge here",
+        title: l10n.t("Too large to merge here"),
         detail:
-          `${path} is larger than can be read in one go, so only part of it is available — and ` +
-          `saving a merge built from part of a file would delete the rest. Accept one side, or resolve ` +
-          `it in an editor and stage it.`,
+          l10n.t("{0} is larger than can be read in one go, so only part of it is available — and ", path) +
+          l10n.t("saving a merge built from part of a file would delete the rest. Accept one side, or resolve ") +
+          l10n.t("it in an editor and stage it."),
       };
     case "both-deleted":
       return {
-        title: "Deleted on both sides",
+        title: l10n.t("Deleted on both sides"),
         detail:
-          `${path} was deleted in ${name("yours")} and in ${name("theirs")}. There is nothing to ` +
-          `choose between — the file is going either way. Delete it to accept the deletion and settle ` +
-          `the conflict.`,
+          l10n.t("{0} was deleted in {1} and in {2}. There is nothing to ", path, name("yours"), name("theirs")) +
+          l10n.t("choose between — the file is going either way. Delete it to accept the deletion and settle ") +
+          l10n.t("the conflict."),
       };
     case "added-one-side": {
       const absent = input.missingRole ?? "theirs";
       return {
-        title: "Added on one side only",
+        title: l10n.t("Added on one side only"),
         detail:
-          `${path} is new in ${name(otherRole(absent))} and does not exist in ${name(absent)} — there ` +
-          `is no earlier version behind either. Keep the new file, or leave it out.`,
+          l10n.t("{0} is new in {1} and does not exist in {2} — there ", path, name(otherRole(absent)), name(absent)) +
+          l10n.t("is no earlier version behind either. Keep the new file, or leave it out."),
       };
     }
     case "modify-delete": {
       const gone = input.missingRole ?? "theirs";
       return {
-        title: "Changed on one side, deleted on the other",
+        title: l10n.t("Changed on one side, deleted on the other"),
         detail:
-          `${path} was edited in ${name(otherRole(gone))} and deleted in ${name(gone)}. There is ` +
-          `nothing to merge line by line: keep the edited file, or accept the deletion.`,
+          l10n.t("{0} was edited in {1} and deleted in {2}. There is ", path, name(otherRole(gone)), name(gone)) +
+          l10n.t("nothing to merge line by line: keep the edited file, or accept the deletion."),
       };
     }
     default:
-      return { title: "Nothing to merge line by line", detail: `${path} has no text to merge here.` };
+      return { title: l10n.t("Nothing to merge line by line"), detail: l10n.t("{0} has no text to merge here.", path) };
   }
 }
 
@@ -204,8 +205,8 @@ export function buildNoTextPanel(input: NoTextPanelInput, handlers: NoTextPanelH
   if (input.shape === "both-deleted") {
     actions.appendChild(
       mkBtn(
-        "Delete the file",
-        "Neither side has this file — delete it and stage the deletion",
+        l10n.t("Delete the file"),
+        l10n.t("Neither side has this file — delete it and stage the deletion"),
         true,
         () => handlers.deleteFile(),
       ),
@@ -219,19 +220,19 @@ export function buildNoTextPanel(input: NoTextPanelInput, handlers: NoTextPanelH
       actions.appendChild(
         missing
           ? mkBtn(
-              "Delete the file",
-              `${word}${side?.name ? ` (${side.name})` : ""} has no version of this file — accepting ` +
+              l10n.t("Delete the file"),
+              l10n.t("{0}{1} has no version of this file — accepting ", word, side?.name ? ` (${side.name})` : "") +
                 `${role} removes it and stages the deletion`,
               true,
               () => handlers.takeRole(role),
             )
           : mkBtn(
-              `Accept ${word}`,
+              l10n.t("Accept {0}", word),
               input.shape === "submodule"
-                ? `Point the submodule at ${named}'s commit${input.commits?.[role] ? ` ${input.commits[role]!.slice(0, 7)}` : ""} and stage it`
+                ? l10n.t("Point the submodule at {0}'s commit{1} and stage it", named, input.commits?.[role] ? ` ${input.commits[role]!.slice(0, 7)}` : "")
                 : side?.description
-                  ? `Keep ${side.description} and stage it`
-                  : `Replace the file with ${named} and stage it`,
+                  ? l10n.t("Keep {0} and stage it", side.description)
+                  : l10n.t("Replace the file with {0} and stage it", named),
               false,
               () => handlers.takeRole(role),
             ),

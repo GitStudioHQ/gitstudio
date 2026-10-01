@@ -15,6 +15,7 @@ import {
   type StopReason,
   type ToolCall,
 } from "../types";
+import * as l10n from "@vscode/l10n";
 
 const ANTHROPIC_VERSION = "2023-06-01";
 
@@ -59,7 +60,7 @@ export class AnthropicProvider implements Provider {
   private async headers(): Promise<Record<string, string>> {
     const key = await this.opts.getKey();
     if (typeof key !== "string" || key.trim().length === 0) {
-      throw new AiError("No Anthropic API key set. Add it in Settings ▸ AI.", 401);
+      throw new AiError(l10n.t("No Anthropic API key set. Add it in Settings ▸ AI."), 401);
     }
     return {
       "x-api-key": key.trim(),
@@ -152,7 +153,7 @@ export class AnthropicProvider implements Provider {
   async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<ChatResult> {
     const model = (opts.modelId ?? this.opts.resolveModel(opts.model));
     if (!model) {
-      throw new AiError("No model configured for this connection.");
+      throw new AiError(l10n.t("No model configured for this connection."));
     }
     const fetchImpl = this.opts.fetchImpl ?? fetch;
     let res: Response;
@@ -168,9 +169,9 @@ export class AnthropicProvider implements Provider {
         throw err;
       }
       if (isAbort(err)) {
-        throw new AiError("Request cancelled.");
+        throw new AiError(l10n.t("Request cancelled."));
       }
-      throw new AiError("Couldn't reach Anthropic (network error).", undefined, true);
+      throw new AiError(l10n.t("Couldn't reach Anthropic (network error)."), undefined, true);
     }
     if (!res.ok) {
       throw httpError(res.status);
@@ -205,7 +206,7 @@ export class AnthropicProvider implements Provider {
   ): Promise<string | null> {
     const model = (opts.modelId ?? this.opts.resolveModel(opts.model));
     if (!model) {
-      throw new AiError("No model configured for this connection.");
+      throw new AiError(l10n.t("No model configured for this connection."));
     }
     const fetchImpl = this.opts.fetchImpl ?? fetch;
     let res: Response;
@@ -223,7 +224,7 @@ export class AnthropicProvider implements Provider {
       if (isAbort(err)) {
         return null;
       }
-      throw new AiError("Couldn't reach Anthropic (network error).", undefined, true);
+      throw new AiError(l10n.t("Couldn't reach Anthropic (network error)."), undefined, true);
     }
     if (!res.ok) {
       throw httpError(res.status);
@@ -255,7 +256,7 @@ export class AnthropicProvider implements Provider {
       }
     } catch (err) {
       if (!isAbort(err)) {
-        throw new AiError("Stream from Anthropic failed.", undefined, true);
+        throw new AiError(l10n.t("Stream from Anthropic failed."), undefined, true);
       }
     } finally {
       reader.releaseLock();
@@ -271,7 +272,7 @@ export class AnthropicProvider implements Provider {
   ): Promise<ChatResult> {
     const model = (opts.modelId ?? this.opts.resolveModel(opts.model));
     if (!model) {
-      throw new AiError("No model configured for this connection.");
+      throw new AiError(l10n.t("No model configured for this connection."));
     }
     const fetchImpl = this.opts.fetchImpl ?? fetch;
     let res: Response;
@@ -285,7 +286,7 @@ export class AnthropicProvider implements Provider {
     } catch (err) {
       if (err instanceof AiError) throw err;
       if (isAbort(err)) return { text: "", toolCalls: [], stopReason: "stop" };
-      throw new AiError("Couldn't reach Anthropic (network error).", undefined, true);
+      throw new AiError(l10n.t("Couldn't reach Anthropic (network error)."), undefined, true);
     }
     if (!res.ok) {
       throw httpError(res.status);
@@ -340,7 +341,7 @@ export class AnthropicProvider implements Provider {
       }
     } catch (err) {
       if (!isAbort(err)) {
-        throw new AiError("Stream from Anthropic failed.", undefined, true);
+        throw new AiError(l10n.t("Stream from Anthropic failed."), undefined, true);
       }
     } finally {
       reader.releaseLock();
@@ -399,13 +400,13 @@ function mapStop(reason: string | undefined): StopReason {
 function httpError(status: number): AiError {
   switch (status) {
     case 401:
-      return new AiError("Anthropic rejected the API key. Check it in Settings ▸ AI.", 401);
+      return new AiError(l10n.t("Anthropic rejected the API key. Check it in Settings ▸ AI."), 401);
     case 429:
-      return new AiError("Anthropic rate limit hit — try again in a moment.", 429, true);
+      return new AiError(l10n.t("Anthropic rate limit hit — try again in a moment."), 429, true);
     case 529:
-      return new AiError("Anthropic is temporarily overloaded — try again shortly.", 529, true);
+      return new AiError(l10n.t("Anthropic is temporarily overloaded — try again shortly."), 529, true);
     default:
-      return new AiError(`Anthropic request failed (HTTP ${status}).`, status, status >= 500);
+      return new AiError(l10n.t("Anthropic request failed (HTTP {0}).", status), status, status >= 500);
   }
 }
 

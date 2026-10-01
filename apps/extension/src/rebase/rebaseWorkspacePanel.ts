@@ -20,6 +20,8 @@ import {
 } from "./rebaseRunner";
 // Shared design tokens, inlined by esbuild — matches every other GitStudio surface.
 import tokensCss from "../../../../packages/webview-ui/src/styles/tokens.css";
+import * as l10n from "@vscode/l10n";
+import { l10nWebviewScript } from "@gitstudio/l10n/index";
 
 interface RebaseCommit {
   sha: string;
@@ -93,18 +95,20 @@ export class RebaseWorkspacePanel {
       void vscode.window.showInformationMessage(
         notice(
           total > 0
-            ? `Nothing to rebase — all ${total} commit${total === 1 ? "" : "s"} here are either merges or changes already on the base, which a rebase would skip.`
-            : "No commits to rebase from that point.",
+            ? total === 1
+              ? l10n.t("Nothing to rebase — all 1 commit here are either merges or changes already on the base, which a rebase would skip.")
+              : l10n.t("Nothing to rebase — all {0} commits here are either merges or changes already on the base, which a rebase would skip.", total)
+            : l10n.t("No commits to rebase from that point."),
         ),
       );
       return;
     }
     if (commits.length > 200) {
       const go = await promptConfirm({
-        title: `Rebase ${commits.length} commits?`,
+        title: l10n.t("Rebase {0} commits?", commits.length),
         message:
-          "Interactive rebase over a range this long is slow, and a conflict in the middle leaves you resolving one commit at a time. A nearer base is usually what you want.",
-        confirmLabel: "Continue",
+          l10n.t("Interactive rebase over a range this long is slow, and a conflict in the middle leaves you resolving one commit at a time. A nearer base is usually what you want."),
+        confirmLabel: l10n.t("Continue"),
         danger: true,
       });
       if (!go) {
@@ -146,7 +150,7 @@ export class RebaseWorkspacePanel {
   ) {
     this.panel = vscode.window.createWebviewPanel(
       "gitstudio.rebaseWorkspace",
-      "Interactive Rebase",
+      l10n.t("Interactive Rebase"),
       vscode.ViewColumn.Active,
       {
         enableScripts: true,
@@ -187,7 +191,7 @@ export class RebaseWorkspacePanel {
         const ok = !!result?.ran && result.outcome.ok;
         this.post({ type: "aborted", ok });
         if (ok) {
-          vscode.window.setStatusBarMessage(`$(discard) ${result?.kind === "am" ? "Patch series abandoned" : "Rebase aborted"}`, 2500);
+          vscode.window.setStatusBarMessage(l10n.t("$(discard) {0}", result?.kind === "am" ? l10n.t("Patch series abandoned") : l10n.t("Rebase aborted")), 2500);
           this.dispose();
         } else if (result && !result.ran) {
           void notifyInfo(nothingToAbortText(result.kind));
@@ -215,14 +219,14 @@ export class RebaseWorkspacePanel {
         message: built.message,
         ...(built.expected ? { expected: true as const } : {}),
       };
-      reportRebaseFailure("Interactive rebase plan refused", refused);
+      reportRebaseFailure(l10n.t("Interactive rebase plan refused"), refused);
       this.post({ type: "result", outcome: refused });
       return;
     }
     const { todo, rewords } = built;
 
     await this.finish(() =>
-      this.undo.runWithUndo(active, `Interactive rebase onto ${describeRebaseBase(this.base)}`, () =>
+      this.undo.runWithUndo(active, l10n.t("Interactive rebase onto {0}", describeRebaseBase(this.base)), () =>
         runRebasePlan(active.root, { base: this.base, todo, rewords }),
       ),
     );
@@ -244,7 +248,7 @@ export class RebaseWorkspacePanel {
     if (outcome.status === "done") {
       const entry = this.repos.getActive();
       void entry?.repo?.status?.();
-      vscode.window.setStatusBarMessage("$(check) Rebase complete", 3000);
+      vscode.window.setStatusBarMessage(l10n.t("$(check) Rebase complete"), 3000);
       this.dispose();
     } else if (outcome.status === "stopped") {
       // Refresh status so the app's auto-conflict handler opens the merge editor
@@ -312,7 +316,7 @@ export class RebaseWorkspacePanel {
       vscode.Uri.joinPath(this.extensionUri, "dist", "webview", "rebase-plan.js"),
     );
     const csp = [
-      `default-src 'none'`,
+      "default-src 'none'",
       `style-src 'nonce-${nonce}' ${this.panel.webview.cspSource}`,
       `font-src ${this.panel.webview.cspSource}`,
       `script-src 'nonce-${nonce}' ${this.panel.webview.cspSource}`,
@@ -333,37 +337,38 @@ export class RebaseWorkspacePanel {
 </head>
 <body>
   <div class="rb-head">
-    <div class="rb-title"><i class="codicon codicon-git-pull-request-draft"></i> Interactive Rebase</div>
-    <div class="rb-sub"><i class="codicon codicon-git-branch"></i> <b class="rb-branch">${esc(this.branch)}</b> onto <b>${esc(describeRebaseBase(this.base))}</b> · <span id="rb-count"></span></div>
+    <div class="rb-title"><i class="codicon codicon-git-pull-request-draft"></i> ${l10n.t("Interactive Rebase")}</div>
+    <div class="rb-sub"><i class="codicon codicon-git-branch"></i> <b class="rb-branch">${esc(this.branch)}</b> ${l10n.t("onto")} <b>${esc(describeRebaseBase(this.base))}</b> · <span id="rb-count"></span></div>
     <span class="rb-spacer"></span>
-    <div class="rb-tools" role="group" aria-label="Set the action of the selected commits">
+    <div class="rb-tools" role="group" aria-label="${l10n.t("Set the action of the selected commits")}">
       <span class="rb-selcount" id="rb-selcount" aria-live="polite"></span>
-      <span class="rb-tools-label">Set action</span>
+      <span class="rb-tools-label">${l10n.t("Set action")}</span>
       <div class="rb-setgroup" id="rb-setgroup"></div>
     </div>
   </div>
   <div class="rb-explain" id="rb-explain">
-    <button class="rb-explain-x" id="rb-explain-x" aria-label="Dismiss">&times;</button>
-    <div class="rb-explain-lead"><i class="codicon codicon-info"></i> <b>Tidy up your recent commits before you push.</b> Reorder them by dragging, or pick what happens to each one below. Newest is at the top, as in Commits; git replays them bottom&nbsp;→&nbsp;top. <b>Nothing changes until you press “Start Rebase,”</b> and Undo (⌘⌥G&nbsp;Z) reverses it.</div>
+    <button class="rb-explain-x" id="rb-explain-x" aria-label="${l10n.t("Dismiss")}">&times;</button>
+    <div class="rb-explain-lead"><i class="codicon codicon-info"></i> <b>${l10n.t("Tidy up your recent commits before you push.")}</b> Reorder them by dragging, or pick what happens to each one below. Newest is at the top, as in Commits; git replays them bottom&nbsp;→&nbsp;top. <b>${l10n.t("Nothing changes until you press “Start Rebase,”")}</b> ${l10n.t("and Undo (⌘⌥G Z) reverses it.")}</div>
     <div class="rb-gloss">
-      <span><b class="g-pick">Pick</b> keep the commit as it is</span>
-      <span><b class="g-reword">Reword</b> keep it, but rewrite the message</span>
-      <span><b class="g-squash">Squash</b> merge into the commit below it — keep both messages</span>
-      <span><b class="g-fixup">Fixup</b> merge into the commit below it — drop this message</span>
-      <span><b class="g-edit">Edit</b> pause here so you can amend the commit</span>
-      <span><b class="g-drop">Drop</b> delete the commit</span>
+      <span><b class="g-pick">${l10n.t("Pick")}</b> ${l10n.t("keep the commit as it is")}</span>
+      <span><b class="g-reword">${l10n.t("Reword")}</b> ${l10n.t("keep it, but rewrite the message")}</span>
+      <span><b class="g-squash">${l10n.t("Squash")}</b> ${l10n.t("merge into the commit below it — keep both messages")}</span>
+      <span><b class="g-fixup">${l10n.t("Fixup")}</b> ${l10n.t("merge into the commit below it — drop this message")}</span>
+      <span><b class="g-edit">${l10n.t("Edit")}</b> ${l10n.t("pause here so you can amend the commit")}</span>
+      <span><b class="g-drop">${l10n.t("Drop")}</b> ${l10n.t("delete the commit")}</span>
     </div>
   </div>
   <div class="rb-hint"><i class="codicon codicon-keyboard"></i><span class="rb-hint-keys" id="rb-hint-keys"></span></div>
-  <div class="rb-list" id="rb-list" role="grid" aria-multiselectable="true" aria-label="Commits to rebase, newest first"></div>
+  <div class="rb-list" id="rb-list" role="grid" aria-multiselectable="true" aria-label="${l10n.t("Commits to rebase, newest first")}"></div>
   <div class="rb-foot" id="rb-foot">
     <div class="rb-banner" id="rb-banner" hidden></div>
-    <button class="rb-btn ghost" id="rb-reset"><i class="codicon codicon-history"></i>Reset plan</button>
+    <button class="rb-btn ghost" id="rb-reset"><i class="codicon codicon-history"></i>${l10n.t("Reset plan")}</button>
     <span class="rb-spacer"></span>
     <span class="rb-preview" id="rb-preview"></span>
-    <button class="rb-btn secondary" id="rb-cancel">Cancel</button>
-    <button class="rb-btn primary" id="rb-apply"><i class="codicon codicon-play glyph"></i><i class="codicon codicon-loading codicon-modifier-spin spin"></i><span id="rb-apply-label">Start Rebase</span></button>
+    <button class="rb-btn secondary" id="rb-cancel">${l10n.t("Cancel")}</button>
+    <button class="rb-btn primary" id="rb-apply"><i class="codicon codicon-play glyph"></i><i class="codicon codicon-loading codicon-modifier-spin spin"></i><span id="rb-apply-label">${l10n.t("Start Rebase")}</span></button>
   </div>
+${l10nWebviewScript(nonce)}
 <script nonce="${nonce}" src="${planUri}"></script>
 <script nonce="${nonce}">
 const DATA = ${dataJson};
@@ -394,10 +399,10 @@ function esc(s: string): string {
 async function resolveBase(active: RepoEntry, sha?: string): Promise<string | undefined> {
   if (!sha) {
     return promptRevision(active, {
-      title: "Interactive Rebase",
-      hint: "Rebase onto which commit or branch? The base itself is excluded — everything after it lands in the workspace.",
-      placeholder: "HEAD~5   main   origin/main",
-      confirmLabel: "Open Workspace",
+      title: l10n.t("Interactive Rebase"),
+      hint: l10n.t("Rebase onto which commit or branch? The base itself is excluded — everything after it lands in the workspace."),
+      placeholder: l10n.t("HEAD~5   main   origin/main"),
+      confirmLabel: l10n.t("Open Workspace"),
     });
   }
   const parent = await active.ctx.process.run(["rev-parse", "--verify", "--quiet", `${sha}^`]);
@@ -466,7 +471,7 @@ async function countInRange(active: RepoEntry, base: string): Promise<number> {
 async function currentBranch(active: RepoEntry): Promise<string> {
   const r = await active.ctx.process.run(["rev-parse", "--abbrev-ref", "HEAD"]);
   const b = r.stdout.trim();
-  return b && b !== "HEAD" ? b : "detached HEAD";
+  return b && b !== "HEAD" ? b : l10n.t("detached HEAD");
 }
 
 /** The commit being rebased ONTO, for the dimmed base row + rail anchor. */
@@ -497,7 +502,7 @@ export function toRebaseOutcome(o: OperationOutcome | undefined): RebaseOutcome 
   if (o.stopped) {
     return { status: "stopped", reason: o.view.pause ? "edit" : "conflict", message: o.message ?? "" };
   }
-  return { status: "failed", message: o.message || o.view.continueBlocked || "Git refused to skip." };
+  return { status: "failed", message: o.message || o.view.continueBlocked || l10n.t("Git refused to skip.") };
 }
 
 // ── Webview CSS ─────────────────────────────────────────────────────────────
@@ -701,9 +706,9 @@ const vscode = acquireVsCodeApi();
 const $ = (id) => document.getElementById(id);
 const ACTIONS = [
   { id: "pick",   label: "Pick",   hint: "keep the commit" },
-  { id: "reword", label: "Reword", hint: "keep, change message" },
-  { id: "squash", label: "Squash", hint: "fold up, keep both messages" },
-  { id: "fixup",  label: "Fixup",  hint: "fold up, discard message" },
+  { id: "reword", label: "Reword", hint: l10nT("keep, change message") },
+  { id: "squash", label: "Squash", hint: l10nT("fold up, keep both messages") },
+  { id: "fixup",  label: "Fixup",  hint: l10nT("fold up, discard message") },
   { id: "edit",   label: "Edit",   hint: "stop to amend" },
   { id: "drop",   label: "Drop",   hint: "remove the commit" },
 ];
@@ -734,8 +739,8 @@ function consequenceHtml(action, targetSubj) {
   }
   const into = targetSubj ? ' <b>' + escText(clip(targetSubj, 44)) + '</b>' : ' the commit below it';
   switch (action) {
-    case "squash": return '<i class="codicon codicon-fold-down"></i> Folds down into' + into + ' — keeps both messages';
-    case "fixup":  return '<i class="codicon codicon-fold-down"></i> Folds down into' + into + ' — drops this message';
+    case "squash": return '<i class="codicon codicon-fold-down"></i> Folds down into' + into + l10nT(" — keeps both messages");
+    case "fixup":  return '<i class="codicon codicon-fold-down"></i> Folds down into' + into + l10nT(" — drops this message");
     case "edit":   return '<i class="codicon codicon-debug-pause"></i> The rebase pauses here so you can amend this commit, then Continue';
     case "drop":   return '<i class="codicon codicon-trash"></i> This commit will be deleted';
     default: return "";
@@ -776,7 +781,7 @@ P.PLAN_ACTIONS.forEach((a) => {
 // …and said once where they can be found without hovering.
 (function hintKeys() {
   const h = $("rb-hint-keys");
-  h.appendChild(el("span", "", escText("Shift- or " + (isMac ? "⌘" : "Ctrl") + "-click selects several;")));
+  h.appendChild(el("span", "", escText(l10nT("Shift- or ") + (isMac ? "⌘" : "Ctrl") + "-click selects several;")));
   P.PLAN_ACTIONS.forEach((a) => { const k = el("kbd", "rb-kbd"); k.textContent = a.key; k.title = a.label; h.appendChild(k); });
   h.appendChild(el("span", "", escText("set their action; drag or Alt+↑ / Alt+↓ moves them.")));
 })();
@@ -797,7 +802,7 @@ function makeRow(r, i) {
   const rail = el("div", "rb-rail"); rail.setAttribute("aria-hidden", "true"); rail.appendChild(el("span", "rb-node")); row.appendChild(rail);
   const grip = el("span", "rb-grip", '<i class="codicon codicon-gripper"></i>');
   grip.setAttribute("aria-hidden", "true");
-  grip.title = "Drag to reorder — the selected commits move together (or press Alt+↑ / Alt+↓)";
+  grip.title = l10nT("Drag to reorder — the selected commits move together (or press Alt+↑ / Alt+↓)");
   row.appendChild(grip);
 
   // Action dropdown (color-coded by the current action).
@@ -816,7 +821,7 @@ function makeRow(r, i) {
   line.appendChild(el("span", "rb-sha", '<i class="codicon codicon-git-commit"></i>' + escText(r.shortSha)));
   main.appendChild(line);
   const rw = el("div", "rb-reword");
-  const ta = el("textarea"); ta.value = r.message || r.subject; ta.placeholder = "New commit message…";
+  const ta = el("textarea"); ta.value = r.message || r.subject; ta.placeholder = l10nT("New commit message…");
   ta.addEventListener("input", () => { r.message = ta.value; });
   rw.appendChild(ta); main.appendChild(rw);
   const cons = el("div", "rb-consequence"); cons.innerHTML = consequenceHtml(r.action, foldTargetSubject(i)); main.appendChild(cons);
@@ -1059,7 +1064,7 @@ function updatePreview() {
   if (!busy) {
     apply.disabled = orphaned;
     apply.title = orphaned
-      ? "A squash or fixup has nothing below it to fold into — git can't run this plan."
+      ? l10nT("A squash or fixup has nothing below it to fold into — git can't run this plan.")
       : "";
   }
 }
@@ -1109,17 +1114,17 @@ function showStopBanner(text, stop, restored) {
   b.appendChild(document.createTextNode(text));
   const acts = el("span", "b-actions");
   if (stop && stop.conflicts > 0) {
-    const resolve = textButton("rb-btn secondary", "Resolve Conflicts…"); resolve.addEventListener("click", () => vscode.postMessage({ type: "resolveConflicts" }));
+    const resolve = textButton("rb-btn secondary", l10nT("Resolve Conflicts…")); resolve.addEventListener("click", () => vscode.postMessage({ type: "resolveConflicts" }));
     acts.appendChild(resolve);
   }
   const verbs = {};
-  const cont = textButton("rb-btn primary", "Continue Rebase"); cont.addEventListener("click", () => { lastVerb = "continue"; setBusy(true); vscode.postMessage({ type: "continue" }); });
+  const cont = textButton("rb-btn primary", l10nT("Continue Rebase")); cont.addEventListener("click", () => { lastVerb = "continue"; setBusy(true); vscode.postMessage({ type: "continue" }); });
   acts.appendChild(cont); verbs.continue = cont;
   if (stop && stop.canSkip) {
-    const skip = textButton("rb-btn secondary", stop.skipLabel || "Skip this commit"); skip.addEventListener("click", () => { lastVerb = "skip"; setBusy(true); vscode.postMessage({ type: "skip" }); });
+    const skip = textButton("rb-btn secondary", stop.skipLabel || l10nT("Skip this commit")); skip.addEventListener("click", () => { lastVerb = "skip"; setBusy(true); vscode.postMessage({ type: "skip" }); });
     acts.appendChild(skip); verbs.skip = skip;
   }
-  const abort = textButton("rb-btn secondary", "Abort Rebase"); abort.addEventListener("click", () => { lastVerb = "abort"; vscode.postMessage({ type: "abort" }); });
+  const abort = textButton("rb-btn secondary", l10nT("Abort Rebase")); abort.addEventListener("click", () => { lastVerb = "abort"; vscode.postMessage({ type: "abort" }); });
   acts.appendChild(abort); b.appendChild(acts); verbs.abort = abort;
   b.hidden = false;
   const back = keyboardHere && lastVerb && !restored ? (verbs[lastVerb] || cont) : null;
@@ -1172,19 +1177,19 @@ window.addEventListener("message", (e) => {
   if (msg.type === "result") {
     const o = msg.outcome;
     if (o.status === "done") { setBusy(true, "Done"); return; }
-    setBusy(false, "Start Rebase");
+    setBusy(false, l10nT("Start Rebase"));
     if (o.status === "stopped") {
       // A Skip the user backed out of reports "stopped" with nothing new: keep
       // the explanation already on screen.
       const text = o.reason === "unknown" && !o.message && lastStopText
         ? lastStopText
-        : (o.reason === "conflict" ? "Rebase paused on a conflict — resolve the files, then Continue. " : o.reason === "edit" ? "Rebase paused to edit a commit — amend in your working tree, then Continue. " : "Rebase paused. ") + (o.message || "");
+        : (o.reason === "conflict" ? l10nT("Rebase paused on a conflict — resolve the files, then Continue. ") : o.reason === "edit" ? l10nT("Rebase paused to edit a commit — amend in your working tree, then Continue. ") : l10nT("Rebase paused. ")) + (o.message || "");
       lastStopText = text;
       showStopBanner(text, msg.stop);
     }
-    else flashBanner(o.message || "Rebase failed.", o.expected ? "warn" : "err");
+    else flashBanner(o.message || l10nT("Rebase failed."), o.expected ? "warn" : "err");
   } else if (msg.type === "aborted") {
-    if (!msg.ok) flashBanner("Couldn't abort the rebase.", "err");
+    if (!msg.ok) flashBanner(l10nT("Couldn't abort the rebase."), "err");
   }
 });
 

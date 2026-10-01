@@ -1,4 +1,6 @@
 import * as vscode from "vscode";
+import * as l10n from "@vscode/l10n";
+import { l10nWebviewScript } from "@gitstudio/l10n/index";
 
 /**
  * Builds the commit-graph webview HTML with a locked-down CSP and the bundled
@@ -26,7 +28,7 @@ export function getGraphHtml(
   const styleUri = dist("webview", `${bundle}.css`);
 
   const csp = [
-    `default-src 'none'`,
+    "default-src 'none'",
     `img-src ${webview.cspSource} https: data:`,
     // Lit injects component styles into shadow roots at runtime (constructed
     // stylesheets / <style>); the bundled page stylesheet is same-origin.
@@ -42,10 +44,11 @@ export function getGraphHtml(
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link href="${styleUri}" rel="stylesheet" />
-  <title>Commit Graph</title>
+  <title>${l10n.t("Commit Graph")}</title>
 </head>
 <body>
-  <div id="root" data-layout="${layout}"><div id="boot">Loading history…</div></div>
+  <div id="root" data-layout="${layout}"><div id="boot">${l10n.t("Loading history…")}</div></div>
+  ${l10nWebviewScript(nonce)}
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

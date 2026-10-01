@@ -1,7 +1,7 @@
 {
   "name": "gitstudio",
-  "displayName": "GitStudio \u2014 JetBrains-style Git Graph, Blame & Merge",
-  "description": "Free, open-source Git GUI & commit graph for VS Code and Cursor. Git Studio brings a JetBrains-style Git workflow into the editor \u2014 inline blame, file history, hunk & line staging, 3-pane merge, interactive rebase with universal Undo, stash/shelf, worktrees, and in-editor GitHub PRs. A free alternative to GitLens, GitKraken & Sourcetree.",
+  "displayName": "%displayName%",
+  "description": "%description%",
   "version": "1.17.0",
   "publisher": "gitstudio",
   "license": "Apache-2.0",
@@ -96,14 +96,14 @@
       "activitybar": [
         {
           "id": "gitstudio",
-          "title": "GitStudio",
+          "title": "%viewContainer.gitstudio.title%",
           "icon": "media/activitybar.svg"
         }
       ],
       "panel": [
         {
           "id": "gitstudioPanel",
-          "title": "Commit Graph",
+          "title": "%viewContainer.gitstudioPanel.title%",
           "icon": "media/activitybar.svg"
         }
       ]
@@ -112,28 +112,28 @@
       "gitstudio": [
         {
           "id": "gitstudio.commit",
-          "name": "Changes",
+          "name": "%view.gitstudio.commit.name%",
           "type": "webview",
           "initialSize": 7,
           "visibility": "visible"
         },
         {
           "id": "gitstudio.commits",
-          "name": "Commits",
+          "name": "%view.gitstudio.commits.name%",
           "type": "webview",
           "initialSize": 3,
           "visibility": "visible"
         },
         {
           "id": "gitstudio.worktrees",
-          "name": "Worktrees",
+          "name": "%view.gitstudio.worktrees.name%",
           "type": "webview",
           "initialSize": 1,
           "visibility": "collapsed"
         },
         {
           "id": "gitstudio.pullRequests",
-          "name": "Pull Requests",
+          "name": "%view.gitstudio.pullRequests.name%",
           "type": "webview",
           "initialSize": 1,
           "visibility": "collapsed"
@@ -142,7 +142,7 @@
       "gitstudioPanel": [
         {
           "id": "gitstudio.commitPanel",
-          "name": "Commit Graph",
+          "name": "%view.gitstudio.commitPanel.name%",
           "type": "webview",
           "contextualTitle": "GitStudio Commit Graph"
         }
@@ -151,7 +151,7 @@
     "customEditors": [
       {
         "viewType": "gitstudio.mergeEditor",
-        "displayName": "GitStudio 3-Pane Merge",
+        "displayName": "%customEditor.gitstudio.mergeEditor.displayName%",
         "selector": [
           {
             "filenamePattern": "*"
@@ -161,7 +161,7 @@
       },
       {
         "viewType": "gitstudio.rebaseTodoEditor",
-        "displayName": "GitStudio Interactive Rebase",
+        "displayName": "%customEditor.gitstudio.rebaseTodoEditor.displayName%",
         "selector": [
           {
             "filenamePattern": "**/git-rebase-todo"
@@ -173,792 +173,792 @@
     "commands": [
       {
         "command": "gitstudio.debug.showProcessAudit",
-        "title": "Show Process Audit",
+        "title": "%command.gitstudio.debug.showProcessAudit.title%",
         "category": "GitStudio"
       },
       {
         "command": "gitstudio.showWelcome",
-        "title": "Welcome",
+        "title": "%command.gitstudio.showWelcome.title%",
         "category": "GitStudio",
         "icon": "$(home)"
       },
       {
         "command": "gitstudio.openWalkthrough",
-        "title": "Get Started",
+        "title": "%command.gitstudio.openWalkthrough.title%",
         "category": "GitStudio",
         "icon": "$(rocket)"
       },
       {
         "command": "gitstudio.support",
-        "title": "Support GitStudio…",
+        "title": "%command.gitstudio.support.title%",
         "category": "GitStudio",
         "icon": "$(heart)"
       },
       {
         "command": "gitstudio.refreshCommits",
-        "title": "Refresh Commits",
+        "title": "%command.gitstudio.refreshCommits.title%",
         "category": "GitStudio",
         "icon": "$(refresh)"
       },
       {
         "command": "gitstudio.refreshBranches",
-        "title": "Refresh Branches",
+        "title": "%command.gitstudio.refreshBranches.title%",
         "category": "GitStudio",
         "icon": "$(refresh)"
       },
       {
         "command": "gitstudio.copyCommitSha",
-        "title": "Copy Commit SHA",
+        "title": "%command.gitstudio.copyCommitSha.title%",
         "category": "GitStudio",
         "icon": "$(copy)"
       },
       {
         "command": "gitstudio.toggleFileBlame",
-        "title": "Annotate with Git Blame",
+        "title": "%command.gitstudio.toggleFileBlame.title%",
         "category": "GitStudio",
         "icon": "$(eye)",
         "toggled": "gitstudio.blameAnnotated"
       },
       {
         "command": "gitstudio.blame.showLineActions",
-        "title": "Line Blame Actions",
+        "title": "%command.gitstudio.blame.showLineActions.title%",
         "category": "GitStudio",
         "icon": "$(eye)"
       },
       {
         "command": "gitstudio.showCommitGraph",
-        "title": "Show Commit Graph",
+        "title": "%command.gitstudio.showCommitGraph.title%",
         "category": "GitStudio",
         "icon": "$(git-commit)"
       },
       {
         "command": "gitstudio.showLineHistory",
-        "title": "Show Line History",
+        "title": "%command.gitstudio.showLineHistory.title%",
         "category": "GitStudio",
         "icon": "$(history)"
       },
       {
         "command": "gitstudio.openChanges",
-        "title": "Open Changes (vs HEAD)",
+        "title": "%command.gitstudio.openChanges.title%",
         "category": "GitStudio",
         "icon": "$(git-compare)"
       },
       {
         "command": "gitstudio.openFileAtRevision",
-        "title": "Open File at Revision\u2026",
+        "title": "%command.gitstudio.openFileAtRevision.title%",
         "category": "GitStudio",
         "icon": "$(history)"
       },
       {
         "command": "gitstudio.revisionNavigateBack",
-        "title": "Revision: Step to Older",
+        "title": "%command.gitstudio.revisionNavigateBack.title%",
         "category": "GitStudio",
         "icon": "$(arrow-left)"
       },
       {
         "command": "gitstudio.revisionNavigateForward",
-        "title": "Revision: Step to Newer",
+        "title": "%command.gitstudio.revisionNavigateForward.title%",
         "category": "GitStudio",
         "icon": "$(arrow-right)"
       },
       {
         "command": "gitstudio.showReflog",
-        "title": "Show Reflog (Time Machine)",
+        "title": "%command.gitstudio.showReflog.title%",
         "category": "GitStudio",
         "icon": "$(history)"
       },
       {
         "command": "gitstudio.switchRepository",
-        "title": "Switch Repository\u2026",
+        "title": "%command.gitstudio.switchRepository.title%",
         "category": "GitStudio",
         "icon": "$(repo)"
       },
       {
         "command": "gitstudio.branches.open",
-        "title": "Branches\u2026",
+        "title": "%command.gitstudio.branches.open.title%",
         "category": "GitStudio",
         "icon": "$(git-branch)"
       },
       {
         "command": "gitstudio.resolveInMergeEditor",
-        "title": "Resolve in Merge Editor",
+        "title": "%command.gitstudio.resolveInMergeEditor.title%",
         "category": "GitStudio",
         "icon": "$(git-merge)"
       },
       {
         "command": "gitstudio.compare",
-        "title": "Compare File\u2026",
+        "title": "%command.gitstudio.compare.title%",
         "category": "GitStudio",
         "icon": "$(git-compare)"
       },
       {
         "command": "gitstudio.showConflicts",
-        "title": "Resolve Conflicts\u2026",
+        "title": "%command.gitstudio.showConflicts.title%",
         "category": "GitStudio",
         "icon": "$(warning)"
       },
       {
         "command": "gitstudio.openDiff",
-        "title": "Open in Embedded Diff",
+        "title": "%command.gitstudio.openDiff.title%",
         "category": "GitStudio",
         "icon": "$(diff)"
       },
       {
         "command": "gitstudio.merge.openDemo",
-        "title": "Open Sample Merge",
+        "title": "%command.gitstudio.merge.openDemo.title%",
         "category": "GitStudio"
       },
       {
         "command": "gitstudio.merge.openDemoDiff",
-        "title": "Open Sample Diff",
+        "title": "%command.gitstudio.merge.openDemoDiff.title%",
         "category": "GitStudio"
       },
       {
         "command": "gitstudio.operation.continue",
-        "title": "Continue Operation",
+        "title": "%command.gitstudio.operation.continue.title%",
         "category": "GitStudio",
         "icon": "$(debug-continue)"
       },
       {
         "command": "gitstudio.operation.skip",
-        "title": "Skip This Commit",
+        "title": "%command.gitstudio.operation.skip.title%",
         "category": "GitStudio",
         "icon": "$(debug-step-over)"
       },
       {
         "command": "gitstudio.operation.abort",
-        "title": "Abort Operation",
+        "title": "%command.gitstudio.operation.abort.title%",
         "category": "GitStudio",
         "icon": "$(stop)"
       },
       {
         "command": "gitstudio.merge.restoreBuiltInMergeEditor",
-        "title": "Restore VS Code's Merge Editor",
+        "title": "%command.gitstudio.merge.restoreBuiltInMergeEditor.title%",
         "category": "GitStudio",
         "icon": "$(discard)"
       },
       {
         "command": "gitstudio.stageSelectedLines",
-        "title": "Stage Selected Lines",
+        "title": "%command.gitstudio.stageSelectedLines.title%",
         "category": "GitStudio",
         "icon": "$(add)"
       },
       {
         "command": "gitstudio.unstageSelectedLines",
-        "title": "Unstage Selected Lines",
+        "title": "%command.gitstudio.unstageSelectedLines.title%",
         "category": "GitStudio",
         "icon": "$(remove)"
       },
       {
         "command": "gitstudio.stageHunk",
-        "title": "Stage Hunk",
+        "title": "%command.gitstudio.stageHunk.title%",
         "category": "GitStudio",
         "icon": "$(add)"
       },
       {
         "command": "gitstudio.unstageHunk",
-        "title": "Unstage Hunk",
+        "title": "%command.gitstudio.unstageHunk.title%",
         "category": "GitStudio",
         "icon": "$(remove)"
       },
       {
         "command": "gitstudio.startInteractiveRebase",
-        "title": "Start Interactive Rebase\u2026",
+        "title": "%command.gitstudio.startInteractiveRebase.title%",
         "category": "GitStudio",
         "icon": "$(git-merge)"
       },
       {
         "command": "gitstudio.abortRebase",
-        "title": "Abort Rebase",
+        "title": "%command.gitstudio.abortRebase.title%",
         "category": "GitStudio",
         "icon": "$(stop)"
       },
       {
         "command": "gitstudio.undo",
-        "title": "Undo Last Git Operation",
+        "title": "%command.gitstudio.undo.title%",
         "category": "GitStudio",
         "icon": "$(discard)"
       },
       {
         "command": "gitstudio.showUndoHistory",
-        "title": "Show Undo History",
+        "title": "%command.gitstudio.showUndoHistory.title%",
         "category": "GitStudio",
         "icon": "$(history)"
       },
       {
         "command": "gitstudio.resetToCommit",
-        "title": "Reset Current Branch to Here\u2026",
+        "title": "%command.gitstudio.resetToCommit.title%",
         "category": "GitStudio",
         "icon": "$(discard)"
       },
       {
         "command": "gitstudio.stashes.refresh",
-        "title": "Refresh Stashes",
+        "title": "%command.gitstudio.stashes.refresh.title%",
         "category": "GitStudio",
         "icon": "$(refresh)"
       },
       {
         "command": "gitstudio.stash.save",
-        "title": "Stash Changes\u2026",
+        "title": "%command.gitstudio.stash.save.title%",
         "category": "GitStudio",
         "icon": "$(add)"
       },
       {
         "command": "gitstudio.stash.apply",
-        "title": "Apply Stash\u2026",
+        "title": "%command.gitstudio.stash.apply.title%",
         "category": "GitStudio",
         "icon": "$(git-stash-apply)"
       },
       {
         "command": "gitstudio.stash.pop",
-        "title": "Pop Stash\u2026",
+        "title": "%command.gitstudio.stash.pop.title%",
         "category": "GitStudio",
         "icon": "$(git-stash-pop)"
       },
       {
         "command": "gitstudio.stash.drop",
-        "title": "Drop Stash\u2026",
+        "title": "%command.gitstudio.stash.drop.title%",
         "category": "GitStudio",
         "icon": "$(trash)"
       },
       {
         "command": "gitstudio.stash.branch",
-        "title": "Create Branch from Stash\u2026",
+        "title": "%command.gitstudio.stash.branch.title%",
         "category": "GitStudio",
         "icon": "$(git-branch)"
       },
       {
         "command": "gitstudio.worktrees.refresh",
-        "title": "Refresh Worktrees",
+        "title": "%command.gitstudio.worktrees.refresh.title%",
         "category": "GitStudio",
         "icon": "$(refresh)"
       },
       {
         "command": "gitstudio.worktree.open",
-        "title": "Open Worktree\u2026",
+        "title": "%command.gitstudio.worktree.open.title%",
         "category": "GitStudio",
         "icon": "$(empty-window)"
       },
       {
         "command": "gitstudio.worktree.openInNewWindow",
-        "title": "Open Worktree in New Window\u2026",
+        "title": "%command.gitstudio.worktree.openInNewWindow.title%",
         "category": "GitStudio",
         "icon": "$(empty-window)"
       },
       {
         "command": "gitstudio.worktree.openHere",
-        "title": "Open Worktree in This Window\u2026",
+        "title": "%command.gitstudio.worktree.openHere.title%",
         "category": "GitStudio",
         "icon": "$(folder-opened)"
       },
       {
         "command": "gitstudio.worktree.add",
-        "title": "New Worktree\u2026",
+        "title": "%command.gitstudio.worktree.add.title%",
         "category": "GitStudio",
         "icon": "$(add)"
       },
       {
         "command": "gitstudio.worktree.remove",
-        "title": "Remove Worktree\u2026",
+        "title": "%command.gitstudio.worktree.remove.title%",
         "category": "GitStudio",
         "icon": "$(trash)"
       },
       {
         "command": "gitstudio.worktree.forget",
-        "title": "Forget Worktree\u2026",
+        "title": "%command.gitstudio.worktree.forget.title%",
         "category": "GitStudio",
         "icon": "$(close)"
       },
       {
         "command": "gitstudio.worktree.lock",
-        "title": "Lock Worktree\u2026",
+        "title": "%command.gitstudio.worktree.lock.title%",
         "category": "GitStudio",
         "icon": "$(lock)"
       },
       {
         "command": "gitstudio.worktree.unlock",
-        "title": "Unlock Worktree\u2026",
+        "title": "%command.gitstudio.worktree.unlock.title%",
         "category": "GitStudio",
         "icon": "$(unlock)"
       },
       {
         "command": "gitstudio.worktree.prune",
-        "title": "Prune Missing Worktrees\u2026",
+        "title": "%command.gitstudio.worktree.prune.title%",
         "category": "GitStudio",
         "icon": "$(trash)"
       },
       {
         "command": "gitstudio.compareRefs",
-        "title": "Compare Branches/Tags\u2026",
+        "title": "%command.gitstudio.compareRefs.title%",
         "category": "GitStudio",
         "icon": "$(git-compare)"
       },
       {
         "command": "gitstudio.branch.checkout",
-        "title": "Checkout",
+        "title": "%command.gitstudio.branch.checkout.title%",
         "category": "GitStudio",
         "icon": "$(check)"
       },
       {
         "command": "gitstudio.branch.merge",
-        "title": "Merge into Current",
+        "title": "%command.gitstudio.branch.merge.title%",
         "category": "GitStudio",
         "icon": "$(git-merge)"
       },
       {
         "command": "gitstudio.branch.rebase",
-        "title": "Rebase Current onto This",
+        "title": "%command.gitstudio.branch.rebase.title%",
         "category": "GitStudio",
         "icon": "$(git-merge)"
       },
       {
         "command": "gitstudio.branch.rename",
-        "title": "Rename Branch\u2026",
+        "title": "%command.gitstudio.branch.rename.title%",
         "category": "GitStudio",
         "icon": "$(edit)"
       },
       {
         "command": "gitstudio.branch.delete",
-        "title": "Delete Branch",
+        "title": "%command.gitstudio.branch.delete.title%",
         "category": "GitStudio",
         "icon": "$(trash)"
       },
       {
         "command": "gitstudio.branch.push",
-        "title": "Push / Publish Branch",
+        "title": "%command.gitstudio.branch.push.title%",
         "category": "GitStudio",
         "icon": "$(arrow-up)"
       },
       {
         "command": "gitstudio.branch.setUpstream",
-        "title": "Set Upstream\u2026",
+        "title": "%command.gitstudio.branch.setUpstream.title%",
         "category": "GitStudio",
         "icon": "$(cloud)"
       },
       {
         "command": "gitstudio.branch.resetToUpstream",
-        "title": "Reset Branch to Its Upstream\u2026",
+        "title": "%command.gitstudio.branch.resetToUpstream.title%",
         "category": "GitStudio",
         "icon": "$(discard)"
       },
       {
         "command": "gitstudio.branch.new",
-        "title": "New Branch from Here\u2026",
+        "title": "%command.gitstudio.branch.new.title%",
         "category": "GitStudio",
         "icon": "$(add)"
       },
       {
         "command": "gitstudio.branch.createWorktree",
-        "title": "New Worktree from This Branch\u2026",
+        "title": "%command.gitstudio.branch.createWorktree.title%",
         "category": "GitStudio",
         "icon": "$(repo-clone)"
       },
       {
         "command": "gitstudio.branch.compare",
-        "title": "Compare with Current",
+        "title": "%command.gitstudio.branch.compare.title%",
         "category": "GitStudio",
         "icon": "$(git-compare)"
       },
       {
         "command": "gitstudio.remoteBranch.checkout",
-        "title": "Checkout (Create Local Tracking)\u2026",
+        "title": "%command.gitstudio.remoteBranch.checkout.title%",
         "category": "GitStudio",
         "icon": "$(check)"
       },
       {
         "command": "gitstudio.remoteBranch.delete",
-        "title": "Delete Remote Branch",
+        "title": "%command.gitstudio.remoteBranch.delete.title%",
         "category": "GitStudio",
         "icon": "$(trash)"
       },
       {
         "command": "gitstudio.tag.checkout",
-        "title": "Checkout Tag",
+        "title": "%command.gitstudio.tag.checkout.title%",
         "category": "GitStudio",
         "icon": "$(check)"
       },
       {
         "command": "gitstudio.tag.delete",
-        "title": "Delete Tag",
+        "title": "%command.gitstudio.tag.delete.title%",
         "category": "GitStudio",
         "icon": "$(trash)"
       },
       {
         "command": "gitstudio.tag.push",
-        "title": "Push Tag\u2026",
+        "title": "%command.gitstudio.tag.push.title%",
         "category": "GitStudio",
         "icon": "$(arrow-up)"
       },
       {
         "command": "gitstudio.fetch",
-        "title": "Fetch",
+        "title": "%command.gitstudio.fetch.title%",
         "category": "GitStudio",
         "icon": "$(sync)"
       },
       {
         "command": "gitstudio.addRemote",
-        "title": "Add Remote\u2026",
+        "title": "%command.gitstudio.addRemote.title%",
         "category": "GitStudio",
         "icon": "$(add)"
       },
       {
         "command": "gitstudio.manageRemotes",
-        "title": "Manage Remotes\u2026",
+        "title": "%command.gitstudio.manageRemotes.title%",
         "category": "GitStudio",
         "icon": "$(cloud)"
       },
       {
         "command": "gitstudio.ai.setApiKey",
-        "title": "Set Anthropic API Key\u2026",
+        "title": "%command.gitstudio.ai.setApiKey.title%",
         "category": "GitStudio",
         "icon": "$(key)"
       },
       {
         "command": "gitstudio.ai.clearApiKey",
-        "title": "Clear Anthropic API Key",
+        "title": "%command.gitstudio.ai.clearApiKey.title%",
         "category": "GitStudio",
         "icon": "$(trash)"
       },
       {
         "command": "gitstudio.ai.setOpenAIKey",
-        "title": "Set OpenAI API Key\u2026",
+        "title": "%command.gitstudio.ai.setOpenAIKey.title%",
         "category": "GitStudio",
         "icon": "$(key)"
       },
       {
         "command": "gitstudio.ai.clearOpenAIKey",
-        "title": "Clear OpenAI API Key",
+        "title": "%command.gitstudio.ai.clearOpenAIKey.title%",
         "category": "GitStudio",
         "icon": "$(trash)"
       },
       {
         "command": "gitstudio.ai.selectModel",
-        "title": "Select AI Model\u2026",
+        "title": "%command.gitstudio.ai.selectModel.title%",
         "category": "GitStudio",
         "icon": "$(sparkle)"
       },
       {
         "command": "gitstudio.ai.generateCommitMessage",
-        "title": "Generate Commit Message (AI)",
+        "title": "%command.gitstudio.ai.generateCommitMessage.title%",
         "category": "GitStudio",
         "icon": "$(sparkle)"
       },
       {
         "command": "gitstudio.ai.explainDiff",
-        "title": "Explain Diff (AI)",
+        "title": "%command.gitstudio.ai.explainDiff.title%",
         "category": "GitStudio",
         "icon": "$(sparkle)"
       },
       {
         "command": "gitstudio.ai.summarizeChanges",
-        "title": "Summarize Changes (AI)",
+        "title": "%command.gitstudio.ai.summarizeChanges.title%",
         "category": "GitStudio",
         "icon": "$(sparkle)"
       },
       {
         "command": "gitstudio.ai.reviewChanges",
-        "title": "Review Changes (AI)",
+        "title": "%command.gitstudio.ai.reviewChanges.title%",
         "category": "GitStudio",
         "icon": "$(sparkle)"
       },
       {
         "command": "gitstudio.ai.connect",
-        "title": "Connect AI Provider",
+        "title": "%command.gitstudio.ai.connect.title%",
         "category": "GitStudio",
         "icon": "$(plug)"
       },
       {
         "command": "gitstudio.ai.disable",
-        "title": "Disable AI Features",
+        "title": "%command.gitstudio.ai.disable.title%",
         "category": "GitStudio"
       },
       {
         "command": "gitstudio.pr.create",
-        "title": "New Pull Request",
+        "title": "%command.gitstudio.pr.create.title%",
         "category": "GitStudio",
         "icon": "$(git-pull-request)"
       },
       {
         "command": "gitstudio.pr.refresh",
-        "title": "Refresh Pull Requests",
+        "title": "%command.gitstudio.pr.refresh.title%",
         "category": "GitStudio",
         "icon": "$(refresh)"
       },
       {
         "command": "gitstudio.pr.signIn",
-        "title": "Sign in to GitHub",
+        "title": "%command.gitstudio.pr.signIn.title%",
         "category": "GitStudio",
         "icon": "$(github)"
       },
       {
         "command": "gitstudio.pr.openDescription",
-        "title": "Open Pull Request",
+        "title": "%command.gitstudio.pr.openDescription.title%",
         "category": "GitStudio",
         "icon": "$(git-pull-request)"
       },
       {
         "command": "gitstudio.pr.checkout",
-        "title": "Checkout Pull Request",
+        "title": "%command.gitstudio.pr.checkout.title%",
         "category": "GitStudio",
         "icon": "$(git-branch)"
       },
       {
         "command": "gitstudio.pr.startReview",
-        "title": "Review Pull Request",
+        "title": "%command.gitstudio.pr.startReview.title%",
         "category": "GitStudio",
         "icon": "$(comment-discussion)"
       },
       {
         "command": "gitstudio.pr.submitReview",
-        "title": "Submit Review",
+        "title": "%command.gitstudio.pr.submitReview.title%",
         "category": "GitStudio",
         "icon": "$(check-all)"
       },
       {
         "command": "gitstudio.pr.cancelReview",
-        "title": "Discard Pending Review",
+        "title": "%command.gitstudio.pr.cancelReview.title%",
         "category": "GitStudio",
         "icon": "$(trash)"
       },
       {
         "command": "gitstudio.pr.replyThread",
-        "title": "Reply",
+        "title": "%command.gitstudio.pr.replyThread.title%",
         "category": "GitStudio",
         "icon": "$(reply)"
       },
       {
         "command": "gitstudio.pr.resolveThread",
-        "title": "Resolve Conversation",
+        "title": "%command.gitstudio.pr.resolveThread.title%",
         "category": "GitStudio",
         "icon": "$(check)"
       },
       {
         "command": "gitstudio.pr.unresolveThread",
-        "title": "Unresolve Conversation",
+        "title": "%command.gitstudio.pr.unresolveThread.title%",
         "category": "GitStudio",
         "icon": "$(issue-reopened)"
       },
       {
         "command": "gitstudio.pr.addReviewComment",
-        "title": "Add to Review",
+        "title": "%command.gitstudio.pr.addReviewComment.title%",
         "category": "GitStudio",
         "icon": "$(add)"
       },
       {
         "command": "gitstudio.pr.addSingleComment",
-        "title": "Add Single Comment",
+        "title": "%command.gitstudio.pr.addSingleComment.title%",
         "category": "GitStudio",
         "icon": "$(comment)"
       },
       {
         "command": "gitstudio.pr.deleteReviewComment",
-        "title": "Delete Comment",
+        "title": "%command.gitstudio.pr.deleteReviewComment.title%",
         "category": "GitStudio",
         "icon": "$(trash)"
       },
       {
         "command": "gitstudio.pr.merge",
-        "title": "Merge Pull Request…",
+        "title": "%command.gitstudio.pr.merge.title%",
         "category": "GitStudio",
         "icon": "$(git-merge)"
       },
       {
         "command": "gitstudio.pr.openOnGitHub",
-        "title": "Open on GitHub",
+        "title": "%command.gitstudio.pr.openOnGitHub.title%",
         "category": "GitStudio",
         "icon": "$(link-external)"
       },
       {
         "command": "gitstudio.pr.copyUrl",
-        "title": "Copy Pull Request Link",
+        "title": "%command.gitstudio.pr.copyUrl.title%",
         "category": "GitStudio",
         "icon": "$(copy)"
       },
       {
         "command": "gitstudio.blame.field.revision.on",
-        "title": "\u2713 Revision",
+        "title": "%command.gitstudio.blame.field.revision.on.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.field.revision.off",
-        "title": "Revision",
+        "title": "%command.gitstudio.blame.field.revision.off.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.field.date.on",
-        "title": "\u2713 Date",
+        "title": "%command.gitstudio.blame.field.date.on.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.field.date.off",
-        "title": "Date",
+        "title": "%command.gitstudio.blame.field.date.off.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.field.author.on",
-        "title": "\u2713 Author",
+        "title": "%command.gitstudio.blame.field.author.on.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.field.author.off",
-        "title": "Author",
+        "title": "%command.gitstudio.blame.field.author.off.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.field.commitNumber.on",
-        "title": "\u2713 Commit number",
+        "title": "%command.gitstudio.blame.field.commitNumber.on.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.field.commitNumber.off",
-        "title": "Commit number",
+        "title": "%command.gitstudio.blame.field.commitNumber.off.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.colors.author.on",
-        "title": "\u2713 Author",
+        "title": "%command.gitstudio.blame.colors.author.on.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.colors.author.off",
-        "title": "Author",
+        "title": "%command.gitstudio.blame.colors.author.off.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.colors.order.on",
-        "title": "\u2713 Order",
+        "title": "%command.gitstudio.blame.colors.order.on.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.colors.order.off",
-        "title": "Order",
+        "title": "%command.gitstudio.blame.colors.order.off.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.colors.hide.on",
-        "title": "\u2713 Hide",
+        "title": "%command.gitstudio.blame.colors.hide.on.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.colors.hide.off",
-        "title": "Hide",
+        "title": "%command.gitstudio.blame.colors.hide.off.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.names.initials.on",
-        "title": "\u2713 Initials",
+        "title": "%command.gitstudio.blame.names.initials.on.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.names.initials.off",
-        "title": "Initials",
+        "title": "%command.gitstudio.blame.names.initials.off.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.names.lastName.on",
-        "title": "\u2713 Last Name",
+        "title": "%command.gitstudio.blame.names.lastName.on.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.names.lastName.off",
-        "title": "Last Name",
+        "title": "%command.gitstudio.blame.names.lastName.off.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.names.firstName.on",
-        "title": "\u2713 First Name",
+        "title": "%command.gitstudio.blame.names.firstName.on.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.names.firstName.off",
-        "title": "First Name",
+        "title": "%command.gitstudio.blame.names.firstName.off.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.names.fullName.on",
-        "title": "\u2713 Full Name",
+        "title": "%command.gitstudio.blame.names.fullName.on.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.names.fullName.off",
-        "title": "Full Name",
+        "title": "%command.gitstudio.blame.names.fullName.off.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.names.email.on",
-        "title": "\u2713 Email",
+        "title": "%command.gitstudio.blame.names.email.on.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.names.email.off",
-        "title": "Email",
+        "title": "%command.gitstudio.blame.names.email.off.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.hover.on",
-        "title": "\u2713 Show Diff On Hover",
+        "title": "%command.gitstudio.blame.hover.on.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.hover.off",
-        "title": "Show Diff On Hover",
+        "title": "%command.gitstudio.blame.hover.off.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.revealCommitInGraph",
-        "title": "Show Commit in Graph",
+        "title": "%command.gitstudio.revealCommitInGraph.title%",
         "category": "GitStudio"
       },
       {
         "command": "gitstudio.blame.copyRevision",
-        "title": "Copy Revision Number",
+        "title": "%command.gitstudio.blame.copyRevision.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.showDiff",
-        "title": "Show Diff",
+        "title": "%command.gitstudio.blame.showDiff.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.showCommit",
-        "title": "Show Commit",
+        "title": "%command.gitstudio.blame.showCommit.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.openPreviousRevision",
-        "title": "Open Previous Revision",
+        "title": "%command.gitstudio.blame.openPreviousRevision.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.viewInBrowser",
-        "title": "View in Browser",
+        "title": "%command.gitstudio.blame.viewInBrowser.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.blame.closeAnnotations",
-        "title": "Close Annotations",
+        "title": "%command.gitstudio.blame.closeAnnotations.title%",
         "category": "GitStudio Blame"
       },
       {
         "command": "gitstudio.showCommitPanel",
-        "title": "Show Commit Graph",
+        "title": "%command.gitstudio.showCommitPanel.title%",
         "category": "GitStudio",
         "icon": "$(git-commit)"
       },
       {
         "command": "gitstudio.stageWithTicks",
-        "title": "Stage Changes with Ticks",
+        "title": "%command.gitstudio.stageWithTicks.title%",
         "category": "GitStudio",
         "icon": "$(checklist)"
       },
       {
         "command": "gitstudio.toggleStageAtLine",
-        "title": "Stage or Unstage the Change at This Line",
+        "title": "%command.gitstudio.toggleStageAtLine.title%",
         "category": "GitStudio"
       },
       {
         "command": "gitstudio.openTerminal",
-        "title": "Open Terminal at Repository Root",
+        "title": "%command.gitstudio.openTerminal.title%",
         "category": "GitStudio",
         "icon": "$(terminal)"
       }
@@ -1015,25 +1015,25 @@
     "configuration": [
       {
         "id": "gitstudio.general",
-        "title": "General",
+        "title": "%config.gitstudio.general.title%",
         "order": 1,
         "properties": {
           "gitstudio.statusBar.showGraph": {
             "type": "boolean",
             "default": true,
-            "description": "Show a status-bar button that opens the Commit Graph.",
+            "description": "%config.gitstudio.statusBar.showGraph.description%",
             "order": 1
           },
           "gitstudio.statusBar.showTerminal": {
             "type": "boolean",
             "default": true,
-            "description": "Show a status-bar button that opens a terminal already in the active repository's root \u2014 which is not necessarily the workspace root.",
+            "description": "%config.gitstudio.statusBar.showTerminal.description%",
             "order": 2
           },
           "gitstudio.worktrees.prefixWithProjectName": {
             "type": "boolean",
             "default": false,
-            "description": "No longer used: New Worktree now suggests the folder '<project>-<branch>' beside the main worktree, and you can edit it before it is created.",
+            "description": "%config.gitstudio.worktrees.prefixWithProjectName.description%",
             "markdownDeprecationMessage": "No longer used: **New Worktree** now suggests the folder `<project>-<branch>` beside the main worktree, and you can edit it before it is created.",
             "order": 3
           },
@@ -1045,25 +1045,25 @@
               "rebase"
             ],
             "enumDescriptions": [
-              "Create a merge commit.",
-              "Squash the PR's commits into one and merge.",
-              "Rebase the PR's commits onto the base and merge."
+              "%config.gitstudio.pr.defaultMergeMethod.enumDescriptions.0%",
+              "%config.gitstudio.pr.defaultMergeMethod.enumDescriptions.1%",
+              "%config.gitstudio.pr.defaultMergeMethod.enumDescriptions.2%"
             ],
             "default": "squash",
-            "description": "Default method offered first when merging a pull request.",
+            "description": "%config.gitstudio.pr.defaultMergeMethod.description%",
             "order": 4
           },
           "gitstudio.avatars.gravatar": {
             "type": "boolean",
             "default": true,
-            "markdownDescription": "Show commit authors' pictures in the Commit Graph, the Commits view and commit details. To find one, GitStudio sends an MD5 hash of each author's email address to Gravatar (`www.gravatar.com`, run by Automattic); for a GitHub noreply address (`…@users.noreply.github.com`) it asks GitHub (`avatars.githubusercontent.com`) for that account's picture instead. Turn this off to show every author as coloured initials and send neither request. While you are signed in to GitHub, the pictures GitHub itself returns (on pull requests, and for the authors of a GitHub repository's recent commits) still show. See [PRIVACY.md](https://github.com/GitStudioHQ/gitstudio/blob/main/apps/extension/PRIVACY.md).",
+            "markdownDescription": "%config.gitstudio.avatars.gravatar.markdownDescription%",
             "order": 5
           }
         }
       },
       {
         "id": "gitstudio.changes",
-        "title": "Changes & Staging",
+        "title": "%config.gitstudio.changes.title%",
         "order": 2,
         "properties": {
           "gitstudio.changes.stagingModel": {
@@ -1073,91 +1073,91 @@
               "checkboxes"
             ],
             "enumDescriptions": [
-              "Separate Staged and Unstaged groups \u2014 the clearest view of what is going into this commit.",
-              "One list with a tick per file, JetBrains-style. Ticking a file stages it, so both models are the same underlying Git state."
+              "%config.gitstudio.changes.stagingModel.enumDescriptions.0%",
+              "%config.gitstudio.changes.stagingModel.enumDescriptions.1%"
             ],
             "default": "split",
-            "description": "How the Changes view presents your work. Either way, committing with nothing ticked or staged offers to commit everything after asking.",
+            "description": "%config.gitstudio.changes.stagingModel.description%",
             "order": 1
           },
           "gitstudio.changes.autoRefresh": {
             "type": "boolean",
             "default": true,
-            "description": "Keep the Changes list up to date on its own \u2014 after you save a file, and when the window regains focus so edits made by other tools show up too. Turn this off on a very large repository to refresh only on demand.",
+            "description": "%config.gitstudio.changes.autoRefresh.description%",
             "order": 2
           },
           "gitstudio.changesBadge": {
             "type": "boolean",
             "default": true,
-            "description": "Show a count badge on the GitStudio activity-bar icon for changed files in the working tree (like the built-in Source Control badge). The tooltip also reports commits waiting to be pulled.",
+            "description": "%config.gitstudio.changesBadge.description%",
             "order": 3
           },
           "gitstudio.staging.showGutterState": {
             "type": "boolean",
             "default": true,
-            "description": "Show which changes are staged in the editor gutter. The glyph reports state only \u2014 VS Code's API does not allow an extension to make a gutter icon clickable. Toggle a change with the keybinding, by right-clicking its line number, or on GitStudio's own diff page.",
+            "description": "%config.gitstudio.staging.showGutterState.description%",
             "order": 4
           },
           "gitstudio.staging.clickGutterToggles": {
             "type": "boolean",
             "default": false,
-            "description": "Stage or unstage a change by clicking the gutter beside it. Off by default: VS Code gives decorations no click event, so this is inferred from a click landing at the start of a line \u2014 which is also how you place a caret. It never fires on a line without a change, and yields while blame annotations are shown.",
+            "description": "%config.gitstudio.staging.clickGutterToggles.description%",
             "order": 5
           }
         }
       },
       {
         "id": "gitstudio.commit",
-        "title": "Commit & Sync",
+        "title": "%config.gitstudio.commit.title%",
         "order": 3,
         "properties": {
           "gitstudio.commit.signoffByDefault": {
             "type": "boolean",
             "default": false,
-            "description": "Enable the Sign-off toggle by default in the GitStudio commit box (adds a Signed-off-by trailer).",
+            "description": "%config.gitstudio.commit.signoffByDefault.description%",
             "order": 1
           },
           "gitstudio.fetch.prune": {
             "type": "boolean",
             "default": true,
-            "description": "Pass --prune when fetching, so remote-tracking branches deleted on the remote disappear from the branch list instead of lingering as stale entries. Never touches local branches.",
+            "description": "%config.gitstudio.fetch.prune.description%",
             "order": 2
           }
         }
       },
       {
         "id": "gitstudio.blame",
-        "title": "Blame",
+        "title": "%config.gitstudio.blame.title%",
         "order": 4,
         "properties": {
           "gitstudio.blame.inlineEnabled": {
             "type": "boolean",
             "default": true,
-            "description": "Show inline blame for the current line (author, relative time, and summary) at the end of the line.",
+            "description": "%config.gitstudio.blame.inlineEnabled.description%",
             "order": 1
           },
           "gitstudio.blame.statusBarEnabled": {
             "type": "boolean",
             "default": true,
-            "description": "Show the current line's commit author and age in the status bar.",
+            "description": "%config.gitstudio.blame.statusBarEnabled.description%",
             "order": 2
           },
           "gitstudio.blame.showDiffOnHover": {
             "type": "boolean",
             "default": true,
-            "description": "Show the commit behind a line \u2014 message, author, date, and a copyable SHA \u2014 when hovering it.",
+            "description": "%config.gitstudio.blame.showDiffOnHover.description%",
             "order": 3
           },
           "gitstudio.blame.clickOpensCommit": {
             "type": "boolean",
             "default": true,
-            "description": "While blame annotations are shown, clicking one reveals that commit in the GitStudio Commit Graph, opened beside the code.",
+            "description": "%config.gitstudio.blame.clickOpensCommit.description%",
             "order": 4
           },
           "gitstudio.blame.heatmap": {
             "type": "boolean",
             "default": true,
-            "description": "Tint full-file blame annotations with a code-age heatmap (recent changes warmer, older changes cooler).",
+            "description": "%config.gitstudio.blame.heatmap.description%",
             "order": 5
           },
           "gitstudio.blame.gutter.fields": {
@@ -1181,7 +1181,7 @@
               "date",
               "author"
             ],
-            "description": "Which columns the blame annotation gutter shows. Configure them from the annotation right-click menu: Git Blame Annotations \u2192 Options.",
+            "description": "%config.gitstudio.blame.gutter.fields.description%",
             "order": 6
           },
           "gitstudio.blame.gutter.nameStyle": {
@@ -1194,14 +1194,14 @@
               "email"
             ],
             "enumDescriptions": [
-              "AA",
-              "Arnaudov",
-              "Anton",
-              "Anton Arnaudov",
-              "anton@example.com"
+              "%config.gitstudio.blame.gutter.nameStyle.enumDescriptions.0%",
+              "%config.gitstudio.blame.gutter.nameStyle.enumDescriptions.1%",
+              "%config.gitstudio.blame.gutter.nameStyle.enumDescriptions.2%",
+              "%config.gitstudio.blame.gutter.nameStyle.enumDescriptions.3%",
+              "%config.gitstudio.blame.gutter.nameStyle.enumDescriptions.4%"
             ],
             "default": "fullName",
-            "description": "How author names are written in the blame annotation gutter.",
+            "description": "%config.gitstudio.blame.gutter.nameStyle.description%",
             "order": 7
           },
           "gitstudio.blame.gutter.colors": {
@@ -1212,38 +1212,38 @@
               "hide"
             ],
             "enumDescriptions": [
-              "Tint by commit age \u2014 a code-age heatmap (recent warmer, older cooler).",
-              "Give every author their own stable tint.",
-              "No background tint."
+              "%config.gitstudio.blame.gutter.colors.enumDescriptions.0%",
+              "%config.gitstudio.blame.gutter.colors.enumDescriptions.1%",
+              "%config.gitstudio.blame.gutter.colors.enumDescriptions.2%"
             ],
             "default": "order",
-            "description": "Background tint for the blame annotation gutter.",
+            "description": "%config.gitstudio.blame.gutter.colors.description%",
             "order": 8
           }
         }
       },
       {
         "id": "gitstudio.merge",
-        "title": "Merge & Diff",
+        "title": "%config.gitstudio.merge.title%",
         "order": 5,
         "properties": {
           "gitstudio.merge.autoOpen": {
             "type": "boolean",
             "default": true,
-            "markdownDescription": "When a merge, rebase, cherry-pick, revert, git am or stash pop stops on conflicts: show the **Conflicts** dashboard, open a conflicted file in the GitStudio merge editor as soon as you switch to it, and take over VS Code's built-in merge editor tab. Off: nothing opens by itself \u2014 use **GitStudio: Resolve Conflicts\u2026**. (This used to open every conflicted file as its own tab.) If Merge Studio is also installed, it leaves this to GitStudio; turn this off to let Merge Studio open conflicts instead.",
+            "markdownDescription": "%config.gitstudio.merge.autoOpen.markdownDescription%",
             "order": 1
           },
           "gitstudio.merge.autoApplyNonConflicting": {
             "type": "boolean",
             "default": false,
-            "description": "Open the merge editor with every non-conflicting change already applied (JetBrains' \"apply non-conflicting changes\" on open). Off: they wait for you, one click each or all at once from the toolbar.",
+            "description": "%config.gitstudio.merge.autoApplyNonConflicting.description%",
             "order": 4
           }
         }
       },
       {
         "id": "gitstudio.ai",
-        "title": "AI",
+        "title": "%config.gitstudio.ai.title%",
         "order": 6,
         "properties": {
           "gitstudio.ai.provider": {
@@ -1257,15 +1257,15 @@
               "off"
             ],
             "enumDescriptions": [
-              "Prefer the zero-key VS Code Language Model (GitHub Copilot / Cursor) when available; otherwise Anthropic (if a key is set), then an OpenAI-compatible endpoint (if a model is configured).",
-              "Use the VS Code Language Model API \u2014 GitHub Copilot or Cursor's models, with no key. Pick a specific model via \u201cGitStudio: Select AI Model\u2026\u201d.",
-              "Use Anthropic directly (requires an API key, set with \u201cGitStudio: Connect AI Provider\u201d).",
-              "Use any OpenAI-compatible endpoint \u2014 OpenAI, Codex, OpenRouter, or a local server (Ollama / LM Studio). Configure the base URL and model below; a key is optional for local servers.",
-              "Use a local agent CLI \u2014 Claude Code, Codex or Gemini CLI \u2014 with its own login and no API key. Which one is gitstudio.ai.cliAgent; pick it with \u201cGitStudio: Connect AI Provider\u201d.",
-              "Disable all AI features."
+              "%config.gitstudio.ai.provider.enumDescriptions.0%",
+              "%config.gitstudio.ai.provider.enumDescriptions.1%",
+              "%config.gitstudio.ai.provider.enumDescriptions.2%",
+              "%config.gitstudio.ai.provider.enumDescriptions.3%",
+              "%config.gitstudio.ai.provider.enumDescriptions.4%",
+              "%config.gitstudio.ai.provider.enumDescriptions.5%"
             ],
             "default": "auto",
-            "markdownDescription": "Which provider GitStudio uses for its optional AI features. AI is off until a provider is available; it never gates or breaks Git operations. Use **GitStudio: Select AI Model\u2026** for a guided picker.",
+            "markdownDescription": "%config.gitstudio.ai.provider.markdownDescription%",
             "order": 1
           },
           "gitstudio.ai.commitStyle": {
@@ -1276,19 +1276,19 @@
               "descriptive"
             ],
             "enumDescriptions": [
-              "Conventional Commits (type(scope): summary), optional body.",
-              "A single concise subject line, no body.",
-              "Imperative subject plus a short explanatory body."
+              "%config.gitstudio.ai.commitStyle.enumDescriptions.0%",
+              "%config.gitstudio.ai.commitStyle.enumDescriptions.1%",
+              "%config.gitstudio.ai.commitStyle.enumDescriptions.2%"
             ],
             "default": "conventional",
-            "description": "How AI-generated commit messages are styled.",
+            "description": "%config.gitstudio.ai.commitStyle.description%",
             "order": 2
           },
           "gitstudio.ai.reviewPrompt": {
             "type": "string",
             "editPresentation": "multilineText",
             "default": "",
-            "markdownDescription": "Custom system prompt for **Review Changes (AI)**. Leave empty to use GitStudio's built-in code-review prompt. Set your own to steer the review (e.g. focus areas, house style, output format).",
+            "markdownDescription": "%config.gitstudio.ai.reviewPrompt.markdownDescription%",
             "order": 3
           },
           "gitstudio.ai.cliAgent": {
@@ -1300,86 +1300,86 @@
               "gemini-cli"
             ],
             "enumDescriptions": [
-              "No local agent.",
-              "Claude Code CLI (`claude`).",
-              "OpenAI Codex CLI (`codex`).",
-              "Gemini CLI (`gemini`)."
+              "%config.gitstudio.ai.cliAgent.enumDescriptions.0%",
+              "%config.gitstudio.ai.cliAgent.enumDescriptions.1%",
+              "%config.gitstudio.ai.cliAgent.enumDescriptions.2%",
+              "%config.gitstudio.ai.cliAgent.enumDescriptions.3%"
             ],
             "default": "",
-            "description": "The local agent CLI to drive (uses its own login, no API key). Set via the GitStudio \u00b7 AI panel; used when the provider is a local agent.",
+            "description": "%config.gitstudio.ai.cliAgent.description%",
             "order": 4
           },
           "gitstudio.ai.cliModel": {
             "type": "string",
             "default": "",
-            "description": "Optional model override passed to the local agent CLI (blank = the CLI's default).",
+            "description": "%config.gitstudio.ai.cliModel.description%",
             "order": 5
           },
           "gitstudio.ai.anthropicModelFast": {
             "type": "string",
             "default": "claude-haiku-4-5",
-            "description": "Anthropic model ID for fast/cheap tasks (commit messages).",
+            "description": "%config.gitstudio.ai.anthropicModelFast.description%",
             "order": 6
           },
           "gitstudio.ai.anthropicModelMid": {
             "type": "string",
             "default": "claude-sonnet-4-6",
-            "description": "Anthropic model ID for mid-tier tasks (explain diff, summaries).",
+            "description": "%config.gitstudio.ai.anthropicModelMid.description%",
             "order": 7
           },
           "gitstudio.ai.anthropicModelDeep": {
             "type": "string",
             "default": "claude-opus-4-8",
-            "description": "Anthropic model ID for opt-in deep reasoning.",
+            "description": "%config.gitstudio.ai.anthropicModelDeep.description%",
             "order": 8
           },
           "gitstudio.ai.openai.baseUrl": {
             "type": "string",
             "default": "https://api.openai.com/v1",
-            "markdownDescription": "Base URL for the OpenAI-compatible endpoint (`/chat/completions` is appended). Examples: `https://api.openai.com/v1` (OpenAI), `https://openrouter.ai/api/v1` (OpenRouter), `http://localhost:11434/v1` (Ollama), `http://localhost:1234/v1` (LM Studio).",
+            "markdownDescription": "%config.gitstudio.ai.openai.baseUrl.markdownDescription%",
             "order": 9
           },
           "gitstudio.ai.openai.modelFast": {
             "type": "string",
             "default": "gpt-4o-mini",
-            "description": "OpenAI-compatible model ID for fast/cheap tasks (commit messages). For a local server use its model name, e.g. llama3.1 or qwen2.5-coder.",
+            "description": "%config.gitstudio.ai.openai.modelFast.description%",
             "order": 10
           },
           "gitstudio.ai.openai.modelMid": {
             "type": "string",
             "default": "gpt-4o-mini",
-            "description": "OpenAI-compatible model ID for mid-tier tasks (explain diff, summaries).",
+            "description": "%config.gitstudio.ai.openai.modelMid.description%",
             "order": 11
           },
           "gitstudio.ai.openai.modelDeep": {
             "type": "string",
             "default": "gpt-4o",
-            "description": "OpenAI-compatible model ID for opt-in deep reasoning.",
+            "description": "%config.gitstudio.ai.openai.modelDeep.description%",
             "order": 12
           }
         }
       },
       {
         "id": "gitstudio.advanced",
-        "title": "Advanced",
+        "title": "%config.gitstudio.advanced.title%",
         "order": 7,
         "properties": {
           "gitstudio.errorReporting.enabled": {
             "type": "boolean",
             "default": true,
-            "markdownDescription": "Send **anonymous, scrubbed crash reports** when a GitStudio command fails, so we can find and fix bugs during the beta without waiting for someone to file a report. Only the shape of a failure is sent (error type/message/stack or the failed operation), tagged with a random install id and your OS/editor version, and it is scrubbed first: paths, file and branch names, commit subjects, emails, tokens and remote repository names are taken out wherever the scrubber recognises them (a remote's host name, such as github.com, is kept). See [PRIVACY.md](https://github.com/GitStudioHQ/gitstudio/blob/main/apps/extension/PRIVACY.md). Reports are also gated by VS Code's global `telemetry.telemetryLevel`: set that to `off` to disable regardless of this toggle. Turn this off to opt out entirely.",
+            "markdownDescription": "%config.gitstudio.errorReporting.enabled.markdownDescription%",
             "order": 1
           },
           "gitstudio.errorReporting.endpoint": {
             "type": "string",
             "default": "https://gitstudio.dev/api/errors",
-            "markdownDescription": "Collector URL that anonymous crash reports are POSTed to as a plain JSON body. Defaults to GitStudio's collector; point it at any endpoint you control, or **leave it blank to disable sending entirely**. If unreachable, reporting silently no-ops.",
+            "markdownDescription": "%config.gitstudio.errorReporting.endpoint.markdownDescription%",
             "order": 2
           },
           "gitstudio.debug.logChildProcesses": {
             "type": "boolean",
             "default": false,
-            "description": "Log every child process GitStudio launches - the binary, its full arguments, the working directory, and the environment variables GitStudio adds - to the GitStudio: Process Audit output channel. Turn this on only while reproducing a problem you want to report: it is how an OS-level prompt raised by a child process (a credential helper, a git hook, an editor binary) is traced back to the exact command that caused it. Secret-looking values are scrubbed.",
+            "description": "%config.gitstudio.debug.logChildProcesses.description%",
             "order": 3
           }
         }
@@ -1388,14 +1388,14 @@
     "walkthroughs": [
       {
         "id": "gitstudio.gettingStarted",
-        "title": "Get Started with GitStudio",
-        "description": "A free, JetBrains-grade Git suite \u2014 commit graph, blame, history, hunk staging, 3-pane merge, interactive rebase with Undo, and optional BYO-key AI. Take the tour.",
+        "title": "%walkthrough.gitstudio.gettingStarted.title%",
+        "description": "%walkthrough.gitstudio.gettingStarted.description%",
         "when": "true",
         "steps": [
           {
             "id": "gitstudio.walkthrough.graph",
-            "title": "Browse your history in the commit graph",
-            "description": "Your history as a commit graph: colored lanes for branches, chips for branches and tags, and who wrote each commit. It is in the **Commits** view, under Changes in the GitStudio sidebar, and in the **Commit Graph** panel beside the terminal. Right-click a commit to check it out, cherry-pick it, branch from it or reset to it; select two to compare them.\n[Show Commit Graph](command:gitstudio.showCommitGraph)",
+            "title": "%walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.graph.title%",
+            "description": "%walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.graph.description%",
             "media": {
               "image": {
                 "light": "media/walkthrough/graph-light.png",
@@ -1403,7 +1403,7 @@
                 "hc": "media/walkthrough/graph-hc-dark.png",
                 "hcLight": "media/walkthrough/graph-hc-light.png"
               },
-              "altText": "The Commit Graph: branch lanes, branch and tag chips, and the authors of the commits on main, a feature branch and a release branch"
+              "altText": "%walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.graph.altText%"
             },
             "completionEvents": [
               "onCommand:gitstudio.showCommitGraph"
@@ -1411,8 +1411,8 @@
           },
           {
             "id": "gitstudio.walkthrough.blame",
-            "title": "See who changed a line, and why",
-            "description": "Who last changed the line you are on, and when \u2014 at the end of the line and in the status bar. **Annotate with Git Blame** adds a column beside every line, tinted by age; click an annotation and its commit opens in the graph, with its message, its author and the files it changed.\n[Annotate with Git Blame](command:gitstudio.toggleFileBlame)\nShortcut: __Ctrl/Cmd+Alt+G B__ in any editor.",
+            "title": "%walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.blame.title%",
+            "description": "%walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.blame.description%",
             "media": {
               "image": {
                 "light": "media/walkthrough/blame-light.png",
@@ -1420,7 +1420,7 @@
                 "hc": "media/walkthrough/blame-hc-dark.png",
                 "hcLight": "media/walkthrough/blame-hc-light.png"
               },
-              "altText": "A commit opened from a blamed line: its author, message, the branches it is on and the file it changed, beside the graph"
+              "altText": "%walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.blame.altText%"
             },
             "completionEvents": [
               "onCommand:gitstudio.toggleFileBlame"
@@ -1428,8 +1428,8 @@
           },
           {
             "id": "gitstudio.walkthrough.stage",
-            "title": "Stage changes & commit",
-            "description": "Stage whole files, or tick single changes inside one, in the **Changes** view, then commit from its commit box (Amend, Sign-off, a different author, Commit & Push). With AI on, the sparkle button in the box drafts a message from what you staged. Your stashes are listed under your changes: open one to see every file it holds, and **Move to Changes** just the files you want back.\n[Open the Changes view](command:workbench.view.extension.gitstudio)\nIn the editor: select lines and press __Ctrl/Cmd+Alt+G S__ to stage the changes they touch.",
+            "title": "%walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.title%",
+            "description": "%walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.description%",
             "media": {
               "image": {
                 "light": "media/walkthrough/stage-light.png",
@@ -1437,7 +1437,7 @@
                 "hc": "media/walkthrough/stage-hc-dark.png",
                 "hcLight": "media/walkthrough/stage-hc-light.png"
               },
-              "altText": "The Changes view with ticks: one file's changes open, one of them ticked, and a commit message ready"
+              "altText": "%walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.altText%"
             },
             "completionEvents": [
               "onCommand:gitstudio.stageHunk",
@@ -1448,8 +1448,8 @@
           },
           {
             "id": "gitstudio.walkthrough.history",
-            "title": "Explore file & line history",
-            "description": "Every commit that changed the lines you select, newest first \u2014 pick one to see its diff. Step a whole file back and forth through its revisions, and find lost work in the reflog.\n[Show Line History](command:gitstudio.showLineHistory)\nShortcut: __Ctrl/Cmd+Alt+G H__ on the current line.",
+            "title": "%walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.history.title%",
+            "description": "%walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.history.description%",
             "media": {
               "image": {
                 "light": "media/walkthrough/history-light.png",
@@ -1457,7 +1457,7 @@
                 "hc": "media/walkthrough/history-hc-dark.png",
                 "hcLight": "media/walkthrough/history-hc-light.png"
               },
-              "altText": "Line History for two lines of a file: the three commits that changed them, with their authors and ages"
+              "altText": "%walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.history.altText%"
             },
             "completionEvents": [
               "onCommand:gitstudio.showLineHistory",
@@ -1466,8 +1466,8 @@
           },
           {
             "id": "gitstudio.walkthrough.merge",
-            "title": "Resolve conflicts in the 3-pane editor",
-            "description": "When a merge, rebase or cherry-pick stops on a conflict, GitStudio opens a three-pane editor \u2014 your side, the result and theirs \u2014 where an arrow takes a change into the result. Interactive rebase gets the same care.\n[Start Interactive Rebase\u2026](command:gitstudio.startInteractiveRebase)\nMade a mistake? __Undo Last Git Operation__ (Ctrl/Cmd+Alt+G Z) reverses it.",
+            "title": "%walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.merge.title%",
+            "description": "%walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.merge.description%",
             "media": {
               "image": {
                 "light": "media/walkthrough/merge-light.png",
@@ -1475,7 +1475,7 @@
                 "hc": "media/walkthrough/merge-hc-dark.png",
                 "hcLight": "media/walkthrough/merge-hc-light.png"
               },
-              "altText": "The three-pane merge editor stopped on a conflict: changes from main, the result, and changes from feature"
+              "altText": "%walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.merge.altText%"
             },
             "completionEvents": [
               "onCommand:gitstudio.startInteractiveRebase",
@@ -1484,8 +1484,8 @@
           },
           {
             "id": "gitstudio.walkthrough.connect",
-            "title": "Connect GitHub & set up AI (optional)",
-            "description": "Sign in once with VS Code's built-in GitHub account to list, check out, review, merge, and create pull requests in-editor. AI is optional: it uses Copilot's (or Cursor's) model when there is one, with nothing to set up; otherwise connect Anthropic, an OpenAI-compatible endpoint or a local agent CLI for commit messages, explain-this-diff, and summaries. It never gates a Git operation, and Disable AI Features turns it off.\n[Sign in to GitHub](command:gitstudio.pr.signIn)\n[Connect AI Provider](command:gitstudio.ai.connect)\nGitStudio is free and open source. [Support GitStudio…](command:gitstudio.support)",
+            "title": "%walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.connect.title%",
+            "description": "%walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.connect.description%",
             "media": {
               "image": {
                 "light": "media/walkthrough/connect-light.png",
@@ -1493,7 +1493,7 @@
                 "hc": "media/walkthrough/connect-hc-dark.png",
                 "hcLight": "media/walkthrough/connect-hc-light.png"
               },
-              "altText": "The AI settings: the editor's own AI connected and ready, and the other ways to connect a model"
+              "altText": "%walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.connect.altText%"
             },
             "completionEvents": [
               "onCommand:gitstudio.pr.signIn",
@@ -2446,23 +2446,23 @@
     "submenus": [
       {
         "id": "gitstudio.editorMenu",
-        "label": "GitStudio"
+        "label": "%submenu.gitstudio.editorMenu.label%"
       },
       {
         "id": "gitstudio.blame.annotationsMenu",
-        "label": "Git Blame Annotations"
+        "label": "%submenu.gitstudio.blame.annotationsMenu.label%"
       },
       {
         "id": "gitstudio.blame.colorsMenu",
-        "label": "Colors"
+        "label": "%submenu.gitstudio.blame.colorsMenu.label%"
       },
       {
         "id": "gitstudio.blame.namesMenu",
-        "label": "Names"
+        "label": "%submenu.gitstudio.blame.namesMenu.label%"
       },
       {
         "id": "gitstudio.blame.optionsMenu",
-        "label": "Options"
+        "label": "%submenu.gitstudio.blame.optionsMenu.label%"
       }
     ]
   },
@@ -2488,9 +2488,11 @@
     "@gitstudio/engine": "*",
     "@gitstudio/git-service": "*",
     "@gitstudio/host-bridge": "*",
+    "@gitstudio/l10n": "*",
     "@gitstudio/merge-vscode": "*",
     "@gitstudio/secret-store": "*",
-    "@gitstudio/webview-ui": "*"
+    "@gitstudio/webview-ui": "*",
+    "@vscode/l10n": "^0.0.18"
   },
   "pricing": "Free",
   "extensionKind": [
@@ -2499,8 +2501,9 @@
   "capabilities": {
     "virtualWorkspaces": {
       "supported": false,
-      "description": "GitStudio requires a local git repository on disk."
+      "description": "%capabilities.virtualWorkspaces.description%"
     }
   },
-  "preview": false
+  "preview": false,
+  "l10n": "./l10n"
 }

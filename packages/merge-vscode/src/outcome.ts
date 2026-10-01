@@ -11,6 +11,7 @@ import type {
 } from "@gitstudio/host-bridge/conflictsProtocol";
 import { skipEndedText } from "@gitstudio/engine/conflict/sides";
 import { abortConfirm, opNoun, skipConfirm } from "@gitstudio/webview-ui/conflicts/opText";
+import * as l10n from "@vscode/l10n";
 
 export type OperationVerb = "continue" | "skip" | "abort";
 
@@ -27,20 +28,20 @@ export interface OutcomeLine {
 export function operationNoun(kind: OperationKind): string {
   switch (kind) {
     case "merge":
-      return "Merge";
+      return l10n.t("Merge");
     case "rebase":
     case "rebase-merge-step":
-      return "Rebase";
+      return l10n.t("Rebase");
     case "cherry-pick":
-      return "Cherry-pick";
+      return l10n.t("Cherry-pick");
     case "revert":
-      return "Revert";
+      return l10n.t("Revert");
     case "am":
-      return "Applying patches";
+      return l10n.t("Applying patches");
     case "stash":
-      return "Applying the stash";
+      return l10n.t("Applying the stash");
     case "none":
-      return "The operation";
+      return l10n.t("The operation");
   }
 }
 
@@ -79,9 +80,9 @@ export function verbConfirm(
 
 /** Why Continue cannot run right now, or undefined when it can. */
 export function continueRefusal(view: OperationView): string | undefined {
-  if (view.kind === "none" || view.kind === "stash") return "Nothing is in progress.";
-  if (!view.verbs.continue) return `There is nothing to continue in the ${opNoun(view.kind)}.`;
-  if (!view.canContinue) return view.continueBlocked || `git can't continue the ${opNoun(view.kind)} yet.`;
+  if (view.kind === "none" || view.kind === "stash") return l10n.t("Nothing is in progress.");
+  if (!view.verbs.continue) return l10n.t("There is nothing to continue in the {0}.", opNoun(view.kind));
+  if (!view.canContinue) return view.continueBlocked || l10n.t("git can't continue the {0} yet.", opNoun(view.kind));
   return undefined;
 }
 
@@ -96,40 +97,40 @@ function doneText(
   if (verb === "skip") return `${skipEndedText(before)}.`;
   if (kind === "am") {
     return verb === "continue"
-      ? "All patches applied."
-      : "Patch series abandoned — the branch is back where it was before it started.";
+      ? l10n.t("All patches applied.")
+      : l10n.t("Patch series abandoned — the branch is back where it was before it started.");
   }
   if (kind === "stash") {
-    return "Stash apply cancelled — the files are back as they were, and the stash is still in your list.";
+    return l10n.t("Stash apply cancelled — the files are back as they were, and the stash is still in your list.");
   }
   if (kind === "none") {
-    return "The conflicted files are back to their last committed versions.";
+    return l10n.t("The conflicted files are back to their last committed versions.");
   }
   const noun = operationNoun(kind);
-  return verb === "abort" ? `${noun} cancelled — the repository is back where it was before.` : `${noun} complete.`;
+  return verb === "abort" ? l10n.t("{0} cancelled — the repository is back where it was before.", noun) : l10n.t("{0} complete.", noun);
 }
 
 function stoppedText(view: OperationView): string {
   if (view.pause) {
-    return `Paused: ${view.pause.detail}`;
+    return l10n.t("Paused: {0}", view.pause.detail);
   }
   if (view.step) {
-    return `Stopped at ${view.step.unit} ${view.step.n} of ${view.step.m} — it has conflicts to resolve.`;
+    return l10n.t("Stopped at {0} {1} of {2} — it has conflicts to resolve.", view.step.unit, view.step.n, view.step.m);
   }
-  return "Stopped again — there are conflicts to resolve.";
+  return l10n.t("Stopped again — there are conflicts to resolve.");
 }
 
 function refusedText(outcome: OperationOutcome, verb: OperationVerb): string {
   switch (outcome.refused) {
     case "blocked":
-      return outcome.view.continueBlocked || "Git can't continue yet.";
+      return outcome.view.continueBlocked || l10n.t("Git can't continue yet.");
     case "confirm-drop":
       return outcome.view.willDrop
-        ? `Continuing drops ${outcome.view.willDrop.sha.slice(0, 7)} ${outcome.view.willDrop.subject} — confirm to go ahead.`
-        : "Continuing would drop an emptied commit — confirm to go ahead.";
+        ? l10n.t("Continuing drops {0} {1} — confirm to go ahead.", outcome.view.willDrop.sha.slice(0, 7), outcome.view.willDrop.subject)
+        : l10n.t("Continuing would drop an emptied commit — confirm to go ahead.");
     case "not-allowed":
-      return verb === "skip" ? "There is nothing git can skip here." : "Nothing is in progress.";
+      return verb === "skip" ? l10n.t("There is nothing git can skip here.") : l10n.t("Nothing is in progress.");
     default:
-      return `Git refused to ${verb}.`;
+      return l10n.t("Git refused to {0}.", verb);
   }
 }

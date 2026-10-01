@@ -7,6 +7,8 @@
 // then drift from — this bundle hands it the same functions the Worktrees page
 // imports, as `window.GsChangeRows` (dist/webview/change-rows.js).
 
+import "@gitstudio/l10n/webview";
+
 import { installSolidAccent } from "../styles/solidAccent";
 import * as rows from "./changeRows";
 

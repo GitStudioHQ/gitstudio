@@ -1,3 +1,4 @@
+import * as l10n from "@vscode/l10n";
 /**
  * Checking out a remote branch — "origin/fix/1.0.1-quality" → local
  * "fix/1.0.1-quality" — without asking anything first.
@@ -81,8 +82,8 @@ export async function planRemoteCheckout(
       local,
       existing: true,
       args: ["checkout", local],
-      success: `Switched to ${local}`,
-      undoLabel: `Checkout ${local}`,
+      success: l10n.t("Switched to {0}", local),
+      undoLabel: l10n.t("Checkout {0}", local),
     };
   }
   return {
@@ -91,7 +92,7 @@ export async function planRemoteCheckout(
     // `--track` is explicit rather than implied, so the new branch gets its
     // upstream even where `branch.autoSetupMerge` has been turned off.
     args: ["checkout", "-b", local, "--track", trackRef ?? remoteRef],
-    success: `Checked out ${local} (tracking ${remoteRef})`,
-    undoLabel: `Checkout ${local}`,
+    success: l10n.t("Checked out {0} (tracking {1})", local, remoteRef),
+    undoLabel: l10n.t("Checkout {0}", local),
   };
 }

@@ -34,6 +34,7 @@ import { MergeEditorProvider, saveConflictedDocuments } from "./mergeEditorProvi
 import { continueRefusal, outcomeLine, verbConfirm, type OperationVerb } from "./outcome";
 import { statusItemLook, type MergePeerApi, type MergeProduct, type MergeRepo } from "./product";
 import { ConflictStatusItem } from "./statusItem";
+import * as l10n from "@vscode/l10n";
 
 export interface OperationVerbOptions {
   /** The repository to act on; default: the one with an operation in progress. */
@@ -319,8 +320,8 @@ export async function driveVerb(
     if (view.willDrop) {
       const w = view.willDrop;
       confirmDrop = await product.ask({
-        title: "Drop the emptied commit?",
-        message: `After your resolution, ${w.sha.slice(0, 7)} “${w.subject}” has no changes left, so git leaves it out of ${w.branch}.`,
+        title: l10n.t("Drop the emptied commit?"),
+        message: l10n.t("After your resolution, {0} “{1}” has no changes left, so git leaves it out of {2}.", w.sha.slice(0, 7), w.subject, w.branch),
         confirmLabel: `${view.verbs.continue} and drop it`,
         danger: true,
       });
@@ -362,7 +363,7 @@ export async function driveVerb(
   } else if (line.kind === "done") {
     void host.notify("info", line.text);
   } else if (line.kind === "stopped") {
-    const resolve = "Resolve Conflicts…";
+    const resolve = l10n.t("Resolve Conflicts…");
     void host.notify("warn", line.text, resolve).then((choice) => {
       if (choice === resolve) {
         void vscode.commands.executeCommand(product.commands.showConflicts);

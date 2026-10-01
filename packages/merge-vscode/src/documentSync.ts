@@ -30,6 +30,7 @@ import {
 } from "@gitstudio/engine/conflict/documentText";
 import { normalizeEol } from "@gitstudio/engine/lineDiff";
 import type { MergeInitPayload } from "@gitstudio/host-bridge/protocol";
+import * as l10n from "@vscode/l10n";
 
 /**
  * How the markers name the sides. The first section is git's stage 2 — Yours
@@ -38,10 +39,10 @@ import type { MergeInitPayload } from "@gitstudio/host-bridge/protocol";
  */
 export function markerLabelsFor(payload: Pick<MergeInitPayload, "op">): MarkerLabels {
   const op = payload.op;
-  if (!op) return { firstIsYours: true, first: "Yours", second: "Theirs" };
+  if (!op) return { firstIsYours: true, first: l10n.t("Yours"), second: l10n.t("Theirs") };
   const named = (word: string, name: string): string => (name ? `${word} (${name})` : word);
-  const yours = named("Yours", op.yours.name);
-  const theirs = named("Theirs", op.theirs.name);
+  const yours = named(l10n.t("Yours"), op.yours.name);
+  const theirs = named(l10n.t("Theirs"), op.theirs.name);
   return op.yours.stage === 2
     ? { firstIsYours: true, first: yours, second: theirs }
     : { firstIsYours: false, first: theirs, second: yours };

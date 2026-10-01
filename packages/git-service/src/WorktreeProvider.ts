@@ -13,6 +13,7 @@ import {
   type WorktreeSummary,
   type WorktreesSnapshot,
 } from "./worktreeState";
+import * as l10n from "@vscode/l10n";
 
 // Worktree paths are compared through the one shared rule (folderPath.ts);
 // re-exported here, where the extension and the desktop import them from.
@@ -498,10 +499,10 @@ export class WorktreeProvider {
         continue;
       }
       if (existsSync(dotGit)) {
-        return { ok: false, stderr: `${entry.path} is a worktree again — its .git is back.` };
+        return { ok: false, stderr: l10n.t("{0} is a worktree again — its .git is back.", entry.path) };
       }
       if (existsSync(join(record, "locked"))) {
-        return { ok: false, stderr: `The worktree at ${entry.path} is locked.` };
+        return { ok: false, stderr: l10n.t("The worktree at {0} is locked.", entry.path) };
       }
       rmSync(record, { recursive: true, force: true });
       try {
@@ -511,7 +512,7 @@ export class WorktreeProvider {
       }
       return { ok: true, stderr: "" };
     }
-    return { ok: false, stderr: `git's record of the worktree at ${entry.path} wasn't found.` };
+    return { ok: false, stderr: l10n.t("git's record of the worktree at {0} wasn't found.", entry.path) };
   }
 
   /** `git worktree remove [--force [--force]] -- <path>` — see

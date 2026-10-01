@@ -17,6 +17,7 @@
 
 import { computeHunks, applySelectedChanges } from "@gitstudio/engine/staging/applyLineChanges";
 import type { StagingProvider } from "./StagingProvider";
+import * as l10n from "@vscode/l10n";
 
 /** One tickable change within a file. */
 export interface FileHunk {
@@ -97,7 +98,7 @@ export async function stageHunks(
   if (picked.length === 0) {
     // The file moved under us between listing and staging: the indexes no longer
     // name the same changes. Refusing beats staging the wrong lines.
-    return { ok: false, staged: 0, stderr: "Those changes are no longer there — refresh and try again." };
+    return { ok: false, staged: 0, stderr: l10n.t("Those changes are no longer there — refresh and try again.") };
   }
   const content = applySelectedChanges(original, modified, picked);
   const r = await host.staging.stageContent(rel, content);

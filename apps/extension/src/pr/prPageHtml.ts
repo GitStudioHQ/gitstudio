@@ -1,3 +1,5 @@
+import * as l10n from "@vscode/l10n";
+import { l10nWebviewScript } from "@gitstudio/l10n/index";
 // A pull request's page, as its editor tab loads it: the shared page's bundle
 // (packages/webview-ui/src/pr/page-main.ts → dist/webview/pr-page.js + .css),
 // the codicons, and a `#root` for it — under a strict CSP.
@@ -59,6 +61,7 @@ export function prPageHtml(p: PrPageHtmlParts): string {
 </head>
 <body>
   <div id="root"${method ? ` data-merge-method="${method}"` : ""}></div>
+  ${l10nWebviewScript(p.nonce)}
   <script nonce="${attr(p.nonce)}" src="${attr(p.pageJs)}"></script>
 </body>
 </html>`;

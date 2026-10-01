@@ -9,6 +9,7 @@ import {
   opChipLabel,
   willDropText,
 } from "@gitstudio/webview-ui/conflicts/opText";
+import "./webviewL10n";
 
 // The Changes view's operation banner (PLAN §3.7 W15, matrix row 38): what is
 // stopped, and Continue / Skip / Abort with the operation's own verbs, plus

@@ -46,6 +46,8 @@ import {
   worktreesOpenHere,
   type WorktreeUi,
 } from "./worktreesView";
+import * as l10n from "@vscode/l10n";
+import { l10nWebviewScript } from "@gitstudio/l10n/index";
 
 // The Worktrees view — a webview (it was a native tree that could show one
 // line per worktree and nothing else). Its page is packages/webview-ui's
@@ -86,10 +88,10 @@ export interface WorktreesDeps {
 /** How Reveal reads on this platform — VS Code's own words for it. */
 export function revealLabel(platform: NodeJS.Platform = process.platform): string {
   return platform === "darwin"
-    ? "Reveal in Finder"
+    ? l10n.t("Reveal in Finder")
     : platform === "win32"
-      ? "Reveal in File Explorer"
-      : "Open Containing Folder";
+      ? l10n.t("Reveal in File Explorer")
+      : l10n.t("Open Containing Folder");
 }
 
 /** The folder relative to the main worktree's parent — or, outside it, the whole folder with ~. */
@@ -303,7 +305,7 @@ export class WorktreesWebviewProvider implements vscode.WebviewViewProvider, vsc
                       ? caps.unlock
                       : undefined;
       if (gate && !gate.ok) {
-        void vscode.window.showInformationMessage(`GitStudio: ${gate.why}`);
+        void vscode.window.showInformationMessage(l10n.t("GitStudio: {0}", gate.why));
         return;
       }
     }
@@ -569,7 +571,7 @@ export class WorktreesWebviewProvider implements vscode.WebviewViewProvider, vsc
       ...(status?.status ? {} : { filesUnread: true as const }),
       ...(unpushed && title ? { unpushed: { title, commits: unpushed.commits.map(toCommit), more: unpushed.more } } : {}),
       ...(toPull && row.upstream
-        ? { toPull: { title: `To pull from ${row.upstream}`, commits: toPull.commits.map(toCommit), more: toPull.more } }
+        ? { toPull: { title: l10n.t("To pull from {0}", row.upstream), commits: toPull.commits.map(toCommit), more: toPull.more } }
         : {}),
     };
     if (!this.expanded.has(p)) return;
@@ -617,7 +619,7 @@ export class WorktreesWebviewProvider implements vscode.WebviewViewProvider, vsc
     if (f.area === "staged") {
       const left = f.status === "A" ? { rev: EMPTY_TREE, path: f.path } : { rev: "HEAD", path: f.oldPath ?? f.path };
       const right = f.status === "D" ? { rev: EMPTY_TREE, path: f.path } : { rev: "", path: f.path };
-      await openSidesDiff(root, f.path, { left, right }, title("HEAD ↔ Index"));
+      await openSidesDiff(root, f.path, { left, right }, title(l10n.t("HEAD ↔ Index")));
       return;
     }
     const left = { rev: "", path: f.oldPath ?? f.path };
@@ -626,7 +628,7 @@ export class WorktreesWebviewProvider implements vscode.WebviewViewProvider, vsc
       "vscode.diff",
       revisionSideUri(root, f.path, left),
       revisionSideUri(root, f.path, right),
-      title("Index ↔ Working Tree"),
+      title(l10n.t("Index ↔ Working Tree")),
       { preview: true } satisfies vscode.TextDocumentShowOptions,
     );
   }
@@ -651,7 +653,7 @@ export class WorktreesWebviewProvider implements vscode.WebviewViewProvider, vsc
     const nonce = getNonce();
     const dist = (...parts: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "dist", ...parts));
     const csp = [
-      `default-src 'none'`,
+      "default-src 'none'",
       `style-src ${webview.cspSource}`,
       `font-src ${webview.cspSource} data:`,
       `script-src 'nonce-${nonce}' ${webview.cspSource}`,
@@ -664,10 +666,11 @@ export class WorktreesWebviewProvider implements vscode.WebviewViewProvider, vsc
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link href="${dist("codicons", "codicon.css")}" rel="stylesheet" />
   <link href="${dist("webview", "worktrees.css")}" rel="stylesheet" />
-  <title>Worktrees</title>
+  <title>${l10n.t("Worktrees")}</title>
 </head>
 <body>
   <div id="root"></div>
+  ${l10nWebviewScript(nonce)}
   <script nonce="${nonce}" src="${dist("webview", "worktrees.js")}"></script>
 </body>
 </html>`;

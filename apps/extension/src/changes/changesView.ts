@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import type { Change } from "../git/git";
 import { EMPTY_TREE, openSidesDiff } from "../history/revisionContentProvider";
+import * as l10n from "@vscode/l10n";
 
 // Change-row helpers shared by the unified Commit webview (commitView.ts) and
 // the line/hunk-staging commands. The standalone "Changes" tree view was folded
@@ -81,7 +82,7 @@ export async function openChangeDiff(node: ChangeFileNode): Promise<void> {
       root,
       rel,
       { left: { rev: "HEAD", path: original }, right: { rev: "" } }, // "" = the index
-      `${fileName} (Staged)`,
+      l10n.t("{0} (Staged)", fileName),
     );
     return;
   }
@@ -91,12 +92,12 @@ export async function openChangeDiff(node: ChangeFileNode): Promise<void> {
   // that is not on disk is not an empty file, so it is read as nothing.
   const baseRev = node.kind === "merge" ? "HEAD" : "";
   const gone = !(await existsOnDisk(change.uri));
-  const label = node.kind === "merge" ? "Working Tree vs HEAD" : "Working Tree";
+  const label = node.kind === "merge" ? l10n.t("Working Tree vs HEAD") : l10n.t("Working Tree");
   await openSidesDiff(
     root,
     rel,
     { left: { rev: baseRev }, right: gone ? { rev: EMPTY_TREE } : { rev: undefined } },
-    `${fileName} (${gone ? "Deleted" : label})`,
+    `${fileName} (${gone ? l10n.t("Deleted") : label})`,
   );
 }
 

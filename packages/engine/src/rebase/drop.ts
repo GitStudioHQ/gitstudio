@@ -16,6 +16,7 @@
  */
 
 import { publishedWarning, type ChainCommit } from "./chain";
+import * as l10n from "@vscode/l10n";
 
 /** Why a commit cannot be dropped — what the menu leaves the item out for. */
 export type DropRefusal =
@@ -80,15 +81,15 @@ export function dropTarget(
 export function dropRefusalMessage(reason: DropRefusal): string {
   switch (reason) {
     case "not-on-branch":
-      return "That commit isn't on the current branch, so there's nothing to drop it from.";
+      return l10n.t("That commit isn't on the current branch, so there's nothing to drop it from.");
     case "merge":
-      return "That's a merge commit — dropping it would flatten the history it joined. Revert it instead.";
+      return l10n.t("That's a merge commit — dropping it would flatten the history it joined. Revert it instead.");
     case "past-merge":
-      return "There's a merge between that commit and the tip of the branch — replaying the commits after it would flatten the merge.";
+      return l10n.t("There's a merge between that commit and the tip of the branch — replaying the commits after it would flatten the merge.");
     case "only-commit":
-      return "That's the only commit on the branch — dropping it would leave nothing.";
+      return l10n.t("That's the only commit on the branch — dropping it would leave nothing.");
     case "too-far":
-      return "That commit is too far down the branch to drop from here. Start an interactive rebase from it instead.";
+      return l10n.t("That commit is too far down the branch to drop from here. Start an interactive rebase from it instead.");
   }
 }
 
@@ -114,24 +115,25 @@ export interface DropSummary {
  */
 export function dropQuestion(s: DropSummary): { title: string; message: string } {
   const what = s.subject ? `${s.shortSha} "${s.subject}"` : s.shortSha;
-  const parts = [`${what} will be removed from ${s.branch ?? "the detached HEAD"}.`];
+  const parts = [l10n.t("{0} will be removed from {1}.", what, s.branch ?? l10n.t("the detached HEAD"))];
   parts.push(
     s.replayed === 0
-      ? "It's the newest commit, so nothing else changes."
+      ? l10n.t("It's the newest commit, so nothing else changes.")
       : s.replayed === 1
-        ? "The commit after it will be replayed on top, with a new SHA."
-        : `The ${s.replayed} commits after it will be replayed on top, with new SHAs.`,
+        ? l10n.t("The commit after it will be replayed on top, with a new SHA.")
+        : l10n.t("The {0} commits after it will be replayed on top, with new SHAs.", s.replayed),
   );
   const carry = s.carryable ?? [];
   if (carry.length > 0) {
-    const names = carry.slice(0, 3).join(", ") + (carry.length > 3 ? ` and ${carry.length - 3} more` : "");
-    parts.push(`${names} ${carry.length === 1 ? "points" : "point"} at a commit that will be replayed.`);
+    const names = carry.slice(0, 3).join(", ") + (carry.length > 3 ? l10n.t(" and {0} more", carry.length - 3) : "");
+    const which = carry.length === 1 ? l10n.t("points") : l10n.t("point");
+    parts.push(l10n.t("{0} {1} at a commit that will be replayed.", names, which));
   }
   if (s.published) {
-    parts.push(`${publishedWarning("Dropping")} The next push will need to be a force push.`);
+    parts.push(l10n.t("{0} The next push will need to be a force push.", publishedWarning("Dropping")));
   }
-  parts.push("Undo is available afterwards.");
-  return { title: `Drop ${s.shortSha}?`, message: parts.join(" ") };
+  parts.push(l10n.t("Undo is available afterwards."));
+  return { title: l10n.t("Drop {0}?", s.shortSha), message: parts.join(" ") };
 }
 
 /** A rebase outcome, as much of it as the words need (the runner's shape). */
@@ -152,17 +154,17 @@ export interface DropOutcomeLike {
  */
 export function dropOutcomeMessage(shortSha: string, outcome: DropOutcomeLike): string {
   if (outcome.status === "done") {
-    return `Dropped ${shortSha}.`;
+    return l10n.t("Dropped {0}.", shortSha);
   }
   if (outcome.status === "stopped") {
     return outcome.reason === "conflict"
-      ? `Dropping ${shortSha} hit a conflict while replaying a later commit. Resolve it and continue the rebase — or skip that commit, or abort to put the branch back as it was.`
-      : `Dropping ${shortSha} stopped and needs you — continue the rebase, or abort it to put the branch back as it was.`;
+      ? l10n.t("Dropping {0} hit a conflict while replaying a later commit. Resolve it and continue the rebase — or skip that commit, or abort to put the branch back as it was.", shortSha)
+      : l10n.t("Dropping {0} stopped and needs you — continue the rebase, or abort it to put the branch back as it was.", shortSha);
   }
   if (!outcome.message) {
-    return `Couldn't drop ${shortSha}.`;
+    return l10n.t("Couldn't drop {0}.", shortSha);
   }
   // "You have uncommitted changes. Commit or stash them, then drop the
   // commit." needs no preamble; git's own words for a real failure do.
-  return outcome.expected ? outcome.message : `Couldn't drop ${shortSha}: ${outcome.message}`;
+  return outcome.expected ? outcome.message : l10n.t("Couldn't drop {0}: {1}", shortSha, outcome.message);
 }

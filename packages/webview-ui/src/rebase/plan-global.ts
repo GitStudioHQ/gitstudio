@@ -9,6 +9,8 @@
 // the engine's own functions as `window.GsRebasePlan`, the same ones the
 // desktop's Rebase view and the git-rebase-todo editor import.
 
+import "@gitstudio/l10n/webview";
+
 import { installSolidAccent } from "../styles/solidAccent";
 import * as plan from "@gitstudio/engine/rebase/planEdit";
 

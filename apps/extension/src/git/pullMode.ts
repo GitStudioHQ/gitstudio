@@ -11,6 +11,7 @@ import {
 } from "@gitstudio/git-service/SyncOps";
 import { promptPick } from "../ui/dialogs";
 import { notifyPaused } from "./pauseNotice";
+import * as l10n from "@vscode/l10n";
 
 /**
  * A pull whose merge or rebase STOPPED on conflicts — said plainly, with the
@@ -60,15 +61,15 @@ export function settlePullStop(result: {
     ? result.stopped.conflicted.length
     : (result.blocked?.conflicted ?? 0);
   if (conflicted > 0) {
-    notifyPaused(`GitStudio: ${message}`);
+    notifyPaused(l10n.t("GitStudio: {0}", message));
   } else {
-    void vscode.window.showWarningMessage(`GitStudio: ${message}`);
+    void vscode.window.showWarningMessage(l10n.t("GitStudio: {0}", message));
   }
   void vscode.commands.executeCommand("gitstudio.commit.focus");
   return true;
 }
 
-const PULL = "Pull";
+const PULL = l10n.t("Pull");
 
 /**
  * A FORCE push the engine refused before it ran, because the remote branch's
@@ -88,14 +89,14 @@ export function settlePushUnseen(result: { unseen?: boolean }): boolean {
     return false;
   }
   void vscode.window
-    .showWarningMessage(`GitStudio: ${pushUnseenMessage()}`, PULL)
+    .showWarningMessage(l10n.t("GitStudio: {0}", pushUnseenMessage()), PULL)
     .then((pick) => {
       if (pick === PULL) void vscode.commands.executeCommand("gitstudio.sync.pull");
     });
   return true;
 }
 
-const CHECK_OUT_BRANCH = "Check Out a Branch…";
+const CHECK_OUT_BRANCH = l10n.t("Check Out a Branch…");
 
 /**
  * A pull on a DETACHED HEAD — a commit or a tag checked out — has no branch to
@@ -116,7 +117,7 @@ export function settlePullDetached(
     return false;
   }
   void vscode.window
-    .showWarningMessage(`GitStudio: ${pullDetachedMessage()}`, CHECK_OUT_BRANCH)
+    .showWarningMessage(l10n.t("GitStudio: {0}", pullDetachedMessage()), CHECK_OUT_BRANCH)
     .then((pick) => {
       if (pick === CHECK_OUT_BRANCH) void checkOut();
     });
@@ -148,24 +149,24 @@ export async function askPullMode(
 ): Promise<Exclude<PullMode, "ff-only"> | undefined> {
   const n = (c: number): string => `${c} commit${c === 1 ? "" : "s"}`;
   const choice = await promptPick({
-    title: `'${d.branch}' and ${d.upstream} have diverged`,
+    title: l10n.t("'{0}' and {1} have diverged", d.branch, d.upstream),
     hint:
-      `You have ${n(d.ahead)} ${d.upstream} doesn't, and it has ${n(d.behind)} you don't. ` +
-      "Git needs to know how to combine them — this applies to this pull only.",
+      l10n.t("You have {0} {1} doesn't, and it has {2} you don't. ", n(d.ahead), d.upstream, n(d.behind)) +
+      l10n.t("Git needs to know how to combine them — this applies to this pull only."),
     choices: [
       {
         id: "merge",
-        label: "Merge",
+        label: l10n.t("Merge"),
         icon: "git-merge",
         description:
-          "Bring their commits in and record a merge commit. Yours keep their shas.",
+          l10n.t("Bring their commits in and record a merge commit. Yours keep their shas."),
       },
       {
         id: "rebase",
-        label: "Rebase",
+        label: l10n.t("Rebase"),
         icon: "git-pull-request",
         description:
-          "Replay your commits on top of theirs. Linear history, new shas.",
+          l10n.t("Replay your commits on top of theirs. Linear history, new shas."),
       },
     ],
   });

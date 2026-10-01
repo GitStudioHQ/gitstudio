@@ -23,6 +23,7 @@
 import { css } from "lit";
 import type { WireRef } from "@gitstudio/host-bridge/graphProtocol";
 import { esc as escapeTip } from "./format";
+import * as l10n from "@vscode/l10n";
 
 /** A ref folded into the "+N" pill. `remotes` mirrors the chip's cloud tail. */
 export interface TipRef {
@@ -41,10 +42,10 @@ export interface TipRef {
 
 /** How each ref kind reads in the card (and in the pill's aria-label). */
 export const REF_KIND_LABEL: Record<WireRef["kind"], string> = {
-  currentHead: "current HEAD",
-  head: "local branch",
-  remoteHead: "remote branch",
-  tag: "tag",
+  currentHead: l10n.t("current HEAD"),
+  head: l10n.t("local branch"),
+  remoteHead: l10n.t("remote branch"),
+  tag: l10n.t("tag"),
 };
 
 const KIND_ICON: Record<WireRef["kind"], string> = {
@@ -81,9 +82,9 @@ export function tipData(refs: TipRef[]): string {
 
 /** The pill's screen-reader text — the card is pointer-only. */
 export function tipAriaLabel(refs: TipRef[]): string {
-  return `${refs.length} more: ${refs
+  return l10n.t("{0} more: {1}", refs.length, refs
     .map((r) => `${r.label ?? r.name} (${REF_KIND_LABEL[r.kind]})`)
-    .join(", ")}`;
+    .join(", "));
 }
 
 interface WireTipRef {
@@ -317,7 +318,7 @@ function parse(raw: string | undefined): TipRef[] {
 
 function rowHtml(ref: TipRef): string {
   const also = ref.remotes?.length
-    ? `<span class="tip-also">· also on ${escapeTip(ref.remotes.join(", "))}</span>`
+    ? `<span class="tip-also">${l10n.t("· also on {0}", escapeTip(ref.remotes.join(", ")))}</span>`
     : "";
   // A LINK, like the chips it stands in for. A ref folded behind "+N" used to
   // be the one ref on the row you could read but not open — and on a busy row

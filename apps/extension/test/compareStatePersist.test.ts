@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import "./webviewL10n";
 
 // Issue #24's second half: surviving the repaints that MUST happen. When the
 // comparison really changed, the webview's html is replaced and every module

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { hasConflictMarkers } from "@gitstudio/engine/conflict/documentText";
 import type { GitProcess } from "./GitProcess";
 import { runIndexWrite } from "./indexWrites";
+import * as l10n from "@vscode/l10n";
 
 export interface StagingOptions {
   signal?: AbortSignal;
@@ -71,11 +72,11 @@ export type CommitBlocker =
 export function commitBlockerMessage(blocker: CommitBlocker): string {
   switch (blocker) {
     case "unstagedChanges":
-      return "Nothing is staged — stage the changes you want to include, then commit.";
+      return l10n.t("Nothing is staged — stage the changes you want to include, then commit.");
     case "untrackedOnly":
-      return "Nothing is staged — the only changes are new files git isn't tracking yet. Stage them to include them in a commit.";
+      return l10n.t("Nothing is staged — the only changes are new files git isn't tracking yet. Stage them to include them in a commit.");
     case "cleanTree":
-      return "Nothing to commit — the working tree is clean.";
+      return l10n.t("Nothing to commit — the working tree is clean.");
   }
 }
 

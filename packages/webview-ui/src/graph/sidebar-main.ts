@@ -4,6 +4,8 @@
 // deliberately has no docked details pane: activating a commit posts
 // `openInGraph`, which promotes it to the full Commit Graph panel.
 
+import "@gitstudio/l10n/webview";
+
 import { installSolidAccent } from "../styles/solidAccent";
 import "../styles/graph-sidebar.css";
 import "./commit-rail";

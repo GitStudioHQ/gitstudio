@@ -17,6 +17,7 @@ import { markUnsettled, prepareMerge } from "@gitstudio/engine/conflict/document
 import type { OperationView } from "@gitstudio/host-bridge/conflictsProtocol";
 import type { HostMessage, MergeInitPayload, WebviewMessage } from "@gitstudio/host-bridge/protocol";
 import { markerLabelsFor } from "./documentSync";
+import * as l10n from "@vscode/l10n";
 
 /**
  * Sample side-by-side diff: an auth middleware before and after a change —
@@ -25,8 +26,8 @@ import { markerLabelsFor } from "./documentSync";
  */
 export const DEMO_DIFF = {
   fileName: "authorizeRequest.ts",
-  leftLabel: "Sample · before",
-  rightLabel: "Sample · after",
+  leftLabel: l10n.t("Sample · before"),
+  rightLabel: l10n.t("Sample · after"),
   leftText: `import type { Request, Response, NextFunction } from "express";
 import { verifyJwt } from "./jwt";
 import { findSession } from "./store";
@@ -193,7 +194,7 @@ export async function authorizeRequest(
 }
 `;
 
-const COMMIT = { sha: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", subject: "Bind sessions to the device", author: "Sample" };
+const COMMIT = { sha: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", subject: l10n.t("Bind sessions to the device"), author: l10n.t("Sample") };
 
 /**
  * The stop the sample stands for: commit 2 of 3 of feature/session-hardening
@@ -204,7 +205,7 @@ const COMMIT = { sha: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", subject: "Bind
  */
 export const SAMPLE_OP: OperationView = {
   kind: "none",
-  title: "Sample · rebasing feature/session-hardening onto main · commit 2 of 3",
+  title: l10n.t("Sample · rebasing feature/session-hardening onto main · commit 2 of 3"),
   direction: { from: "yours", verb: "onto", to: "theirs" },
   step: { n: 2, m: 3, unit: "commit" },
   commit: COMMIT,
@@ -212,17 +213,17 @@ export const SAMPLE_OP: OperationView = {
     role: "yours",
     stage: 3,
     name: "feature/session-hardening",
-    paneTitle: "Rebasing a1b2c3d from feature/session-hardening",
-    description: `Your commit a1b2c3d “${COMMIT.subject}” from feature/session-hardening`,
+    paneTitle: l10n.t("Rebasing a1b2c3d from feature/session-hardening"),
+    description: l10n.t("Your commit a1b2c3d “{0}” from feature/session-hardening", COMMIT.subject),
   },
   theirs: {
     role: "theirs",
     stage: 2,
     name: "main",
-    paneTitle: "Already rebased commits and commits from main",
-    description: "main, plus the commits already rebased onto it",
+    paneTitle: l10n.t("Already rebased commits and commits from main"),
+    description: l10n.t("main, plus the commits already rebased onto it"),
   },
-  verbs: { abort: "Close sample" },
+  verbs: { abort: l10n.t("Close sample") },
   canContinue: false,
   canSkip: false,
   episode: "sample",
@@ -231,7 +232,7 @@ export const SAMPLE_OP: OperationView = {
 export const DEMO_MERGE = {
   fileName: "authorizeRequest.ts",
   /** The editor tab's title. */
-  title: "Sample: authorizeRequest.ts",
+  title: l10n.t("Sample: authorizeRequest.ts"),
   base: BASE,
   yours: YOURS,
   theirs: THEIRS,
@@ -240,7 +241,7 @@ export const DEMO_MERGE = {
 
 /** What Apply says in the sample: nothing is written, and what a real Apply does. */
 export const SAMPLE_APPLIED =
-  "Sample resolved. In a real conflict, Apply saves and stages the file, then Continue Rebase appears.";
+  l10n.t("Sample resolved. In a real conflict, Apply saves and stages the file, then Continue Rebase appears.");
 
 let body: string | undefined;
 

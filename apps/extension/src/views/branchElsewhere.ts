@@ -8,6 +8,7 @@ import {
   type ElsewhereDoor,
 } from "@gitstudio/git-service/branchElsewhere";
 import { refShortName } from "@gitstudio/git-service/checkoutRef";
+import * as l10n from "@vscode/l10n";
 
 // The extension's doors for a branch another worktree has checked out — the
 // Branches view, the branch menu, the graph's chips, a pull request's
@@ -37,13 +38,13 @@ export async function saidCheckedOutElsewhere(
   if (!where) {
     return false;
   }
-  const open = "Open Worktree in New Window";
+  const open = l10n.t("Open Worktree in New Window");
   const folder = where;
   // Its folder gone, there is nothing to open: forgetting it is the way out.
   const gone = !existsSync(folder);
   void vscode.window
     .showWarningMessage(
-      `GitStudio: ${checkedOutElsewhereMessage(refShortName(fullName), tildify(folder), door, gone)}`,
+      l10n.t("GitStudio: {0}", checkedOutElsewhereMessage(refShortName(fullName), tildify(folder), door, gone)),
       ...(gone ? [] : [open]),
     )
     .then((pick) => {

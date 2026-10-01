@@ -18,6 +18,7 @@ import type {
   SideRole,
   SideView,
 } from "@gitstudio/host-bridge/conflictsProtocol";
+import * as l10n from "@vscode/l10n";
 
 /** The first seven characters of an object name ("" stays ""). */
 export function sha7(sha: string | undefined): string {
@@ -25,8 +26,8 @@ export function sha7(sha: string | undefined): string {
 }
 
 /** "Yours" / "Theirs" — the role as a button word. */
-export function roleWord(role: SideRole): "Yours" | "Theirs" {
-  return role === "yours" ? "Yours" : "Theirs";
+export function roleWord(role: SideRole): string {
+  return role === "yours" ? l10n.t("Yours") : l10n.t("Theirs");
 }
 
 /** The side a role names. */
@@ -47,42 +48,42 @@ export function otherRole(role: SideRole): SideRole {
 export function opNoun(kind: OperationKind): string {
   switch (kind) {
     case "merge":
-      return "merge";
+      return l10n.t("merge");
     case "rebase":
     case "rebase-merge-step":
-      return "rebase";
+      return l10n.t("rebase");
     case "cherry-pick":
-      return "cherry-pick";
+      return l10n.t("cherry-pick");
     case "revert":
-      return "revert";
+      return l10n.t("revert");
     case "am":
-      return "patch series";
+      return l10n.t("patch series");
     case "stash":
-      return "stash apply";
+      return l10n.t("stash apply");
     case "none":
-      return "merge";
+      return l10n.t("merge");
   }
 }
 
 /** The dashboard chip and the Changes strip: what is in progress, in two or three words. */
 export function opChipLabel(op: OperationView): string {
-  if (op.pause) return "Rebase paused";
+  if (op.pause) return l10n.t("Rebase paused");
   switch (op.kind) {
     case "merge":
-      return "Merge in progress";
+      return l10n.t("Merge in progress");
     case "rebase":
     case "rebase-merge-step":
-      return "Rebase in progress";
+      return l10n.t("Rebase in progress");
     case "cherry-pick":
-      return "Cherry-pick in progress";
+      return l10n.t("Cherry-pick in progress");
     case "revert":
-      return "Revert in progress";
+      return l10n.t("Revert in progress");
     case "am":
-      return "Applying patches";
+      return l10n.t("Applying patches");
     case "stash":
-      return "Applying a stash";
+      return l10n.t("Applying a stash");
     case "none":
-      return "Unmerged files";
+      return l10n.t("Unmerged files");
   }
 }
 
@@ -93,20 +94,20 @@ export function opChipLabel(op: OperationView): string {
 export function dashboardHeading(op: OperationView): string {
   switch (op.kind) {
     case "merge":
-      return "Merge conflicts";
+      return l10n.t("Merge conflicts");
     case "rebase":
     case "rebase-merge-step":
-      return "Rebase conflicts";
+      return l10n.t("Rebase conflicts");
     case "cherry-pick":
-      return "Cherry-pick conflicts";
+      return l10n.t("Cherry-pick conflicts");
     case "revert":
-      return "Revert conflicts";
+      return l10n.t("Revert conflicts");
     case "am":
-      return "Patch conflicts";
+      return l10n.t("Patch conflicts");
     case "stash":
-      return "Stash conflicts";
+      return l10n.t("Stash conflicts");
     case "none":
-      return "Conflicts";
+      return l10n.t("Conflicts");
   }
 }
 
@@ -123,33 +124,39 @@ export function dashboardHeading(op: OperationView): string {
 export function successCard(op: OperationView): { title: string; note: string } {
   const verb = op.verbs.continue;
   if (!verb) {
-    return { title: "All conflicts resolved", note: "Review below." };
+    return { title: l10n.t("All conflicts resolved"), note: l10n.t("Review below.") };
   }
   if (op.step && op.step.m > 1) {
-    const unit = op.step.unit;
+    const rawUnit = op.step.unit;
+    const unit = rawUnit === "patch" ? l10n.t("patch") : rawUnit === "step" ? l10n.t("step") : l10n.t("commit");
     const Unit = unit.charAt(0).toUpperCase() + unit.slice(1);
     if (op.step.n < op.step.m) {
-      const next = op.kind === "am" ? "apply the next patch" : unit === "step" ? "go on to the next step" : "replay the next commit";
+      const next =
+        op.kind === "am"
+          ? l10n.t("apply the next patch")
+          : rawUnit === "step"
+            ? l10n.t("go on to the next step")
+            : l10n.t("replay the next commit");
       return {
-        title: `${Unit} ${op.step.n} of ${op.step.m} resolved`,
-        note: `${verb} to ${next}. It stops again if that one conflicts.`,
+        title: l10n.t("{0} {1} of {2} resolved", Unit, op.step.n, op.step.m),
+        note: l10n.t("{0} to {1}. It stops again if that one conflicts.", verb, next),
       };
     }
-    return { title: `Last ${unit} resolved`, note: `${verb} to finish.` };
+    return { title: l10n.t("Last {0} resolved", unit), note: l10n.t("{0} to finish.", verb) };
   }
   if ((op.kind === "cherry-pick" || op.kind === "revert") && op.queued && op.queued > 0) {
-    const noun = op.kind === "revert" ? "revert" : "pick";
-    const queued = op.queued === 1 ? "1 more is" : `${op.queued} more are`;
+    const noun = op.kind === "revert" ? l10n.t("revert") : l10n.t("pick");
+    const queued = op.queued === 1 ? l10n.t("1 more is") : l10n.t("{0} more are", op.queued);
     return {
-      title: "This commit resolved",
-      note: `${verb} to commit it and go on to the next ${noun} (${queued} queued). It stops again if one conflicts.`,
+      title: l10n.t("This commit resolved"),
+      note: l10n.t("{0} to commit it and go on to the next {1} ({2} queued). It stops again if one conflicts.", verb, noun, queued),
     };
   }
   if (op.kind === "rebase" || op.kind === "rebase-merge-step" || op.kind === "am") {
     // One of one: the step is also the last.
-    return { title: op.kind === "am" ? "Last patch resolved" : "Last commit resolved", note: `${verb} to finish.` };
+    return { title: op.kind === "am" ? l10n.t("Last patch resolved") : l10n.t("Last commit resolved"), note: l10n.t("{0} to finish.", verb) };
   }
-  return { title: "All conflicts resolved", note: `Review below, then ${verb} to commit it.` };
+  return { title: l10n.t("All conflicts resolved"), note: l10n.t("Review below, then {0} to commit it.", verb) };
 }
 
 /**
@@ -181,21 +188,21 @@ export function choicePill(
     const side = sideOf(op, choice);
     return {
       text: "deleted",
-      title: `Resolved by deleting the file, as ${choice}${side.name ? ` (${side.name})` : ""} did`,
+      title: l10n.t("Resolved by deleting the file, as {0}{1} did", choice, side.name ? ` (${side.name})` : ""),
     };
   }
   if (!choice && f.shape === "both-deleted") {
-    return { text: "deleted", title: "Resolved by deleting the file — both sides had deleted it" };
+    return { text: "deleted", title: l10n.t("Resolved by deleting the file — both sides had deleted it") };
   }
   if (choice === "yours" || choice === "theirs") {
     const side = sideOf(op, choice);
     return {
-      text: side.name ? `kept ${choice} · ${shortName(side.name)}` : `kept ${choice}`,
-      title: `Resolved with ${choice}${side.description ? ` — ${side.description}` : side.name ? ` (${side.name})` : ""}`,
+      text: side.name ? l10n.t("kept {0} · {1}", choice, shortName(side.name)) : `kept ${choice}`,
+      title: l10n.t("Resolved with {0}{1}", choice, side.description ? ` — ${side.description}` : side.name ? ` (${side.name})` : ""),
     };
   }
-  if (choice === "merged") return { text: "merged", title: "Resolved in the merge editor" };
-  return { text: "resolved", title: "Resolved (in an editor, or outside this app)" };
+  if (choice === "merged") return { text: "merged", title: l10n.t("Resolved in the merge editor") };
+  return { text: "resolved", title: l10n.t("Resolved (in an editor, or outside this app)") };
 }
 
 /**
@@ -254,7 +261,7 @@ export function directionText(op: OperationView): string {
 export function abortLabel(op: OperationView): string {
   const v = op.verbs.abort;
   if (v && v !== "Cancel") return v;
-  return op.kind === "stash" ? "Cancel the stash apply" : "Cancel the merge";
+  return op.kind === "stash" ? l10n.t("Cancel the stash apply") : l10n.t("Cancel the merge");
 }
 
 /** What ending it costs, said before it happens (every host's inline confirm). */
@@ -262,10 +269,10 @@ export function abortConfirm(op: OperationView): { question: string; detail: str
   const noun = opNoun(op.kind);
   if (op.kind === "stash") {
     return {
-      question: "Cancel applying the stash?",
+      question: l10n.t("Cancel applying the stash?"),
       detail:
-        "The files go back to how they were before the stash was applied. The stash itself stays in " +
-        "your stash list, so nothing in it is lost — but conflicts you have resolved here are.",
+        l10n.t("The files go back to how they were before the stash was applied. The stash itself stays in ") +
+        l10n.t("your stash list, so nothing in it is lost — but conflicts you have resolved here are."),
       confirm: abortLabel(op),
     };
   }
@@ -275,56 +282,58 @@ export function abortConfirm(op: OperationView): { question: string; detail: str
     // or `checkout -m` stops with the user's own staged changes in the index).
     // Only changes that were never staged survive.
     return {
-      question: "Reset the conflicted files?",
+      question: l10n.t("Reset the conflicted files?"),
       detail:
-        "Every unmerged file goes back to its last committed version, and so does everything that is " +
-        "staged — including changes you staged before the conflict. Conflicts you have resolved are " +
-        "discarded too; none of it was committed, so nothing can bring it back. Changes you never " +
-        "staged are kept.",
+        l10n.t(
+          "Every unmerged file goes back to its last committed version, and so does everything that is staged — including changes you staged before the conflict. Conflicts you have resolved are discarded too; none of it was committed, so nothing can bring it back. Changes you never staged are kept.",
+        ),
       confirm: abortLabel(op),
     };
   }
   if (op.kind === "am") {
     return {
-      question: "Abandon this patch series?",
+      question: l10n.t("Abandon this patch series?"),
       detail:
-        "The branch goes back to where it was before the series started. Patches already applied are " +
-        "undone, and conflicts you have resolved are discarded.",
+        l10n.t("The branch goes back to where it was before the series started. Patches already applied are ") +
+        l10n.t("undone, and conflicts you have resolved are discarded."),
       confirm: abortLabel(op),
     };
   }
   return {
-    question: `Abort the ${noun}?`,
+    question: l10n.t("Abort the {0}?", noun),
     detail:
-      `The repository goes back to how it was before the ${noun} started. Conflicts you have already ` +
-      `resolved are discarded — they were never committed, so nothing can bring them back.`,
+      l10n.t("The repository goes back to how it was before the {0} started. Conflicts you have already ", noun) +
+      l10n.t("resolved are discarded — they were never committed, so nothing can bring them back."),
     confirm: abortLabel(op),
   };
 }
 
 /** Skip's confirm: it drops work, and says whose — and whether anything comes after it. */
 export function skipConfirm(op: OperationView): { question: string; detail: string; confirm: string } {
-  const label = op.verbs.skip ?? "Skip";
+  const label = op.verbs.skip ?? l10n.t("Skip");
   // What comes AFTER it: the rest of the sequence, or the picks queued behind
   // it. With none, "the rest carries on" promised a rest that isn't there.
   const rest = op.step ? op.step.m - op.step.n : (op.queued ?? 0);
   const which =
     op.kind === "am"
-      ? "The patch git is stuck on"
+      ? l10n.t("The patch git is stuck on")
       : op.commit
         ? `${sha7(op.commit.sha)} “${op.commit.subject}”`
-        : "This commit";
+        : l10n.t("This commit");
   let what: string;
   if (rest > 0) {
-    what = op.kind === "am" ? `${which} is left out and the rest of the series carries on.` : `${which} is left out and the rest carries on.`;
+    what =
+      op.kind === "am"
+        ? l10n.t("{0} is left out and the rest of the series carries on.", which)
+        : l10n.t("{0} is left out and the rest carries on.", which);
   } else if (op.kind === "am") {
-    what = `${which} is left out, and that ends the series.`;
+    what = l10n.t("{0} is left out, and that ends the series.", which);
   } else if (op.kind === "cherry-pick" || op.kind === "revert") {
-    what = `${which} is left out, and that ends the ${opNoun(op.kind)}.`;
+    what = l10n.t("{0} is left out, and that ends the {1}.", which, opNoun(op.kind));
   } else {
-    what = `${which} is left out, and the ${opNoun(op.kind)} finishes without it.`;
+    what = l10n.t("{0} is left out, and the {1} finishes without it.", which, opNoun(op.kind));
   }
-  return { question: `${label}?`, detail: `${what} This cannot be undone from here.`, confirm: label };
+  return { question: `${label}?`, detail: l10n.t("{0} This cannot be undone from here.", what), confirm: label };
 }
 
 /** The willDrop warning, from the reader's side. */
@@ -332,8 +341,8 @@ export function willDropText(op: OperationView): string {
   const w = op.willDrop;
   if (!w) return "";
   return (
-    `Your resolution leaves ${sha7(w.sha)} “${w.subject}” with no changes, so continuing drops it ` +
-    `from ${w.branch}. Keep editing if you meant to keep it.`
+    l10n.t("Your resolution leaves {0} “{1}” with no changes, so continuing drops it ", sha7(w.sha), w.subject) +
+    l10n.t("from {0}. Keep editing if you meant to keep it.", w.branch)
   );
 }
 
@@ -342,8 +351,8 @@ export function continueBlockedText(op: OperationView, pending: number): string 
   if (op.continueBlocked) return op.continueBlocked;
   if (pending > 0) {
     return pending === 1
-      ? "Resolve the last conflicted file first."
-      : `Resolve the ${pending} conflicted files first.`;
+      ? l10n.t("Resolve the last conflicted file first.")
+      : l10n.t("Resolve the {0} conflicted files first.", pending);
   }
   // Nothing conflicted, and still no Continue: the stop has nothing left to
   // record. The banner this dashboard replaced said so, and a disabled button
@@ -351,8 +360,8 @@ export function continueBlockedText(op: OperationView, pending: number): string 
   // exist. Skip is git's own way out there.
   if (op.canSkip && !op.canContinue) {
     return op.kind === "am"
-      ? "git couldn't apply this patch. Skip it, or abort."
-      : "Nothing is left to commit at this step: it is already on the branch. Skip it, or abort.";
+      ? l10n.t("git couldn't apply this patch. Skip it, or abort.")
+      : l10n.t("Nothing is left to commit at this step: it is already on the branch. Skip it, or abort.");
   }
   return "";
 }
@@ -373,21 +382,21 @@ export function hasText(shape: ConflictShape | undefined): boolean {
 export function shapeWord(shape: ConflictShape): string {
   switch (shape) {
     case "binary":
-      return "binary";
+      return l10n.t("binary");
     case "submodule":
-      return "submodule";
+      return l10n.t("submodule");
     case "symlink":
-      return "symbolic link";
+      return l10n.t("symbolic link");
     case "too-large":
-      return "too large to merge here";
+      return l10n.t("too large to merge here");
     case "modify-delete":
-      return "deleted on one side";
+      return l10n.t("deleted on one side");
     case "both-deleted":
-      return "deleted on both sides";
+      return l10n.t("deleted on both sides");
     case "added-one-side":
-      return "added on one side";
+      return l10n.t("added on one side");
     case "added-both":
-      return "added on both sides";
+      return l10n.t("added on both sides");
     case "text":
       return "";
   }

@@ -36,6 +36,7 @@ import {
   type GitHubRemote,
   type GitHubRepoContext,
 } from "./repoContext";
+import * as l10n from "@vscode/l10n";
 
 // The Pull Requests view (gitstudio.pullRequests): a webview view that mounts
 // the shared list (packages/webview-ui/src/pr/prList.ts) and feeds it. It
@@ -128,12 +129,19 @@ function remoteSig(remotes: readonly GitHubRemote[]): string {
 /** "just now" / "3 minutes ago", from epoch milliseconds. */
 function ago(ms: number): string {
   const r = relativeTime(ms / 1000);
-  if (r === "now") return "just now";
+  if (r === "now") return l10n.t("just now");
   const m = /^(\d+)(mo|m|h|d|w|y)$/.exec(r);
-  if (!m) return `${r} ago`;
+  if (!m) return l10n.t("{0} ago", r);
   const n = Number(m[1]);
-  const unit = { m: "minute", h: "hour", d: "day", w: "week", mo: "month", y: "year" }[m[2] as "m"];
-  return `${n} ${unit}${n === 1 ? "" : "s"} ago`;
+  const unit = {
+    m: n === 1 ? l10n.t("minute") : l10n.t("minutes"),
+    h: n === 1 ? l10n.t("hour") : l10n.t("hours"),
+    d: n === 1 ? l10n.t("day") : l10n.t("days"),
+    w: n === 1 ? l10n.t("week") : l10n.t("weeks"),
+    mo: n === 1 ? l10n.t("month") : l10n.t("months"),
+    y: n === 1 ? l10n.t("year") : l10n.t("years"),
+  }[m[2] as "m"];
+  return l10n.t("{0} {1} ago", n, unit);
 }
 
 // ── A row, to the PR commands and back ─────────────────────────────────────
@@ -220,21 +228,21 @@ interface Described {
 function describe(err: unknown): Described {
   if (err instanceof GitHubApiError) return { message: err.message, kind: err.kind, status: err.status, helpUrl: err.helpUrl };
   if (err instanceof PrListError) return { message: err.message, kind: err.kind };
-  return { message: "GitHub didn't answer.", kind: "unknown" };
+  return { message: l10n.t("GitHub didn't answer."), kind: "unknown" };
 }
 
 /** A first load that failed: why, and the one thing that can put it right. */
 export function failureMessage(err: Described, repo: string): PrListMessage {
-  const retry = { label: "Retry", icon: "refresh", action: { kind: "retry" } as PrListAction };
+  const retry = { label: l10n.t("Retry"), icon: "refresh", action: { kind: "retry" } as PrListAction };
   if (err.kind === "auth" && err.status === 401) {
     // Signing in helps only as a NEW sign-in: VS Code hands the refused
     // session straight back to a plain request for one.
     return {
       icon: "warning",
       tone: "warning",
-      title: "Your GitHub session expired",
-      detail: `Sign in again to see ${repo}'s pull requests.`,
-      buttons: [{ label: "Sign in again", icon: "sign-in", primary: true, action: { kind: "signIn", again: true } }],
+      title: l10n.t("Your GitHub session expired"),
+      detail: l10n.t("Sign in again to see {0}'s pull requests.", repo),
+      buttons: [{ label: l10n.t("Sign in again"), icon: "sign-in", primary: true, action: { kind: "signIn", again: true } }],
     };
   }
   if (err.kind === "auth" || err.kind === "forbidden") {
@@ -243,18 +251,18 @@ export function failureMessage(err: Described, repo: string): PrListMessage {
     return {
       icon: "warning",
       tone: "warning",
-      title: `GitHub refused to list ${repo}'s pull requests`,
+      title: l10n.t("GitHub refused to list {0}'s pull requests", repo),
       detail: err.message,
       buttons: [
         err.helpUrl
           ? {
-              label: "Authorize on GitHub",
+              label: l10n.t("Authorize on GitHub"),
               icon: "link-external",
               primary: true,
               action: { kind: "openUrl", url: err.helpUrl },
-              title: "Open GitHub's page that authorizes this sign-in for the organization",
+              title: l10n.t("Open GitHub's page that authorizes this sign-in for the organization"),
             }
-          : { label: "Open on GitHub", icon: "link-external", primary: true, action: { kind: "openUrl", url: `https://github.com/${repo}/pulls` } },
+          : { label: l10n.t("Open on GitHub"), icon: "link-external", primary: true, action: { kind: "openUrl", url: `https://github.com/${repo}/pulls` } },
         retry,
       ],
     };
@@ -263,29 +271,29 @@ export function failureMessage(err: Described, repo: string): PrListMessage {
     return {
       icon: "warning",
       tone: "warning",
-      title: `GitHub has no repository ${repo}`,
-      detail: "Or this GitHub sign-in can't see it: a private repository needs an account with access to it.",
+      title: l10n.t("GitHub has no repository {0}", repo),
+      detail: l10n.t("Or this GitHub sign-in can't see it: a private repository needs an account with access to it."),
       buttons: [
-        { label: "Sign in again", icon: "sign-in", action: { kind: "signIn", again: true }, title: "Sign in to GitHub, with another account if need be" },
+        { label: l10n.t("Sign in again"), icon: "sign-in", action: { kind: "signIn", again: true }, title: l10n.t("Sign in to GitHub, with another account if need be") },
         retry,
       ],
     };
   }
   if (err.kind === "rate-limit") {
-    return { icon: "clock", tone: "warning", title: "GitHub's rate limit was reached", detail: err.message, buttons: [retry] };
+    return { icon: "clock", tone: "warning", title: l10n.t("GitHub's rate limit was reached"), detail: err.message, buttons: [retry] };
   }
   if (err.kind === "network") {
-    return { icon: "error", tone: "error", title: "Couldn't reach GitHub", detail: "Check your network connection.", buttons: [{ ...retry, primary: true }] };
+    return { icon: "error", tone: "error", title: l10n.t("Couldn't reach GitHub"), detail: l10n.t("Check your network connection."), buttons: [{ ...retry, primary: true }] };
   }
-  return { icon: "error", tone: "error", title: "Couldn't load pull requests", detail: err.message, buttons: [{ ...retry, primary: true }] };
+  return { icon: "error", tone: "error", title: l10n.t("Couldn't load pull requests"), detail: err.message, buttons: [{ ...retry, primary: true }] };
 }
 
 export const SIGNED_OUT: PrListMessage = {
   icon: "github",
   tone: "info",
-  title: "Sign in to GitHub to see pull requests",
-  detail: "GitStudio uses VS Code's GitHub account — no token to paste. Then list, check out, review, merge and create pull requests here.",
-  buttons: [{ label: "Sign in to GitHub", icon: "sign-in", primary: true, action: { kind: "signIn" } }],
+  title: l10n.t("Sign in to GitHub to see pull requests"),
+  detail: l10n.t("GitStudio uses VS Code's GitHub account — no token to paste. Then list, check out, review, merge and create pull requests here."),
+  buttons: [{ label: l10n.t("Sign in to GitHub"), icon: "sign-in", primary: true, action: { kind: "signIn" } }],
 };
 
 // ── The view ─────────────────────────────────────────────────────────────────
@@ -605,7 +613,7 @@ export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vsc
         message: {
           icon: "repo",
           tone: "info",
-          title: discovering ? LOOKING_FOR_A_REPOSITORY : "Open a Git repository to see its pull requests.",
+          title: discovering ? LOOKING_FOR_A_REPOSITORY : l10n.t("Open a Git repository to see its pull requests."),
           buttons: [],
         },
       };
@@ -728,12 +736,12 @@ export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vsc
         this.notice = {
           icon: "warning",
           tone: "warning",
-          title: `Couldn't refresh: ${d.message}`,
-          detail: `Showing the list as it was ${ago(shown.at)}.`,
+          title: l10n.t("Couldn't refresh: {0}", d.message),
+          detail: l10n.t("Showing the list as it was {0}.", ago(shown.at)),
           buttons:
             d.kind === "auth" && d.status === 401
-              ? [{ label: "Sign in again", icon: "sign-in", action: { kind: "signIn", again: true } }]
-              : [{ label: "Retry", icon: "refresh", action: { kind: "retry" } }],
+              ? [{ label: l10n.t("Sign in again"), icon: "sign-in", action: { kind: "signIn", again: true } }]
+              : [{ label: l10n.t("Retry"), icon: "refresh", action: { kind: "retry" } }],
         };
       } else {
         this.status = "message";
@@ -778,8 +786,8 @@ export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vsc
       this.notice = {
         icon: "warning",
         tone: "warning",
-        title: `Couldn't load more: ${describe(err).message}`,
-        buttons: [{ label: "Retry", icon: "refresh", action: { kind: "loadMore" } }],
+        title: l10n.t("Couldn't load more: {0}", describe(err).message),
+        buttons: [{ label: l10n.t("Retry"), icon: "refresh", action: { kind: "loadMore" } }],
       };
     } finally {
       if (this.queryKeyNow() === key) {
@@ -1034,14 +1042,14 @@ function cleanFilters(f: PrListFilters | undefined): PrListFilters {
 /** whyNoGitHub's sentences as a message: a short title, and what it read. */
 function noGitHubMessage(why: string): PrListMessage {
   if (/^None of this repository's remotes is on github\.com/.test(why)) {
-    return { icon: "repo", tone: "info", title: "This repository isn't on GitHub", detail: why, buttons: [] };
+    return { icon: "repo", tone: "info", title: l10n.t("This repository isn't on GitHub"), detail: why, buttons: [] };
   }
   if (/^This repository has no remotes/.test(why)) {
     return {
       icon: "repo",
       tone: "info",
-      title: "This repository has no remotes",
-      detail: "Pull requests show here once a remote points at github.com.",
+      title: l10n.t("This repository has no remotes"),
+      detail: l10n.t("Pull requests show here once a remote points at github.com."),
       buttons: [],
     };
   }

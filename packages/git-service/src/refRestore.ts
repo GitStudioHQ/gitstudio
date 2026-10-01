@@ -1,5 +1,6 @@
 import { nativePath } from "./folderPath";
 import type { GitProcess, GitRunOptions } from "./GitProcess";
+import * as l10n from "@vscode/l10n";
 
 // Reading and putting back local branches — for both products' Undo.
 //
@@ -97,20 +98,20 @@ export async function whyRefsNotRestorable(
     if (cur === m.before) continue; // already back
     if (cur !== m.after) {
       if (m.after === null) {
-        return `A branch named '${name}' exists again, so Undo won't bring back the one "${label}" deleted. Nothing was changed.`;
+        return l10n.t("A branch named '{0}' exists again, so Undo won't bring back the one \"{1}\" deleted. Nothing was changed.", name, label);
       }
       if (cur === null) {
-        return `'${name}' has been deleted since "${label}", so there is nothing to put back.`;
+        return l10n.t("'{0}' has been deleted since \"{1}\", so there is nothing to put back.", name, label);
       }
-      return `'${name}' has moved since (it is at ${shortSha(cur)} now), and putting it back would throw that away.`;
+      return l10n.t("'{0}' has moved since (it is at {1} now), and putting it back would throw that away.", name, shortSha(cur));
     }
     const here = head === m.ref && opts?.leaving !== m.ref;
     const elsewhere = head !== m.ref ? where.get(m.ref) : undefined;
     if (elsewhere) {
-      return `'${name}' is checked out in another worktree, at ${elsewhere}. Undo it there.`;
+      return l10n.t("'{0}' is checked out in another worktree, at {1}. Undo it there.", name, elsewhere);
     }
     if (here && m.before === null) {
-      return `'${name}' is checked out. Switch to another branch, then undo.`;
+      return l10n.t("'{0}' is checked out. Switch to another branch, then undo.", name);
     }
   }
   return undefined;
@@ -144,7 +145,7 @@ export async function putRefBack(
   const r = await proc.run(args, opts);
   if (r.code !== 0) {
     const what =
-      m.before === null ? `delete '${name}'` : m.after === null ? `bring back '${name}'` : `move '${name}' back to ${shortSha(m.before)}`;
-    throw new Error(`Undo couldn't ${what}: ${r.stderr.trim() || "git refused"}`);
+      m.before === null ? l10n.t("delete '{0}'", name) : m.after === null ? l10n.t("bring back '{0}'", name) : l10n.t("move '{0}' back to {1}", name, shortSha(m.before));
+    throw new Error(l10n.t("Undo couldn't {0}: {1}", what, r.stderr.trim() || "git refused"));
   }
 }

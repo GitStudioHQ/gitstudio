@@ -16,6 +16,8 @@ import {
   type RefKind,
 } from "./refCompare";
 import type { GitRef } from "@gitstudio/host-bridge/git";
+import * as l10n from "@vscode/l10n";
+import { l10nWebviewScript } from "@gitstudio/l10n/index";
 
 /** Each ref pill's icon, by what the ref names. */
 const REF_ICON: Record<RefKind, string> = {
@@ -68,7 +70,7 @@ export class ComparePanel {
         (r: GitRef) =>
           r.type === "head" || r.type === "remote" || r.type === "tag",
       );
-      h = await pickRef(refs, `Compare ${b} with…`);
+      h = await pickRef(refs, l10n.t("Compare {0} with…", b ?? ""));
     }
     if (!b || !h) {
       return;
@@ -112,7 +114,7 @@ export class ComparePanel {
     this.head = head;
     this.panel = vscode.window.createWebviewPanel(
       "gitstudio.compare",
-      "Compare",
+      l10n.t("Compare"),
       vscode.ViewColumn.Active,
       {
         enableScripts: true,
@@ -146,11 +148,11 @@ export class ComparePanel {
     const base = this.base;
     const head = this.head;
     const threeDot = this.threeDot;
-    this.panel.title = `Compare: ${base} ↔ ${head}`;
+    this.panel.title = l10n.t("Compare: {0} ↔ {1}", base, head);
     const active = this.repos.getActive();
     if (!active) {
       this.lastRenderKey = "";
-      this.panel.webview.html = this.errorHtml("No active repository.");
+      this.panel.webview.html = this.errorHtml(l10n.t("No active repository."));
       return;
     }
     let result: CompareResult;
@@ -167,7 +169,7 @@ export class ComparePanel {
       }
       this.lastRenderKey = "";
       this.panel.webview.html = this.errorHtml(
-        `Couldn't compare ${this.base} with ${this.head}.`,
+        l10n.t("Couldn't compare {0} with {1}.", this.base, this.head),
       );
       return;
     }
@@ -204,7 +206,7 @@ export class ComparePanel {
         );
         const picked = await pickRef(
           refs,
-          m.type === "pickBase" ? "Compare from (base)…" : "Compare to (head)…",
+          m.type === "pickBase" ? l10n.t("Compare from (base)…") : l10n.t("Compare to (head)…"),
         );
         if (picked) {
           if (m.type === "pickBase") {
@@ -292,7 +294,7 @@ export class ComparePanel {
       vscode.Uri.joinPath(this.extensionUri, "dist", "codicons", "codicon.css"),
     );
     const csp = [
-      `default-src 'none'`,
+      "default-src 'none'",
       `style-src 'nonce-${nonce}' ${this.panel.webview.cspSource}`,
       `font-src ${this.panel.webview.cspSource}`,
       `script-src 'nonce-${nonce}'`,
@@ -310,7 +312,7 @@ export class ComparePanel {
       deletions: result.deletions,
       commits: result.commits.map((c) => ({
         sha: c.sha,
-        subject: c.subject || "(no message)",
+        subject: c.subject || l10n.t("(no message)"),
         author: c.author,
         rel: relativeTime(c.authorDate),
       })),
@@ -333,73 +335,74 @@ export class ComparePanel {
 </head>
 <body>
   <div class="cmp-bar">
-    <button class="ref-pick" id="pick-base" title="Change base ref"><i class="codicon codicon-${REF_ICON[result.baseKind]}"></i><span class="nm">${esc(this.base)}</span></button>
+    <button class="ref-pick" id="pick-base" title="${l10n.t("Change base ref")}"><i class="codicon codicon-${REF_ICON[result.baseKind]}"></i><span class="nm">${esc(this.base)}</span></button>
     <span class="cmp-arrow" aria-hidden="true"><i class="codicon codicon-arrow-right"></i></span>
-    <button class="ref-pick" id="pick-head" title="Change compare ref"><i class="codicon codicon-${REF_ICON[result.headKind]}"></i><span class="nm">${esc(this.head)}</span></button>
-    <button class="icon-btn" id="swap" title="Swap base and compare"><i class="codicon codicon-arrow-swap"></i></button>
-    <div class="cmp-mode" role="group" aria-label="Comparison mode">
+    <button class="ref-pick" id="pick-head" title="${l10n.t("Change compare ref")}"><i class="codicon codicon-${REF_ICON[result.headKind]}"></i><span class="nm">${esc(this.head)}</span></button>
+    <button class="icon-btn" id="swap" title="${l10n.t("Swap base and compare")}"><i class="codicon codicon-arrow-swap"></i></button>
+    <div class="cmp-mode" role="group" aria-label="${l10n.t("Comparison mode")}">
       <button id="mode-3" class="${this.threeDot ? "on" : ""}" title="Commits and changes ${esc(this.head)} adds on top of the merge-base">What ${esc(this.head)} adds</button>
-      <button id="mode-2" class="${this.threeDot ? "" : "on"}" title="Every difference between the two refs">All differences</button>
+      <button id="mode-2" class="${this.threeDot ? "" : "on"}" title="${l10n.t("Every difference between the two refs")}">${l10n.t("All differences")}</button>
     </div>
   </div>
 
   <div class="cmp-diffstat">
     <div class="ds-headline">
       <b class="ds-head">${esc(this.head)}</b>
-      <span class="ds-vs">compared with</span>
+      <span class="ds-vs">${l10n.t("compared with")}</span>
       <b class="ds-base">${esc(this.base)}</b>
     </div>
     <div class="ds-metrics">
-      <span class="ds-metric"><b id="m-commits">${result.ahead}</b> ${result.ahead === 1 ? "commit" : "commits"}</span>
+      <span class="ds-metric"><b id="m-commits">${result.ahead}</b> ${result.ahead === 1 ? l10n.t("commit") : l10n.t("commits")}</span>
       <span class="ds-sep">·</span>
-      <span class="ds-metric"><b id="m-files">${result.files.length}</b> ${result.files.length === 1 ? "file" : "files"} changed</span>
+      <span class="ds-metric"><b id="m-files">${result.files.length}</b> ${result.files.length === 1 ? l10n.t("file") : l10n.t("files")} ${l10n.t("changed")}</span>
       <span class="ds-sep">·</span>
       <span class="ds-metric ds-add">+${result.additions}</span>
       <span class="ds-metric ds-del">−${result.deletions}</span>
       <span class="ds-bar" id="ds-bar" aria-hidden="true"></span>
-      ${result.behind > 0 ? `<span class="ds-behind" title="${esc(this.base)} has commits ${esc(this.head)} doesn't"><i class="codicon codicon-arrow-down"></i>${result.behind} behind</span>` : ""}
+      ${result.behind > 0 ? `<span class="ds-behind" title="${l10n.t("{0} has commits {1} doesn't", esc(this.base), esc(this.head))}"><i class="codicon codicon-arrow-down"></i>${l10n.t("{0} behind", result.behind)}</span>` : ""}
     </div>
   </div>
 
   <div class="cmp-seg" role="tablist">
-    <button id="seg-files" class="on" role="tab"><i class="codicon codicon-file"></i>Files<span class="count">${result.files.length}</span></button>
-    <button id="seg-commits" role="tab"><i class="codicon codicon-git-commit"></i>Commits<span class="count">${result.ahead}</span></button>
+    <button id="seg-files" class="on" role="tab"><i class="codicon codicon-file"></i>${l10n.t("Files")}<span class="count">${result.files.length}</span></button>
+    <button id="seg-commits" role="tab"><i class="codicon codicon-git-commit"></i>${l10n.t("Commits")}<span class="count">${result.ahead}</span></button>
   </div>
 
   <div class="cmp-panel" id="panel-files">
     <div class="files-toolbar">
-      <button class="tb-btn" id="toggle-tree" title="Toggle file tree" aria-pressed="true"><i class="codicon codicon-list-tree"></i></button>
+      <button class="tb-btn" id="toggle-tree" title="${l10n.t("Toggle file tree")}" aria-pressed="true"><i class="codicon codicon-list-tree"></i></button>
       <div class="filter-wrap">
         <i class="codicon codicon-search"></i>
-        <input id="file-filter" type="text" placeholder="Filter changed files…" aria-label="Filter changed files" />
+        <input id="file-filter" type="text" placeholder="${l10n.t("Filter changed files…")}" aria-label="${l10n.t("Filter changed files")}" />
       </div>
       <span class="tb-spacer"></span>
-      <button class="tb-btn" id="expand-all" title="Expand all files"><i class="codicon codicon-unfold"></i></button>
-      <button class="tb-btn" id="collapse-all" title="Collapse all files"><i class="codicon codicon-fold"></i></button>
-      <div class="tb-group" role="group" aria-label="Diff style">
-        <button class="tb-seg on" id="diff-unified" title="Unified diff"><i class="codicon codicon-diff-single"></i></button>
-        <button class="tb-seg" id="diff-split" title="Split diff"><i class="codicon codicon-diff-sidebyside"></i></button>
+      <button class="tb-btn" id="expand-all" title="${l10n.t("Expand all files")}"><i class="codicon codicon-unfold"></i></button>
+      <button class="tb-btn" id="collapse-all" title="${l10n.t("Collapse all files")}"><i class="codicon codicon-fold"></i></button>
+      <div class="tb-group" role="group" aria-label="${l10n.t("Diff style")}">
+        <button class="tb-seg on" id="diff-unified" title="${l10n.t("Unified diff")}"><i class="codicon codicon-diff-single"></i></button>
+        <button class="tb-seg" id="diff-split" title="${l10n.t("Split diff")}"><i class="codicon codicon-diff-sidebyside"></i></button>
       </div>
     </div>
     <div class="cmp-files-layout" id="files-layout">
-      <aside class="cmp-tree-sidebar" id="tree-sidebar" aria-label="Changed files">
-        <div class="tree-head"><span>Files</span><span class="tree-head-count" id="tree-count">0</span></div>
+      <aside class="cmp-tree-sidebar" id="tree-sidebar" aria-label="${l10n.t("Changed files")}">
+        <div class="tree-head"><span>${l10n.t("Files")}</span><span class="tree-head-count" id="tree-count">0</span></div>
         <div class="tree-nav" id="tree-nav"></div>
       </aside>
-      <div class="tree-resizer" id="tree-resizer" title="Drag to resize"></div>
+      <div class="tree-resizer" id="tree-resizer" title="${l10n.t("Drag to resize")}"></div>
       <div class="files-main">
         <div class="files-list" id="files-list"></div>
-        <div class="cmp-empty" id="files-empty" hidden>No file changes between these refs.</div>
-        <div class="cmp-empty" id="files-nomatch" hidden>No files match the filter.</div>
+        <div class="cmp-empty" id="files-empty" hidden>${l10n.t("No file changes between these refs.")}</div>
+        <div class="cmp-empty" id="files-nomatch" hidden>${l10n.t("No files match the filter.")}</div>
       </div>
     </div>
   </div>
 
   <div class="cmp-panel" id="panel-commits" hidden>
     <div class="commits-list" id="commits-list"></div>
-    <div class="cmp-empty" id="commits-empty" hidden>No commits — <b>${esc(this.head)}</b> has nothing that <b>${esc(this.base)}</b> doesn't.</div>
+    <div class="cmp-empty" id="commits-empty" hidden>${l10n.t("No commits —")} <b>${esc(this.head)}</b> ${l10n.t("has nothing that")} <b>${esc(this.base)}</b> ${l10n.t("doesn't.")}</div>
   </div>
 
+${l10nWebviewScript(nonce)}
 <script nonce="${nonce}">${SOLID_ACCENT_JS}</script>
 <script nonce="${nonce}">
 const DATA = ${dataJson};
@@ -807,7 +810,7 @@ function makeFileEl(f) {
   nums.appendChild(makeMiniBar(f.additions, f.deletions));
   head.appendChild(nums);
   const open = el("button", "open-native", '<i class="codicon codicon-diff"></i>');
-  open.title = "Open in diff editor";
+  open.title = l10nT("Open in diff editor");
   open.addEventListener("click", (e) => { e.stopPropagation(); vscode.postMessage({ type: "openFile", path: f.path, oldPath: f.oldPath }); });
   head.appendChild(open);
   head.addEventListener("click", () => toggleFile(fileEl));
@@ -1009,10 +1012,10 @@ function parseHunks(patch) {
 function renderDiffInto(body, patch) {
   body.dataset.requested = "1";
   body.textContent = "";
-  if (patch === "") { body.appendChild(el("div", "diff-note", "No textual diff (binary, empty, or rename with no content change).")); return; }
+  if (patch === "") { body.appendChild(el("div", "diff-note", l10nT("No textual diff (binary, empty, or rename with no content change)."))); return; }
   const parsed = parseHunks(patch);
-  if (parsed.binary) { body.appendChild(el("div", "diff-note", "Binary file — not shown.")); return; }
-  if (!parsed.hunks.length) { body.appendChild(el("div", "diff-note", "No content changes.")); return; }
+  if (parsed.binary) { body.appendChild(el("div", "diff-note", l10nT("Binary file — not shown."))); return; }
+  if (!parsed.hunks.length) { body.appendChild(el("div", "diff-note", l10nT("No content changes."))); return; }
   body.appendChild(diffMode === "split" ? renderSplit(parsed.hunks) : renderUnified(parsed.hunks));
 }
 

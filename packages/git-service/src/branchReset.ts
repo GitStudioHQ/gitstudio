@@ -33,6 +33,7 @@ import { refShortName } from "./checkoutRef";
 import { localNameFor } from "./checkoutRemote";
 import { operationInTheWayMessage, pick, stoppedIn } from "./stoppedOperation";
 import { noCopyClause, whyNoCopy, type NoCopy } from "./SnapshotProvider";
+import * as l10n from "@vscode/l10n";
 
 /** How many of the commits a reset drops the question lists by subject. */
 export const DROPPED_SHOWN = 5;
@@ -159,7 +160,7 @@ export async function resetTargetOf(
     .map((line) => line.split("\0"))
     .find((f) => f[0] === fullName);
   if (r.code !== 0 || !row) {
-    return { refused: `'${branch}' is not in this repository any more — refresh and try again.` };
+    return { refused: l10n.t("'{0}' is not in this repository any more — refresh and try again.", branch) };
   }
   const [, upstream = "", upstreamRemote = "", worktreePath = ""] = row;
   const current = (await headRef(proc, opts)) === fullName;
@@ -169,12 +170,12 @@ export async function resetTargetOf(
   if (!to) {
     if (!upstream) {
       return {
-        refused: `'${branch}' doesn't track a remote branch, so there is nothing to reset it to. Set its tracked branch first.`,
+        refused: l10n.t("'{0}' doesn't track a remote branch, so there is nothing to reset it to. Set its tracked branch first.", branch),
       };
     }
     if (!upstream.startsWith("refs/remotes/")) {
       return {
-        refused: `'${branch}' tracks '${refShortName(upstream)}', a branch in this repository, not on a remote — there is nothing to fetch and reset it to.`,
+        refused: l10n.t("'{0}' tracks '{1}', a branch in this repository, not on a remote — there is nothing to fetch and reset it to.", branch, refShortName(upstream)),
       };
     }
     to = upstream;
@@ -193,7 +194,7 @@ export async function resetTargetOf(
   if (!current && worktreePath) {
     return {
       // git spells a Windows path C:/Users/…; say it the way the system does.
-      refused: `'${branch}' is checked out in another worktree, at ${nativePath(worktreePath)}. Reset it there, or check out another branch in that worktree first.`,
+      refused: l10n.t("'{0}' is checked out in another worktree, at {1}. Reset it there, or check out another branch in that worktree first.", branch, nativePath(worktreePath)),
     };
   }
   // A name git reads as an option. `branch -f -- <name>` is refused by git
@@ -201,7 +202,7 @@ export async function resetTargetOf(
   // is reset without its name on argv, so it is not affected.)
   if (!current && branch.startsWith("-")) {
     return {
-      refused: `Git can't safely move '${branch}': a branch name that starts with "-" reads as an option. Rename it, then reset it.`,
+      refused: l10n.t("Git can't safely move '{0}': a branch name that starts with \"-\" reads as an option. Rename it, then reset it.", branch),
     };
   }
   if (!remote) {
@@ -240,14 +241,14 @@ export async function planReset(
   }
   const localSha = await commitOf(proc, t.fullName, run);
   if (!localSha) {
-    return { refused: `'${t.branch}' is not in this repository any more — refresh and try again.` };
+    return { refused: l10n.t("'{0}' is not in this repository any more — refresh and try again.", t.branch) };
   }
   const targetSha = await commitOf(proc, t.target, run);
   if (!targetSha) {
     return {
       refused: opts.fetchFailed
-        ? `There is no '${t.targetName}' to reset to, and ${t.remote} couldn't be reached to fetch it.`
-        : `There is no '${t.targetName}' to reset to — it is not on ${t.remote} any more.`,
+        ? l10n.t("There is no '{0}' to reset to, and {1} couldn't be reached to fetch it.", t.targetName, t.remote)
+        : l10n.t("There is no '{0}' to reset to — it is not on {1} any more.", t.targetName, t.remote),
     };
   }
 
@@ -345,21 +346,21 @@ export function resetQuestion(p: ResetPlan): ResetQuestion {
   const b = `'${p.branch}'`;
   const t = `'${p.targetName}'`;
   const stale = p.fetchFailed
-    ? `${p.remote} couldn't be reached, so this uses ${t} as it was when last fetched.`
+    ? l10n.t("{0} couldn't be reached, so this uses {1} as it was when last fetched.", p.remote, t)
     : "";
   const dirty = p.current ? p.dirty : 0;
   const overwritten = p.current ? p.untrackedOverwritten : 0;
   const loses = p.ahead > 0 || dirty > 0 || overwritten > 0;
 
   if (!loses && p.behind === 0) {
-    return { kind: "nothing", message: [`${b} already matches ${t}. Nothing to reset.`, stale].filter(Boolean).join(" ") };
+    return { kind: "nothing", message: [l10n.t("{0} already matches {1}. Nothing to reset.", b, t), stale].filter(Boolean).join(" ") };
   }
   if (!loses) {
     return {
       kind: "confirm",
-      title: `Fast-forward ${b} to ${t}?`,
+      title: l10n.t("Fast-forward {0} to {1}?", b, t),
       message: [
-        `${b} is ${plural(p.behind, "commit")} behind ${t} and has no commits of its own, so nothing will be lost: it will move forward to match.`,
+        l10n.t("{0} is {1} behind {2} and has no commits of its own, so nothing will be lost: it will move forward to match.", b, plural(p.behind, "commit"), t),
         stale,
       ]
         .filter(Boolean)
@@ -372,14 +373,14 @@ export function resetQuestion(p: ResetPlan): ResetQuestion {
   const parts: string[] = [];
   if (p.ahead > 0) {
     const lines = p.dropped.map((c) => `    ${c.sha}  ${c.subject}`);
-    if (p.ahead > p.dropped.length) lines.push(`    …and ${p.ahead - p.dropped.length} more`);
+    if (p.ahead > p.dropped.length) lines.push(l10n.t("    …and {0} more", p.ahead - p.dropped.length));
     parts.push(
-      `${b} will lose ${plural(p.ahead, "commit")} that ${p.ahead === 1 ? "isn't" : "aren't"} on ${t}:\n` +
+      l10n.t("{0} will lose {1} that {2} on {3}:\n", b, plural(p.ahead, "commit"), p.ahead === 1 ? l10n.t("isn't") : l10n.t("aren't"), t) +
         lines.join("\n"),
     );
   }
   if (dirty > 0) {
-    parts.push(`Uncommitted changes to ${plural(dirty, "file")} will be discarded.`);
+    parts.push(l10n.t("Uncommitted changes to {0} will be discarded.", plural(dirty, "file")));
   }
   if (overwritten > 0) {
     parts.push(
@@ -387,22 +388,24 @@ export function resetQuestion(p: ResetPlan): ResetQuestion {
     );
   }
   if (p.behind > 0) {
-    parts.push(`${b} will also get the ${plural(p.behind, "commit")} on ${t} it doesn't have yet.`);
+    parts.push(l10n.t("{0} will also get the {1} on {2} it doesn't have yet.", b, plural(p.behind, "commit"), t));
   }
   const withChanges =
     dirty === 0
       ? ""
       : p.current && p.uncopied
-        ? `, but not your uncommitted changes — git can't keep a copy of them ${noCopyClause(p.uncopied, "now")}`
-        : ", with your uncommitted changes";
+        ? l10n.t(", but not your uncommitted changes — git can't keep a copy of them {0}", noCopyClause(p.uncopied, "now"))
+        : l10n.t(", with your uncommitted changes");
   parts.push(
-    `GitStudio's Undo can put the branch back${withChanges}.` +
-      (overwritten > 0 ? ` It can't bring back the overwritten untracked ${overwritten === 1 ? "file" : "files"}.` : ""),
+    l10n.t("GitStudio's Undo can put the branch back{0}.", withChanges) +
+      (overwritten > 0
+        ? l10n.t(" It can't bring back the overwritten untracked {0}.", overwritten === 1 ? l10n.t("file") : l10n.t("files"))
+        : ""),
   );
   if (stale) parts.push(stale);
   return {
     kind: "confirm",
-    title: `Reset ${b} to ${t}?`,
+    title: l10n.t("Reset {0} to {1}?", b, t),
     message: parts.join("\n\n"),
     confirmLabel: "Reset",
     danger: true,
@@ -421,15 +424,15 @@ export async function runReset(proc: GitProcess, p: ResetPlan, opts?: GitRunOpti
       ok: false,
       stderr: "",
       refused: now
-        ? `'${p.branch}' moved while you were being asked (it is at ${short(now)} now, not ${short(p.localSha)}). Nothing was reset — try again.`
-        : `'${p.branch}' is not in this repository any more. Nothing was reset.`,
+        ? l10n.t("'{0}' moved while you were being asked (it is at {1} now, not {2}). Nothing was reset — try again.", p.branch, short(now), short(p.localSha))
+        : l10n.t("'{0}' is not in this repository any more. Nothing was reset.", p.branch),
     };
   }
   if (((await headRef(proc, opts)) === p.fullName) !== p.current) {
     return {
       ok: false,
       stderr: "",
-      refused: `Which branch is checked out changed while you were being asked. Nothing was reset — try again.`,
+      refused: l10n.t("Which branch is checked out changed while you were being asked. Nothing was reset — try again."),
     };
   }
   const args = p.current

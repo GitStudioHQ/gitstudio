@@ -14,6 +14,7 @@ import {
   type ConflictsState,
   type MergeSettings,
 } from "@gitstudio/host-bridge/conflictsProtocol";
+import * as l10n from "@vscode/l10n";
 
 /**
  * The command ids a product registers, by role. GitStudio and Merge Studio use
@@ -166,14 +167,14 @@ export function sidesTipText(
   version: string,
   op: { kind: string; yours: { name: string } },
 ): string | undefined {
-  const lead = `New in ${product.displayName} ${version}:`;
-  const after = "Before this version the two sides were swapped.";
+  const lead = l10n.t("New in {0} {1}:", product.displayName, version);
+  const after = l10n.t("Before this version the two sides were swapped.");
   if (op.kind === "rebase" || op.kind === "rebase-merge-step") {
     const name = op.yours.name ? ` (${op.yours.name})` : "";
-    return `${lead} during a rebase, Yours is your commit${name}, on the left. ${after}`;
+    return l10n.t("{0} during a rebase, Yours is your commit{1}, on the left. {2}", lead, name, after);
   }
   if (op.kind === "stash") {
-    return `${lead} when a stash is applied, Yours is your stashed changes, on the left. ${after}`;
+    return l10n.t("{0} when a stash is applied, Yours is your stashed changes, on the left. {1}", lead, after);
   }
   return undefined;
 }
@@ -404,22 +405,22 @@ export function statusItemLook(s: {
   if (s.defers) return undefined;
   if (s.unmerged > 0) {
     return {
-      text: "$(warning) Resolve Conflicts",
-      tooltip: `${s.unmerged === 1 ? "1 conflicted file" : `${s.unmerged} conflicted files`} — open the Conflicts view`,
+      text: l10n.t("$(warning) Resolve Conflicts"),
+      tooltip: l10n.t("{0} — open the Conflicts view", s.unmerged === 1 ? l10n.t("1 conflicted file") : l10n.t("{0} conflicted files", s.unmerged)),
       warning: true,
     };
   }
   if (s.op?.pause) {
     return {
-      text: "$(debug-pause) Rebase paused",
-      tooltip: `${s.op.pause.detail || "Paused"}. Open the Conflicts view to continue.`,
+      text: l10n.t("$(debug-pause) Rebase paused"),
+      tooltip: l10n.t("{0}. Open the Conflicts view to continue.", s.op.pause.detail || l10n.t("Paused")),
       warning: false,
     };
   }
   if (s.op?.continueVerb) {
     return {
-      text: `$(debug-continue) ${s.op.continueVerb}`,
-      tooltip: "All conflicts are resolved. Open the Conflicts view to continue.",
+      text: l10n.t("$(debug-continue) {0}", s.op.continueVerb),
+      tooltip: l10n.t("All conflicts are resolved. Open the Conflicts view to continue."),
       warning: false,
     };
   }

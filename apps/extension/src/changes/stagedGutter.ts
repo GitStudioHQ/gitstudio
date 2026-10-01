@@ -4,6 +4,7 @@ import type { ChangeBlock } from "@gitstudio/git-service/blockStaging";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { relativePath } from "./changesView";
 import { blockAtLine } from "./blockAtLine";
+import * as l10n from "@vscode/l10n";
 
 /**
  * Staging state in VS Code's OWN editor gutter.
@@ -236,7 +237,7 @@ export class StagedGutter implements vscode.Disposable {
     const target = this.resolve(document.uri);
     if (!target) {
       void vscode.window.showInformationMessage(
-        "GitStudio: this file is not inside an open Git repository.",
+        l10n.t("GitStudio: this file is not inside an open Git repository."),
       );
       return;
     }
@@ -248,7 +249,7 @@ export class StagedGutter implements vscode.Disposable {
     const block = blockAtLine(blocks, line);
     if (!block) {
       void vscode.window.setStatusBarMessage(
-        "$(info) GitStudio: no change on this line to stage",
+        l10n.t("$(info) GitStudio: no change on this line to stage"),
         2500,
       );
       return;
@@ -265,7 +266,7 @@ export class StagedGutter implements vscode.Disposable {
       staged,
     );
     if (!result.ok) {
-      void vscode.window.setStatusBarMessage(`$(info) GitStudio: ${result.stderr}`, 4000);
+      void vscode.window.setStatusBarMessage(l10n.t("$(info) GitStudio: {0}", result.stderr), 4000);
     }
     await this.refresh(document);
   }

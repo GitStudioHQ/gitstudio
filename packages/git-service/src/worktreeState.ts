@@ -4,6 +4,7 @@ import type { GitProcess, GitRunOptions } from "./GitProcess";
 import { parseV2 } from "./StatusProvider";
 import { stoppedIn, type StoppedOperation } from "./stoppedOperation";
 import type { WorktreeEntry } from "./WorktreeProvider";
+import * as l10n from "@vscode/l10n";
 
 // What each worktree of a repository is doing — read in tiers, so a list of
 // seventy worktrees costs a fixed handful of spawns to paint, and the rest is
@@ -366,7 +367,7 @@ export async function readCommits(
       parents: f[1].split(" ").filter(Boolean),
       author: f[2],
       date: Number(f[3]) || 0,
-      subject: f.slice(4).join("\x1f") || "(no message)",
+      subject: f.slice(4).join("\x1f") || l10n.t("(no message)"),
     });
   }
   return { commits: commits.slice(0, limit), more: commits.length > limit };

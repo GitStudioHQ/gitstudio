@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import "./webviewL10n";
 
 // Issue #24: "expanded file diffs collapse on their own … about every 30
 // seconds to 2 minutes even when neither branch is changing."

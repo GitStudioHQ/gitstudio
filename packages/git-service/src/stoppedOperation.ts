@@ -1,5 +1,6 @@
 import type { GitProcess } from "./GitProcess";
 import { OperationProvider } from "./OperationProvider";
+import * as l10n from "@vscode/l10n";
 
 // What git is ALREADY stopped in, for a door about to run a command — and the
 // sentence for a command refused over it.
@@ -109,36 +110,36 @@ export function sameStop(a: Stopped | null, b: Stopped | null): boolean {
 
 /** "…before <what>". */
 const BEFORE: Record<BlockedDoor, string> = {
-  revert: "reverting",
-  "cherry-pick": "cherry-picking",
-  merge: "merging",
-  rebase: "rebasing",
-  checkout: "checking out",
-  stash: "applying a stash",
-  pull: "pulling again",
-  reset: "resetting",
-  drop: "dropping a commit",
-  "drop-many": "dropping commits",
-  squash: "squashing commits",
+  revert: l10n.t("reverting"),
+  "cherry-pick": l10n.t("cherry-picking"),
+  merge: l10n.t("merging"),
+  rebase: l10n.t("rebasing"),
+  checkout: l10n.t("checking out"),
+  stash: l10n.t("applying a stash"),
+  pull: l10n.t("pulling again"),
+  reset: l10n.t("resetting"),
+  drop: l10n.t("dropping a commit"),
+  "drop-many": l10n.t("dropping commits"),
+  squash: l10n.t("squashing commits"),
 };
 
 /** The operation, as the subject of a sentence. */
 const NAME: Record<StoppedOperation, string> = {
-  merge: "A merge",
-  rebase: "A rebase",
-  "cherry-pick": "A cherry-pick",
-  revert: "A revert",
-  am: "Applying patches (git am)",
+  merge: l10n.t("A merge"),
+  rebase: l10n.t("A rebase"),
+  "cherry-pick": l10n.t("A cherry-pick"),
+  revert: l10n.t("A revert"),
+  am: l10n.t("Applying patches (git am)"),
 };
 
 /** How the operation is finished once nothing is left to resolve — "commit"
  *  only for a merge; a rebase, a pick, a revert and an am CONTINUE. */
 export const FINISH: Readonly<Record<StoppedOperation, string>> = {
-  merge: "commit the merge",
-  rebase: "continue the rebase",
-  "cherry-pick": "continue the cherry-pick",
-  revert: "continue the revert",
-  am: "continue",
+  merge: l10n.t("commit the merge"),
+  rebase: l10n.t("continue the rebase"),
+  "cherry-pick": l10n.t("continue the cherry-pick"),
+  revert: l10n.t("continue the revert"),
+  am: l10n.t("continue"),
 };
 
 /**
@@ -148,18 +149,22 @@ export const FINISH: Readonly<Record<StoppedOperation, string>> = {
  */
 export function operationInTheWayMessage(b: OperationInTheWay): string {
   const n = b.unmerged;
-  const files = n === 1 ? "1 file" : `${n} files`;
-  const it = n === 1 ? "it" : "them";
+  const files = n === 1 ? l10n.t("1 file") : l10n.t("{0} files", n);
+  const it = n === 1 ? l10n.t("it") : l10n.t("them");
   const before = BEFORE[b.kind];
   if (!b.operation) {
-    return `${files} ${n === 1 ? "is" : "are"} still conflicted. Resolve ${it} before ${before}.`;
+    return n === 1
+      ? l10n.t("{0} is still conflicted. Resolve {1} before {2}.", files, it, before)
+      : l10n.t("{0} are still conflicted. Resolve {1} before {2}.", files, it, before);
   }
   const name = NAME[b.operation];
   if (n === 0) {
-    return `${name} is still in progress. ${b.operation === "merge" ? "Commit" : "Continue"} it — or abort it — before ${before}.`;
+    return b.operation === "merge"
+      ? l10n.t("{0} is still in progress. Commit it — or abort it — before {1}.", name, before)
+      : l10n.t("{0} is still in progress. Continue it — or abort it — before {1}.", name, before);
   }
   return (
-    `${name} is still in progress, with ${files} still conflicted. ` +
-    `Resolve ${it} and ${FINISH[b.operation]} — or abort it — before ${before}.`
+    l10n.t("{0} is still in progress, with {1} still conflicted. ", name, files) +
+    l10n.t("Resolve {0} and {1} — or abort it — before {2}.", it, FINISH[b.operation], before)
   );
 }

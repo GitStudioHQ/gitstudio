@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import "./webviewL10n";
 
 // `isAttributable` decides whether a process-wide failure gets transmitted off
 // the user's machine, so it is the privacy boundary of the whole reporter.

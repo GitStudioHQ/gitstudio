@@ -8,6 +8,7 @@
 // the host refuses by them, and the state-table tests pin them without a
 // browser. The desktop's Worktrees list can adopt the same functions.
 
+import * as l10n from "@vscode/l10n";
 import type { ChangeCommit, ChangeFile } from "./changeRows";
 import { unlinkedWhy } from "./worktreeRemoval";
 
@@ -89,21 +90,24 @@ export interface WorktreeFact {
   tip: string;
 }
 
-const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
+const plural = (n: number, one: string, many: string): string => l10n.t("{0} {1}", n, n === 1 ? one : many);
+
+/** "1 commit" / "3 commits" — a whole message: "commit" alone is also a column label. */
+const commits = (n: number): string => (n === 1 ? l10n.t("1 commit") : l10n.t("{0} commits", n));
 
 /** An operation, as a row names it. */
 export function operationWords(op: WorktreeOperationName): string {
   switch (op) {
     case "merge":
-      return "Merge in progress";
+      return l10n.t("Merge in progress");
     case "rebase":
-      return "Rebase stopped";
+      return l10n.t("Rebase stopped");
     case "cherry-pick":
-      return "Cherry-pick stopped";
+      return l10n.t("Cherry-pick stopped");
     case "revert":
-      return "Revert stopped";
+      return l10n.t("Revert stopped");
     case "am":
-      return "Applying patches";
+      return l10n.t("Applying patches");
   }
 }
 
@@ -111,24 +115,24 @@ export function operationWords(op: WorktreeOperationName): string {
 function operationSentence(op: WorktreeOperationName): string {
   switch (op) {
     case "merge":
-      return "A merge is in progress in it";
+      return l10n.t("A merge is in progress in it");
     case "rebase":
-      return "A rebase is stopped in it";
+      return l10n.t("A rebase is stopped in it");
     case "cherry-pick":
-      return "A cherry-pick is stopped in it";
+      return l10n.t("A cherry-pick is stopped in it");
     case "revert":
-      return "A revert is stopped in it";
+      return l10n.t("A revert is stopped in it");
     case "am":
-      return "git am is applying patches in it";
+      return l10n.t("git am is applying patches in it");
   }
 }
 
 /** How line 1 names what is checked out: the branch, or "detached at <sha>". */
 export function headWords(r: WorktreeRow): string {
-  if (r.kind === "bare") return "Bare repository";
+  if (r.kind === "bare") return l10n.t("Bare repository");
   if (r.branch) return r.branch;
-  if (r.status?.rebasing) return `${r.status.rebasing} (rebasing)`;
-  return `detached at ${r.head.slice(0, 7)}`;
+  if (r.status?.rebasing) return l10n.t("{0} (rebasing)", r.status.rebasing);
+  return l10n.t("detached at {0}", r.head.slice(0, 7));
 }
 
 /** Every fact about a row, in the order its tooltip says them. */
@@ -138,73 +142,81 @@ export function worktreeFacts(r: WorktreeRow): WorktreeFact[] {
     return out;
   }
   if (r.current) {
-    out.push({ id: "current", text: "This window", tone: "accent", tip: "Current — open in this window." });
+    out.push({ id: "current", text: l10n.t("This window"), tone: "accent", tip: l10n.t("Current — open in this window.") });
   }
   if (r.kind === "main") {
     out.push({
       id: "main",
-      text: "Main worktree",
+      text: l10n.t("Main worktree"),
       tone: "neutral",
-      tip: "Main worktree — the repository's own folder.",
+      tip: l10n.t("Main worktree — the repository's own folder."),
     });
   }
   if (r.locked) {
     out.push({
       id: "locked",
-      text: r.lockReason ? `Locked: ${r.lockReason}` : "Locked",
+      text: r.lockReason ? l10n.t("Locked: {0}", r.lockReason) : l10n.t("Locked"),
       tone: "warn",
       tip: r.lockReason
-        ? `Locked: “${r.lockReason}”. Git won't prune, move or remove it until it is unlocked.`
-        : "Locked, with no reason given. Git won't prune, move or remove it until it is unlocked.",
+        ? l10n.t("Locked: “{0}”. Git won't prune, move or remove it until it is unlocked.", r.lockReason)
+        : l10n.t("Locked, with no reason given. Git won't prune, move or remove it until it is unlocked."),
     });
   }
   if (r.missing) {
     out.push({
       id: "missing",
-      text: "Folder missing",
+      text: l10n.t("Folder missing"),
       tone: "danger",
-      tip: `Its folder isn't there. Forget it to clear it from the list${r.locked ? " — if it is on a drive that isn't connected, connect it instead" : ""}.`,
+      tip: r.locked
+        ? l10n.t("Its folder isn't there. Forget it to clear it from the list — if it is on a drive that isn't connected, connect it instead.")
+        : l10n.t("Its folder isn't there. Forget it to clear it from the list."),
     });
     return out;
   }
   if (r.unlinked) {
     out.push({
       id: "unlinked",
-      text: "Not a worktree",
+      text: l10n.t("Not a worktree"),
       tone: "danger",
-      tip: `Its folder is there, but it isn't a worktree any more: ${unlinkedWhy(r.unlinkedWhy)}. Forget it to clear it from the list — the folder and its files stay.`,
+      tip: l10n.t("Its folder is there, but it isn't a worktree any more: {0}. Forget it to clear it from the list — the folder and its files stay.", unlinkedWhy(r.unlinkedWhy)),
     });
     return out;
   }
   const s = r.status;
   if (s?.operation) {
-    const conflicts = s.conflicted > 0 ? ` · ${plural(s.conflicted, "conflict")}` : "";
+    const conflicts = s.conflicted > 0 ? ` · ${plural(s.conflicted, l10n.t("conflict"), l10n.t("conflicts"))}` : "";
     out.push({
       id: "operation",
       text: `${operationWords(s.operation)}${conflicts}`,
       tone: s.conflicted > 0 ? "danger" : "warn",
-      tip: `${operationSentence(s.operation)}${s.conflicted > 0 ? `, with ${plural(s.conflicted, "file")} left to resolve` : ""}. Open the worktree to continue or abort it.`,
+      tip:
+        s.conflicted > 0
+          ? l10n.t("{0}, with {1} left to resolve. Open the worktree to continue or abort it.", operationSentence(s.operation), plural(s.conflicted, l10n.t("file"), l10n.t("files")))
+          : l10n.t("{0}. Open the worktree to continue or abort it.", operationSentence(s.operation)),
     });
   } else if (s && s.conflicted > 0) {
     out.push({
       id: "operation",
-      text: plural(s.conflicted, "conflict"),
+      text: plural(s.conflicted, l10n.t("conflict"), l10n.t("conflicts")),
       tone: "danger",
-      tip: `${plural(s.conflicted, "file")} left unmerged in it. Open the worktree to resolve ${s.conflicted === 1 ? "it" : "them"}.`,
+      tip:
+        s.conflicted === 1
+          ? l10n.t("{0} left unmerged in it. Open the worktree to resolve it.", plural(s.conflicted, l10n.t("file"), l10n.t("files")))
+          : l10n.t("{0} left unmerged in it. Open the worktree to resolve them.", plural(s.conflicted, l10n.t("file"), l10n.t("files"))),
     });
   }
   if (s && s.changed > 0) {
     const parts = [
-      s.staged > 0 ? `${s.staged} staged` : "",
-      s.unstaged > 0 ? `${s.unstaged} unstaged` : "",
-      s.untracked > 0 ? `${s.untracked} untracked` : "",
-      s.conflicted > 0 ? `${s.conflicted} conflicted` : "",
+      s.staged > 0 ? l10n.t("{0} staged", s.staged) : "",
+      s.unstaged > 0 ? l10n.t("{0} unstaged", s.unstaged) : "",
+      s.untracked > 0 ? l10n.t("{0} untracked", s.untracked) : "",
+      s.conflicted > 0 ? l10n.t("{0} conflicted", s.conflicted) : "",
     ].filter(Boolean);
     out.push({
       id: "changed",
-      text: `${s.changed} changed`,
+      text: l10n.t("{0} changed", s.changed),
       tone: "info",
-      tip: `${plural(s.changed, "uncommitted change")}: ${parts.join(", ")}.`,
+      tip: l10n.t("{0}: {1}.", plural(s.changed, l10n.t("uncommitted change"), l10n.t("uncommitted changes")), parts.join(", ")),
     });
   }
   if (!r.branch) {
@@ -213,13 +225,13 @@ export function worktreeFacts(r: WorktreeRow): WorktreeFact[] {
   if (r.upstream && r.upstreamGone) {
     out.push({
       id: "sync",
-      text: "Upstream gone",
+      text: l10n.t("Upstream gone"),
       tone: "warn",
-      tip: `Its upstream, ${r.upstream}, was deleted from the remote.`,
+      tip: l10n.t("Its upstream, {0}, was deleted from the remote.", r.upstream),
     });
   } else if (r.upstream) {
     if (r.ahead > 0 || r.behind > 0) {
-      const text = [r.ahead > 0 ? `${r.ahead} to push` : "", r.behind > 0 ? `${r.behind} to pull` : ""]
+      const text = [r.ahead > 0 ? l10n.t("{0} to push", r.ahead) : "", r.behind > 0 ? l10n.t("{0} to pull", r.behind) : ""]
         .filter(Boolean)
         .join(", ");
       out.push({
@@ -228,10 +240,10 @@ export function worktreeFacts(r: WorktreeRow): WorktreeFact[] {
         tone: r.ahead > 0 && r.behind > 0 ? "warn" : "info",
         tip:
           r.ahead > 0 && r.behind > 0
-            ? `It and ${r.upstream} have diverged: ${plural(r.ahead, "commit")} to push, ${plural(r.behind, "commit")} to pull.`
+            ? l10n.t("It and {0} have diverged: {1} to push, {2} to pull.", r.upstream, commits(r.ahead), commits(r.behind))
             : r.ahead > 0
-              ? `${plural(r.ahead, "commit")} not pushed to ${r.upstream}.`
-              : `${plural(r.behind, "commit")} on ${r.upstream} not pulled yet.`,
+              ? l10n.t("{0} not pushed to {1}.", commits(r.ahead), r.upstream)
+              : l10n.t("{0} on {1} not pulled yet.", commits(r.behind), r.upstream),
       });
     }
   } else if (r.hasRemotes) {
@@ -242,18 +254,18 @@ export function worktreeFacts(r: WorktreeRow): WorktreeFact[] {
       s?.unpublished
         ? {
             id: "sync",
-            text: `${s.unpublished} unpublished`,
+            text: l10n.t("{0} unpublished", s.unpublished),
             tone: "info",
-            tip: `No upstream: ${plural(s.unpublished, "commit")} no remote has yet. Push publishes the branch.`,
+            tip: l10n.t("No upstream: {0} no remote has yet. Push publishes the branch.", commits(s.unpublished)),
           }
-        : { id: "upstream", text: "No upstream", tone: "neutral", tip: "Its branch has no upstream: Push publishes it." },
+        : { id: "upstream", text: l10n.t("No upstream"), tone: "neutral", tip: l10n.t("Its branch has no upstream: Push publishes it.") },
     );
   } else if (s?.unpublished && r.defaultBranch) {
     out.push({
       id: "sync",
-      text: `${s.unpublished} not on ${r.defaultBranch}`,
+      text: l10n.t("{0} not on {1}", s.unpublished, r.defaultBranch),
       tone: "neutral",
-      tip: `${plural(s.unpublished, "commit")} ${r.defaultBranch} doesn't have. The repository has no remote.`,
+      tip: l10n.t("{0} {1} doesn't have. The repository has no remote.", commits(s.unpublished), r.defaultBranch),
     });
   }
   return out;
@@ -276,15 +288,15 @@ export interface WorktreeState {
 function operationWord(op: WorktreeOperationName): string {
   switch (op) {
     case "merge":
-      return "merging";
+      return l10n.t("merging");
     case "rebase":
-      return "rebasing";
+      return l10n.t("rebasing");
     case "cherry-pick":
-      return "cherry-picking";
+      return l10n.t("cherry-picking");
     case "revert":
-      return "reverting";
+      return l10n.t("reverting");
     case "am":
-      return "applying";
+      return l10n.t("applying");
   }
 }
 
@@ -298,32 +310,32 @@ function operationWord(op: WorktreeOperationName): string {
  */
 export function worktreeState(r: WorktreeRow): WorktreeState | undefined {
   if (r.kind === "bare") return undefined;
-  if (r.missing) return { id: "missing", text: "folder missing", tone: "attention", short: "missing" };
-  if (r.unlinked) return { id: "unlinked", text: "not a worktree", tone: "attention", short: "unlinked" };
+  if (r.missing) return { id: "missing", text: l10n.t("folder missing"), tone: "attention", short: l10n.t("missing") };
+  if (r.unlinked) return { id: "unlinked", text: l10n.t("not a worktree"), tone: "attention", short: l10n.t("unlinked") };
   const s = r.status;
   if (s?.operation) return { id: "operation", text: operationWords(s.operation).toLowerCase(), tone: "attention", short: operationWord(s.operation) };
-  if (s && s.conflicted > 0) return { id: "operation", text: plural(s.conflicted, "conflict"), tone: "attention" };
-  if (s && s.changed > 0) return { id: "changed", text: `${s.changed} changed`, tone: "muted" };
+  if (s && s.conflicted > 0) return { id: "operation", text: plural(s.conflicted, l10n.t("conflict"), l10n.t("conflicts")), tone: "attention" };
+  if (s && s.changed > 0) return { id: "changed", text: l10n.t("{0} changed", s.changed), tone: "muted" };
   const sync = syncState(r);
   if (sync) return { id: "sync", text: sync, tone: "muted" };
-  if (r.locked) return { id: "locked", text: "locked", tone: "muted" };
+  if (r.locked) return { id: "locked", text: l10n.t("locked"), tone: "muted" };
   return undefined;
 }
 
 /** What is to push or pull, in a few words — undefined when nothing is. */
 function syncState(r: WorktreeRow): string | undefined {
   if (!r.branch) return undefined;
-  if (r.upstream && r.upstreamGone) return "upstream gone";
+  if (r.upstream && r.upstreamGone) return l10n.t("upstream gone");
   if (r.upstream) {
-    if (r.ahead > 0 && r.behind > 0) return "diverged";
-    if (r.ahead > 0) return `${r.ahead} to push`;
-    if (r.behind > 0) return `${r.behind} to pull`;
+    if (r.ahead > 0 && r.behind > 0) return l10n.t("diverged");
+    if (r.ahead > 0) return l10n.t("{0} to push", r.ahead);
+    if (r.behind > 0) return l10n.t("{0} to pull", r.behind);
     return undefined;
   }
   const n = r.status?.unpublished;
   if (!n) return undefined;
-  if (r.hasRemotes) return `${n} unpublished`;
-  return r.defaultBranch ? `${n} not on ${r.defaultBranch}` : undefined;
+  if (r.hasRemotes) return l10n.t("{0} unpublished", n);
+  return r.defaultBranch ? l10n.t("{0} not on {1}", n, r.defaultBranch) : undefined;
 }
 
 /**
@@ -335,7 +347,7 @@ function syncState(r: WorktreeRow): string | undefined {
 export function worktreeTip(r: WorktreeRow): string {
   const lines = [r.shownPath, ...worktreeFacts(r).map((f) => f.tip)];
   if (r.branch && r.upstream && !r.upstreamGone && r.ahead === 0 && r.behind === 0 && !r.missing && !r.unlinked) {
-    lines.push(`Up to date with ${r.upstream}.`);
+    lines.push(l10n.t("Up to date with {0}.", r.upstream));
   }
   return lines.join("\n");
 }
@@ -369,7 +381,7 @@ export interface WorktreeCaps {
 /** What a row offers, each refusal with its reason. */
 export function worktreeCaps(r: WorktreeRow): WorktreeCaps {
   if (r.kind === "bare") {
-    const bare = no("It is the bare repository itself, not a working tree.");
+    const bare = no(l10n.t("It is the bare repository itself, not a working tree."));
     return {
       expand: false,
       openHere: bare,
@@ -387,7 +399,7 @@ export function worktreeCaps(r: WorktreeRow): WorktreeCaps {
   if (r.missing || r.unlinked) {
     // Not a worktree any more: nothing is run in the folder, which only
     // Reveal still shows.
-    const gone = no(r.missing ? "Its folder is missing." : `It isn't a worktree any more — ${unlinkedWhy(r.unlinkedWhy)}.`);
+    const gone = no(r.missing ? l10n.t("Its folder is missing.") : l10n.t("It isn't a worktree any more — {0}.", unlinkedWhy(r.unlinkedWhy)));
     return {
       expand: false,
       openHere: gone,
@@ -396,36 +408,36 @@ export function worktreeCaps(r: WorktreeRow): WorktreeCaps {
       terminal: false,
       pull: gone,
       push: gone,
-      lock: r.locked ? no("It is locked already.") : gone,
-      unlock: r.locked ? yes : no("It isn't locked."),
+      lock: r.locked ? no(l10n.t("It is locked already.")) : gone,
+      unlock: r.locked ? yes : no(l10n.t("It isn't locked.")),
       remove: gone,
       forget: true,
     };
   }
-  const here = no("This window has it open.");
+  const here = no(l10n.t("This window has it open."));
   const op = r.status?.operation;
-  const stopped = op ? no(`${operationSentence(op)} — continue or abort it first.`) : undefined;
+  const stopped = op ? no(l10n.t("{0} — continue or abort it first.", operationSentence(op))) : undefined;
   // What git is stopped in comes first: mid-rebase git lists the worktree
   // detached, and "no branch is checked out" would be the wrong reason.
   const pull: Gate = stopped
     ? stopped
     : !r.branch
-      ? no("No branch is checked out in it, so there is nothing to pull into.")
+      ? no(l10n.t("No branch is checked out in it, so there is nothing to pull into."))
       : !r.hasRemotes
-        ? no("The repository has no remote to pull from.")
+        ? no(l10n.t("The repository has no remote to pull from."))
         : !r.upstream
-          ? no("Its branch has no upstream to pull from.")
+          ? no(l10n.t("Its branch has no upstream to pull from."))
           : r.upstreamGone
-            ? no(`Its upstream, ${r.upstream}, is gone from the remote.`)
+            ? no(l10n.t("Its upstream, {0}, is gone from the remote.", r.upstream))
             : yes;
   const push: Gate = stopped
     ? stopped
     : !r.branch
-      ? no("No branch is checked out in it, so there is nothing to push.")
+      ? no(l10n.t("No branch is checked out in it, so there is nothing to push."))
       : !r.hasRemotes
-        ? no("The repository has no remote to push to.")
+        ? no(l10n.t("The repository has no remote to push to."))
         : r.upstream && !r.upstreamGone && r.ahead === 0
-          ? no(`Nothing to push — it is up to date with ${r.upstream}.`)
+          ? no(l10n.t("Nothing to push — it is up to date with {0}.", r.upstream))
           : yes;
   return {
     expand: true,
@@ -437,16 +449,16 @@ export function worktreeCaps(r: WorktreeRow): WorktreeCaps {
     push,
     lock:
       r.kind === "main"
-        ? no("The main worktree holds the repository itself, so git can't lock it.")
+        ? no(l10n.t("The main worktree holds the repository itself, so git can't lock it."))
         : r.locked
-          ? no("It is locked already.")
+          ? no(l10n.t("It is locked already."))
           : yes,
-    unlock: r.locked ? yes : no("It isn't locked."),
+    unlock: r.locked ? yes : no(l10n.t("It isn't locked.")),
     remove:
       r.kind === "main"
-        ? no("The main worktree holds the repository itself, so git never removes it.")
+        ? no(l10n.t("The main worktree holds the repository itself, so git never removes it."))
         : r.current
-          ? no("This window has it open — its folder would be deleted from under the window.")
+          ? no(l10n.t("This window has it open — its folder would be deleted from under the window."))
           : yes,
     forget: false,
   };
@@ -455,10 +467,10 @@ export function worktreeCaps(r: WorktreeRow): WorktreeCaps {
 /** The title of a row's "not pushed" section, by the rule that counts it. */
 export function unpublishedTitle(r: WorktreeRow): string | undefined {
   if (r.kind === "bare" || r.missing || r.unlinked) return undefined;
-  if (r.branch && r.upstream && !r.upstreamGone) return `Not pushed to ${r.upstream}`;
-  if (r.hasRemotes) return "Not on any remote";
+  if (r.branch && r.upstream && !r.upstreamGone) return l10n.t("Not pushed to {0}", r.upstream);
+  if (r.hasRemotes) return l10n.t("Not on any remote");
   if (r.onDefaultBranch || !r.defaultBranch) return undefined;
-  return `Not on ${r.defaultBranch}`;
+  return l10n.t("Not on {0}", r.defaultBranch);
 }
 
 /** The rows in the order the list shows them: this window's first, then the

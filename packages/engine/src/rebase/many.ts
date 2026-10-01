@@ -22,6 +22,7 @@
 
 import { publishedWarning, type ChainCommit } from "./chain";
 import type { DropRefusal } from "./drop";
+import * as l10n from "@vscode/l10n";
 
 /** Why several commits cannot be dropped or squashed together. */
 export type ManyRefusal =
@@ -121,19 +122,19 @@ export function squashTarget(
 export function manyRefusalMessage(reason: ManyRefusal, verb: "drop" | "squash"): string {
   switch (reason) {
     case "not-on-branch":
-      return `Not all of those commits are on the current branch, so they can't be ${verb === "drop" ? "dropped" : "squashed"} from it.`;
+      return l10n.t("Not all of those commits are on the current branch, so they can't be {0} from it.", verb === "drop" ? l10n.t("dropped") : l10n.t("squashed"));
     case "merge":
-      return `One of those commits is a merge — ${verb === "drop" ? "dropping" : "squashing"} it would flatten the history it joined.`;
+      return l10n.t("One of those commits is a merge — {0} it would flatten the history it joined.", verb === "drop" ? l10n.t("dropping") : l10n.t("squashing"));
     case "past-merge":
-      return "There's a merge between those commits and the tip of the branch — replaying the commits after them would flatten the merge.";
+      return l10n.t("There's a merge between those commits and the tip of the branch — replaying the commits after them would flatten the merge.");
     case "only-commit":
-      return "Those are all the commits on the branch — dropping them would leave nothing.";
+      return l10n.t("Those are all the commits on the branch — dropping them would leave nothing.");
     case "too-far":
-      return `Those commits are too far down the branch to ${verb} from here. Start an interactive rebase instead.`;
+      return l10n.t("Those commits are too far down the branch to {0} from here. Start an interactive rebase instead.", verb);
     case "not-contiguous":
-      return "Only commits next to each other on the branch can be squashed — there are other commits between the ones you selected.";
+      return l10n.t("Only commits next to each other on the branch can be squashed — there are other commits between the ones you selected.");
     case "too-few":
-      return "Select at least two commits to squash them.";
+      return l10n.t("Select at least two commits to squash them.");
   }
 }
 
@@ -165,7 +166,7 @@ function named(c: NamedCommit): string {
 /** "x", "x and y", "x, y and z" — every item, so a confirmation lists them all. */
 export function listInWords(items: readonly string[]): string {
   if (items.length <= 1) return items[0] ?? "";
-  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+  return l10n.t("{0} and {1}", items.slice(0, -1).join(", "), items[items.length - 1]);
 }
 
 /**
@@ -174,16 +175,17 @@ export function listInWords(items: readonly string[]): string {
  */
 function replayedSentence(n: number): string {
   return n === 0
-    ? "Nothing else changes."
+    ? l10n.t("Nothing else changes.")
     : n === 1
-      ? "One later commit will be replayed on top, with a new SHA."
-      : `The ${n} later commits will be replayed on top, with new SHAs.`;
+      ? l10n.t("One later commit will be replayed on top, with a new SHA.")
+      : l10n.t("The {0} later commits will be replayed on top, with new SHAs.", n);
 }
 
 function carrySentence(carry: readonly string[]): string | undefined {
   if (carry.length === 0) return undefined;
-  const names = carry.slice(0, 3).join(", ") + (carry.length > 3 ? ` and ${carry.length - 3} more` : "");
-  return `${names} ${carry.length === 1 ? "points" : "point"} at a commit that will be rewritten.`;
+  const names = carry.slice(0, 3).join(", ") + (carry.length > 3 ? l10n.t(" and {0} more", carry.length - 3) : "");
+  const which = carry.length === 1 ? l10n.t("points") : l10n.t("point");
+  return l10n.t("{0} {1} at a commit that will be rewritten.", names, which);
 }
 
 /**
@@ -194,14 +196,14 @@ function carrySentence(carry: readonly string[]): string | undefined {
 export function dropManyQuestion(s: ManySummary): { title: string; message: string } {
   const n = s.commits.length;
   const parts = [
-    `${n} commits will be removed from ${s.branch ?? "the detached HEAD"}: ${listInWords(s.commits.map(named))}.`,
+    l10n.t("{0} commits will be removed from {1}: {2}.", n, s.branch ?? "the detached HEAD", listInWords(s.commits.map(named))),
     replayedSentence(s.replayed),
   ];
   const carry = carrySentence(s.carryable ?? []);
   if (carry) parts.push(carry);
-  if (s.published) parts.push(`${publishedWarning("Dropping", n)} The next push will need to be a force push.`);
-  parts.push("Undo is available afterwards.");
-  return { title: `Drop ${n} commits?`, message: parts.join(" ") };
+  if (s.published) parts.push(l10n.t("{0} The next push will need to be a force push.", publishedWarning("Dropping", n)));
+  parts.push(l10n.t("Undo is available afterwards."));
+  return { title: l10n.t("Drop {0} commits?", n), message: parts.join(" ") };
 }
 
 /** A squash's sentences after its first: what is replayed, the branches on
@@ -210,14 +212,14 @@ function squashRest(s: ManySummary): string[] {
   const parts = [replayedSentence(s.replayed)];
   const carry = carrySentence(s.carryable ?? []);
   if (carry) parts.push(carry);
-  if (s.published) parts.push(`${publishedWarning("Squashing", s.commits.length)} The next push will need to be a force push.`);
-  parts.push("Undo is available afterwards.");
+  if (s.published) parts.push(l10n.t("{0} The next push will need to be a force push.", publishedWarning("Squashing", s.commits.length)));
+  parts.push(l10n.t("Undo is available afterwards."));
   return parts;
 }
 
 /** "3333333, 2222222 and 1111111 on main" — the commits a squash makes one. */
 function squashWhat(s: ManySummary): string {
-  return `${listInWords(s.commits.map((c) => c.shortSha))} on ${s.branch ?? "the detached HEAD"}`;
+  return l10n.t("{0} on {1}", listInWords(s.commits.map((c) => c.shortSha)), s.branch ?? l10n.t("the detached HEAD"));
 }
 
 /**
@@ -227,8 +229,8 @@ function squashWhat(s: ManySummary): string {
  */
 export function squashQuestion(s: ManySummary): { title: string; message: string } {
   const n = s.commits.length;
-  const parts = [`${squashWhat(s)} will become one commit with the message below.`, ...squashRest(s)];
-  return { title: `Squash ${n} commits`, message: parts.join(" ") };
+  const parts = [l10n.t("{0} will become one commit with the message below.", squashWhat(s)), ...squashRest(s)];
+  return { title: l10n.t("Squash {0} commits", n), message: parts.join(" ") };
 }
 
 /**
@@ -240,8 +242,8 @@ export function squashQuestion(s: ManySummary): { title: string; message: string
  */
 export function squashCarryQuestion(s: ManySummary): { title: string; message: string } {
   const n = s.commits.length;
-  const parts = [`${squashWhat(s)} will become one commit.`, ...squashRest(s)];
-  return { title: `Squash ${n} commits — move the branches too?`, message: parts.join(" ") };
+  const parts = [l10n.t("{0} will become one commit.", squashWhat(s)), ...squashRest(s)];
+  return { title: l10n.t("Squash {0} commits — move the branches too?", n), message: parts.join(" ") };
 }
 
 /** A commit's whole message, as git stores it. */
@@ -278,18 +280,19 @@ export interface ManyOutcomeLike {
 
 /** How dropping or squashing N commits ended, in words — the same in both products. */
 export function manyOutcomeMessage(verb: "drop" | "squash", n: number, outcome: ManyOutcomeLike): string {
-  const what = `${n} commits`;
+  const what = l10n.t("{0} commits", n);
   if (outcome.status === "done") {
-    return verb === "drop" ? `Dropped ${what}.` : `Squashed ${what} into one.`;
+    return verb === "drop" ? l10n.t("Dropped {0}.", what) : l10n.t("Squashed {0} into one.", what);
   }
-  const verbing = verb === "drop" ? "Dropping" : "Squashing";
+  const verbing = verb === "drop" ? l10n.t("Dropping") : l10n.t("Squashing");
+  const verbWord = verb === "drop" ? l10n.t("drop") : l10n.t("squash");
   if (outcome.status === "stopped") {
     return outcome.reason === "conflict"
-      ? `${verbing} ${what} hit a conflict while replaying a later commit. Resolve it and continue the rebase — or skip that commit, or abort to put the branch back as it was.`
-      : `${verbing} ${what} stopped and needs you — continue the rebase, or abort it to put the branch back as it was.`;
+      ? l10n.t("{0} {1} hit a conflict while replaying a later commit. Resolve it and continue the rebase — or skip that commit, or abort to put the branch back as it was.", verbing, what)
+      : l10n.t("{0} {1} stopped and needs you — continue the rebase, or abort it to put the branch back as it was.", verbing, what);
   }
-  if (!outcome.message) return `Couldn't ${verb} ${what}.`;
-  return outcome.expected ? outcome.message : `Couldn't ${verb} ${what}: ${outcome.message}`;
+  if (!outcome.message) return l10n.t("Couldn't {0} {1}.", verbWord, what);
+  return outcome.expected ? outcome.message : l10n.t("Couldn't {0} {1}: {2}", verbWord, what, outcome.message);
 }
 
 /**
@@ -300,9 +303,9 @@ export function manyOutcomeMessage(verb: "drop" | "squash", n: number, outcome: 
  */
 export function applyManyMessage(verb: "cherry-pick" | "revert", n: number, status: "done" | "stopped"): string {
   if (status === "done") {
-    return verb === "cherry-pick" ? `Cherry-picked ${n} commits.` : `Reverted ${n} commits.`;
+    return verb === "cherry-pick" ? l10n.t("Cherry-picked {0} commits.", n) : l10n.t("Reverted {0} commits.", n);
   }
   return verb === "cherry-pick"
-    ? `Cherry-picking ${n} commits stopped on a commit that needs you — resolve any conflicts and continue, skip that commit, or abort to put the branch back as it was.`
-    : `Reverting ${n} commits stopped on a commit that needs you — resolve any conflicts and continue, skip that commit, or abort to put the branch back as it was.`;
+    ? l10n.t("Cherry-picking {0} commits stopped on a commit that needs you — resolve any conflicts and continue, skip that commit, or abort to put the branch back as it was.", n)
+    : l10n.t("Reverting {0} commits stopped on a commit that needs you — resolve any conflicts and continue, skip that commit, or abort to put the branch back as it was.", n);
 }

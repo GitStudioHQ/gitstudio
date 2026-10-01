@@ -12,6 +12,7 @@ import {
 import { refShortName } from "@gitstudio/git-service/checkoutRef";
 import { promptConfirm, promptPick } from "../ui/dialogs";
 import type { UndoOptions } from "../git/repoManager";
+import * as l10n from "@vscode/l10n";
 
 // "Reset 'feature' to 'origin/feature'…" (issue #32), the door. The plan, the
 // words and the git are git-service's (branchReset.ts); this is where they
@@ -42,13 +43,13 @@ export async function resetBranchTo(
 ): Promise<boolean> {
   const t = await resetTargetOf(ctx.process, fullName, target);
   if (isResetRefusal(t)) {
-    void vscode.window.showWarningMessage(`GitStudio: ${t.refused}`);
+    void vscode.window.showWarningMessage(l10n.t("GitStudio: {0}", t.refused));
     return false;
   }
   // Fetch first: the point is to match the remote as it is now. A failed
   // fetch (offline) does not stop it — the question says the target is as
   // last fetched.
-  const busy = vscode.window.setStatusBarMessage(`$(sync~spin) Fetching ${t.remote}…`);
+  const busy = vscode.window.setStatusBarMessage(l10n.t("$(sync~spin) Fetching {0}…", t.remote));
   let fetched = false;
   try {
     fetched = await fetchResetTarget(ctx.process, t);
@@ -57,12 +58,12 @@ export async function resetBranchTo(
   }
   const plan = await planReset(ctx.process, t, { fetchFailed: !fetched });
   if (isResetRefusal(plan)) {
-    void vscode.window.showWarningMessage(`GitStudio: ${plan.refused}`);
+    void vscode.window.showWarningMessage(l10n.t("GitStudio: {0}", plan.refused));
     return false;
   }
   const q = resetQuestion(plan);
   if (q.kind === "nothing") {
-    void vscode.window.showInformationMessage(`GitStudio: ${q.message}`);
+    void vscode.window.showInformationMessage(l10n.t("GitStudio: {0}", q.message));
     return false;
   }
   const ok = await promptConfirm({
@@ -77,23 +78,23 @@ export async function resetBranchTo(
   const run = async (): Promise<boolean> => {
     const r = await runReset(ctx.process, plan);
     if (r.refused) {
-      void vscode.window.showWarningMessage(`GitStudio: ${r.refused}`);
+      void vscode.window.showWarningMessage(l10n.t("GitStudio: {0}", r.refused));
       return false;
     }
     if (!r.ok) {
       void vscode.window.showErrorMessage(
-        `GitStudio: couldn't reset ${plan.branch} to ${plan.targetName}${r.stderr.trim() ? ` — ${r.stderr.trim()}` : ""}`,
+        l10n.t("GitStudio: couldn't reset {0} to {1}{2}", plan.branch, plan.targetName, r.stderr.trim() ? ` — ${r.stderr.trim()}` : ""),
       );
       return false;
     }
     return true;
   };
   // `false` from run is "nothing ran", which the envelope records nothing for.
-  const label = `Reset ${plan.branch} to ${plan.targetName}`;
+  const label = l10n.t("Reset {0} to {1}", plan.branch, plan.targetName);
   const changed = undo ? await undo(label, run, { branch: plan.fullName }) : await run();
   if (changed) {
     void vscode.window.setStatusBarMessage(
-      `$(check) ${q.danger ? "Reset" : "Fast-forwarded"} ${plan.branch} to ${plan.targetName}`,
+      l10n.t("$(check) {0} {1} to {2}", q.danger ? l10n.t("Reset") : l10n.t("Fast-forwarded"), plan.branch, plan.targetName),
       2500,
     );
   }
@@ -127,23 +128,23 @@ export async function askOverLocalBranch(ctx: GitContext, remoteFullName: string
   const x = `'${local.branch}'`;
   const commits = (n: number): string => `${n} commit${n === 1 ? "" : "s"}`;
   const picked = await promptPick({
-    title: `Check out ${remote}`,
+    title: l10n.t("Check out {0}", remote),
     hint:
-      `A local ${x} already exists, with ${commits(local.ahead)} that ${remote} doesn't have` +
-      (local.behind > 0 ? `, and ${remote} has ${commits(local.behind)} it doesn't.` : "."),
+      l10n.t("A local {0} already exists, with {1} that {2} doesn't have", x, commits(local.ahead), remote) +
+      (local.behind > 0 ? l10n.t(", and {0} has {1} it doesn't.", remote, commits(local.behind)) : "."),
     choices: [
       {
         id: "checkout",
-        label: `Switch to local ${x}`,
+        label: l10n.t("Switch to local {0}", x),
         icon: "git-branch",
-        description: `Keeps its ${commits(local.ahead)}. Nothing is reset.`,
+        description: l10n.t("Keeps its {0}. Nothing is reset.", commits(local.ahead)),
       },
       {
         id: "reset",
-        label: `Reset ${x} to ${remote}…`,
+        label: l10n.t("Reset {0} to {1}…", x, remote),
         icon: "discard",
         danger: true,
-        description: `Makes ${x} match ${remote}, then switches to it. Asks first, and says what would be lost.`,
+        description: l10n.t("Makes {0} match {1}, then switches to it. Asks first, and says what would be lost.", x, remote),
       },
     ],
   });

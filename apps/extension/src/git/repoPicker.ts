@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { promptPick, type DialogChoice } from "../ui/dialogs";
 import { isSamePathOrInside } from "../util/repoScope";
 import type { RepoEntry, RepoManager } from "./repoManager";
+import * as l10n from "@vscode/l10n";
 
 // Switch Repository… (issue #32): a workspace that holds several repositories
 // — a parent folder of checkouts, a multi-root workspace, a repo nested in
@@ -135,9 +136,9 @@ export function repoChoices(
   if (picked) {
     choices.push({
       id: FOLLOW_EDITOR_ID,
-      label: "Follow the active editor",
+      label: l10n.t("Follow the active editor"),
       icon: "go-to-file",
-      description: "Show the repository of whichever file you are editing.",
+      description: l10n.t("Show the repository of whichever file you are editing."),
     });
   }
   return choices;
@@ -146,8 +147,8 @@ export function repoChoices(
 /** The picker's one-line explanation, in the words of the rule it applies. */
 export function repoPickHint(pickedName: string | undefined): string {
   return pickedName
-    ? `Changes, the commit graph, worktrees and sync status stay on ${pickedName} until you pick again.`
-    : "Changes, the commit graph, worktrees and sync status follow the file you are editing. Pick a repository to keep them on it.";
+    ? l10n.t("Changes, the commit graph, worktrees and sync status stay on {0} until you pick again.", pickedName)
+    : l10n.t("Changes, the commit graph, worktrees and sync status follow the file you are editing. Pick a repository to keep them on it.");
 }
 
 function workspaceFolders(): FolderLike[] {
@@ -185,7 +186,7 @@ export async function switchRepository(repos: RepoManager): Promise<void> {
   }
   const picked = repos.getPicked();
   const choice = await promptPick({
-    title: "Switch Repository",
+    title: l10n.t("Switch Repository"),
     hint: repoPickHint(picked !== undefined ? repoName(picked) : undefined),
     choices: repoChoices(rows, repos.getActive()?.root, picked !== undefined),
   });
@@ -198,7 +199,7 @@ export async function switchRepository(repos: RepoManager): Promise<void> {
   }
   if (!repos.setActive(choice)) {
     void vscode.window.showInformationMessage(
-      `GitStudio: ${repoName(choice)} is no longer open, so it can't be shown.`,
+      l10n.t("GitStudio: {0} is no longer open, so it can't be shown.", repoName(choice)),
     );
   }
 }

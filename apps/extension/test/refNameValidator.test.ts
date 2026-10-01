@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import "./webviewL10n";
 
 // The dialog validators (`DLG_VALIDATORS`) live inside the Changes webview's
 // inline <script>, which is authored as a String.raw template literal in

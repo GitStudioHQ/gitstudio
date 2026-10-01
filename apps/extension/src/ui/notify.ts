@@ -16,6 +16,7 @@
 // senders are thin.
 
 import * as vscode from "vscode";
+import * as l10n from "@vscode/l10n";
 
 const PREFIX = "GitStudio: ";
 
@@ -25,7 +26,8 @@ export function notice(text: string): string {
   while (t.startsWith(PREFIX) || t.startsWith("GitStudio:")) t = t.slice(t.indexOf(":") + 1).trim();
   if (!t) return PREFIX.trim();
   t = t.charAt(0).toUpperCase() + t.slice(1);
-  if (!/[.!?…)"”]$/.test(t)) t += ".";
+  // 。？！ end a sentence in the Chinese bundle: no Latin full stop after them.
+  if (!/[.!?…。？！)"”]$/.test(t)) t += ".";
   return PREFIX + t;
 }
 
@@ -36,15 +38,15 @@ export function failed(action: string, reason?: string): string {
     .map((l) => l.trim())
     .filter(Boolean)
     .join(" ");
-  return notice(why ? `${action} failed — ${why}` : `${action} failed`);
+  return notice(why ? l10n.t("{0} failed — {1}", action, why) : l10n.t("{0} failed", action));
 }
 
 /** The one sentence for "there is no repository to act on". */
-export const NO_REPOSITORY = notice("No repository is open");
+export const NO_REPOSITORY = notice(l10n.t("No repository is open"));
 
 /** What the status bar says after a copy. */
 export function copiedText(what: string): string {
-  return `$(check) Copied ${what}`;
+  return l10n.t("$(check) Copied {0}", what);
 }
 
 export function notifyInfo(text: string, ...items: string[]): Thenable<string | undefined> {

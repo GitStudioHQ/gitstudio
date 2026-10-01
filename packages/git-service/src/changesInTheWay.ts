@@ -5,6 +5,7 @@ import { isStashSha, literalPathspec as literally, StashProvider, stashBranchNam
 import { parseV2 } from "./StatusProvider";
 import { pick, sameStop, stoppedIn, type OperationInTheWay, type StoppedHere } from "./stoppedOperation";
 import type { PullDirty, PullResult } from "./SyncOps";
+import * as l10n from "@vscode/l10n";
 
 export {
   operationInTheWayMessage,
@@ -213,13 +214,13 @@ const NOT_RUN: GitRunResult = { code: 1, stdout: "", stderr: "" };
 
 /** The operation's name, for a sentence. */
 const THE: Record<InTheWayKind, string> = {
-  revert: "the revert",
-  "cherry-pick": "the cherry-pick",
-  merge: "the merge",
-  rebase: "the rebase",
-  checkout: "switching to it",
-  stash: "applying the stash",
-  pull: "the pull",
+  revert: l10n.t("the revert"),
+  "cherry-pick": l10n.t("the cherry-pick"),
+  merge: l10n.t("the merge"),
+  rebase: l10n.t("the rebase"),
+  checkout: l10n.t("switching to it"),
+  stash: l10n.t("applying the stash"),
+  pull: l10n.t("the pull"),
 };
 
 /** "a.txt", "a.txt and b.txt", "a.txt, b.txt and 3 other files". */
@@ -227,7 +228,9 @@ function nameThe(paths: readonly string[]): string {
   if (paths.length === 1) return paths[0];
   if (paths.length === 2) return `${paths[0]} and ${paths[1]}`;
   const rest = paths.length - 2;
-  return `${paths[0]}, ${paths[1]} and ${rest} other file${rest === 1 ? "" : "s"}`;
+  return rest === 1
+    ? l10n.t("{0}, {1} and 1 other file", paths[0], paths[1])
+    : l10n.t("{0}, {1} and {2} other files", paths[0], paths[1], rest);
 }
 
 /**
@@ -235,25 +238,26 @@ function nameThe(paths: readonly string[]): string {
  * way on — stash them and retry, or cancel — is the question the caller asks.
  */
 export function changesInTheWayMessage(v: ChangesInTheWay): string {
-  const them = v.paths.length === 1 ? "it" : "them";
+  const them = v.paths.length === 1 ? l10n.t("it") : l10n.t("them");
   if (v.kind === "rebase" || (v.kind === "pull" && v.rebase)) {
+    const subject = v.kind === "pull" ? l10n.t("Pulling with rebase") : l10n.t("A rebase");
     return (
-      `${v.kind === "pull" ? "Pulling with rebase" : "A rebase"} needs a clean working tree, and your ` +
-      `uncommitted changes to ${nameThe(v.paths)} are in the way. Stash ${them} and try again, or commit ${them} first.`
+      l10n.t("{0} needs a clean working tree, and your ", subject) +
+      l10n.t("uncommitted changes to {0} are in the way. Stash {1} and try again, or commit {2} first.", nameThe(v.paths), them, them)
     );
   }
   if (v.kind === "stash" && v.branch !== undefined) {
     // Not "applying the stash": the file in the way may be one the stash never
     // touches, in the way of the switch to where the stash was made.
     return (
-      `Your uncommitted changes to ${nameThe(v.paths)} are in the way of creating the branch “${v.branch}” ` +
-      `from the stash, which first switches to where the stash was made. ` +
-      `Stash ${them} and try again, or commit ${them} first.`
+      l10n.t("Your uncommitted changes to {0} are in the way of creating the branch “{1}” ", nameThe(v.paths), v.branch) +
+      l10n.t("from the stash, which first switches to where the stash was made. ") +
+      l10n.t("Stash {0} and try again, or commit {1} first.", them, them)
     );
   }
   return (
-    `Your uncommitted changes to ${nameThe(v.paths)} are in the way of ${THE[v.kind]} — ` +
-    `git won't overwrite them. Stash ${them} and try again, or commit ${them} first.`
+    l10n.t("Your uncommitted changes to {0} are in the way of {1} — ", nameThe(v.paths), THE[v.kind]) +
+    l10n.t("git won't overwrite them. Stash {0} and try again, or commit {1} first.", them, them)
   );
 }
 
@@ -837,7 +841,12 @@ export interface StashRetryOutcome {
   indexRefused?: true;
 }
 
-/** The message a stash-and-retry's stash carries, so it can be found again. */
+/**
+ * The message a stash-and-retry's stash carries, so it can be found again.
+ *
+ * English on purpose: git stores it in refs/stash — `git stash list` shows it to
+ * whoever reads the repository — and the UI quotes the same words back.
+ */
 function stashMessage(op: ApplyOp): string {
   // Named the way the user names it: the doors hand a merge, a rebase and a
   // remote checkout their target by its FULL name (a short one is ambiguous
@@ -888,7 +897,7 @@ export async function stashAndRetry(
   // The stash a stash op names, BY SHA, before anything is pushed on top of it.
   const target = op.kind === "stash" ? await shaOf(proc, op.stash, signal) : null;
   if (op.kind === "stash" && !target) {
-    return { result: { code: 1, stdout: "", stderr: "" }, stashFailed: "That stash no longer exists.", stashGone: true };
+    return { result: { code: 1, stdout: "", stderr: "" }, stashFailed: l10n.t("That stash no longer exists."), stashGone: true };
   }
 
   // Asked again rather than trusted from the first refusal: the tree may have
@@ -899,7 +908,7 @@ export async function stashAndRetry(
     return { result: first.result, blocked: first.blocked };
   }
   if (first.stashGone) {
-    return { result: first.result, stashFailed: "That stash no longer exists.", stashGone: true };
+    return { result: first.result, stashFailed: l10n.t("That stash no longer exists."), stashGone: true };
   }
   if (first.indexBusy || first.indexRefused) {
     return { result: first.result, ...(first.indexBusy ? { indexBusy: true } : { indexRefused: true }) };
@@ -923,7 +932,7 @@ export async function stashAndRetry(
         result: { code: 1, stdout: "", stderr: "" },
         stashed,
         fate: await putBack(proc, stashes, saved, signal),
-        stashFailed: "That stash no longer exists.",
+        stashFailed: l10n.t("That stash no longer exists."),
         stashGone: true,
       };
     }
@@ -1087,7 +1096,7 @@ async function stashTheWay(
   const deleted = paths.filter((p) => index.get(p) === "D");
   if (deleted.length > 0) {
     const r = await proc.run(["reset", "-q", "--", ...deleted.map(literally)], { signal });
-    if (r.code !== 0) return { failed: r.stderr.trim() || "The staged deletions could not be stashed." };
+    if (r.code !== 0) return { failed: r.stderr.trim() || l10n.t("The staged deletions could not be stashed.") };
   }
   const saved = await stashes.save({
     message,
@@ -1097,7 +1106,7 @@ async function stashTheWay(
   });
   if (!saved.ok || !saved.created) {
     await restageDeletions(proc, deleted, signal);
-    return { failed: saved.stderr.trim() || "Nothing could be stashed." };
+    return { failed: saved.stderr.trim() || l10n.t("Nothing could be stashed.") };
   }
   return {
     ours: await shaOf(proc, "refs/stash", signal),
@@ -1247,18 +1256,18 @@ export function stashRetryNote(out: StashRetryOutcome): string | undefined {
       return undefined;
     case "conflicted":
       return (
-        `Your changes to ${which} were put back, but they conflict with what came in — ` +
-        `resolve them in Changes. They are also kept in the stash ${stash}.`
+        l10n.t("Your changes to {0} were put back, but they conflict with what came in — ", which) +
+        l10n.t("resolve them in Changes. They are also kept in the stash {0}.", stash)
       );
     case "waiting":
       return (
-        `Your changes to ${which} are waiting in the stash ${stash} — ` +
+        l10n.t("Your changes to {0} are waiting in the stash {1} — ", which, stash) +
         `apply it once ${out.stashed.kind === "stash" || out.stashed.kind === "checkout" || out.stashed.kind === "pull" ? "the conflicts are resolved" : `${THE[out.stashed.kind]} is finished`}.`
       );
     default:
       return (
-        `Your changes to ${which} are kept in the stash ${stash} — git won't put them back ` +
-        "over the changes that just came in. Apply it when you're ready."
+        l10n.t("Your changes to {0} are kept in the stash {1} — git won't put them back ", which, stash) +
+        l10n.t("over the changes that just came in. Apply it when you're ready.")
       );
   }
 }

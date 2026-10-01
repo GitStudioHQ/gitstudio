@@ -14,6 +14,7 @@
   "dependencies": {
     "@gitstudio/ai": "*",
     "@gitstudio/engine": "*",
-    "@gitstudio/host-bridge": "*"
+    "@gitstudio/host-bridge": "*",
+    "@vscode/l10n": "^0.0.18"
   }
 }

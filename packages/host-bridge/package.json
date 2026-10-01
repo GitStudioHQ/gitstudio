@@ -10,5 +10,8 @@
   "scripts": {
     "test": "tsx --import ../../scripts/test/hermetic-git.mjs --test \"test/**/*.test.ts\"",
     "check-types": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@vscode/l10n": "^0.0.18"
   }
 }

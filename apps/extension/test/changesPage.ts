@@ -23,6 +23,8 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { buildSync } from "esbuild";
 import ts from "typescript";
+
+import { fillHole, l10nHoles } from "./pageHoles";
 import { findChrome } from "../../../packages/webview-ui/test/headless";
 import { Browser, type Page } from "../../../scripts/merge-e2e/cdp";
 import { BODY_CLASS, VSCODE_THEMES, type VsCodeTheme } from "../../../scripts/merge-e2e/themes";
@@ -182,13 +184,13 @@ export function changesViewHtml(pageTheme: PageTheme, webviewState?: unknown): s
     tokensCss: readFileSync(TOKENS, "utf8"),
     changeRowsCss: readFileSync(CHANGE_ROWS_CSS, "utf8"),
     changeRowsUri: changeRowsScript(),
+    // The words and the bundle: see pageHoles.ts.
+    ...l10nHoles("n"),
   };
   // head "`…${", middle "}…${", tail "}…`" — the delimiters come off.
   let html = tpl.head.getText(sf).slice(1, -2);
   for (const span of tpl.templateSpans) {
-    const name = span.expression.getText(sf);
-    if (!(name in holes)) throw new Error(`commitView.ts html(): a hole this page cannot fill: \${${name}}`);
-    html += holes[name];
+    html += fillHole("commitView.ts html()", span, sf, holes);
     const lit = span.literal.getText(sf);
     html += ts.isTemplateTail(span.literal) ? lit.slice(1, -1) : lit.slice(1, -2);
   }

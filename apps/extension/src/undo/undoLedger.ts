@@ -6,6 +6,7 @@ import type { RepoManager, RepoEntry, UndoOptions } from "../git/repoManager";
 import { relativeTime } from "../util/relativeTime";
 import { pausedForUser } from "../git/pausedForUser";
 import { notifyPaused } from "../git/pauseNotice";
+import * as l10n from "@vscode/l10n";
 
 // The universal Undo envelope — GitStudio's flagship trust feature.
 //
@@ -171,13 +172,14 @@ export class UndoLedger {
   private offerUndoToast(root: string, entry: UndoEntry, outcome: Outcome): void {
     const text =
       outcome === "stopped"
-        ? `${entry.label} stopped — finish it, or Undo.`
+        ? l10n.t("{0} stopped — finish it, or Undo.", entry.label)
         : outcome === "failed"
-          ? `${entry.label} did not finish.`
-          : `${entry.label} — done.`;
-    void notifyInfo(text, "Undo")
+          ? l10n.t("{0} did not finish.", entry.label)
+          : l10n.t("{0} — done.", entry.label);
+    const undo = l10n.t("Undo");
+    void notifyInfo(text, undo)
       .then((choice) => {
-        if (choice === "Undo") {
+        if (choice === undo) {
           void this.undoThrough(root, entry);
         }
       });
@@ -194,7 +196,7 @@ export class UndoLedger {
     const buffer = this.ledgers.get(root) ?? [];
     const index = buffer.indexOf(entry);
     if (!repo || index < 0) {
-      void notifyInfo(`"${entry.label}" isn't in the undo history any more`);
+      void notifyInfo(l10n.t("\"{0}\" isn't in the undo history any more", entry.label));
       return;
     }
     await this.undoChain(repo, buffer.slice(index).reverse());
@@ -212,7 +214,7 @@ export class UndoLedger {
     const buffer = this.ledgers.get(active.root);
     const entry = buffer?.[buffer.length - 1];
     if (!entry) {
-      void notifyInfo("Nothing to undo");
+      void notifyInfo(l10n.t("Nothing to undo"));
       return;
     }
     await this.undoOne(active, entry);
@@ -227,7 +229,7 @@ export class UndoLedger {
     }
     const buffer = this.ledgers.get(active.root) ?? [];
     if (buffer.length === 0) {
-      void notifyInfo("No undo history yet");
+      void notifyInfo(l10n.t("No undo history yet"));
       return;
     }
 
@@ -241,16 +243,22 @@ export class UndoLedger {
       .reverse();
 
     const pickedId = await promptPick({
-      title: "Undo History",
-      hint: "Undo this operation — and, newest first, every one after it.",
+      title: l10n.t("Undo History"),
+      hint: l10n.t("Undo this operation — and, newest first, every one after it."),
       choices: items.map((it) => ({
         id: String(it.index),
         label: it.entry.label,
         icon: "history",
         detail: relativeTime(it.entry.time / 1000),
-        description: `HEAD was ${short(it.entry.headBefore)}${
-          it.newer > 0 ? ` · undoes ${it.newer} newer operation${it.newer === 1 ? "" : "s"} first` : ""
-        }`,
+        description: l10n.t(
+          "HEAD was {0}{1}",
+          short(it.entry.headBefore),
+          it.newer === 0
+            ? ""
+            : it.newer === 1
+              ? l10n.t(" · undoes 1 newer operation first")
+              : l10n.t(" · undoes {0} newer operations first", it.newer),
+        ),
       })),
     });
     if (pickedId === undefined) {
@@ -306,18 +314,18 @@ export class UndoLedger {
     try {
       plan = await active.ctx.snapshot.plan(snap);
     } catch (err) {
-      void vscode.window.showErrorMessage(failed("Undo", err instanceof Error ? err.message : String(err)));
+      void vscode.window.showErrorMessage(failed(l10n.t("Undo"), err instanceof Error ? err.message : String(err)));
       return false;
     }
     switch (plan.kind) {
       case "refuse":
         if (heading) {
           const forget = await promptConfirm({
-            title: `Can't undo "${entry.label}"`,
+            title: l10n.t("Can't undo \"{0}\"", entry.label),
             message:
-              `${plan.reason} Take it off the undo history and go on to undo "${heading.label}"? ` +
-              "That puts back only what it changed, and only where nothing has moved since.",
-            confirmLabel: "Forget It and Continue",
+              l10n.t("{0} Take it off the undo history and go on to undo \"{1}\"? ", plan.reason, heading.label) +
+              l10n.t("That puts back only what it changed, and only where nothing has moved since."),
+            confirmLabel: l10n.t("Forget It and Continue"),
           });
           if (!forget) {
             return false;
@@ -328,15 +336,16 @@ export class UndoLedger {
         }
         // Left alone, a refused entry would stand in front of every older one
         // for good: Undo would only ever say this. Forget It takes it off.
-        void notifyWarning(`Can't undo "${entry.label}": ${plan.reason}`, "Forget It").then(async (choice) => {
-          if (choice === "Forget It") {
+        const forgetLabel = l10n.t("Forget It");
+        void notifyWarning(l10n.t("Can't undo \"{0}\": {1}", entry.label, plan.reason), forgetLabel).then(async (choice) => {
+          if (choice === forgetLabel) {
             this.remove(active.root, entry);
             await this.save();
           }
         });
         return false;
       case "nothing":
-        void notifyInfo(`Nothing to undo for "${entry.label}" — ${plan.reason}`);
+        void notifyInfo(l10n.t("Nothing to undo for \"{0}\" — {1}", entry.label, plan.reason));
         this.remove(active.root, entry);
         await this.save();
         return true;
@@ -347,9 +356,9 @@ export class UndoLedger {
     }
 
     const ok = await promptConfirm({
-      title: `Undo "${entry.label}"?${progress ? ` (${progress.step} of ${progress.of})` : ""}`,
+      title: l10n.t("Undo \"{0}\"?{1}", entry.label, progress ? l10n.t(" ({0} of {1})", progress.step, progress.of) : ""),
       message: plan.lines.join(" "),
-      confirmLabel: "Undo",
+      confirmLabel: l10n.t("Undo"),
       danger: plan.danger,
     });
     if (!ok) {
@@ -361,14 +370,14 @@ export class UndoLedger {
       const again = await active.ctx.snapshot.plan(snap);
       if (again.kind !== "restore" || again.lines.join(" ") !== plan.lines.join(" ")) {
         void notifyWarning(
-          `The repository changed while you were being asked, so "${entry.label}" wasn't undone. Try Undo again.`,
+          l10n.t("The repository changed while you were being asked, so \"{0}\" wasn't undone. Try Undo again.", entry.label),
         );
         return false;
       }
       await active.ctx.snapshot.execute(snap, again.steps);
-      flash(`Undid ${entry.label}`);
+      flash(l10n.t("Undid {0}", entry.label));
     } catch (err) {
-      void vscode.window.showErrorMessage(failed("Undo", err instanceof Error ? err.message : String(err)));
+      void vscode.window.showErrorMessage(failed(l10n.t("Undo"), err instanceof Error ? err.message : String(err)));
       return false;
     }
     this.remove(active.root, entry);
@@ -389,12 +398,12 @@ export class UndoLedger {
     progress?: { step: number; of: number },
   ): Promise<boolean> {
     const ok = await promptConfirm({
-      title: `"${entry.label}" has already been pushed${progress ? ` (${progress.step} of ${progress.of})` : ""}`,
+      title: l10n.t("\"{0}\" has already been pushed{1}", entry.label, progress ? l10n.t(" ({0} of {1})", progress.step, progress.of) : ""),
       message:
         plan.mode === "range"
-          ? "Rewriting published history would break everyone who has already pulled it. GitStudio will Revert instead — a new commit that undoes the change, leaving the original in place."
-          : `Rewriting published history would break everyone who has already pulled it. GitStudio will add a new commit instead that puts the files back as they were before "${entry.label}", leaving the pushed commit in place.`,
-      confirmLabel: "Revert",
+          ? l10n.t("Rewriting published history would break everyone who has already pulled it. GitStudio will Revert instead — a new commit that undoes the change, leaving the original in place.")
+          : l10n.t("Rewriting published history would break everyone who has already pulled it. GitStudio will add a new commit instead that puts the files back as they were before \"{0}\", leaving the pushed commit in place.", entry.label),
+      confirmLabel: l10n.t("Revert"),
     });
     if (!ok) {
       return false;
@@ -410,13 +419,13 @@ export class UndoLedger {
       again.branch !== plan.branch
     ) {
       void notifyWarning(
-        `The repository changed while you were being asked, so "${entry.label}" wasn't undone. Try Undo again.`,
+        l10n.t("The repository changed while you were being asked, so \"{0}\" wasn't undone. Try Undo again.", entry.label),
       );
       return false;
     }
     const result = await active.ctx.snapshot.revert(entry.snapshot, again);
     if (result.code === 0) {
-      flash(`Reverted ${entry.label}`);
+      flash(l10n.t("Reverted {0}", entry.label));
       // The op is now logically undone; drop its entry.
       this.remove(active.root, entry);
       await this.save();
@@ -431,15 +440,15 @@ export class UndoLedger {
     const paused = plan.mode === "range" && (await pausedForUser(active.ctx.process, result.code, "REVERT_HEAD"));
     if (paused) {
       notifyPaused(
-        `Revert of "${entry.label}" needs a decision — resolve any conflicts ` +
-          `and continue, or abort the revert.`,
+        l10n.t("Revert of \"{0}\" needs a decision — resolve any conflicts ", entry.label) +
+          l10n.t("and continue, or abort the revert."),
       );
     } else if (!stderr) {
       // Non-zero with nothing on stderr means there was nothing left to undo;
       // git explains that on stdout.
-      void notifyInfo(`Nothing to revert — "${entry.label}" is already undone.`);
+      void notifyInfo(l10n.t("Nothing to revert — \"{0}\" is already undone.", entry.label));
     } else {
-      void vscode.window.showErrorMessage(failed("Revert", stderr));
+      void vscode.window.showErrorMessage(failed(l10n.t("Revert"), stderr));
     }
     return false;
   }
@@ -538,7 +547,7 @@ export function nothingRan(result: unknown): boolean {
 // ── Local UI helpers (mirror commitActions.ts) ───────────────────────────────
 
 function flash(message: string): void {
-  void vscode.window.setStatusBarMessage(`$(discard) ${message}`, 2500);
+  void vscode.window.setStatusBarMessage(l10n.t("$(discard) {0}", message), 2500);
 }
 
 function short(sha: string): string {

@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { constants as osConstants } from "node:os";
 import { auditSpawn } from "./spawnAudit";
+import * as l10n from "@vscode/l10n";
 
 export interface GitProcessOptions {
   cwd: string;
@@ -79,7 +80,7 @@ const HARDENED_ARGS: readonly string[] = [
 
 function makeAbortError(): Error {
   // Node's own AbortError shape: name === "AbortError".
-  const err = new Error("The operation was aborted");
+  const err = new Error(l10n.t("The operation was aborted"));
   err.name = "AbortError";
   return err;
 }
@@ -99,7 +100,7 @@ function signalExitCode(signal: NodeJS.Signals | null): number {
 }
 
 function signalMessage(signal: NodeJS.Signals | null): string {
-  return `git was stopped by ${signal ?? "a signal"} before it finished.`;
+  return l10n.t("git was stopped by {0} before it finished.", signal ?? l10n.t("a signal"));
 }
 
 /**
@@ -450,7 +451,7 @@ export class GitProcess {
       // truncated history as though it were the whole of it.
       exitCode = code ?? signalExitCode(killedBy);
       if (code === null) {
-        failure = new Error(`git ${args.join(" ")}: ${signalMessage(killedBy)}`);
+        failure = new Error(l10n.t("git {0}: {1}", args.join(" "), signalMessage(killedBy)));
       }
       const tail = decoder.decode();
       if (tail) {
@@ -483,7 +484,7 @@ export class GitProcess {
       if (exitCode !== null && exitCode !== 0) {
         const message = Buffer.concat(stderr).toString("utf8").trim();
         throw new Error(
-          `git ${args.join(" ")} exited with code ${exitCode}` +
+          l10n.t("git {0} exited with code {1}", args.join(" "), exitCode) +
             (message ? `: ${message}` : ""),
         );
       }

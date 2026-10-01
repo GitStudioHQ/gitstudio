@@ -17,6 +17,7 @@
 
 import type { PrCreateLabel, PrPermission, PrPerson } from "@gitstudio/host-bridge/prProtocol";
 import { PrListError, type GraphqlFn } from "./prList";
+import * as l10n from "@vscode/l10n";
 
 // ── The question ─────────────────────────────────────────────────────────────
 
@@ -63,14 +64,14 @@ function permissionOf(v: unknown): PrPermission {
 /** What the form needs of the repository it opens on, in one request. */
 export async function fetchCreateData(graphql: GraphqlFn, owner: string, repo: string): Promise<PrCreateRepoData> {
   if (!OWNER_OR_REPO.test(owner) || !OWNER_OR_REPO.test(repo)) {
-    throw new PrListError(`"${owner}/${repo}" isn't a GitHub repository name.`, "query");
+    throw new PrListError(l10n.t("\"{0}/{1}\" isn't a GitHub repository name.", owner, repo), "query");
   }
   const res = await graphql(PR_CREATE_QUERY, { owner, name: repo });
   const limited = res.errors?.find((e) => e.type === "RATE_LIMITED");
-  if (limited) throw new PrListError(limited.message || "GitHub's rate limit was reached.", "rate-limit");
+  if (limited) throw new PrListError(limited.message || l10n.t("GitHub's rate limit was reached."), "rate-limit");
   const data = res.data as Json;
   const r = data?.repository;
-  if (!r) throw new PrListError(res.errors?.[0]?.message || `GitHub has no repository ${owner}/${repo}.`, "not-found");
+  if (!r) throw new PrListError(res.errors?.[0]?.message || l10n.t("GitHub has no repository {0}/{1}.", owner, repo), "not-found");
   const labels: PrCreateLabel[] = (r.labels?.nodes ?? [])
     .filter((l: Json) => l && typeof l.name === "string")
     .map((l: Json) => ({
@@ -170,7 +171,7 @@ export function canSetMetadata(permission: PrPermission): boolean {
 }
 
 export function metadataNote(repo: string): string {
-  return `Reviewers, labels and assignees take triage access to ${repo}. Its maintainers can add them.`;
+  return l10n.t("Reviewers, labels and assignees take triage access to {0}. Its maintainers can add them.", repo);
 }
 
 /** Why the pull request can't be created as things are — or undefined when it can. */
@@ -184,24 +185,24 @@ export function createProblem(p: {
   push?: "new" | "ahead" | "pushed" | "diverged" | "unknown";
   remote?: string;
 }): string | undefined {
-  if (!p.branch) return "Pick the branch to open it from.";
-  if (!p.base) return "Pick the branch it goes into.";
-  if (p.sameRepository && p.branch === p.base) return `${p.branch} can't go into itself: pick another base.`;
-  if (p.existing) return `${p.branch} already has an open pull request, #${p.existing.number}.`;
+  if (!p.branch) return l10n.t("Pick the branch to open it from.");
+  if (!p.base) return l10n.t("Pick the branch it goes into.");
+  if (p.sameRepository && p.branch === p.base) return l10n.t("{0} can't go into itself: pick another base.", p.branch);
+  if (p.existing) return l10n.t("{0} already has an open pull request, #{1}.", p.branch, p.existing.number);
   if (p.push === "diverged") {
-    return `${p.branch} and ${p.remote ?? "its remote"}/${p.branch} have both moved on: pull, then create it.`;
+    return l10n.t("{0} and {1}/{2} have both moved on: pull, then create it.", p.branch, p.remote ?? "its remote", p.branch);
   }
-  if (p.push === "unknown") return `${p.branch} has no GitHub remote to be pushed to.`;
-  if (p.compareReady && p.commits === 0) return `Nothing to compare: ${p.branch} has no commits that ${p.base} doesn't.`;
+  if (p.push === "unknown") return l10n.t("{0} has no GitHub remote to be pushed to.", p.branch);
+  if (p.compareReady && p.commits === 0) return l10n.t("Nothing to compare: {0} has no commits that {1} doesn't.", p.branch, p.base);
   return undefined;
 }
 
 /** Where the branch stands on its remote, in words — said above Create. */
 export function pushWords(h: { branch: string; remote?: string; push: string; ahead: number }): string | undefined {
   if (!h.remote) return undefined;
-  if (h.push === "new") return `${h.branch} isn't on ${h.remote} yet: it is pushed there first.`;
+  if (h.push === "new") return l10n.t("{0} isn't on {1} yet: it is pushed there first.", h.branch, h.remote);
   if (h.push === "ahead") {
-    return `${h.ahead === 1 ? "1 commit isn't" : `${h.ahead} commits aren't`} on ${h.remote}/${h.branch} yet: ${h.ahead === 1 ? "it is" : "they are"} pushed first.`;
+    return l10n.t("{0} on {1}/{2} yet: {3} pushed first.", h.ahead === 1 ? l10n.t("1 commit isn't") : l10n.t("{0} commits aren't", h.ahead), h.remote, h.branch, h.ahead === 1 ? l10n.t("it is") : l10n.t("they are"));
   }
   return undefined;
 }

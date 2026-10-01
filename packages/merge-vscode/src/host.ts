@@ -6,6 +6,7 @@ import * as vscode from "vscode";
 import type { MergeHostSettings, MergeProduct, MergeRepo } from "./product";
 import { normalizeMergeSettings, settingWithFallback, sidesTipText } from "./product";
 import type { ExitGuard } from "./exitGuard";
+import * as l10n from "@vscode/l10n";
 
 export type NoticeKind = "info" | "warn" | "error";
 
@@ -46,7 +47,7 @@ export function createHostCore(
     notify: (kind, text, ...actions) => {
       const line = `${product.displayName}: ${text}`;
       if (kind === "info" && actions.length === 0) {
-        vscode.window.setStatusBarMessage(`$(check) ${line}`, 3000);
+        vscode.window.setStatusBarMessage(l10n.t("$(check) {0}", line), 3000);
         return Promise.resolve(undefined);
       }
       if (kind === "error") {

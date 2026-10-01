@@ -36,6 +36,7 @@ import { commitList, pushWords } from "@gitstudio/engine/forge/prCreate";
 import { patchChildren } from "../conflicts/patch";
 import { ageWords } from "./prList";
 import { avatarSrc } from "./avatarSrc";
+import * as l10n from "@vscode/l10n";
 
 export interface PullRequestCreateOptions {
   post(message: PrCreateMessageToHost): void;
@@ -110,8 +111,8 @@ function spaced(parent: HTMLElement, ...kids: (Node | string)[]): void {
   });
 }
 
-function plural(n: number, one: string, many = `${one}s`): string {
-  return `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
+function plural(n: number, one: string, many: string): string {
+  return l10n.t("{0} {1}", n.toLocaleString("en-US"), n === 1 ? one : many);
 }
 
 const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
@@ -130,14 +131,14 @@ interface PickerItem {
 }
 
 const PICKER_WORDS: Record<PickerKind, { title: string; filter: string; empty: string }> = {
-  base: { title: "The branch it goes into", filter: "Find a branch, or type one", empty: "No branch matches" },
-  head: { title: "The branch it comes from", filter: "Find a branch", empty: "No branch matches" },
-  push: { title: "Push it to", filter: "Find a remote", empty: "No remote matches" },
-  target: { title: "The repository it opens on", filter: "Find a repository", empty: "No repository matches" },
-  template: { title: "Start the description from", filter: "Find a template", empty: "No template matches" },
-  reviewers: { title: "Ask for a review from", filter: "Find someone, or type a login", empty: "No one matches" },
-  assignees: { title: "Assign it to", filter: "Find someone, or type a login", empty: "No one matches" },
-  labels: { title: "Label it", filter: "Find a label", empty: "No label matches" },
+  base: { title: l10n.t("The branch it goes into"), filter: l10n.t("Find a branch, or type one"), empty: l10n.t("No branch matches") },
+  head: { title: l10n.t("The branch it comes from"), filter: l10n.t("Find a branch"), empty: l10n.t("No branch matches") },
+  push: { title: l10n.t("Push it to"), filter: l10n.t("Find a remote"), empty: l10n.t("No remote matches") },
+  target: { title: l10n.t("The repository it opens on"), filter: l10n.t("Find a repository"), empty: l10n.t("No repository matches") },
+  template: { title: l10n.t("Start the description from"), filter: l10n.t("Find a template"), empty: l10n.t("No template matches") },
+  reviewers: { title: l10n.t("Ask for a review from"), filter: l10n.t("Find someone, or type a login"), empty: l10n.t("No one matches") },
+  assignees: { title: l10n.t("Assign it to"), filter: l10n.t("Find someone, or type a login"), empty: l10n.t("No one matches") },
+  labels: { title: l10n.t("Label it"), filter: l10n.t("Find a label"), empty: l10n.t("No label matches") },
 };
 
 // ── The component ────────────────────────────────────────────────────────────
@@ -169,7 +170,7 @@ export class PullRequestCreate {
   ) {
     this.view = el("div", "prp prc");
     this.view.setAttribute("role", "main");
-    this.view.setAttribute("aria-label", "New pull request");
+    this.view.setAttribute("aria-label", l10n.t("New pull request"));
     this.layer = el("div", "prp-layer prc-layer");
     this.root.append(this.view, this.layer);
     this.view.addEventListener("click", (e) => this.onClick(e));
@@ -295,9 +296,9 @@ export class PullRequestCreate {
       const t = button("prc-crumb-btn", "pick-target", "pick");
       t.dataset.picker = "target";
       t.append(codicon("repo"), el("span", "prc-crumb-repo", s.target), codicon("chevron-down"));
-      t.title = `Opens on ${s.target} — choose another repository`;
+      t.title = l10n.t("Opens on {0} — choose another repository", s.target);
       t.setAttribute("aria-haspopup", "listbox");
-      t.setAttribute("aria-label", `Repository: ${s.target}. Choose another`);
+      t.setAttribute("aria-label", l10n.t("Repository: {0}. Choose another", s.target));
       crumb.appendChild(t);
     } else {
       crumb.append(codicon("repo"), el("span", "prp-crumb-repo", s.target));
@@ -311,8 +312,8 @@ export class PullRequestCreate {
     // pushed from another machine, a template just added on GitHub).
     const refresh = button("prp-icon-btn prc-refresh", "refresh", "refresh");
     refresh.appendChild(codicon("refresh"));
-    refresh.title = "Refresh — read the branches and GitHub again";
-    refresh.setAttribute("aria-label", "Refresh: read the branches and GitHub again");
+    refresh.title = l10n.t("Refresh — read the branches and GitHub again");
+    refresh.setAttribute("aria-label", l10n.t("Refresh: read the branches and GitHub again"));
     refresh.disabled = !!s.busy || s.status === "loading";
     titleRow.appendChild(refresh);
     head.appendChild(titleRow);
@@ -320,7 +321,7 @@ export class PullRequestCreate {
     if (s.status !== "message") {
       const flow = el("div", "prc-flow");
       flow.setAttribute("role", "group");
-      flow.setAttribute("aria-label", "Branches");
+      flow.setAttribute("aria-label", l10n.t("Branches"));
       const arrow = el("span", "prc-flow-arrow");
       arrow.appendChild(codicon("arrow-left"));
       const h = s.head;
@@ -328,21 +329,21 @@ export class PullRequestCreate {
       const sum = el("span", "prc-flow-sum");
       if (s.compare.status === "ready") {
         const c = s.compare;
-        spaced(sum, el("span", "", plural(c.commitsTotal, "commit")), el("span", "prp-dot", "·"), el("span", "", plural(c.files.length, "file")));
+        spaced(sum, el("span", "", plural(c.commitsTotal, l10n.t("commit"), l10n.t("commits"))), el("span", "prp-dot", "·"), el("span", "", plural(c.files.length, l10n.t("file"), l10n.t("files"))));
         if (c.additions > 0 || c.deletions > 0) {
           sum.append(" ");
           spaced(sum, el("span", "prp-dot", "·"), el("span", "prp-add", `+${c.additions.toLocaleString("en-US")}`), el("span", "prp-del", `−${c.deletions.toLocaleString("en-US")}`));
         }
       } else if (s.compare.status === "loading") {
-        sum.textContent = "Comparing…";
+        sum.textContent = l10n.t("Comparing…");
       }
       spaced(
         flow,
-        el("span", "prc-flow-word", "Into"),
-        this.branchButton("base", s.base, "git-branch", s.base ? `Into ${s.base} — choose the branch it goes into` : "Choose the branch it goes into", "Pick a base"),
+        el("span", "prc-flow-word", l10n.t("Into")),
+        this.branchButton("base", s.base, "git-branch", s.base ? l10n.t("Into {0} — choose the branch it goes into", s.base) : l10n.t("Choose the branch it goes into"), l10n.t("Pick a base")),
         arrow,
         el("span", "prc-flow-word", "from"),
-        this.branchButton("head", h ? h.ref : undefined, fork ? "repo-forked" : "git-branch", h ? `From ${h.ref} — choose the branch it comes from` : "Choose the branch it comes from", "Pick a branch"),
+        this.branchButton("head", h ? h.ref : undefined, fork ? "repo-forked" : "git-branch", h ? l10n.t("From {0} — choose the branch it comes from", h.ref) : l10n.t("Choose the branch it comes from"), l10n.t("Pick a branch")),
         sum,
       );
       head.appendChild(flow);
@@ -370,12 +371,12 @@ export class PullRequestCreate {
     icon.appendChild(codicon(e.draft ? "git-pull-request-draft" : "git-pull-request"));
     box.appendChild(icon);
     const body = el("div", "prp-notice-body");
-    body.appendChild(el("div", "prp-notice-title", `${s.head?.branch ?? "This branch"} already has an open pull request`));
+    body.appendChild(el("div", "prp-notice-title", `${s.head?.branch ?? l10n.t("This branch")} already has an open pull request`));
     body.appendChild(el("div", "prp-notice-detail", `#${e.number} ${e.title}`));
     const row = el("div", "prp-notice-buttons");
     const open = button("gs-btn gs-btn--primary prp-btn", "open-existing", "openExisting");
-    open.append(codicon("git-pull-request"), el("span", "prp-btn-label", `Open #${e.number}`));
-    open.title = `Open pull request #${e.number}`;
+    open.append(codicon("git-pull-request"), el("span", "prp-btn-label", l10n.t("Open #{0}", e.number)));
+    open.title = l10n.t("Open pull request #{0}", e.number);
     row.appendChild(open);
     body.appendChild(row);
     box.appendChild(body);
@@ -389,13 +390,13 @@ export class PullRequestCreate {
     const titleProblem = this.tried && !this.title.trim();
 
     const tf = el("label", "prp-field prc-title-field");
-    tf.appendChild(el("span", "prp-field-label", "Title"));
+    tf.appendChild(el("span", "prp-field-label", l10n.t("Title")));
     const title = el("input", `prp-input prc-title${titleProblem ? " is-invalid" : ""}`);
     title.type = "text";
     title.dataset.key = "title";
     title.spellcheck = true;
-    title.placeholder = "What the pull request does";
-    title.setAttribute("aria-label", "Title");
+    title.placeholder = l10n.t("What the pull request does");
+    title.setAttribute("aria-label", l10n.t("Title"));
     title.setAttribute("aria-required", "true");
     if (titleProblem) {
       title.setAttribute("aria-invalid", "true");
@@ -404,7 +405,7 @@ export class PullRequestCreate {
     title.disabled = busy;
     tf.appendChild(title);
     if (titleProblem) {
-      const p = el("span", "prc-field-problem", "A title is required.");
+      const p = el("span", "prc-field-problem", l10n.t("A title is required."));
       p.id = "prc-title-problem";
       tf.appendChild(p);
     }
@@ -412,32 +413,32 @@ export class PullRequestCreate {
 
     const bf = el("div", "prp-field prc-body-field");
     const bh = el("div", "prc-body-head");
-    const bl = el("label", "prp-field-label", "Description");
+    const bl = el("label", "prp-field-label", l10n.t("Description"));
     bl.htmlFor = "prc-body";
     bh.appendChild(bl);
     const tools = el("div", "prc-tools");
     tools.setAttribute("role", "toolbar");
-    tools.setAttribute("aria-label", "Description");
+    tools.setAttribute("aria-label", l10n.t("Description"));
     if (s.templates.length > 0) {
       const t = button("prp-ghost prc-tool", "pick-template", "pick");
       t.dataset.picker = "template";
-      t.append(codicon("file"), el("span", "", s.template ? `Template: ${baseName(s.template)}` : "Template"), codicon("chevron-down"));
-      t.title = "Start the description from one of the repository's templates";
+      t.append(codicon("file"), el("span", "", s.template ? l10n.t("Template: {0}", baseName(s.template)) : l10n.t("Template")), codicon("chevron-down"));
+      t.title = l10n.t("Start the description from one of the repository's templates");
       t.setAttribute("aria-haspopup", "listbox");
       t.disabled = busy;
       tools.appendChild(t);
     }
     if (s.compare.commits.length > 0) {
       const c = button("prp-ghost prc-tool", "insert-commits", "insertCommits");
-      c.append(codicon("list-unordered"), el("span", "", "Commit list"));
-      c.title = "Add the commits to the description, as a list";
+      c.append(codicon("list-unordered"), el("span", "", l10n.t("Commit list")));
+      c.title = l10n.t("Add the commits to the description, as a list");
       c.disabled = busy;
       tools.appendChild(c);
     }
     if (s.ai) {
       const a = button("prp-ghost prc-tool", "ai-draft", "aiDraft");
-      a.append(codicon(s.busy === "ai" ? "loading" : "sparkle", s.busy === "ai" ? "codicon-modifier-spin" : ""), el("span", "", s.busy === "ai" ? "Drafting…" : "Draft with AI"));
-      a.title = "Write the description from the commits and the diff with AI (replaces what is there)";
+      a.append(codicon(s.busy === "ai" ? "loading" : "sparkle", s.busy === "ai" ? "codicon-modifier-spin" : ""), el("span", "", s.busy === "ai" ? l10n.t("Drafting…") : l10n.t("Draft with AI")));
+      a.title = l10n.t("Write the description from the commits and the diff with AI (replaces what is there)");
       a.disabled = busy || s.compare.status !== "ready";
       tools.appendChild(a);
     }
@@ -447,7 +448,7 @@ export class PullRequestCreate {
     body.id = "prc-body";
     body.dataset.key = "body";
     body.rows = 12;
-    body.placeholder = "Describe the change. Markdown is fine.";
+    body.placeholder = l10n.t("Describe the change. Markdown is fine.");
     body.disabled = busy;
     bf.appendChild(body);
     main.appendChild(bf);
@@ -459,7 +460,7 @@ export class PullRequestCreate {
     box.dataset.act = "draft";
     box.disabled = busy;
     const words = el("span", "prc-draft-text");
-    words.append(el("span", "prp-check-label", "Create as draft"), el("span", "prp-hint", "A draft can't be merged until it's marked ready."));
+    words.append(el("span", "prp-check-label", l10n.t("Create as draft")), el("span", "prp-hint", l10n.t("A draft can't be merged until it's marked ready.")));
     draft.append(box, words);
     main.appendChild(draft);
 
@@ -475,8 +476,8 @@ export class PullRequestCreate {
       if (!elsewhere || !s.head) return;
       const b = button("prp-link prc-push-pick", "pick-push", "pick");
       b.dataset.picker = "push";
-      b.append(el("span", "", "Push to another remote"), codicon("chevron-down", "prc-push-chevron"));
-      b.title = s.head.remote ? `Pushed to ${s.head.remote} — choose another of this clone's GitHub remotes` : "Choose where to push it";
+      b.append(el("span", "", l10n.t("Push to another remote")), codicon("chevron-down", "prc-push-chevron"));
+      b.title = s.head.remote ? l10n.t("Pushed to {0} — choose another of this clone's GitHub remotes", s.head.remote) : l10n.t("Choose where to push it");
       b.setAttribute("aria-haspopup", "listbox");
       b.disabled = busy;
       line.append(" ", b);
@@ -504,16 +505,16 @@ export class PullRequestCreate {
     const create = button("gs-btn gs-btn--primary prp-btn prc-create", "create", "create");
     create.append(
       codicon(s.busy === "create" ? "loading" : "git-pull-request", s.busy === "create" ? "codicon-modifier-spin" : ""),
-      el("span", "prp-btn-label", s.busy === "create" ? (needsPush ? "Pushing and creating…" : "Creating…") : needsPush ? "Push and create pull request" : "Create pull request"),
+      el("span", "prp-btn-label", s.busy === "create" ? (needsPush ? l10n.t("Pushing and creating…") : l10n.t("Creating…")) : needsPush ? l10n.t("Push and create pull request") : l10n.t("Create pull request")),
     );
-    create.title = needsPush ? `Push ${s.head?.branch}, then create the pull request on ${s.target}` : `Create the pull request on ${s.target}`;
+    create.title = needsPush ? l10n.t("Push {0}, then create the pull request on {1}", s.head?.branch ?? "", s.target) : l10n.t("Create the pull request on {0}", s.target);
     create.disabled = busy || !!s.problem || s.status !== "ready";
     if (s.problem) create.setAttribute("aria-describedby", "prc-problem");
-    const cancel = button("gs-btn prp-btn prc-cancel", "cancel", "cancel", "Cancel");
-    cancel.title = "Close this form — nothing is created";
+    const cancel = button("gs-btn prp-btn prc-cancel", "cancel", "cancel", l10n.t("Cancel"));
+    cancel.title = l10n.t("Close this form — nothing is created");
     cancel.disabled = s.busy === "create";
     const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
-    const keys = el("span", "prp-hint prc-keys", `${mac ? "Cmd" : "Ctrl"}+Enter creates it`);
+    const keys = el("span", "prp-hint prc-keys", l10n.t("{0}+Enter creates it", mac ? "Cmd" : "Ctrl"));
     buttons.append(create, cancel, keys);
     foot.appendChild(buttons);
     return [main, foot];
@@ -521,7 +522,7 @@ export class PullRequestCreate {
 
   private buildSide(s: PrCreateViewState): HTMLElement {
     const side = el("aside", "prp-rail prc-side");
-    side.setAttribute("aria-label", "Reviewers, assignees and labels");
+    side.setAttribute("aria-label", l10n.t("Reviewers, assignees and labels"));
     const people = new Map((s.options?.people ?? []).map((p) => [p.login.toLowerCase(), p] as const));
     const personOf = (login: string): PrPerson => people.get(login.toLowerCase()) ?? { login, avatarUrl: null };
     const section = (kind: "reviewers" | "assignees" | "labels", title: string, content: HTMLElement[], empty: string, extra?: HTMLElement) => {
@@ -532,8 +533,8 @@ export class PullRequestCreate {
       const edit = button("prp-icon-btn prc-side-edit", `pick-${kind}`, "pick");
       edit.dataset.picker = kind;
       edit.appendChild(codicon("gear"));
-      edit.title = s.canSetMetadata ? `Choose ${title.toLowerCase()}` : (s.metadataNote ?? "");
-      edit.setAttribute("aria-label", `Choose ${title.toLowerCase()}`);
+      edit.title = s.canSetMetadata ? l10n.t("Choose {0}", title.toLowerCase()) : (s.metadataNote ?? "");
+      edit.setAttribute("aria-label", l10n.t("Choose {0}", title.toLowerCase()));
       edit.setAttribute("aria-haspopup", "listbox");
       edit.disabled = !s.canSetMetadata || !!s.busy;
       h.appendChild(edit);
@@ -551,20 +552,20 @@ export class PullRequestCreate {
       x.dataset.kind = kind;
       x.dataset.value = login;
       x.appendChild(codicon("close"));
-      x.title = `Remove ${login}`;
-      x.setAttribute("aria-label", `Remove ${login}`);
+      x.title = l10n.t("Remove {0}", login);
+      x.setAttribute("aria-label", l10n.t("Remove {0}", login));
       x.disabled = !!s.busy;
       row.appendChild(x);
       return row;
     };
-    side.appendChild(section("reviewers", "Reviewers", this.reviewers.map((l) => personRow(l, "reviewers")), "No one yet"));
+    side.appendChild(section("reviewers", l10n.t("Reviewers"), this.reviewers.map((l) => personRow(l, "reviewers")), l10n.t("No one yet")));
     let assignSelf: HTMLElement | undefined;
     if (s.canSetMetadata && s.viewer && this.assignees.length === 0) {
       assignSelf = button("prp-link prc-self", "assign-self", "assignSelf");
-      assignSelf.textContent = "Assign yourself";
-      assignSelf.title = `Assign it to ${s.viewer.login}`;
+      assignSelf.textContent = l10n.t("Assign yourself");
+      assignSelf.title = l10n.t("Assign it to {0}", s.viewer.login);
     }
-    side.appendChild(section("assignees", "Assignees", this.assignees.map((l) => personRow(l, "assignees")), "No one", assignSelf));
+    side.appendChild(section("assignees", l10n.t("Assignees"), this.assignees.map((l) => personRow(l, "assignees")), l10n.t("No one"), assignSelf));
     const colors = new Map((s.options?.labels ?? []).map((l) => [l.name, l.color] as const));
     const labelRow = el("div", "prp-labels");
     for (const name of this.labels) {
@@ -576,38 +577,38 @@ export class PullRequestCreate {
       x.dataset.kind = "labels";
       x.dataset.value = name;
       x.appendChild(codicon("close"));
-      x.title = `Remove the label ${name}`;
-      x.setAttribute("aria-label", `Remove the label ${name}`);
+      x.title = l10n.t("Remove the label {0}", name);
+      x.setAttribute("aria-label", l10n.t("Remove the label {0}", name));
       x.disabled = !!s.busy;
       chip.appendChild(x);
       labelRow.appendChild(chip);
     }
-    side.appendChild(section("labels", "Labels", this.labels.length ? [labelRow] : [], "None yet"));
+    side.appendChild(section("labels", l10n.t("Labels"), this.labels.length ? [labelRow] : [], l10n.t("None yet")));
     if (!s.canSetMetadata && s.metadataNote) side.appendChild(el("p", "prp-hint prc-side-note", s.metadataNote));
     return side;
   }
 
   private buildPreview(s: PrCreateViewState): HTMLElement {
     const box = el("section", "prc-preview");
-    box.setAttribute("aria-label", "What the pull request will have");
+    box.setAttribute("aria-label", l10n.t("What the pull request will have"));
     const c = s.compare;
     if (c.status === "failed") {
-      box.appendChild(this.buildMessage({ icon: "warning", tone: "warning", title: "Couldn't compare the branches", detail: c.error, buttons: [{ label: "Retry", icon: "refresh", action: { kind: "retry" } }] }, "prp-notice", "compare-failed"));
+      box.appendChild(this.buildMessage({ icon: "warning", tone: "warning", title: l10n.t("Couldn't compare the branches"), detail: c.error, buttons: [{ label: l10n.t("Retry"), icon: "refresh", action: { kind: "retry" } }] }, "prp-notice", "compare-failed"));
       return box;
     }
     if (c.stale) {
-      box.appendChild(el("p", "prp-hint prc-stale", `Compared with ${s.base} as last fetched: GitHub couldn't be reached.`));
+      box.appendChild(el("p", "prp-hint prc-stale", l10n.t("Compared with {0} as last fetched: GitHub couldn't be reached.", s.base ?? "")));
     }
     // Commits.
     const commits = el("div", "prc-block");
     commits.dataset.key = "block-commits";
     const ch = el("h2", "prc-block-title");
-    ch.append(codicon("git-commit"), el("span", "", "Commits"), el("span", "prp-count", c.status === "ready" ? c.commitsTotal.toLocaleString("en-US") : "…"));
+    ch.append(codicon("git-commit"), el("span", "", l10n.t("Commits")), el("span", "prp-count", c.status === "ready" ? c.commitsTotal.toLocaleString("en-US") : "…"));
     commits.appendChild(ch);
     if (c.status === "loading" || c.status === "idle") {
       commits.appendChild(this.rowsSkeleton("commits"));
     } else if (c.commits.length === 0) {
-      commits.appendChild(el("p", "prp-empty prc-empty", s.head && s.base ? `${s.head.branch} has no commits that ${s.base} doesn't.` : "Pick both branches to see what it will have."));
+      commits.appendChild(el("p", "prp-empty prc-empty", s.head && s.base ? l10n.t("{0} has no commits that {1} doesn't.", s.head.branch, s.base) : l10n.t("Pick both branches to see what it will have.")));
     } else {
       const list = el("ol", "prc-commits");
       for (const k of c.commits) {
@@ -622,14 +623,14 @@ export class PullRequestCreate {
         list.appendChild(li);
       }
       commits.appendChild(list);
-      if (c.commitsTotal > c.commits.length) commits.appendChild(el("p", "prp-hint", `The first ${c.commits.length.toLocaleString("en-US")} of ${c.commitsTotal.toLocaleString("en-US")} commits.`));
+      if (c.commitsTotal > c.commits.length) commits.appendChild(el("p", "prp-hint", l10n.t("The first {0} of {1} commits.", c.commits.length.toLocaleString("en-US"), c.commitsTotal.toLocaleString("en-US"))));
     }
     box.appendChild(commits);
     // Files.
     const files = el("div", "prc-block");
     files.dataset.key = "block-files";
     const fh = el("h2", "prc-block-title");
-    fh.append(codicon("code"), el("span", "", "Files changed"), el("span", "prp-count", c.status === "ready" ? c.files.length.toLocaleString("en-US") : "…"));
+    fh.append(codicon("code"), el("span", "", l10n.t("Files changed")), el("span", "prp-count", c.status === "ready" ? c.files.length.toLocaleString("en-US") : "…"));
     if (c.status === "ready" && (c.additions > 0 || c.deletions > 0)) {
       const stat = el("span", "prc-block-stat");
       stat.append(el("span", "prp-add", `+${c.additions.toLocaleString("en-US")}`), el("span", "prp-del", `−${c.deletions.toLocaleString("en-US")}`));
@@ -639,7 +640,7 @@ export class PullRequestCreate {
     if (c.status === "loading" || c.status === "idle") {
       files.appendChild(this.rowsSkeleton("files"));
     } else if (c.files.length === 0) {
-      files.appendChild(el("p", "prp-empty prc-empty", "No files change."));
+      files.appendChild(el("p", "prp-empty prc-empty", l10n.t("No files change.")));
     } else {
       const list = el("ul", "prc-files");
       for (const f of c.files) list.appendChild(this.fileRow(f));
@@ -661,12 +662,12 @@ export class PullRequestCreate {
     const name = el("span", "prc-file-name", slash >= 0 ? f.path.slice(slash + 1) : f.path);
     const dir = el("span", "prc-file-dir", slash >= 0 ? f.path.slice(0, slash) : "");
     const counts = el("span", "prc-file-counts");
-    if (f.binary) counts.appendChild(el("span", "prp-hint", "Binary"));
+    if (f.binary) counts.appendChild(el("span", "prp-hint", l10n.t("Binary")));
     else spaced(counts, ...[...(f.additions > 0 ? [el("span", "prp-add", `+${f.additions}`)] : []), ...(f.deletions > 0 ? [el("span", "prp-del", `−${f.deletions}`)] : [])]);
     spaced(b, letter, name, dir, counts);
-    const was = f.previousPath ? ` (renamed from ${f.previousPath})` : "";
-    b.title = `${f.path}${was} — ${st.word}. Open its diff`;
-    b.setAttribute("aria-label", `${st.word}: ${f.path}${was}. Open its diff`);
+    const was = f.previousPath ? l10n.t(" (renamed from {0})", f.previousPath) : "";
+    b.title = l10n.t("{0}{1} — {2}. Open its diff", f.path, was, st.word);
+    b.setAttribute("aria-label", l10n.t("{0}: {1}{2}. Open its diff", st.word, f.path, was));
     li.appendChild(b);
     return li;
   }
@@ -675,7 +676,7 @@ export class PullRequestCreate {
     const sk = el("div", "prc-rows-sk");
     sk.dataset.key = `sk-${key}`;
     sk.setAttribute("aria-busy", "true");
-    sk.setAttribute("aria-label", key === "commits" ? "Loading the commits" : "Loading the files");
+    sk.setAttribute("aria-label", key === "commits" ? l10n.t("Loading the commits") : l10n.t("Loading the files"));
     for (let i = 0; i < 3; i++) sk.appendChild(el("span", "prp-sk prc-sk-row"));
     return sk;
   }
@@ -683,7 +684,7 @@ export class PullRequestCreate {
   private buildSkeleton(): HTMLElement {
     const sk = el("div", "prp-skeleton");
     sk.setAttribute("aria-busy", "true");
-    sk.setAttribute("aria-label", "Loading the form");
+    sk.setAttribute("aria-label", l10n.t("Loading the form"));
     for (const w of ["line-1", "block", "line-2", "block-2"]) sk.appendChild(el("span", `prp-sk prp-sk-${w}`));
     return sk;
   }
@@ -840,14 +841,14 @@ export class PullRequestCreate {
     const match = (text: string) => !q || text.toLowerCase().includes(q.toLowerCase());
     switch (kind) {
       case "base": {
-        const items = s.bases.filter((b) => match(b.name)).map((b) => ({ id: b.name, label: b.name, icon: "git-branch", checked: b.name === s.base, ...(b.isDefault ? { detail: "default" } : {}) }));
+        const items = s.bases.filter((b) => match(b.name)).map((b) => ({ id: b.name, label: b.name, icon: "git-branch", checked: b.name === s.base, ...(b.isDefault ? { detail: l10n.t("default") } : {}) }));
         const t = q.trim();
-        const typed = t && !s.bases.some((b) => b.name === t) && /^[^\s~^:?*[\\]+$/.test(t) && !t.startsWith("-") ? { id: t, label: `Use ${t}`, icon: "edit", detail: "a branch not listed" } : undefined;
+        const typed = t && !s.bases.some((b) => b.name === t) && /^[^\s~^:?*[\\]+$/.test(t) && !t.startsWith("-") ? { id: t, label: l10n.t("Use {0}", t), icon: "edit", detail: l10n.t("a branch not listed") } : undefined;
         return { items, ...(typed ? { typed } : {}), multi: false };
       }
       case "head":
         return {
-          items: s.branches.filter((b) => match(b.name)).map((b) => ({ id: b.name, label: b.name, icon: "git-branch", checked: b.name === s.head?.branch, ...(b.current ? { detail: "checked out" } : {}) })),
+          items: s.branches.filter((b) => match(b.name)).map((b) => ({ id: b.name, label: b.name, icon: "git-branch", checked: b.name === s.head?.branch, ...(b.current ? { detail: l10n.t("checked out") } : {}) })),
           multi: false,
         };
       case "push":
@@ -862,7 +863,7 @@ export class PullRequestCreate {
       case "template":
         return {
           items: [
-            ...(match("none") ? [{ id: "", label: "No template", icon: "circle-slash", checked: !s.template }] : []),
+            ...(match("none") ? [{ id: "", label: l10n.t("No template"), icon: "circle-slash", checked: !s.template }] : []),
             ...s.templates.filter((t) => match(t.filename)).map((t) => ({ id: t.filename, label: baseName(t.filename), detail: t.filename, icon: "file", checked: t.filename === s.template })),
           ],
           multi: false,
@@ -882,10 +883,10 @@ export class PullRequestCreate {
         const chosen = this.listOf(kind);
         const viewer = s.viewer?.login;
         const people = (s.options?.people ?? []).filter((p) => match(p.login) && !(kind === "reviewers" && viewer && p.login.toLowerCase() === viewer.toLowerCase()));
-        const items: PickerItem[] = people.map((p) => ({ id: p.login, label: p.login, lead: avatar(p, 16), checked: chosen.some((c) => c.toLowerCase() === p.login.toLowerCase()), ...(viewer && p.login.toLowerCase() === viewer.toLowerCase() ? { detail: "you" } : {}) }));
+        const items: PickerItem[] = people.map((p) => ({ id: p.login, label: p.login, lead: avatar(p, 16), checked: chosen.some((c) => c.toLowerCase() === p.login.toLowerCase()), ...(viewer && p.login.toLowerCase() === viewer.toLowerCase() ? { detail: l10n.t("you") } : {}) }));
         for (const c of chosen) if (!items.some((i) => i.id.toLowerCase() === c.toLowerCase()) && match(c)) items.unshift({ id: c, label: c, icon: "account", checked: true });
         const t = q.trim().replace(/^@/, "");
-        const typed = t && LOGIN.test(t) && !items.some((i) => i.id.toLowerCase() === t.toLowerCase()) ? { id: t, label: `@${t}`, icon: "account", detail: "someone not listed" } : undefined;
+        const typed = t && LOGIN.test(t) && !items.some((i) => i.id.toLowerCase() === t.toLowerCase()) ? { id: t, label: `@${t}`, icon: "account", detail: l10n.t("someone not listed") } : undefined;
         return { items, ...(typed ? { typed } : {}), multi: true };
       }
     }
@@ -949,7 +950,7 @@ export class PullRequestCreate {
     if (all.length === 0) list.appendChild(el("div", "prc-picker-empty", words.empty));
     m.appendChild(list);
     if (p.kind === "labels" || p.kind === "reviewers" || p.kind === "assignees") {
-      const foot = el("div", "prc-picker-foot", this.state.options?.truncated ? "Only the first 100 are listed; type to find others." : "");
+      const foot = el("div", "prc-picker-foot", this.state.options?.truncated ? l10n.t("Only the first 100 are listed; type to find others.") : "");
       if (foot.textContent) m.appendChild(foot);
     }
     this.placePicker();

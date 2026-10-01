@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import "./webviewL10n";
 
 // DLG_SANITIZE turns free text into a name git will accept, and is offered in
 // the branch dialog as "use this instead". Like DLG_VALIDATORS it lives inside

@@ -10,6 +10,7 @@
 // and what an answer opens are unit-tested.
 
 import type { DialogChoice } from "./dialogs";
+import * as l10n from "@vscode/l10n";
 
 /** GitHub Sponsors: recurring support. The manifest's `sponsor` field is the same page. */
 export const SPONSOR_URL = "https://github.com/sponsors/antonarnaudov";
@@ -28,11 +29,11 @@ export interface SupportPickSpec {
 /** The question: the two ways, in the README's words, with the codicons the dialog draws. */
 export function supportPickSpec(): SupportPickSpec {
   return {
-    title: "Support GitStudio",
-    message: "GitStudio is free and open source. If it saves you time, you can support it.",
+    title: l10n.t("Support GitStudio"),
+    message: l10n.t("GitStudio is free and open source. If it saves you time, you can support it."),
     choices: [
-      { id: "sponsor", label: "Sponsor on GitHub", icon: "heart", description: "Recurring support" },
-      { id: "coffee", label: "Buy me a coffee", icon: "coffee", description: "A one-off tip" },
+      { id: "sponsor", label: l10n.t("Sponsor on GitHub"), icon: "heart", description: l10n.t("Recurring support") },
+      { id: "coffee", label: l10n.t("Buy me a coffee"), icon: "coffee", description: l10n.t("A one-off tip") },
     ],
     // Two rows: a filter box would only be in the way.
     filter: false,

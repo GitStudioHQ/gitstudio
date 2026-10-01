@@ -25,6 +25,7 @@ import {
   resetBranchTo,
   type BranchUndoRunner,
 } from "./branchReset";
+import * as l10n from "@vscode/l10n";
 
 // Branch / remote / tag context-menu actions for the Branches view. Each runs a
 // real git op via the GitContext provider methods, confirms destructive ops, and
@@ -73,14 +74,14 @@ async function refOrPick(
   if (candidates.length === 0) {
     const noun =
       type === "head"
-        ? "branches"
+        ? l10n.t("branches")
         : type === "remote"
-          ? "remote branches"
+          ? l10n.t("remote branches")
           : type === "tag"
-            ? "tags"
-            : "stashes";
+            ? l10n.t("tags")
+            : l10n.t("stashes");
     void vscode.window.showInformationMessage(
-      `GitStudio: this repository has no ${noun} to choose from.`,
+      l10n.t("GitStudio: this repository has no {0} to choose from.", noun),
     );
     return undefined;
   }
@@ -149,7 +150,7 @@ async function runRefCheckout(
   }
   if (c.kind === "missing") {
     void vscode.window.showErrorMessage(
-      `GitStudio: ${ref.name} is not in this repository any more — refresh and try again.`,
+      l10n.t("GitStudio: {0} is not in this repository any more — refresh and try again.", ref.name),
     );
     return;
   }
@@ -174,7 +175,7 @@ async function runRefCheckout(
     }
   }
   const plan = c.plan;
-  await reportApplied(await applyOrAsk(a.ctx, checkoutOp(plan.args)), plan.success, refresh, "Checkout");
+  await reportApplied(await applyOrAsk(a.ctx, checkoutOp(plan.args)), plan.success, refresh, l10n.t("Checkout"));
 }
 
 /**
@@ -190,7 +191,7 @@ async function listedRef(a: RepoEntry, ref: GitRef): Promise<GitRef & { fullName
   const hit = await resolveListedRef(a.ctx, ref);
   if (!hit) {
     void vscode.window.showErrorMessage(
-      `GitStudio: ${ref.name} is not in this repository any more — refresh and try again.`,
+      l10n.t("GitStudio: {0} is not in this repository any more — refresh and try again.", ref.name),
     );
     return undefined;
   }
@@ -212,7 +213,7 @@ function tagNameOf(fullName: string): string | undefined {
 function localName(ref: { fullName: string; name: string }): string | undefined {
   const name = branchNameOf(ref.fullName);
   if (!name) {
-    void vscode.window.showErrorMessage(`GitStudio: ${ref.name} is not a local branch.`);
+    void vscode.window.showErrorMessage(l10n.t("GitStudio: {0} is not a local branch.", ref.name));
   }
   return name;
 }
@@ -249,16 +250,16 @@ export async function mergeBranchIntoCurrent(
   // commit lands on no branch.
   const detached = await detachedHead(a);
   const ok = await promptConfirm({
-    title: detached ? `Merge ${name} into ${detached}?` : `Merge ${name} into the current branch?`,
+    title: detached ? l10n.t("Merge {0} into {1}?", name, detached) : l10n.t("Merge {0} into the current branch?", name),
     message:
-      "Its commits join your history. If the two sides touched the same lines you'll get conflicts to resolve, and Undo can take you back either way." +
-      (detached ? " HEAD is on no branch, so the merge is on no branch either: create a branch from it to keep it." : ""),
-    confirmLabel: "Merge",
+      l10n.t("Its commits join your history. If the two sides touched the same lines you'll get conflicts to resolve, and Undo can take you back either way.") +
+      (detached ? l10n.t(" HEAD is on no branch, so the merge is on no branch either: create a branch from it to keep it.") : ""),
+    confirmLabel: l10n.t("Merge"),
   });
   if (!ok) {
     return;
   }
-  await withUndo(repos, a, `Merge ${name}`, async () => {
+  await withUndo(repos, a, l10n.t("Merge {0}", name), async () => {
     // By its FULL name: the bare "release" is the TAG beside a tag of that
     // name, and git's "heads/release" merged the branch under the words
     // "Merge branch 'heads/release'". BranchOps.merge records "Merge branch
@@ -277,8 +278,8 @@ export async function mergeBranchIntoCurrent(
     await reportMergeLike(
       a.ctx,
       result,
-      `Merged ${name}`,
-      "Merge",
+      l10n.t("Merged {0}", name),
+      l10n.t("Merge"),
       "MERGE_HEAD",
       refresh,
     );
@@ -304,16 +305,16 @@ export async function rebaseCurrentOnto(
   // push: the rewritten commits land on no branch.
   const detached = await detachedHead(a);
   const ok = await promptConfirm({
-    title: detached ? `Rebase ${detached} onto ${name}?` : `Rebase the current branch onto ${name}?`,
+    title: detached ? l10n.t("Rebase {0} onto {1}?", detached, name) : l10n.t("Rebase the current branch onto {0}?", name),
     message: detached
-      ? `The commits HEAD has that ${name} does not are rewritten on top of it, so they get new shas. HEAD is on no branch, so they are on no branch either: create a branch from them to keep them. Undo can take you back.`
-      : `Your local commits are rewritten on top of ${name}, so they get new shas. If you have already pushed them, the next push needs a force. Undo can take you back.`,
-    confirmLabel: "Rebase",
+      ? l10n.t("The commits HEAD has that {0} does not are rewritten on top of it, so they get new shas. HEAD is on no branch, so they are on no branch either: create a branch from them to keep them. Undo can take you back.", name)
+      : l10n.t("Your local commits are rewritten on top of {0}, so they get new shas. If you have already pushed them, the next push needs a force. Undo can take you back.", name),
+    confirmLabel: l10n.t("Rebase"),
   });
   if (!ok) {
     return;
   }
-  await withUndo(repos, a, `Rebase onto ${name}`, async () => {
+  await withUndo(repos, a, l10n.t("Rebase onto {0}", name), async () => {
     // By its full name — the bare one is the tag's, beside a tag of that name.
     // A rebase needs a clean tree: a refusal over the user's work is said,
     // with Stash & Retry, instead of git's "cannot rebase: You have unstaged
@@ -328,8 +329,8 @@ export async function rebaseCurrentOnto(
     await reportMergeLike(
       a.ctx,
       result,
-      `Rebased onto ${name}`,
-      "Rebase",
+      l10n.t("Rebased onto {0}", name),
+      l10n.t("Rebase"),
       "REBASE_HEAD",
       refresh,
     );
@@ -355,10 +356,10 @@ export async function renameBranch(
   // "release" is "fatal: no branch named 'heads/release'", and the box
   // offered that as the name to edit.
   const neu = await promptInput({
-    title: `Rename branch ${old}`,
-    hint: "Only the local name changes — the commits and the remote branch stay where they are.",
+    title: l10n.t("Rename branch {0}", old),
+    hint: l10n.t("Only the local name changes — the commits and the remote branch stay where they are."),
     value: old,
-    confirmLabel: "Rename",
+    confirmLabel: l10n.t("Rename"),
     validate: "refName",
   });
   if (!neu || neu === old) {
@@ -366,11 +367,11 @@ export async function renameBranch(
   }
   const result = await a.ctx.branches.rename(old, neu);
   if (!result.ok) {
-    report(result, `Renamed to ${neu}`, refresh, "Rename branch");
+    report(result, l10n.t("Renamed to {0}", neu), refresh, l10n.t("Rename branch"));
     return;
   }
   await reconcileUpstreamAfterRename(a, old, neu, refresh);
-  report(result, `Renamed to ${neu}`, refresh, "Rename branch");
+  report(result, l10n.t("Renamed to {0}", neu), refresh, l10n.t("Rename branch"));
 }
 
 /**
@@ -407,26 +408,26 @@ async function reconcileUpstreamAfterRename(
   const { remote } = upstream;
 
   const choice = await promptPick({
-    title: `Rename ${oldName} on ${remote} too?`,
-    hint: `This branch still tracks ${remote}/${oldName} — renaming locally doesn't rename it on the remote.`,
+    title: l10n.t("Rename {0} on {1} too?", oldName, remote),
+    hint: l10n.t("This branch still tracks {0}/{1} — renaming locally doesn't rename it on the remote.", remote, oldName),
     choices: [
       {
         id: "rename",
-        label: `Rename on ${remote}`,
+        label: l10n.t("Rename on {0}", remote),
         icon: "cloud-upload",
-        description: `Push ${newName}, track it, and delete ${remote}/${oldName}.`,
+        description: l10n.t("Push {0}, track it, and delete {1}/{2}.", newName, remote, oldName),
       },
       {
         id: "publish",
-        label: `Publish ${newName}, keep ${oldName}`,
+        label: l10n.t("Publish {0}, keep {1}", newName, oldName),
         icon: "repo-forked",
-        description: `Push ${newName} and track it, but leave ${remote}/${oldName} in place.`,
+        description: l10n.t("Push {0} and track it, but leave {1}/{2} in place.", newName, remote, oldName),
       },
       {
         id: "keep",
-        label: `Keep tracking ${remote}/${oldName}`,
+        label: l10n.t("Keep tracking {0}/{1}", remote, oldName),
         icon: "link",
-        description: "Git's default. The new name stays local-only.",
+        description: l10n.t("Git's default. The new name stays local-only."),
       },
     ],
   });
@@ -443,14 +444,12 @@ async function reconcileUpstreamAfterRename(
   });
   if (!pushed.ok) {
     void vscode.window.showErrorMessage(
-      `GitStudio: renamed locally, but publishing ${newName} failed${
-        pushed.stderr ? ` — ${pushed.stderr.trim()}` : ""
-      }. It still tracks ${remote}/${oldName}.`,
+      l10n.t("GitStudio: renamed locally, but publishing {0} failed{1}. It still tracks {2}/{3}.", newName, pushed.stderr ? ` — ${pushed.stderr.trim()}` : "", remote, oldName),
     );
     return;
   }
   if (choice === "publish") {
-    flash(`Published ${newName} to ${remote}`);
+    flash(l10n.t("Published {0} to {1}", newName, remote));
     refresh();
     return;
   }
@@ -460,12 +459,10 @@ async function reconcileUpstreamAfterRename(
   const removed = await a.ctx.branches.deleteRemoteBranch(remote, oldName);
   if (!removed.ok) {
     void vscode.window.showWarningMessage(
-      `GitStudio: ${newName} is published and tracked, but ${remote}/${oldName} could not be deleted${
-        removed.stderr ? ` — ${removed.stderr.trim()}` : ""
-      }.`,
+      l10n.t("GitStudio: {0} is published and tracked, but {1}/{2} could not be deleted{3}.", newName, remote, oldName, removed.stderr ? ` — ${removed.stderr.trim()}` : ""),
     );
   } else {
-    flash(`Renamed on ${remote}: ${oldName} → ${newName}`);
+    flash(l10n.t("Renamed on {0}: {1} → {2}", remote, oldName, newName));
   }
   refresh();
 }
@@ -491,9 +488,9 @@ export async function deleteBranch(
     return;
   }
   const ok = await confirm(
-    `Delete branch ${name}?`,
-    "The branch label is removed. Its commits stay reachable from anywhere else that points at them, and GitStudio's Undo can put the branch back.",
-    "Delete",
+    l10n.t("Delete branch {0}?", name),
+    l10n.t("The branch label is removed. Its commits stay reachable from anywhere else that points at them, and GitStudio's Undo can put the branch back."),
+    l10n.t("Delete"),
   );
   if (!ok) {
     return;
@@ -503,22 +500,22 @@ export async function deleteBranch(
   await withUndo(
     repos,
     a,
-    `Delete branch ${name}`,
+    l10n.t("Delete branch {0}", name),
     async () => {
       // The name under refs/heads/ — git's "heads/release" names no branch.
       let result = await a.ctx.branches.delete(name);
       if (!result.ok && /not fully merged/i.test(result.stderr)) {
         const force = await confirm(
           `${name} is not fully merged`,
-          "Some of its commits are not on any other branch, so deleting it may leave them unreachable. Undo can still recover them.",
-          "Force Delete",
+          l10n.t("Some of its commits are not on any other branch, so deleting it may leave them unreachable. Undo can still recover them."),
+          l10n.t("Force Delete"),
         );
         if (!force) {
           return { cancelled: true };
         }
         result = await a.ctx.branches.delete(name, { force: true });
       }
-      report(result, `Deleted ${name}`, refresh, "Delete branch");
+      report(result, l10n.t("Deleted {0}", name), refresh, l10n.t("Delete branch"));
       return undefined;
     },
     { refsOnly: true },
@@ -573,7 +570,7 @@ export async function pushBranch(
   const upstream = ref.upstream;
   if (!upstream) {
     const remotes = await a.ctx.remotes.list();
-    const remote = await pickRemote(remotes, "Publish to which remote?");
+    const remote = await pickRemote(remotes, l10n.t("Publish to which remote?"));
     if (!remote) {
       return;
     }
@@ -585,7 +582,7 @@ export async function pushBranch(
       branch: name,
       setUpstream: true,
     });
-    report(result, `Published ${name} to ${remote}`, refresh, "Publish");
+    report(result, l10n.t("Published {0} to {1}", name, remote), refresh, l10n.t("Publish"));
     return;
   }
   // Push the ref we were invoked ON, not whatever happens to be checked out.
@@ -599,7 +596,7 @@ export async function pushBranch(
     // would need its own ahead/behind check against that branch's upstream.
     ? await a.ctx.sync.push({ remote, branch: name })
     : await a.ctx.sync.push();
-  report(result, `Pushed ${name}`, refresh, "Push");
+  report(result, l10n.t("Pushed {0}", name), refresh, l10n.t("Push"));
 }
 
 export async function setUpstream(
@@ -615,7 +612,7 @@ export async function setUpstream(
     a,
     arg,
     "head",
-    "Set the upstream for which branch?",
+    l10n.t("Set the upstream for which branch?"),
     "git-branch",
   );
   const ref = picked && (await listedRef(a, picked));
@@ -635,8 +632,8 @@ export async function setUpstream(
   // bare name like any revision, and a local branch or tag sharing a
   // remote-tracking branch's short name would answer first.
   const upstream = await promptPick({
-    title: `Set upstream for ${name}`,
-    hint: "The remote-tracking branch this branch pushes to and compares against.",
+    title: l10n.t("Set upstream for {0}", name),
+    hint: l10n.t("The remote-tracking branch this branch pushes to and compares against."),
     choices: remoteBranches.map((r) => ({
       id: r.fullName,
       label: refShortName(r.fullName),
@@ -648,7 +645,7 @@ export async function setUpstream(
     return;
   }
   const result = await a.ctx.branches.setUpstream(name, upstream);
-  report(result, `Set upstream of ${name} → ${refShortName(upstream)}`, refresh, "Set upstream");
+  report(result, l10n.t("Set upstream of {0} → {1}", name, refShortName(upstream)), refresh, l10n.t("Set upstream"));
 }
 
 export async function newBranchFrom(
@@ -672,32 +669,32 @@ export async function newBranchFrom(
   const startPoint = ref?.fullName;
   const from = ref ? shown(ref) : undefined;
   const name = await promptInput({
-    title: from ? `New branch from ${from}` : "New branch",
+    title: from ? l10n.t("New branch from {0}", from) : l10n.t("New branch"),
     hint: from
-      ? `The branch starts at ${from}.`
-      : "The branch starts at HEAD.",
+      ? l10n.t("The branch starts at {0}.", from)
+      : l10n.t("The branch starts at HEAD."),
     placeholder: "feature/my-branch",
-    confirmLabel: "Continue",
+    confirmLabel: l10n.t("Continue"),
     validate: "refName",
   });
   if (!name) {
     return;
   }
   const checkout = await promptPick({
-    title: `Create ${name}`,
-    hint: "Switch to the new branch after creating it?",
+    title: l10n.t("Create {0}", name),
+    hint: l10n.t("Switch to the new branch after creating it?"),
     choices: [
       {
         id: "switch",
-        label: "Create and Switch",
+        label: l10n.t("Create and Switch"),
         icon: "git-branch",
-        description: "Create the branch and check it out.",
+        description: l10n.t("Create the branch and check it out."),
       },
       {
         id: "only",
-        label: "Create Only",
+        label: l10n.t("Create Only"),
         icon: "add",
-        description: `Create the branch and stay on the current one.`,
+        description: l10n.t("Create the branch and stay on the current one."),
       },
     ],
   });
@@ -709,13 +706,13 @@ export async function newBranchFrom(
     // refused the same way over uncommitted work in its way.
     await reportApplied(
       await applyOrAsk(a.ctx, checkoutOp(["checkout", "-b", name, ...(startPoint ? [startPoint] : [])])),
-      `Created ${name}`,
+      l10n.t("Created {0}", name),
       refresh,
-      "Create branch",
+      l10n.t("Create branch"),
     );
     return;
   }
-  report(await a.ctx.branches.create(name, startPoint), `Created ${name}`, refresh, "Create branch");
+  report(await a.ctx.branches.create(name, startPoint), l10n.t("Created {0}", name), refresh, l10n.t("Create branch"));
 }
 
 /** "Create worktree for this branch" — pick a folder, add a worktree on `ref`.
@@ -749,7 +746,7 @@ export async function checkoutRemoteBranch(
     a,
     arg,
     "remote",
-    "Check out which remote branch?",
+    l10n.t("Check out which remote branch?"),
     "cloud",
   );
   if (!ref) {
@@ -776,7 +773,7 @@ export async function deleteRemoteBranch(
     a,
     arg,
     "remote",
-    "Delete which remote branch?",
+    l10n.t("Delete which remote branch?"),
     "cloud",
   );
   const ref = picked && (await listedRef(a, picked));
@@ -793,15 +790,15 @@ export async function deleteRemoteBranch(
   }
   const { remote, branch } = pair;
   const ok = await confirm(
-    `Delete ${branch} on ${remote}?`,
-    `This removes the branch from the remote for everyone, not just from your copy. Your local ${branch} (if you have one) is untouched.`,
-    "Delete Remote Branch",
+    l10n.t("Delete {0} on {1}?", branch, remote),
+    l10n.t("This removes the branch from the remote for everyone, not just from your copy. Your local {0} (if you have one) is untouched.", branch),
+    l10n.t("Delete Remote Branch"),
   );
   if (!ok) {
     return;
   }
   const result = await a.ctx.branches.deleteRemoteBranch(remote, branch);
-  report(result, `Deleted ${remote}/${branch}`, refresh, "Delete remote branch");
+  report(result, l10n.t("Deleted {0}/{1}", remote, branch), refresh, l10n.t("Delete remote branch"));
 }
 
 // ── Tag actions ──────────────────────────────────────────────────────────────
@@ -815,15 +812,15 @@ export async function checkoutTag(
   if (!a) {
     return;
   }
-  const ref = await refOrPick(a, arg, "tag", "Select a tag to check out", "tag");
+  const ref = await refOrPick(a, arg, "tag", l10n.t("Select a tag to check out"), "tag");
   if (!ref) {
     return;
   }
   const ok = await promptConfirm({
-    title: `Check out tag ${ref.name}?`,
+    title: l10n.t("Check out tag {0}?", ref.name),
     message:
-      "You'll be on a detached HEAD — commits made here belong to no branch until you create one.",
-    confirmLabel: "Checkout",
+      l10n.t("You'll be on a detached HEAD — commits made here belong to no branch until you create one."),
+    confirmLabel: l10n.t("Checkout"),
   });
   if (!ok) {
     return;
@@ -842,16 +839,16 @@ export async function deleteTag(
   if (!a) {
     return;
   }
-  const picked = await refOrPick(a, arg, "tag", "Select a tag to delete", "tag");
+  const picked = await refOrPick(a, arg, "tag", l10n.t("Select a tag to delete"), "tag");
   const ref = picked && (await listedRef(a, picked));
   const name = ref && tagNameOf(ref.fullName);
   if (!ref || !name) {
     return;
   }
   const ok = await confirm(
-    `Delete tag ${name}?`,
-    "This deletes the tag locally. If it was already pushed, it stays on the remote until you delete it there too.",
-    "Delete",
+    l10n.t("Delete tag {0}?", name),
+    l10n.t("This deletes the tag locally. If it was already pushed, it stays on the remote until you delete it there too."),
+    l10n.t("Delete"),
   );
   if (!ok) {
     return;
@@ -859,7 +856,7 @@ export async function deleteTag(
   // The name under refs/tags/: beside a branch "release" the tag lists as
   // "tags/release", and `git tag -d tags/release` finds no such tag.
   const result = await a.ctx.tags.delete(name);
-  report(result, `Deleted tag ${name}`, refresh, "Delete tag");
+  report(result, l10n.t("Deleted tag {0}", name), refresh, l10n.t("Delete tag"));
 }
 
 export async function pushTag(
@@ -871,21 +868,21 @@ export async function pushTag(
   if (!a) {
     return;
   }
-  const picked = await refOrPick(a, arg, "tag", "Select a tag to push", "tag");
+  const picked = await refOrPick(a, arg, "tag", l10n.t("Select a tag to push"), "tag");
   const ref = picked && (await listedRef(a, picked));
   const name = ref && tagNameOf(ref.fullName);
   if (!ref || !name) {
     return;
   }
   const remotes = await a.ctx.remotes.list();
-  const remote = await pickRemote(remotes, `Push ${name} to which remote?`);
+  const remote = await pickRemote(remotes, l10n.t("Push {0} to which remote?", name));
   if (!remote) {
     return;
   }
   // TagOps qualifies it as refs/tags/<name>; "tags/release" would have been
   // refs/tags/tags/release, which is nothing.
   const result = await a.ctx.tags.push(remote, name);
-  report(result, `Pushed tag ${name} to ${remote}`, refresh, "Push tag");
+  report(result, l10n.t("Pushed tag {0} to {1}", name, remote), refresh, l10n.t("Push tag"));
 }
 
 // ── Title actions ────────────────────────────────────────────────────────────
@@ -899,7 +896,7 @@ export async function fetchAll(
     return;
   }
   const result = await a.ctx.sync.fetch({ all: true, prune: pruneOnFetch() });
-  report(result, "Fetched all remotes", refresh, "Fetch");
+  report(result, l10n.t("Fetched all remotes"), refresh, l10n.t("Fetch"));
 }
 
 /** `gitstudio.addRemote` — add a new remote. */
@@ -912,27 +909,27 @@ export async function addRemote(
     return;
   }
   const name = await promptInput({
-    title: "Add remote",
-    hint: "The short name you'll refer to it by — origin, upstream, fork.",
+    title: l10n.t("Add remote"),
+    hint: l10n.t("The short name you'll refer to it by — origin, upstream, fork."),
     placeholder: "origin",
-    confirmLabel: "Continue",
+    confirmLabel: l10n.t("Continue"),
     validate: "remoteName",
   });
   if (!name) {
     return;
   }
   const url = await promptInput({
-    title: `Add remote ${name}`,
-    hint: "An https:// URL, an ssh URL, git@host:owner/repo.git, or a local path.",
+    title: l10n.t("Add remote {0}", name),
+    hint: l10n.t("An https:// URL, an ssh URL, git@host:owner/repo.git, or a local path."),
     placeholder: "https://github.com/owner/repo.git",
-    confirmLabel: "Add Remote",
+    confirmLabel: l10n.t("Add Remote"),
     validate: "url",
   });
   if (!url) {
     return;
   }
   const result = await a.ctx.remotes.add(name.trim(), url.trim());
-  report(result, `Added remote ${name}`, refresh, "Add remote");
+  report(result, l10n.t("Added remote {0}", name), refresh, l10n.t("Add remote"));
 }
 
 /** `gitstudio.manageRemotes` — pick a remote, then an action. */
@@ -947,10 +944,10 @@ export async function manageRemotes(
   const remotes = await a.ctx.remotes.list();
   if (remotes.length === 0) {
     const add = await promptConfirm({
-      title: "No remotes configured",
+      title: l10n.t("No remotes configured"),
       message:
-        "This repository has no remotes, so there is nothing to fetch from or push to.",
-      confirmLabel: "Add Remote…",
+        l10n.t("This repository has no remotes, so there is nothing to fetch from or push to."),
+      confirmLabel: l10n.t("Add Remote…"),
     });
     if (add) {
       await addRemote(repos, refresh);
@@ -960,7 +957,7 @@ export async function manageRemotes(
   // A sentinel id no remote can collide with: git forbids ":" in a remote name.
   const ADD = "gitstudio:add-remote";
   const pickedRemote = await promptPick({
-    title: "Manage remotes",
+    title: l10n.t("Manage remotes"),
     choices: [
       ...remotes.map((r) => ({
         id: r.name,
@@ -968,7 +965,7 @@ export async function manageRemotes(
         icon: "cloud",
         description: r.fetchUrl,
       })),
-      { id: ADD, label: "Add remote…", icon: "add" },
+      { id: ADD, label: l10n.t("Add remote…"), icon: "add" },
     ],
   });
   if (!pickedRemote) {
@@ -984,14 +981,14 @@ export async function manageRemotes(
   }
 
   const action = await promptPick({
-    title: `Remote: ${remote.name}`,
+    title: l10n.t("Remote: {0}", remote.name),
     hint: remote.fetchUrl,
     choices: [
-      { id: "fetch", label: "Fetch", icon: "sync", description: "Update this remote's branches." },
-      { id: "prune", label: "Prune Stale Branches", icon: "trash", description: "Drop remote-tracking branches that no longer exist on the server." },
-      { id: "url", label: "Edit URL", icon: "link", description: remote.fetchUrl },
-      { id: "rename", label: "Rename", icon: "edit" },
-      { id: "remove", label: "Remove", icon: "trash", danger: true },
+      { id: "fetch", label: l10n.t("Fetch"), icon: "sync", description: l10n.t("Update this remote's branches.") },
+      { id: "prune", label: l10n.t("Prune Stale Branches"), icon: "trash", description: l10n.t("Drop remote-tracking branches that no longer exist on the server.") },
+      { id: "url", label: l10n.t("Edit URL"), icon: "link", description: remote.fetchUrl },
+      { id: "rename", label: l10n.t("Rename"), icon: "edit" },
+      { id: "remove", label: l10n.t("Remove"), icon: "trash", danger: true },
     ],
   });
   if (!action) {
@@ -1001,25 +998,25 @@ export async function manageRemotes(
     case "fetch":
       report(
         await a.ctx.remotes.fetch(remote.name, { prune: pruneOnFetch() }),
-        `Fetched ${remote.name}`,
+        l10n.t("Fetched {0}", remote.name),
         refresh,
-        "Fetch",
+        l10n.t("Fetch"),
       );
       break;
     case "prune":
       report(
         await a.ctx.remotes.prune(remote.name),
-        `Pruned ${remote.name}`,
+        l10n.t("Pruned {0}", remote.name),
         refresh,
-        "Prune",
+        l10n.t("Prune"),
       );
       break;
     case "url": {
       const url = await promptInput({
-        title: `Edit URL of ${remote.name}`,
-        hint: "Where this remote fetches from and pushes to.",
+        title: l10n.t("Edit URL of {0}", remote.name),
+        hint: l10n.t("Where this remote fetches from and pushes to."),
         value: remote.fetchUrl,
-        confirmLabel: "Update URL",
+        confirmLabel: l10n.t("Update URL"),
         validate: "url",
       });
       if (!url) {
@@ -1027,18 +1024,18 @@ export async function manageRemotes(
       }
       report(
         await a.ctx.remotes.setUrl(remote.name, url.trim()),
-        `Updated ${remote.name} URL`,
+        l10n.t("Updated {0} URL", remote.name),
         refresh,
-        "Edit URL",
+        l10n.t("Edit URL"),
       );
       break;
     }
     case "rename": {
       const neu = await promptInput({
-        title: `Rename ${remote.name}`,
-        hint: "Its remote-tracking branches are renamed to match.",
+        title: l10n.t("Rename {0}", remote.name),
+        hint: l10n.t("Its remote-tracking branches are renamed to match."),
         value: remote.name,
-        confirmLabel: "Rename",
+        confirmLabel: l10n.t("Rename"),
         validate: "remoteName",
       });
       if (!neu || neu === remote.name) {
@@ -1046,26 +1043,26 @@ export async function manageRemotes(
       }
       report(
         await a.ctx.remotes.rename(remote.name, neu.trim()),
-        `Renamed remote to ${neu}`,
+        l10n.t("Renamed remote to {0}", neu),
         refresh,
-        "Rename remote",
+        l10n.t("Rename remote"),
       );
       break;
     }
     case "remove": {
       const ok = await confirm(
-        `Remove remote ${remote.name}?`,
-        "Its remote-tracking branches go with it. Nothing on the server changes.",
-        "Remove",
+        l10n.t("Remove remote {0}?", remote.name),
+        l10n.t("Its remote-tracking branches go with it. Nothing on the server changes."),
+        l10n.t("Remove"),
       );
       if (!ok) {
         return;
       }
       report(
         await a.ctx.remotes.remove(remote.name),
-        `Removed remote ${remote.name}`,
+        l10n.t("Removed remote {0}", remote.name),
         refresh,
-        "Remove remote",
+        l10n.t("Remove remote"),
       );
       break;
     }
@@ -1081,7 +1078,7 @@ async function pickRemote(
   title: string,
 ): Promise<string | undefined> {
   if (remotes.length === 0) {
-    void vscode.window.showInformationMessage("GitStudio: no remotes configured.");
+    void vscode.window.showInformationMessage(l10n.t("GitStudio: no remotes configured."));
     return undefined;
   }
   if (remotes.length === 1) {
@@ -1186,7 +1183,7 @@ async function reportMergeLike(
     return;
   }
   if (await pausedForUser(ctx.process, result.code, marker)) {
-    notifyPaused(`${verb} hit conflicts. Resolve them, then continue or abort.`);
+    notifyPaused(l10n.t("{0} hit conflicts. Resolve them, then continue or abort.", verb));
     refresh();
     return;
   }
@@ -1206,5 +1203,5 @@ async function confirm(
 }
 
 function flash(message: string): void {
-  void vscode.window.setStatusBarMessage(`$(check) ${message}`, 2500);
+  void vscode.window.setStatusBarMessage(l10n.t("$(check) {0}", message), 2500);
 }

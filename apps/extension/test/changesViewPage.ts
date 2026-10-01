@@ -19,6 +19,7 @@ import { pathToFileURL } from "node:url";
 import { headlessChromeArgs } from "../../../scripts/test/no-network-chrome.mjs";
 import { decodeVerdictTitle, findChrome } from "../../../packages/webview-ui/test/headless";
 import { changeRowsScript } from "./changesPage";
+import { filledTemplate, l10nHoles } from "./pageHoles";
 
 export { findChrome };
 
@@ -90,23 +91,26 @@ export const THEMES = {
 
 export type ThemeName = keyof typeof THEMES;
 
-/** The Changes view's document template, exactly as commitView.ts holds it. */
-function template(): string {
-  const src = readFileSync(join(__dirname, "..", "src", "changes", "commitView.ts"), "utf8");
-  const open = "return String.raw`";
-  const start = src.indexOf(open + "<!DOCTYPE html>");
-  const end = src.indexOf("</html>`;", start);
-  if (start < 0 || end < 0) throw new Error("the Changes view's HTML template was not found");
-  return src.slice(start + open.length, end + "</html>".length);
-}
+/** The file holding the Changes view's document template. */
+const SRC = join(__dirname, "..", "src", "changes", "commitView.ts");
 
 /**
  * The Changes view document with `harness` run after its own script. The
  * harness sees `post(data)` (a host message), `posted` (what the page sent),
  * `tick()` (a macrotask), `expect(cond, what)`, `fails`, `notes`, and ends
  * the run by the verdict it returns. `width` narrows the body to a sidebar.
+ *
+ * `messages` is the bundle the words are read from — the zh-cn one, for a test
+ * of the Chinese page. It must agree with whatever `@gitstudio/l10n` was
+ * configured with, so the template's words and the script's bundle match; see
+ * pageHoles.ts.
  */
-export function changesViewPage(opts: { theme: ThemeName; harness: string; width?: number }): string {
+export function changesViewPage(opts: {
+  theme: ThemeName;
+  harness: string;
+  width?: number;
+  messages?: Record<string, string>;
+}): string {
   const theme = THEMES[opts.theme];
   const codicons = pathToFileURL(join(ROOT, "node_modules", "@vscode", "codicons", "dist", "codicon.css")).href;
   const tokens = readFileSync(join(ROOT, "packages", "webview-ui", "src", "styles", "tokens.css"), "utf8");
@@ -137,13 +141,17 @@ export function changesViewPage(opts: { theme: ThemeName; harness: string; width
 })();
 </script>`;
   const changeRowsCss = readFileSync(join(ROOT, "packages", "webview-ui", "src", "changeRows", "changeRows.css"), "utf8");
-  return template()
-    .replace("${csp}", "default-src * 'unsafe-inline' file: data:")
-    .replace("${codiconUri}", () => codicons)
-    .replace("${tokensCss}", () => tokens)
-    .replace("${changeRowsCss}", () => changeRowsCss)
-    .replace("${changeRowsUri}", () => changeRowsScript())
-    .split("${nonce}").join("harness")
+  const holes: Record<string, string> = {
+    csp: "default-src * 'unsafe-inline' file: data:",
+    codiconUri: codicons,
+    nonce: "harness",
+    tokensCss: tokens,
+    changeRowsCss,
+    changeRowsUri: changeRowsScript(),
+    // The words and the bundle: see pageHoles.ts.
+    ...l10nHoles("harness"),
+  };
+  return filledTemplate("commitView.ts html()", SRC, "<!DOCTYPE html>", holes, opts.messages)
     .replace('<body class="layout-list">', () => `<body class="layout-list ${theme.bodyClass}">`)
     .replace("</head>", () => `${prelude}\n</head>`)
     .replace("</body>", () => `${harness}\n</body>`);

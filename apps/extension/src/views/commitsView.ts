@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import type { CommitRecord } from "@gitstudio/host-bridge/git";
 import type { RepoManager } from "../git/repoManager";
 import { relativeTime } from "../util/relativeTime";
+import * as l10n from "@vscode/l10n";
 
 // How many commits we load for the active branch. M2 keeps this a flat,
 // bounded list; the full paginated graph lands in a later milestone.
@@ -13,7 +14,7 @@ export class CommitNode extends vscode.TreeItem {
     readonly commit: CommitRecord,
     isHead = false,
   ) {
-    super(commit.subject || "(no commit message)", vscode.TreeItemCollapsibleState.None);
+    super(commit.subject || l10n.t("(no commit message)"), vscode.TreeItemCollapsibleState.None);
 
     const shortSha = commit.sha.slice(0, 7);
     // Muted metadata, GitLens-style: author · relative date · short sha.
@@ -36,7 +37,7 @@ export class CommitNode extends vscode.TreeItem {
     // a launchpad into the full graph + details surface.
     this.command = {
       command: "gitstudio.openCommitInGraph",
-      title: "Open in Commit Graph",
+      title: l10n.t("Open in Commit Graph"),
       arguments: [commit.sha],
     };
   }
@@ -52,17 +53,17 @@ function buildCommitTooltip(
 
   md.appendMarkdown(`**${escapeMarkdown(commit.subject)}**\n\n`);
   if (isHead) {
-    md.appendMarkdown(`$(git-commit) HEAD\n\n`);
+    md.appendMarkdown(l10n.t("$(git-commit) HEAD\n\n"));
   }
-  md.appendMarkdown(`$(git-commit) \`${commit.sha.slice(0, 12)}\``);
+  md.appendMarkdown(l10n.t("$(git-commit) `{0}`", commit.sha.slice(0, 12)));
   if (commit.parents.length > 1) {
-    md.appendMarkdown(` · $(git-merge) merge`);
+    md.appendMarkdown(l10n.t(" · $(git-merge) merge"));
   }
   md.appendMarkdown(`\n\n`);
   md.appendMarkdown(
     `$(account) ${escapeMarkdown(commit.author)} <${escapeMarkdown(commit.authorEmail)}>\n\n`,
   );
-  md.appendMarkdown(`$(calendar) ${date.toLocaleString()}\n`);
+  md.appendMarkdown(l10n.t("$(calendar) {0}\n", date.toLocaleString()));
 
   const body = commit.body.trim();
   if (body) {
@@ -173,7 +174,7 @@ export async function copyCommitSha(
   }
   await vscode.env.clipboard.writeText(sha);
   void vscode.window.setStatusBarMessage(
-    `$(check) Copied ${sha.slice(0, 7)}`,
+    l10n.t("$(check) Copied {0}", sha.slice(0, 7)),
     2000,
   );
 }

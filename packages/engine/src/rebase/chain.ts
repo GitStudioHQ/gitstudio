@@ -1,3 +1,4 @@
+import * as l10n from "@vscode/l10n";
 /**
  * Which commits the Commits list may reorder, and what a drag does to them.
  *
@@ -93,19 +94,19 @@ export function publishedWarning(verbing: string, n = 1): string {
   // Several commits (issue #32) are "them", and not necessarily all pushed:
   // "published" there means the oldest is, and so everything below it.
   return n > 1
-    ? `Some of these commits are already pushed. ${verbing} them would rewrite history other people have.`
-    : `Already pushed. ${verbing} it would rewrite history other people have.`;
+    ? l10n.t("Some of these commits are already pushed. {0} them would rewrite history other people have.", verbing)
+    : l10n.t("Already pushed. {0} it would rewrite history other people have.", verbing);
 }
 
 /** Human wording for why a row cannot be dragged. Shown on hover, not in a dialog. */
 export function stopReason(stop: ChainStop): string {
   switch (stop) {
     case "merge":
-      return "Reordering stops at a merge — moving a commit past one would flatten it.";
+      return l10n.t("Reordering stops at a merge — moving a commit past one would flatten it.");
     case "published":
       return publishedWarning("Reordering");
     default:
-      return "The first commit — there is nothing below it to reorder past.";
+      return l10n.t("The first commit — there is nothing below it to reorder past.");
   }
 }
 

@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { readManifest } from "./manifest";
 
 // The branch menu from the keyboard. It opened only from the branch pill and
 // the status-bar item, both needing the mouse: no command in the palette and
@@ -9,7 +10,7 @@ import { fileURLToPath } from "node:url";
 // while a repository is open, and doing exactly what the status bar does.
 
 const read = (p: string): string => readFileSync(fileURLToPath(new URL(p, import.meta.url)), "utf8");
-const manifest = JSON.parse(read("../package.json")) as {
+const manifest = readManifest() as {
   contributes: {
     commands: { command: string; title: string; category?: string }[];
     menus: { commandPalette: { command: string; when?: string }[] };
@@ -55,5 +56,7 @@ test("'GitStudio: Branches…' has Ctrl/Cmd+Alt+G G, a letter of the chord nothi
 test("the worktree command says New Worktree, as the branch menu does", () => {
   const cmd = manifest.contributes.commands.find((c) => c.command === "gitstudio.branch.createWorktree");
   assert.equal(cmd?.title, "New Worktree from This Branch…");
-  assert.match(read("../src/changes/commitView.ts"), /"New Worktree from '" \+ name \+ "'…"/);
+  // The label is translated (l10nT, the webview's runtime global), so the
+  // source is a call plus the name rather than one concatenated literal.
+  assert.match(read("../src/changes/commitView.ts"), /l10nT\("New Worktree from '"\) \+ name \+ "'…"/);
 });

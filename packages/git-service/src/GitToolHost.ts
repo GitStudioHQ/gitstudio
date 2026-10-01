@@ -33,6 +33,7 @@ import { branchNameOf } from "./BranchOps";
 import { commitBlockerMessage } from "./StagingProvider";
 import { stashBlockerMessage } from "./StashProvider";
 import { pick, stoppedIn } from "./stoppedOperation";
+import * as l10n from "@vscode/l10n";
 
 /** Largest blob the read_file tool will return inline. */
 const FILE_CAP_BYTES = 256 * 1024;
@@ -46,7 +47,7 @@ function w(r: { ok: boolean; stderr: string }): ToolWriteResult {
   return r.ok ? { ok: true } : { ok: false, message: r.stderr.trim() || "git reported an error." };
 }
 
-const UNSAFE: ToolWriteResult = { ok: false, message: "Argument rejected for safety (starts with '-' or contains a control character)." };
+const UNSAFE: ToolWriteResult = { ok: false, message: l10n.t("Argument rejected for safety (starts with '-' or contains a control character).") };
 
 export function createGitToolHost(ctx: GitContext): GitToolHost {
   return new GitContextToolHost(ctx);
@@ -267,7 +268,7 @@ class GitContextToolHost implements GitToolHost {
 
   async commit(message: string, amend?: boolean): Promise<ToolWriteResult> {
     if (!message.trim() && !amend) {
-      return { ok: false, message: "A commit message is required." };
+      return { ok: false, message: l10n.t("A commit message is required.") };
     }
     const r = await this.ctx.staging.commit(message, { amend });
     if (r.ok) {
@@ -286,7 +287,7 @@ class GitContextToolHost implements GitToolHost {
           message:
             blocker === "cleanTree"
               ? commitBlockerMessage(blocker)
-              : `${commitBlockerMessage(blocker)} Use git_stage first.`,
+              : l10n.t("{0} Use git_stage first.", commitBlockerMessage(blocker)),
         };
       }
     }

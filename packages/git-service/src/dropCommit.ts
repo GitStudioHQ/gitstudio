@@ -17,6 +17,7 @@ import {
   whyRefsNotRestorable,
   type RefMove,
 } from "./refRestore";
+import * as l10n from "@vscode/l10n";
 
 // Drop Commit (issue #32), for both products.
 //
@@ -197,7 +198,7 @@ export async function planDropCommit(
 }
 
 /** The dirty-tree refusal, in the runner's own words for the same state. */
-export const DROP_DIRTY_MESSAGE = "You have uncommitted changes. Commit or stash them, then drop the commit.";
+export const DROP_DIRTY_MESSAGE = l10n.t("You have uncommitted changes. Commit or stash them, then drop the commit.");
 
 /**
  * What stops a drop from starting right now — said BEFORE the confirmation,
@@ -295,7 +296,7 @@ export async function carriedBranches(proc: GitProcess, rows: readonly RebasePla
 
 /** The refusal for a confirmation that went stale. */
 export const DROP_MOVED_MESSAGE =
-  "The branch has moved since you chose Drop, so nothing was dropped. Look at the history again and retry.";
+  l10n.t("The branch has moved since you chose Drop, so nothing was dropped. Look at the history again and retry.");
 
 /**
  * Run a confirmed drop through the host's rebase runner.
@@ -408,7 +409,7 @@ export async function undoDrop(
     (u.branch !== undefined && u.branch !== null && !isBranchRef(u.branch))
   ) {
     // The renderer only ever sends what a drop answered with.
-    return { ok: false, message: "That isn't a drop this app made." };
+    return { ok: false, message: l10n.t("That isn't a drop this app made.") };
   }
   if (u.branch) {
     return undoOnBranch(proc, { before: u.before, after: u.after, branch: u.branch, carried: carried.map(carriedMove) }, "drop");
@@ -420,7 +421,7 @@ export async function undoDrop(
     return {
       ok: false,
       expected: true,
-      message: "HEAD was detached when the commit was dropped, and it's on a branch now. Detach it again, then undo.",
+      message: l10n.t("HEAD was detached when the commit was dropped, and it's on a branch now. Detach it again, then undo."),
     };
   }
   return undoRewrite(proc, { before: u.before, after: u.after, carried }, "drop");
@@ -462,6 +463,7 @@ async function undoOnBranch(
 
 /** The reflog entry an undo of `what` writes on each branch it puts back. */
 function undoReflog(what: string): string {
+  // English on purpose: a reflog entry, stored in the repository itself.
   return what === "drop" ? "GitStudio undo: drop commit" : `GitStudio undo: ${what}`;
 }
 
@@ -477,8 +479,8 @@ async function putCarriedBack(
     try {
       await putRefBack(proc, m, reflog, { here: head === m.ref });
     } catch (err) {
-      const back = what === "drop" ? "The dropped commit is back" : "The branch is back";
-      return { ok: false, message: `${back}, but ${branchShort(m.ref)} isn't: ${err instanceof Error ? err.message : String(err)}` };
+      const back = what === "drop" ? l10n.t("The dropped commit is back") : l10n.t("The branch is back");
+      return { ok: false, message: l10n.t("{0}, but {1} isn't: {2}", back, branchShort(m.ref), err instanceof Error ? err.message : String(err)) };
     }
   }
   return { ok: true };
@@ -491,10 +493,10 @@ async function keepRefused(proc: GitProcess, stderr: string, what: string): Prom
     return {
       ok: false,
       expected: true,
-      message: `Your uncommitted changes touch files the ${what} changed. Commit or stash them, then undo.`,
+      message: l10n.t("Your uncommitted changes touch files the {0} changed. Commit or stash them, then undo.", what),
     };
   }
-  return { ok: false, message: stderr.trim() || "Couldn't put the branch back." };
+  return { ok: false, message: stderr.trim() || l10n.t("Couldn't put the branch back.") };
 }
 
 /**
@@ -525,7 +527,7 @@ export async function undoRewrite(
     (u.branch !== undefined && u.branch !== null && !isBranchRef(u.branch))
   ) {
     // The renderer only ever sends the tips the operation answered with.
-    return { ok: false, message: `That isn't a ${what} this app made.` };
+    return { ok: false, message: l10n.t("That isn't a {0} this app made.", what) };
   }
   if (u.branch) {
     return undoOnBranch(proc, { before: u.before, after: u.after, branch: u.branch, carried: carried.map(carriedMove) }, what);
@@ -537,7 +539,7 @@ export async function undoRewrite(
     return {
       ok: false,
       expected: true,
-      message: `HEAD was detached when the ${what} ran, and it's on a branch now. Detach it again, then undo.`,
+      message: l10n.t("HEAD was detached when the {0} ran, and it's on a branch now. Detach it again, then undo.", what),
     };
   }
   const head = await revParse(proc, "HEAD");
@@ -545,7 +547,7 @@ export async function undoRewrite(
     return {
       ok: false,
       expected: true,
-      message: `The branch has moved since the ${what}, so undoing it now would throw that away too. Nothing was changed.`,
+      message: l10n.t("The branch has moved since the {0}, so undoing it now would throw that away too. Nothing was changed.", what),
     };
   }
   // The carried branches through the same checks and the same way back as

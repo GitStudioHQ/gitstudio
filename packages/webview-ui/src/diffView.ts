@@ -14,6 +14,7 @@ import { lineDocOf, planLineWrite } from "./lineEdits";
 import { LARGE_FILE_LINE_THRESHOLD } from "./limits";
 import { StageTickLayer, type TickRow } from "./stageTicks";
 import { deriveTickStates } from "./tickState";
+import * as l10n from "@vscode/l10n";
 
 type Editor = monaco.editor.IStandaloneCodeEditor;
 
@@ -523,8 +524,8 @@ export class DiffView {
     accept.type = "button";
     accept.className = `jb-gutter-btn jb-btn-accept jb-role-${block.role}`;
     accept.appendChild(iconElement(chevronDoubleRight));
-    accept.title = "Replace with the left side's text";
-    accept.setAttribute("aria-label", "Replace with the left side's text");
+    accept.title = l10n.t("Replace with the left side's text");
+    accept.setAttribute("aria-label", l10n.t("Replace with the left side's text"));
     accept.addEventListener("mousedown", (event) => {
       event.preventDefault();
       this.transferBlock(block);

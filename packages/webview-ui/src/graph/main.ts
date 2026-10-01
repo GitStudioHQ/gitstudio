@@ -4,6 +4,8 @@
 // details; the details panel's file-open / action / copy events and the
 // graph's select/open/context/loadMore intents are forwarded to the host.
 
+import "@gitstudio/l10n/webview";
+
 import { installSolidAccent } from "../styles/solidAccent";
 import "../styles/graph.css";
 import "./commit-graph";

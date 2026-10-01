@@ -16,6 +16,7 @@ import {
   rebaseInProgress,
   type RebaseStateRunner,
 } from "@gitstudio/git-service/rebaseInProgress";
+import * as l10n from "@vscode/l10n";
 
 /** All this needs from a GitContext: run a git command, in a known directory
  *  (a rebase's state is a directory git resolves relative to it). */
@@ -84,7 +85,7 @@ export async function pausedForUser(
 // tests run against real git under plain node).
 
 /** The one label every "paused" toast offers. */
-export const RESOLVE_CONFLICTS_ACTION = "Resolve Conflicts…";
+export const RESOLVE_CONFLICTS_ACTION = l10n.t("Resolve Conflicts…");
 
 /** The command that opens the Conflicts dashboard. */
 export const SHOW_CONFLICTS_COMMAND = "gitstudio.showConflicts";
@@ -120,20 +121,20 @@ export interface DetectedOperation {
 function operationPhrase(kind: string): string {
   switch (kind) {
     case "merge":
-      return "a merge";
+      return l10n.t("a merge");
     case "rebase":
     case "rebase-merge-step":
-      return "a rebase";
+      return l10n.t("a rebase");
     case "cherry-pick":
-      return "a cherry-pick";
+      return l10n.t("a cherry-pick");
     case "revert":
-      return "a revert";
+      return l10n.t("a revert");
     case "am":
-      return "applying patches (git am)";
+      return l10n.t("applying patches (git am)");
     case "stash":
-      return "applying a stash";
+      return l10n.t("applying a stash");
     default:
-      return "an operation";
+      return l10n.t("an operation");
   }
 }
 
@@ -144,10 +145,10 @@ function operationPhrase(kind: string): string {
  */
 export function operationInProgressMessage(d: DetectedOperation): string | undefined {
   if (d.kind !== "none") {
-    return `${capitalise(operationPhrase(d.kind))} is already in progress — continue or abort it first.`;
+    return l10n.t("{0} is already in progress — continue or abort it first.", capitalise(operationPhrase(d.kind)));
   }
   if (d.unmerged > 0) {
-    return "There are unresolved conflicts — resolve them or cancel first.";
+    return l10n.t("There are unresolved conflicts — resolve them or cancel first.");
   }
   return undefined;
 }

@@ -1,0 +1,16 @@
+{
+  "name": "@gitstudio/l10n",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "GitStudio localization seam: host-side bundle loading + webview bootstrap script generation, on top of the official @vscode/l10n runtime.",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@vscode/l10n": "^0.0.18"
+  }
+}

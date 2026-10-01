@@ -20,6 +20,7 @@ import {
   MERGE_STUDIO_EXTENSION_ID,
   MERGE_STUDIO_SETTINGS_SECTION,
 } from "./mergeIds";
+import * as l10n from "@vscode/l10n";
 
 // GitStudio's side of the shared merge experience (@gitstudio/merge-vscode):
 // the MergeProduct that says what is GitStudio's — ids, brand, settings under
@@ -71,7 +72,7 @@ export function registerGitStudioMerge(
     // are read while the `gitstudio.merge.*` twin is unset (POLISH A5.7).
     peer: {
       extensionId: MERGE_STUDIO_EXTENSION_ID,
-      displayName: "Merge Studio",
+      displayName: l10n.t("Merge Studio"),
       sharedMerge: hasMergeStudioSharedExperience,
       outdatedNoticeKey: "gitstudio.merge.outdatedMergeStudioNotice",
     },
@@ -125,10 +126,10 @@ export function registerGitStudioMerge(
 async function compareSingle(left: vscode.Uri): Promise<void> {
   const name = left.fsPath.split(/[\\/]/).pop() ?? left.fsPath;
   const choice = await promptPick({
-    title: `Compare ${name} with…`,
+    title: l10n.t("Compare {0} with…", name),
     choices: [
-      { id: "head", label: "HEAD", icon: "git-commit", description: "The last committed version of this file." },
-      { id: "file", label: "Another file…", icon: "file", description: "Pick any file on disk to diff against." },
+      { id: "head", label: l10n.t("HEAD"), icon: "git-commit", description: l10n.t("The last committed version of this file.") },
+      { id: "file", label: l10n.t("Another file…"), icon: "file", description: l10n.t("Pick any file on disk to diff against.") },
     ],
   });
   if (choice === "head") {
@@ -140,8 +141,8 @@ async function compareSingle(left: vscode.Uri): Promise<void> {
   }
   const picked = await vscode.window.showOpenDialog({
     canSelectMany: false,
-    openLabel: "Compare",
-    title: `Compare ${name} with…`,
+    openLabel: l10n.t("Compare"),
+    title: l10n.t("Compare {0} with…", name),
   });
   const right = picked?.[0];
   if (right) {

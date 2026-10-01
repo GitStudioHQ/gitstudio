@@ -15,7 +15,9 @@
   "dependencies": {
     "@gitstudio/engine": "*",
     "@gitstudio/host-bridge": "*",
+    "@gitstudio/l10n": "*",
     "@tanstack/virtual-core": "^3.13.12",
+    "@vscode/l10n": "^0.0.18",
     "lit": "^3.3.1",
     "monaco-editor": "^0.55.1"
   }

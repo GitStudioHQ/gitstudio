@@ -17,6 +17,7 @@ import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { repoName as repoNameOf, switchRepository, workspacePathOf } from "../git/repoPicker";
 import { pruneOnFetch } from "../git/fetchOptions";
 import { Arrival } from "../ui/arrival";
+import * as l10n from "@vscode/l10n";
 
 /**
  * One change of a file, as the Changes list shows it.
@@ -80,6 +81,7 @@ import {
   stashFileSides,
   type StashOutcome,
 } from "../views/stashesView";
+import { l10nWebviewScript } from "@gitstudio/l10n/index";
 
 // The unified Commit window: ONE WebviewView ("Commit", viewId gitstudio.commit)
 // that renders BOTH the commit message box AND the working-tree changes —
@@ -320,18 +322,18 @@ const EXTERNAL_REFRESH_DEBOUNCE_MS = 300;
 
 /** Why a push cannot start on a detached HEAD — host and page say the same. */
 const DETACHED_PUSH_REASON =
-  "HEAD is detached, so these commits are on no branch and there is nothing to push them to. Create a branch here to push them.";
+  l10n.t("HEAD is detached, so these commits are on no branch and there is nothing to push them to. Create a branch here to push them.");
 /** Why a push cannot start in a repository with no remote. */
-const NO_REMOTE_PUSH_REASON = "No remote is configured for this repository.";
+const NO_REMOTE_PUSH_REASON = l10n.t("No remote is configured for this repository.");
 
 /** An operation stopped on a detached HEAD, as the subject of a sentence. */
 const STOPPED_OPERATION: Record<string, string> = {
-  merge: "A merge",
-  rebase: "A rebase",
-  "rebase-merge-step": "A rebase",
-  "cherry-pick": "A cherry-pick",
-  revert: "A revert",
-  am: "A git am session",
+  merge: l10n.t("A merge"),
+  rebase: l10n.t("A rebase"),
+  "rebase-merge-step": l10n.t("A rebase"),
+  "cherry-pick": l10n.t("A cherry-pick"),
+  revert: l10n.t("A revert"),
+  am: l10n.t("A git am session"),
 };
 
 /**
@@ -354,12 +356,12 @@ function detachedPushReason(op: OperationBannerData | undefined): string {
   if (!op || !stopped) {
     return DETACHED_PUSH_REASON;
   }
-  const finish = `Finish it with ${op.continueLabel || "Continue"}`;
+  const finish = l10n.t("Finish it with {0}", op.continueLabel || l10n.t("Continue"));
   return op.rebaseBranch
-    ? `A rebase of ${op.rebaseBranch} is in progress, so there is no branch to push until it finishes. ` +
-        `${finish} and these commits land on ${op.rebaseBranch}.`
-    : `${stopped} is in progress on a detached HEAD, so these commits are on no branch. ` +
-        `${finish}, then create a branch to push them.`;
+    ? l10n.t("A rebase of {0} is in progress, so there is no branch to push until it finishes. ", op.rebaseBranch) +
+        l10n.t("{0} and these commits land on {1}.", finish, op.rebaseBranch)
+    : l10n.t("{0} is in progress on a detached HEAD, so these commits are on no branch. ", stopped) +
+        l10n.t("{0}, then create a branch to push them.", finish);
 }
 
 /** Git's canonical empty-tree object — the "before" side when previewing the
@@ -369,7 +371,7 @@ const COMMIT_EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 /** A short, friendly label for a diff ref: 7-char sha, "(new file)" for the
  *  empty tree, or the ref name verbatim (e.g. "origin/main"). */
 function pushRefLabel(ref: string): string {
-  if (ref === COMMIT_EMPTY_TREE) return "(new file)";
+  if (ref === COMMIT_EMPTY_TREE) return l10n.t("(new file)");
   return /^[0-9a-f]{40}$/i.test(ref) ? ref.slice(0, 7) : ref;
 }
 
@@ -662,7 +664,7 @@ export class CommitViewProvider
     const view = this.view ?? (await this.viewArrival.wait(5000));
     if (!view) {
       void vscode.window.showWarningMessage(
-        "GitStudio: the Changes view didn't open, so this action can't ask its question. Open the GitStudio sidebar and try again.",
+        l10n.t("GitStudio: the Changes view didn't open, so this action can't ask its question. Open the GitStudio sidebar and try again."),
       );
       return undefined;
     }
@@ -1111,7 +1113,7 @@ export class CommitViewProvider
     const stash = (await entry.ctx.stashes.list()).find((e) => e.sha === sha);
     const files = stash ? await entry.ctx.stashes.files(sha) : undefined;
     if (!stash || !files) {
-      void vscode.window.showInformationMessage("GitStudio: That stash is no longer in the list.");
+      void vscode.window.showInformationMessage(l10n.t("GitStudio: That stash is no longer in the list."));
       await this.refreshStashes();
       return;
     }
@@ -1130,7 +1132,7 @@ export class CommitViewProvider
           toRevisionUri(entry.root, right.rev, f.path, right.path),
         ] as const;
       });
-    await vscode.commands.executeCommand("vscode.changes", `Stash “${stashTitle(stash.message).text}”`, resources);
+    await vscode.commands.executeCommand("vscode.changes", l10n.t("Stash “{0}”", stashTitle(stash.message).text), resources);
   }
 
   /**
@@ -1173,7 +1175,7 @@ export class CommitViewProvider
     }
     if (held.length > 0) {
       void vscode.window.showWarningMessage(
-        `GitStudio: ${markedConflictsMessage(held, staged)}`,
+        l10n.t("GitStudio: {0}", markedConflictsMessage(held, staged)),
       );
     }
   }
@@ -1208,7 +1210,7 @@ export class CommitViewProvider
     try {
       const result = await op(entry);
       if (isRefusal(result)) {
-        failure = result.stderr.trim() || "git gave no reason.";
+        failure = result.stderr.trim() || l10n.t("git gave no reason.");
       }
     } catch (err) {
       failure = err instanceof Error ? err.message : String(err);
@@ -1217,7 +1219,7 @@ export class CommitViewProvider
       const paths = what.paths.filter((p) => p);
       void this.view?.webview.postMessage({ type: "opFailed", paths, error: failure });
       void vscode.window.showErrorMessage(
-        `GitStudio: couldn't ${what.verb} ${describePaths(paths)} — ${failure}`,
+        l10n.t("GitStudio: couldn't {0} {1} — {2}", what.verb, describePaths(paths), failure),
       );
     }
     // Re-scan NOW so pushState reads fresh index/worktree state. (The old code
@@ -1307,9 +1309,9 @@ export class CommitViewProvider
     }
     const n = files.length;
     const ok = await promptConfirm({
-      title: n === 1 ? `Discard changes in ${files[0].path}?` : `Discard changes in ${n} files?`,
+      title: n === 1 ? l10n.t("Discard changes in {0}?", files[0].path) : l10n.t("Discard changes in {0} files?", n),
       message: discardConsequence(files, partlyStaged),
-      confirmLabel: n === 1 ? "Discard" : `Discard ${n} Files`,
+      confirmLabel: n === 1 ? l10n.t("Discard") : l10n.t("Discard {0} Files", n),
       danger: true,
     });
     if (!ok) {
@@ -1451,8 +1453,8 @@ export class CommitViewProvider
     if (merge.length > 0) {
       const n = merge.length;
       void vscode.window.showWarningMessage(
-        `GitStudio: ${n === 1 ? `${merge[0].path} still has` : `${n} files still have`} conflicts. ` +
-          "Resolve and stage them first — git can't commit while files are unmerged.",
+        l10n.t("GitStudio: {0} conflicts. ", n === 1 ? l10n.t("{0} still has", merge[0].path) : l10n.t("{0} files still have", n)) +
+          l10n.t("Resolve and stage them first — git can't commit while files are unmerged."),
       );
       return "cancelled";
     }
@@ -1462,11 +1464,13 @@ export class CommitViewProvider
     }
     const n = candidates.length;
     const ok = await promptConfirm({
-      title: `Commit all ${n} changed file${n === 1 ? "" : "s"}?`,
+      title: n === 1
+        ? l10n.t("Commit all 1 changed file?")
+        : l10n.t("Commit all {0} changed files?", n),
       message:
-        "Nothing is staged, so everything currently changed will be included — new files too. " +
-        "Stage individually first if you only want some of it.",
-      confirmLabel: `Commit all ${n}`,
+        l10n.t("Nothing is staged, so everything currently changed will be included — new files too. ") +
+        l10n.t("Stage individually first if you only want some of it."),
+      confirmLabel: l10n.t("Commit all {0}", n),
     });
     if (!ok) {
       return "cancelled";
@@ -1474,7 +1478,7 @@ export class CommitViewProvider
     const result = await entry.ctx.staging.stageFiles(candidates.map((e) => e.path));
     if (!result.ok) {
       void vscode.window.showErrorMessage(
-        `GitStudio: couldn't stage the changes — ${result.stderr.trim() || "unknown error"}`,
+        l10n.t("GitStudio: couldn't stage the changes — {0}", result.stderr.trim() || "unknown error"),
       );
       return "cancelled";
     }
@@ -1562,11 +1566,11 @@ export class CommitViewProvider
         block.state !== "staged",
       );
       if (!r.ok) {
-        void vscode.window.showInformationMessage(`GitStudio: ${r.stderr}`);
+        void vscode.window.showInformationMessage(l10n.t("GitStudio: {0}", r.stderr));
       }
     } catch (err) {
       void vscode.window.showErrorMessage(
-        `GitStudio: couldn't stage that change — ${err instanceof Error ? err.message : String(err)}`,
+        l10n.t("GitStudio: couldn't stage that change — {0}", err instanceof Error ? err.message : String(err)),
       );
     }
     await this.mutate(async () => {});
@@ -1626,9 +1630,11 @@ export class CommitViewProvider
     }
     const { partlyStaged } = await this.discardTargets(active, rels);
     const ok = await promptConfirm({
-      title: `Discard all ${rels.length} working-tree change${rels.length === 1 ? "" : "s"}?`,
+      title: rels.length === 1
+        ? l10n.t("Discard all 1 working-tree change?")
+        : l10n.t("Discard all {0} working-tree changes?", rels.length),
       message: discardConsequence(unstaged, partlyStaged),
-      confirmLabel: "Discard All",
+      confirmLabel: l10n.t("Discard All"),
       danger: true,
     });
     if (!ok) {
@@ -1647,9 +1653,11 @@ export class CommitViewProvider
       return;
     }
     const ok = await promptConfirm({
-      title: `Discard changes in ${files.length} file${files.length === 1 ? "" : "s"}?`,
+      title: files.length === 1
+        ? l10n.t("Discard changes in 1 file?")
+        : l10n.t("Discard changes in {0} files?", files.length),
       message: discardConsequence(files, partlyStaged),
-      confirmLabel: "Discard",
+      confirmLabel: l10n.t("Discard"),
       danger: true,
     });
     if (!ok) {
@@ -1676,7 +1684,7 @@ export class CommitViewProvider
         this.view?.webview.postMessage({ type: "setMessage", text });
       } else {
         void vscode.window.setStatusBarMessage(
-          "$(sparkle) Nothing to draft (stage changes first)",
+          l10n.t("$(sparkle) Nothing to draft (stage changes first)"),
           3000,
         );
       }
@@ -1697,7 +1705,7 @@ export class CommitViewProvider
     const message = (msg.message ?? "").trim();
     if (message === "" && !msg.amend) {
       void vscode.window.showWarningMessage(
-        "GitStudio: enter a commit message.",
+        l10n.t("GitStudio: enter a commit message."),
       );
       void this.view?.webview.postMessage({ type: "commitDone", ok: false });
       return;
@@ -1732,7 +1740,7 @@ export class CommitViewProvider
       const ledger = this.repos.getUndoLedger();
       const result =
         msg.amend && ledger
-          ? await ledger.runWithUndo(entry, "Amend commit", doCommit)
+          ? await ledger.runWithUndo(entry, l10n.t("Amend commit"), doCommit)
           : await doCommit();
       if (!result.ok) {
         const stderr = result.stderr.trim();
@@ -1747,7 +1755,7 @@ export class CommitViewProvider
         if (blocker) {
           const text = commitBlockerMessage(blocker);
           // Information, not error: the user did nothing wrong.
-          void vscode.window.showInformationMessage(`GitStudio: ${text}`);
+          void vscode.window.showInformationMessage(l10n.t("GitStudio: {0}", text));
           void this.view?.webview.postMessage({
             type: "commitDone",
             ok: false,
@@ -1769,8 +1777,8 @@ export class CommitViewProvider
         const detail =
           stderr ||
           result.stdout.trim() ||
-          "git refused the commit without saying why. If this repository has a pre-commit hook, check its output.";
-        void vscode.window.showErrorMessage(failed("Commit", detail));
+          l10n.t("git refused the commit without saying why. If this repository has a pre-commit hook, check its output.");
+        void vscode.window.showErrorMessage(failed(l10n.t("Commit"), detail));
         void this.view?.webview.postMessage({
           type: "commitDone",
           ok: false,
@@ -1779,7 +1787,7 @@ export class CommitViewProvider
         return;
       }
 
-      void vscode.window.setStatusBarMessage("$(check) Committed", 3000);
+      void vscode.window.setStatusBarMessage(l10n.t("$(check) Committed"), 3000);
       markWalkthrough("committed");
 
       // Clear the box and refresh the views. The commit spinner clears on
@@ -1848,8 +1856,8 @@ export class CommitViewProvider
     const count = paths.size;
     const incoming = on ? (behind ?? 0) : 0;
     const bits: string[] = [];
-    if (count) bits.push(`${count} changed file${count === 1 ? "" : "s"}`);
-    if (incoming) bits.push(`${incoming} incoming commit${incoming === 1 ? "" : "s"} to pull`);
+    if (count) bits.push(count === 1 ? l10n.t("1 changed file") : l10n.t("{0} changed files", count));
+    if (incoming) bits.push(incoming === 1 ? l10n.t("1 incoming commit to pull") : l10n.t("{0} incoming commits to pull", incoming));
 
     // A zero badge, NEVER `undefined`. Clearing a *webview* view's badge does not
     // work: WebviewViewPane.updateBadge only calls showViewActivity when the new
@@ -1863,7 +1871,7 @@ export class CommitViewProvider
     // a repo that is only behind has always published { value: 0 }.
     this.view.badge = {
       value: count,
-      tooltip: bits.length ? `GitStudio — ${bits.join(" · ")}` : "",
+      tooltip: bits.length ? l10n.t("GitStudio — {0}", bits.join(" · ")) : "",
     };
   }
 
@@ -1991,7 +1999,7 @@ export class CommitViewProvider
           // git would read it as one of its own options: "-f" after
           // --detach discards every uncommitted change.
           if (r.startsWith("-")) {
-            result = { ok: false, stderr: `'${r}' is not a revision: it starts with '-'.` };
+            result = { ok: false, stderr: l10n.t("'{0}' is not a revision: it starts with '-'.", r) };
             break;
           }
           // Picked from the dialog's list — a branch, a remote branch, a tag —
@@ -2004,8 +2012,8 @@ export class CommitViewProvider
           if (picked === "head" || picked === "remote" || picked === "tag") {
             const full = pickedRefName(await entry.ctx.refs.listRefs(), r, picked);
             if (!full) {
-              const word = picked === "head" ? "branch" : picked === "remote" ? "remote branch" : "tag";
-              result = { ok: false, stderr: `there is no ${word} '${r}' any more.` };
+              const word = picked === "head" ? l10n.t("branch") : picked === "remote" ? l10n.t("remote branch") : l10n.t("tag");
+              result = { ok: false, stderr: l10n.t("there is no {0} '{1}' any more.", word, r) };
               break;
             }
             target = full;
@@ -2100,14 +2108,14 @@ export class CommitViewProvider
       // pull blocked by the operation a stop left paused) was already said,
       // plainly and with its count, by settlePullStop.
     } else if (!result.ok && before && stoppedByThisCommand(before, await detectOperation(entry.ctx))) {
-      notifyPaused("Pull hit conflicts. Resolve them, then continue or abort.");
+      notifyPaused(l10n.t("Pull hit conflicts. Resolve them, then continue or abort."));
     } else if (!result.ok) {
       // Named by what the user chose ("Pull into 'feature'"), not by the id.
       void vscode.window.showErrorMessage(
-        `GitStudio: ${branchActionWords(msg.action, msg.ref)} failed${result.stderr ? ` — ${result.stderr.trim()}` : ""}`,
+        l10n.t("GitStudio: {0} failed{1}", branchActionWords(msg.action, msg.ref), result.stderr ? ` — ${result.stderr.trim()}` : ""),
       );
     } else if (msg.action === "pullFf") {
-      vscode.window.setStatusBarMessage(`Fast-forwarded ${ref}`, 2500);
+      vscode.window.setStatusBarMessage(l10n.t("Fast-forwarded {0}", ref), 2500);
     }
     // A branch action moved/created/deleted refs — refetch them on the next push.
     this.invalidateRefs();
@@ -2194,7 +2202,7 @@ export class CommitViewProvider
       }
     } catch (err) {
       void vscode.window.showErrorMessage(
-        `GitStudio: ${err instanceof Error ? err.message : String(err)}`,
+        l10n.t("GitStudio: {0}", err instanceof Error ? err.message : String(err)),
       );
     }
     // The submenu command may have moved refs (checkout/rename/delete/merge).
@@ -2271,7 +2279,7 @@ export class CommitViewProvider
       const pushRemote =
         remotes.find((r) => r.name === "origin")?.name ?? remotes[0]?.name;
       target = head.detached
-        ? "no branch (detached HEAD)"
+        ? l10n.t("no branch (detached HEAD)")
         : pushRemote ? `${pushRemote}/${branch}` : branch;
     }
     // A tracked branch with nothing ahead really has nothing to preview.
@@ -2333,7 +2341,7 @@ export class CommitViewProvider
         // The first is what the commit's own files are diffed against when
         // its row opens (the shared change rows).
         parents: c.parents,
-        subject: c.subject || "(no message)",
+        subject: c.subject || l10n.t("(no message)"),
         author: c.author,
         date: c.authorDate,
         // The age as every other GitStudio list says it ("3h", "2d"): the
@@ -2395,17 +2403,15 @@ export class CommitViewProvider
       data = await this.gatherPushData(entry);
     } catch (err) {
       void vscode.window.showErrorMessage(
-        `GitStudio: couldn't prepare the push — ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        l10n.t("GitStudio: couldn't prepare the push — {0}", err instanceof Error ? err.message : String(err)),
       );
       return;
     }
     if (!data) {
       vscode.window.setStatusBarMessage(
         this.pushTarget
-          ? `$(check) Nothing to push from ${this.pushTarget.name} — up to date`
-          : "$(check) Nothing to push — up to date",
+          ? l10n.t("$(check) Nothing to push from {0} — up to date", this.pushTarget.name)
+          : l10n.t("$(check) Nothing to push — up to date"),
         2500,
       );
       // Clear any spinner the trigger may have started.
@@ -2480,7 +2486,7 @@ export class CommitViewProvider
       "vscode.diff",
       left,
       right,
-      `${name}  (before ${pushRefLabel(base)} ↔ after HEAD)`,
+      l10n.t("{0}  (before {1} ↔ after HEAD)", name, pushRefLabel(base)),
       { preview: true } satisfies vscode.TextDocumentShowOptions,
     );
   }
@@ -2499,24 +2505,24 @@ export class CommitViewProvider
    */
   private async askRewritePush(): Promise<boolean | undefined> {
     const choice = await promptPick({
-      title: "This branch was rewritten",
+      title: l10n.t("This branch was rewritten"),
       hint:
-        "The remote still has the commits you replaced — amending a pushed " +
-        "commit does this. A normal push will be refused.",
+        l10n.t("The remote still has the commits you replaced — amending a pushed ") +
+        l10n.t("commit does this. A normal push will be refused."),
       choices: [
         {
           id: "force",
-          label: "Force push",
+          label: l10n.t("Force push"),
           icon: "repo-force-push",
           danger: true,
           description:
-            "Replaces only the versions you rewrote — nobody else's commits are on the remote branch.",
+            l10n.t("Replaces only the versions you rewrote — nobody else's commits are on the remote branch."),
         },
         {
           id: "cancel",
-          label: "Cancel",
+          label: l10n.t("Cancel"),
           icon: "close",
-          description: "Nothing is pushed.",
+          description: l10n.t("Nothing is pushed."),
         },
       ],
     });
@@ -2558,9 +2564,9 @@ export class CommitViewProvider
       result = { ok: false, stderr: err instanceof Error ? err.message : String(err) };
     }
     if (result.ok) {
-      vscode.window.setStatusBarMessage("$(check) Pushed", 3000);
+      vscode.window.setStatusBarMessage(l10n.t("$(check) Pushed"), 3000);
     } else if (!settlePushUnseen(result)) {
-      void vscode.window.showErrorMessage(failed("Push", result.stderr));
+      void vscode.window.showErrorMessage(failed(l10n.t("Push"), result.stderr));
     }
     this.invalidateRefs();
     void entry.repo?.status?.();
@@ -2606,7 +2612,7 @@ export class CommitViewProvider
         const oldest = unpushed[unpushed.length - 1];
         if (oldest && oldest.parents.length === 0) {
           void vscode.window.showWarningMessage(
-            "GitStudio: can't undo the repository's initial commit this way.",
+            l10n.t("GitStudio: can't undo the repository's initial commit this way."),
           );
           return;
         }
@@ -2614,31 +2620,31 @@ export class CommitViewProvider
       }
     } catch (err) {
       void vscode.window.showErrorMessage(
-        `GitStudio: ${err instanceof Error ? err.message : String(err)}`,
+        l10n.t("GitStudio: {0}", err instanceof Error ? err.message : String(err)),
       );
       return;
     }
     if (!base || count === 0) {
-      vscode.window.setStatusBarMessage("$(info) No local commits to undo", 2500);
+      vscode.window.setStatusBarMessage(l10n.t("$(info) No local commits to undo"), 2500);
       return;
     }
 
     const plural = count === 1 ? "commit" : "commits";
     const chosen = await promptPick({
-      title: `Undo ${count} local ${plural}`,
-      hint: "Where should the committed changes go? Your work is kept either way.",
+      title: l10n.t("Undo {0} local {1}", count, plural),
+      hint: l10n.t("Where should the committed changes go? Your work is kept either way."),
       choices: [
         {
           id: "keep",
-          label: "Keep Staged",
+          label: l10n.t("Keep Staged"),
           icon: "check",
-          description: "Their changes return to the Staged group, ready to re-commit.",
+          description: l10n.t("Their changes return to the Staged group, ready to re-commit."),
         },
         {
           id: "unstage",
-          label: "Unstage",
+          label: l10n.t("Unstage"),
           icon: "list-flat",
-          description: "Their changes return as unstaged edits.",
+          description: l10n.t("Their changes return as unstaged edits."),
         },
       ],
     });
@@ -2649,11 +2655,11 @@ export class CommitViewProvider
     const r = await entry.ctx.process.run(["reset", mode.value, base]);
     if (r.code !== 0) {
       void vscode.window.showErrorMessage(
-        `GitStudio: undo failed${r.stderr ? ` — ${r.stderr.trim()}` : ""}`,
+        l10n.t("GitStudio: undo failed{0}", r.stderr ? ` — ${r.stderr.trim()}` : ""),
       );
     } else {
       vscode.window.setStatusBarMessage(
-        `$(check) Undid ${count} local ${plural}`,
+        l10n.t("$(check) Undid {0} local {1}", count, plural),
         3000,
       );
     }
@@ -2700,11 +2706,11 @@ export class CommitViewProvider
     }
     if (!result.ok) {
       void vscode.window.showErrorMessage(
-        `GitStudio: couldn't create branch${result.stderr ? ` — ${result.stderr.trim()}` : ""}`,
+        l10n.t("GitStudio: couldn't create branch{0}", result.stderr ? ` — ${result.stderr.trim()}` : ""),
       );
       return; // keep the modal open so the user can retry / cancel
     }
-    vscode.window.setStatusBarMessage(`$(check) Created & switched to ${name.trim()}`, 3000);
+    vscode.window.setStatusBarMessage(l10n.t("$(check) Created & switched to {0}", name.trim()), 3000);
     await this.noteRecentBranch(entry, name.trim());
     this.invalidateRefs();
     void entry.repo?.status?.();
@@ -3044,7 +3050,7 @@ export class CommitViewProvider
       vscode.Uri.joinPath(this.extensionUri, "dist", "webview", "change-rows.js"),
     );
     const csp = [
-      `default-src 'none'`,
+      "default-src 'none'",
       // cspSource: the codicon stylesheet; nonce: our own inline <style>.
       `style-src 'nonce-${nonce}' ${webview.cspSource}`,
       // cspSource: the codicon.ttf the stylesheet @font-face references.
@@ -5108,7 +5114,7 @@ export class CommitViewProvider
       <span class="repo-name" id="repo-name"></span>
       <i class="codicon codicon-chevron-down repo-caret" aria-hidden="true"></i>
     </button>
-    <button class="branch" id="branch-pill" type="button" title="Branch &amp; actions"
+    <button class="branch" id="branch-pill" type="button" title="${l10n.t("Branch & actions")}"
       aria-haspopup="true" aria-expanded="false">
       <i class="codicon codicon-git-branch" aria-hidden="true"></i>
       <span class="branch-name" id="branch-name">—</span>
@@ -5116,20 +5122,20 @@ export class CommitViewProvider
     </button>
     <span class="sync hidden" id="sync">
       <button class="sync-pill ahead" id="ahead" type="button"
-        title="Push these commits to the upstream" aria-label="Push commits">
+        title="${l10n.t("Push these commits to the upstream")}" aria-label="${l10n.t("Push commits")}">
         <i class="codicon codicon-arrow-up" aria-hidden="true"></i>
-        <span class="sync-verb">Push</span>
+        <span class="sync-verb">${l10n.t("Push")}</span>
         <span id="ahead-n">0</span>
       </button>
       <button class="sync-pill behind" id="behind" type="button"
-        title="Pull these commits from the upstream" aria-label="Pull commits">
+        title="${l10n.t("Pull these commits from the upstream")}" aria-label="${l10n.t("Pull commits")}">
         <i class="codicon codicon-arrow-down" aria-hidden="true"></i>
-        <span class="sync-verb">Pull</span>
+        <span class="sync-verb">${l10n.t("Pull")}</span>
         <span id="behind-n">0</span>
       </button>
-      <span class="sync-clean" id="sync-clean" title="Up to date with upstream" role="img" aria-label="Up to date with upstream">
+      <span class="sync-clean" id="sync-clean" title="${l10n.t("Up to date with upstream")}" role="img" aria-label="${l10n.t("Up to date with upstream")}">
         <i class="codicon codicon-check" aria-hidden="true"></i>
-        <span>up to date</span>
+        <span>${l10n.t("up to date")}</span>
       </span>
     </span>
   </header>
@@ -5139,22 +5145,22 @@ export class CommitViewProvider
   <div class="composer">
   <div class="message-wrap">
     <textarea id="message" rows="1"
-      placeholder="Message (what & why)…"
-      aria-label="Commit message"></textarea>
+      placeholder="${l10n.t("Message (what & why)…")}"
+      aria-label="${l10n.t("Commit message")}"></textarea>
     <button class="sparkle" id="generate" type="button"
-      title="Generate commit message with AI"
-      aria-label="Generate commit message">
+      title="${l10n.t("Generate commit message with AI")}"
+      aria-label="${l10n.t("Generate commit message")}">
       <i class="codicon codicon-sparkle glyph" aria-hidden="true"></i>
       <i class="codicon codicon-loading spinner" aria-hidden="true"></i>
     </button>
     <button class="sparkle review" id="review" type="button"
-      title="Review changes with AI"
-      aria-label="Review changes with AI">
+      title="${l10n.t("Review changes with AI")}"
+      aria-label="${l10n.t("Review changes with AI")}">
       <i class="codicon codicon-code-review glyph" aria-hidden="true"></i>
     </button>
     <button class="sparkle connect" id="connect-ai" type="button"
-      title="Connect an AI provider — powers commit messages &amp; code review"
-      aria-label="Connect AI">
+      title="${l10n.t("Connect an AI provider — powers commit messages & code review")}"
+      aria-label="${l10n.t("Connect AI")}">
       <i class="codicon codicon-plug glyph" aria-hidden="true"></i>
     </button>
     <div class="composer-foot">
@@ -5163,64 +5169,64 @@ export class CommitViewProvider
   </div>
 
   <div class="toggles">
-    <label><input type="checkbox" id="amend" /> Amend</label>
-    <label><input type="checkbox" id="signoff" /> Sign-off</label>
+    <label><input type="checkbox" id="amend" /> ${l10n.t("Amend")}</label>
+    <label><input type="checkbox" id="signoff" /> ${l10n.t("Sign-off")}</label>
     <button class="link" id="author-toggle" type="button" aria-expanded="false"
       aria-controls="author-row">
-      Author
+      ${l10n.t("Author")}
       <i class="codicon codicon-chevron-down chev" aria-hidden="true"></i>
     </button>
   </div>
 
   <div class="author-row hidden" id="author-row">
     <input id="author" type="text"
-      placeholder="Author override — Name &lt;email@example.com&gt;"
-      aria-label="Author override" />
+      placeholder="${l10n.t("Author override — Name <email@example.com>")}"
+      aria-label="${l10n.t("Author override")}" />
   </div>
 
   <div class="actions">
-    <button class="gs-commit split commit-btn" id="commit" type="button" aria-label="Commit">
+    <button class="gs-commit split commit-btn" id="commit" type="button" aria-label="${l10n.t("Commit")}">
       <i class="codicon codicon-git-commit glyph" aria-hidden="true"></i>
       <i class="codicon codicon-loading spin" aria-hidden="true"></i>
-      <span id="commit-label">Commit</span>
+      <span id="commit-label">${l10n.t("Commit")}</span>
     </button>
-    <button class="gs-commit primary main-btn" id="commit-push" type="button" aria-label="Commit and Push">
+    <button class="gs-commit primary main-btn" id="commit-push" type="button" aria-label="${l10n.t("Commit and Push")}">
       <i class="codicon codicon-arrow-up glyph" aria-hidden="true"></i>
       <i class="codicon codicon-loading spin" aria-hidden="true"></i>
-      <span id="main-label">Commit &amp; Push</span>
+      <span id="main-label">${l10n.t("Commit & Push")}</span>
     </button>
   </div>
   </div>
 
   <div class="changes-toolbar">
-    <span class="changes-title">Changed Files</span>
+    <span class="changes-title">${l10n.t("Changed Files")}</span>
     <span class="changes-total" id="changes-total">0</span>
     <span class="toolbar-spacer"></span>
     <span class="toolbar-actions">
       <button class="icon-btn layout" id="layout-toggle" type="button"
-        title="View as Tree" aria-label="View as Tree">
+        title="${l10n.t("View as Tree")}" aria-label="${l10n.t("View as Tree")}">
         <i class="codicon codicon-list-tree to-tree" aria-hidden="true"></i>
         <i class="codicon codicon-list-flat to-list" aria-hidden="true"></i>
       </button>
       <button class="icon-btn model" id="model-toggle" type="button"
-        title="Switch to checkboxes" aria-label="Switch to checkboxes">
+        title="${l10n.t("Switch to checkboxes")}" aria-label="${l10n.t("Switch to checkboxes")}">
         <i class="codicon codicon-checklist to-checks" aria-hidden="true"></i>
         <i class="codicon codicon-list-selection to-split" aria-hidden="true"></i>
       </button>
       <button class="icon-btn stage-all-top" id="stage-all-top" type="button"
-        title="Stage All Changes" aria-label="Stage All Changes">
+        title="${l10n.t("Stage All Changes")}" aria-label="${l10n.t("Stage All Changes")}">
         <i class="codicon codicon-add" aria-hidden="true"></i>
       </button>
       <button class="icon-btn stash-btn" id="stash-changes" type="button"
-        title="Stash all changes…" aria-label="Stash all changes…">
+        title="${l10n.t("Stash all changes…")}" aria-label="${l10n.t("Stash all changes…")}">
         <i class="codicon codicon-git-stash" aria-hidden="true"></i>
       </button>
       <button class="icon-btn collapse-all" id="collapse-all" type="button"
-        title="Collapse All Folders" aria-label="Collapse All Folders">
+        title="${l10n.t("Collapse All Folders")}" aria-label="${l10n.t("Collapse All Folders")}">
         <i class="codicon codicon-collapse-all" aria-hidden="true"></i>
       </button>
       <button class="icon-btn refresh" id="refresh" type="button"
-        title="Refresh" aria-label="Refresh">
+        title="${l10n.t("Refresh")}" aria-label="${l10n.t("Refresh")}">
         <i class="codicon codicon-refresh" aria-hidden="true"></i>
       </button>
     </span>
@@ -5231,18 +5237,18 @@ export class CommitViewProvider
        tabindex). The row buttons stay for the pointer; the keyboard reaches
        the same actions through the row's menu (Shift+F10). The Stashes
        group below the clean-tree note is part of it (aria-owns). -->
-  <div class="groups" id="groups" role="tree" aria-label="Changed files" aria-multiselectable="true" aria-owns="stashes"></div>
+  <div class="groups" id="groups" role="tree" aria-label="${l10n.t("Changed files")}" aria-multiselectable="true" aria-owns="stashes"></div>
 
   <!-- Selection bar: only present while a multi-selection exists, so the view
        is unchanged for anyone who never selects. -->
   <div class="selbar" id="selbar" hidden>
     <span class="selbar-count" id="selbar-count"></span>
     <span class="selbar-actions">
-      <button type="button" class="selbar-btn" id="selbar-stash">Stash</button>
-      <button type="button" class="selbar-btn" id="selbar-stage">Stage</button>
-      <button type="button" class="selbar-btn" id="selbar-move" hidden>Move to Changes</button>
-      <button type="button" class="selbar-btn" id="selbar-copy" hidden>Copy to Changes</button>
-      <button type="button" class="selbar-btn" id="selbar-clear">Clear</button>
+      <button type="button" class="selbar-btn" id="selbar-stash">${l10n.t("Stash")}</button>
+      <button type="button" class="selbar-btn" id="selbar-stage">${l10n.t("Stage")}</button>
+      <button type="button" class="selbar-btn" id="selbar-move" hidden>${l10n.t("Move to Changes")}</button>
+      <button type="button" class="selbar-btn" id="selbar-copy" hidden>${l10n.t("Copy to Changes")}</button>
+      <button type="button" class="selbar-btn" id="selbar-clear">${l10n.t("Clear")}</button>
     </span>
   </div>
 
@@ -5250,15 +5256,15 @@ export class CommitViewProvider
     <span class="badge">
       <i class="codicon codicon-check" aria-hidden="true"></i>
     </span>
-    <span class="et">Working tree clean</span>
-    <span class="es">No changes to commit.</span>
+    <span class="et">${l10n.t("Working tree clean")}</span>
+    <span class="es">${l10n.t("No changes to commit.")}</span>
   </div>
 
   <div class="empty-state visible" id="loading-state" role="status">
     <span class="badge">
       <i class="codicon codicon-loading codicon-modifier-spin" aria-hidden="true"></i>
     </span>
-    <span class="et" id="loading-text">Reading changes…</span>
+    <span class="et" id="loading-text">${l10n.t("Reading changes…")}</span>
   </div>
 
   <!-- The Stashes group: after the file groups and the clean-tree note, so a
@@ -5271,20 +5277,21 @@ export class CommitViewProvider
     <span class="badge">
       <i class="codicon codicon-source-control" aria-hidden="true"></i>
     </span>
-    <span class="et">No repository open</span>
-    <span class="es">Open a folder that's under Git to see your changes, branches, and history.</span>
+    <span class="et">${l10n.t("No repository open")}</span>
+    <span class="es">${l10n.t("Open a folder that's under Git to see your changes, branches, and history.")}</span>
     <div class="no-repo-actions">
       <button class="gs-commit primary" id="open-folder" type="button">
         <i class="codicon codicon-folder-opened" aria-hidden="true"></i>
-        <span>Open Folder…</span>
+        <span>${l10n.t("Open Folder…")}</span>
       </button>
       <button class="gs-commit split" id="open-graph" type="button">
         <i class="codicon codicon-git-commit" aria-hidden="true"></i>
-        <span>Commit Graph</span>
+        <span>${l10n.t("Commit Graph")}</span>
       </button>
     </div>
   </div>
 
+  ${l10nWebviewScript(nonce)}
   <script nonce="${nonce}" src="${changeRowsUri}"></script>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
@@ -5448,7 +5455,10 @@ export class CommitViewProvider
       if (node.getAttribute(name) !== value) node.setAttribute(name, value);
     }
     function countWords(n, one, many) {
-      return n === 1 ? "1 " + (one || "file") : n + " " + (many || "files");
+      // The noun is a message of its own so a language can put the count and
+      // the word in its own order (and its own plural form).
+      const word = n === 1 ? one || l10nT("file") : many || l10nT("files");
+      return l10nT("{0} {1}", n, word);
     }
 
     // ---- The tree from the keyboard: one tab stop, arrows move it ---------
@@ -5725,11 +5735,10 @@ export class CommitViewProvider
       const entries = selectionEntries();
       const paths = selectionPaths();
       const n = paths.length;
-      const label = n === 1 ? "1 File" : String(n) + " Files";
       const stageable = entries.filter((en) => en.kind !== "staged");
       const unstageable = entries.filter((en) => en.kind === "staged");
       const items = [];
-      items.push({ icon: "git-stash", label: "Stash " + label,
+      items.push({ icon: "git-stash", label: l10nT("Stash {0}", countFilesCap(n)),
         fn: () => { vscode.postMessage({ type: "stashPaths", paths: paths }); clearSelection(); } });
       items.push({ sep: true });
       // ONE message per action, never one per file. Per-file messages ran
@@ -5737,7 +5746,7 @@ export class CommitViewProvider
       // failed; and each Discard opened its own confirm, which dismissed the
       // one before it, so only the last file was ever discarded.
       if (stageable.length > 0) {
-        items.push({ icon: "add", label: "Stage " + (stageable.length === 1 ? "1 File" : String(stageable.length) + " Files"),
+        items.push({ icon: "add", label: l10nT("Stage {0}", countFilesCap(stageable.length)),
           fn: () => {
             const paths = stageable.map((en) => en.path);
             queueFiles(paths, "stage");
@@ -5746,7 +5755,7 @@ export class CommitViewProvider
           } });
       }
       if (unstageable.length > 0) {
-        items.push({ icon: "remove", label: "Unstage " + (unstageable.length === 1 ? "1 File" : String(unstageable.length) + " Files"),
+        items.push({ icon: "remove", label: l10nT("Unstage {0}", countFilesCap(unstageable.length)),
           fn: () => {
             const paths = unstageable.map((en) => en.path);
             queueFiles(paths, "unstage");
@@ -5758,14 +5767,14 @@ export class CommitViewProvider
       if (discardable.length > 0) {
         items.push({ sep: true });
         // The host confirms before discarding; this only asks for it.
-        items.push({ icon: "discard", label: "Discard " + (discardable.length === 1 ? "1 File" : String(discardable.length) + " Files"), danger: true,
+        items.push({ icon: "discard", label: l10nT("Discard {0}", countFilesCap(discardable.length)), danger: true,
           fn: () => {
             vscode.postMessage({ type: "discardPaths", paths: discardable.map((en) => en.path) });
             clearSelection();
           } });
       }
       items.push({ sep: true });
-      items.push({ icon: "close", label: "Clear Selection", fn: clearSelection });
+      items.push({ icon: "close", label: l10nT("Clear Selection"), fn: clearSelection });
       return items;
     }
 
@@ -5783,8 +5792,8 @@ export class CommitViewProvider
       selbarCopyBtn.hidden = !st;
       if (st) {
         const s = authStashes.find((x) => x.sha === st.sha);
-        selbarCount.textContent = (st.paths.length === 1 ? "1 file" : String(st.paths.length) + " files") +
-          (s ? " from “" + s.text + "”" : "");
+        selbarCount.textContent = countWords(st.paths.length) +
+          (s ? l10nT(" from “{0}”", s.text) : "");
         // Their tips say where these files come back, as the rows' do.
         const files = stashFilesOf({ sha: st.sha }, st.paths);
         for (const [b, tip] of [[selbarMoveBtn, tipMove(files)], [selbarCopyBtn, tipCopy(files)]]) {
@@ -5796,7 +5805,9 @@ export class CommitViewProvider
       }
       if (selbarEl.previousElementSibling !== groupsEl) groupsEl.after(selbarEl);
       const files = selectionPaths().length;
-      selbarCount.textContent = files === 1 ? "1 file selected" : String(files) + " files selected";
+      selbarCount.textContent = files === 1
+        ? l10nT("1 file selected")
+        : l10nT("{0} files selected", files);
     }
 
     function updateSelectionChrome() { syncStashButtonLabel(); }
@@ -5868,16 +5879,18 @@ export class CommitViewProvider
     }
     /** What a drop does, in words: [the verb, how Alt/Option picks the other]. */
     function dropWords() {
-      if (drag.kind === "tree") return ["Drop to stash " + countWords(drag.paths.length), ""];
+      if (drag.kind === "tree") {
+        return [l10nT("Drop to stash {0}", countWords(drag.paths.length)), ""];
+      }
       if (drag.kind === "stash") {
         return dropAlt
-          ? ["Drop to pop", "Release " + ALT_NAME + " to apply"]
-          : ["Drop to apply", "Hold " + ALT_NAME + " to pop"];
+          ? [l10nT("Drop to pop"), l10nT("Release {0} to apply", ALT_NAME)]
+          : [l10nT("Drop to apply"), l10nT("Hold {0} to pop", ALT_NAME)];
       }
       const n = countWords(drag.paths.length);
       return dropAlt
-        ? ["Drop to copy " + n, "Release " + ALT_NAME + " to move"]
-        : ["Drop to move " + n, "Hold " + ALT_NAME + " to copy"];
+        ? [l10nT("Drop to copy {0}", n), l10nT("Release {0} to move", ALT_NAME)]
+        : [l10nT("Drop to move {0}", n), l10nT("Hold {0} to copy", ALT_NAME)];
     }
     /**
      * Where a place shows its words: the Stashes header and the clean note in
@@ -6099,8 +6112,8 @@ export class CommitViewProvider
     // the button's tip and the push dialog must give the same reason. On a
     // detached HEAD the state carries the host's reason (detachedReason),
     // which knows whether a rebase is what detached it; this is the fallback.
-    const DETACHED_PUSH_REASON = "HEAD is detached, so these commits are on no branch and there is nothing to push them to. Create a branch here to push them.";
-    const NO_REMOTE_PUSH_REASON = "No remote is configured for this repository.";
+    const DETACHED_PUSH_REASON = l10nT("HEAD is detached, so these commits are on no branch and there is nothing to push them to. Create a branch here to push them.");
+    const NO_REMOTE_PUSH_REASON = l10nT("No remote is configured for this repository.");
     let aheadCount = 0;     // commits a push would send (drives the button label)
     let canPublish = false; // there IS somewhere to push/publish those commits
     let onUpstream = false; // branch tracks an upstream (Push) vs not (Publish)
@@ -6250,11 +6263,11 @@ export class CommitViewProvider
     // Spell out the one-letter status on hover so the A / U / M / D … column
     // isn't a mystery.
     const STATUS_NAMES = {
-      A: "Added", U: "Untracked", D: "Deleted", R: "Renamed",
-      "!": "Conflict", I: "Ignored", T: "Type changed", M: "Modified",
+      A: l10nT("Added"), U: l10nT("Untracked"), D: l10nT("Deleted"), R: l10nT("Renamed"),
+      "!": l10nT("Conflict"), I: l10nT("Ignored"), T: l10nT("Type changed"), M: l10nT("Modified"),
     };
     function statusTitle(letter) {
-      return STATUS_NAMES[letter] || "Modified";
+      return STATUS_NAMES[letter] || l10nT("Modified");
     }
 
     /**
@@ -6264,7 +6277,9 @@ export class CommitViewProvider
      * the same number twice).
      */
     function showMoreLabel(hidden, page) {
-      return hidden > page ? "Show " + page + " more of " + hidden : "Show " + hidden + " more";
+      return hidden > page
+        ? l10nT("Show {0} more of {1}", page, hidden)
+        : l10nT("Show {0} more", hidden);
     }
 
     function el(tag, cls, html) {
@@ -6291,10 +6306,12 @@ export class CommitViewProvider
       counterEl.classList.toggle("over", subject > 72);
       // What the number is, and what the 50/72 convention asks of it.
       counterEl.dataset.tip = subject > 72
-        ? "Subject line: " + subject + " characters, over 72. GitHub cuts a longer subject short."
+        ? l10nT("Subject line: {0} characters, over 72. GitHub cuts a longer subject short.", subject)
         : subject > 50
-          ? "Subject line: " + subject + " characters, over 50. Aim for 50; 72 at most."
-          : "Subject line: " + subject + (subject === 1 ? " character" : " characters") + ". Keep it to 50.";
+          ? l10nT("Subject line: {0} characters, over 50. Aim for 50; 72 at most.", subject)
+          : subject === 1
+            ? l10nT("Subject line: 1 character. Keep it to 50.")
+            : l10nT("Subject line: {0} characters. Keep it to 50.", subject);
     }
     message.addEventListener("input", () => { autoGrow(); updateComposer(); });
 
@@ -6310,7 +6327,7 @@ export class CommitViewProvider
     //  • nothing to do → primary disabled.
     // The Commit button only commits staged work; it shrinks beside the primary.
     function renderCommitButtons() {
-      const verb = amend.checked ? "Amend" : "Commit";
+      const verb = amend.checked ? l10nT("Amend") : l10nT("Commit");
       const hasStaged = stagedCount > 0 || amend.checked;
       // Anything at all to commit? With nothing staged the host offers to commit
       // everything after confirming (issue #16), so the button must be reachable —
@@ -6325,8 +6342,8 @@ export class CommitViewProvider
       // Commit button label + state.
       if (!committing) {
         commitLabel.textContent =
-          stagedCount > 0 ? verb + " " + stagedCount
-          : !amend.checked && totalChanges > 0 ? verb + " all " + totalChanges
+          stagedCount > 0 ? l10nT("{0} {1}", verb, stagedCount)
+          : !amend.checked && totalChanges > 0 ? l10nT("{0} all {1}", verb, totalChanges)
           : verb;
       }
       commitBtn.disabled = committing || hostBusy || !canCommit;
@@ -6343,17 +6360,17 @@ export class CommitViewProvider
       const blocked = pushBlockedReason();
       let mode, label;
       if (hasStaged && !blocked) {
-        mode = "commitpush"; label = (amend.checked ? "Amend" : "Commit") + " & Push";
+        mode = "commitpush"; label = l10nT("{0} & Push", verb);
       } else if (!blocked && canPublish && (aheadCount > 0 || !onUpstream)) {
         // An unpublished branch is always actionable: "Publish" even with a
         // zero ahead-count. Only a TRACKED branch that is up to date has
         // genuinely nothing to do.
         mode = "push";
         label = onUpstream
-          ? "Push " + aheadCount
-          : (aheadCount > 0 ? "Publish " + aheadCount : "Publish");
+          ? l10nT("Push {0}", aheadCount)
+          : (aheadCount > 0 ? l10nT("Publish {0}", aheadCount) : l10nT("Publish"));
       } else {
-        mode = "none"; label = "Push";
+        mode = "none"; label = l10nT("Push");
       }
       pushBtn.dataset.mode = mode;
       if (!pushBtn.classList.contains("is-busy")) mainLabel.textContent = label;
@@ -6387,19 +6404,19 @@ export class CommitViewProvider
         repoNameEl.textContent = state.repoName || "";
         // Where it is first: the name is clipped on a narrow sidebar, and two
         // repositories in one workspace can share a folder name.
-        const what = "Switch repository (" + repoCount + " in this workspace)";
+        const what = l10nT("Switch repository (") + repoCount + l10nT(" in this workspace)");
         repoPill.dataset.tip = (state.repoPath ? state.repoPath + " — " : "") + what;
-        repoPill.setAttribute("aria-label", "Repository " + (state.repoName || "") + ". " + what);
+        repoPill.setAttribute("aria-label", l10nT("Repository {0}. {1}", state.repoName || "", what));
       }
-      branchName.textContent = state.branch || "(no branch)";
+      branchName.textContent = state.branch || l10nT("(no branch)");
       // A detached head is a revision, not a branch — mark it so the pill can
       // look different from an ordinary branch instead of silently lying.
       branchPill.classList.toggle("is-detached", !!state.detached);
       branchPill.title = (state.repoName ? state.repoName + " · " : "") +
         (state.detached
-          ? "Detached HEAD at " + (state.branch || "an unknown revision") +
-            " — commits here belong to no branch"
-          : (state.branch || "detached HEAD")) +
+          ? l10nT("Detached HEAD at ") + (state.branch || l10nT("an unknown revision")) +
+            l10nT(" — commits here belong to no branch")
+          : (state.branch || l10nT("detached HEAD"))) +
         (state.upstream ? "  ↔ " + state.upstream : "");
       const ahead = state.ahead || 0;
       const behind = state.behind || 0;
@@ -6407,8 +6424,10 @@ export class CommitViewProvider
       aheadN.textContent = String(ahead);
       behindN.textContent = String(behind);
       // The count in the name too: a folded pill shows only an arrow and it.
-      aheadEl.setAttribute("aria-label", "Push " + ahead + (ahead === 1 ? " commit" : " commits"));
-      behindEl.setAttribute("aria-label", "Pull " + behind + (behind === 1 ? " commit" : " commits"));
+      aheadEl.setAttribute("aria-label", ahead === 1
+        ? l10nT("Push 1 commit") : l10nT("Push {0} commits", ahead));
+      behindEl.setAttribute("aria-label", behind === 1
+        ? l10nT("Pull 1 commit") : l10nT("Pull {0} commits", behind));
       aheadEl.classList.toggle("visible", ahead > 0);
       behindEl.classList.toggle("visible", behind > 0);
       syncClean.classList.toggle("visible", hasUpstream && ahead === 0 && behind === 0);
@@ -6477,7 +6496,7 @@ export class CommitViewProvider
       }
       committing = true;
       btn.classList.add("is-busy");
-      labelEl.textContent = "Committing…";
+      labelEl.textContent = l10nT("Committing…");
       renderCommitButtons();
       doCommit(push);
     }
@@ -6506,7 +6525,7 @@ export class CommitViewProvider
       generateBtn.disabled = on;
       generateBtn.classList.toggle("loading", on);
       generateBtn.setAttribute("aria-label",
-        on ? "Generating commit message…" : "Generate commit message");
+        on ? l10nT("Generating commit message…") : l10nT("Generate commit message"));
     }
     generateBtn.addEventListener("click", () => {
       if (generating) return;
@@ -6543,7 +6562,7 @@ export class CommitViewProvider
       document.body.classList.toggle("layout-list", layout !== "tree");
       // Where the toggle takes you (its icon is that layout's), as the model
       // toggle beside it says — "Toggle tree / list view" said neither.
-      const label = layout === "tree" ? "View as List" : "View as Tree";
+      const label = layout === "tree" ? l10nT("View as List") : l10nT("View as Tree");
       layoutToggle.dataset.tip = label;
       layoutToggle.setAttribute("aria-label", label);
     }
@@ -6562,7 +6581,7 @@ export class CommitViewProvider
     function applyModelToggleLabel() {
       const inChecks = stagingModel === "checkboxes";
       document.body.classList.toggle("model-checkboxes", inChecks);
-      const label = inChecks ? "Switch to staged / unstaged" : "Switch to checkboxes";
+      const label = inChecks ? l10nT("Switch to staged / unstaged") : l10nT("Switch to checkboxes");
       modelToggle.dataset.tip = label;
       modelToggle.setAttribute("aria-label", label);
     }
@@ -6609,8 +6628,8 @@ export class CommitViewProvider
     function syncStashButtonLabel() {
       const n = selectionPaths().length;
       const label = n === 0
-        ? "Stash all changes\u2026"
-        : (n === 1 ? "Stash 1 selected file\u2026" : "Stash " + n + " selected files\u2026");
+        ? l10nT("Stash all changes…")
+        : (n === 1 ? l10nT("Stash 1 selected file…") : l10nT("Stash {0} selected files…", n));
       stashChangesBtn.dataset.tip = label;
       stashChangesBtn.setAttribute("aria-label", label);
       stashChangesBtn.classList.toggle("is-scoped", n > 0);
@@ -7100,7 +7119,7 @@ export class CommitViewProvider
         const fav = !!r.fav;
         const star = el("button", "bm-star" + (fav ? " on" : ""),
           bIcon(fav ? "star-full" : "star-empty"));
-        star.title = fav ? "Remove from favorites" : "Add to favorites";
+        star.title = fav ? l10nT("Remove from favorites") : l10nT("Add to favorites");
         // No Tab stop: focus stays in the search box. The keyboard's way to
         // a star is the branch's submenu (Add to Favorites).
         star.tabIndex = -1;
@@ -7136,8 +7155,11 @@ export class CommitViewProvider
       // Full ref name on hover — a narrow sidebar ellipsis-clips the row, so the
       // tooltip is how the whole name (esp. long remote refs) is always readable,
       // and the counts, which a row too narrow for them drops (fitBranchRows).
-      const counts = [ahead ? ahead + " to push" : "", behind ? behind + " to pull" : ""].filter(Boolean).join(", ");
-      row.title = name + (up ? "  ↔ " + up + (gone ? ", which no longer exists on the remote" : "") : "") +
+      const counts = [
+        ahead ? l10nT("{0} to push", ahead) : "",
+        behind ? l10nT("{0} to pull", behind) : "",
+      ].filter(Boolean).join(", ");
+      row.title = name + (up ? "  ↔ " + up + (gone ? l10nT(", which no longer exists on the remote") : "") : "") +
         (counts ? " — " + counts : "");
       row.dataset.bmkey = "b:" + kind + ":" + name;
       if (branchFilter) row.dataset.score = String(r.s);
@@ -7145,10 +7167,10 @@ export class CommitViewProvider
       // What a screen reader says when the highlight lands here — the badges
       // are arrows and numbers, so they are spelled out.
       row.setAttribute("aria-label", name +
-        (current ? ", current branch" : kind === "remote" ? ", remote branch" : kind === "tag" ? ", tag" : "") +
-        (ahead ? ", " + ahead + " to push" : "") +
-        (behind ? ", " + behind + " to pull" : "") +
-        (up ? ", tracks " + up + (gone ? ", which no longer exists on the remote" : "") : ""));
+        (current ? l10nT(", current branch") : kind === "remote" ? l10nT(", remote branch") : kind === "tag" ? l10nT(", tag") : "") +
+        (ahead ? l10nT(", {0} to push", ahead) : "") +
+        (behind ? l10nT(", {0} to pull", behind) : "") +
+        (up ? l10nT(", tracks ") + up + (gone ? l10nT(", which no longer exists on the remote") : "") : ""));
       row.addEventListener("click", () => openBranchActions(name, kind, current, row));
       return row;
     }
@@ -7390,16 +7412,16 @@ export class CommitViewProvider
      */
     function resetToUpstreamItem(list, name, bd) {
       if (!bd || !bd.upstream || !bd.upstreamOnRemote) return;
-      subItem(list, "discard", "Reset to '" + bd.upstream + "'…",
+      subItem(list, "discard", l10nT("Reset to '") + bd.upstream + "'…",
         () => subAct("gitstudio.branch.resetToUpstream", name, "head"), true,
-        "Fetches, then makes '" + name + "' match '" + bd.upstream +
-        "' exactly. Asks first, and says what would be lost.");
+        l10nT("Fetches, then makes '") + name + l10nT("' match '") + bd.upstream +
+        l10nT("' exactly. Asks first, and says what would be lost."));
     }
 
     /** "Add to Favorites" / "Remove from Favorites" — the star, from the keyboard. */
     function favoriteItem(list, name, bd) {
       const on = !!(bd && bd.favorite);
-      subItem(list, on ? "star-full" : "star-empty", on ? "Remove from Favorites" : "Add to Favorites",
+      subItem(list, on ? "star-full" : "star-empty", on ? l10nT("Remove from Favorites") : l10nT("Add to Favorites"),
         () => toggleFavorite(name));
     }
 
@@ -7432,7 +7454,7 @@ export class CommitViewProvider
       const list = el("div", "bm-sublist");
       list.id = "bm-sub";
       list.setAttribute("role", "listbox");
-      list.setAttribute("aria-label", "Actions for " + name);
+      list.setAttribute("aria-label", l10nT("Actions for ") + name);
       menu.appendChild(list);
 
       // Live branch data for this row (counts may have just changed via Fetch).
@@ -7452,71 +7474,75 @@ export class CommitViewProvider
         for (let i = before; i < items.length; i++) items[i].dataset.sub = key;
       });
       const trackedItem = (l) => subItem(l, "cloud",
-        bd && bd.upstream && !gone ? "Tracked Branch: " + bd.upstream + "…" : "Set Tracked Branch…",
+        bd && bd.upstream && !gone ? l10nT("Tracked Branch: {0}…", bd.upstream) : l10nT("Set Tracked Branch…"),
         () => subAct("gitstudio.branch.setUpstream", name, refType), false,
-        gone ? "'" + bd.upstream + "', which '" + name + "' tracked, no longer exists on the remote. Choose the branch it tracks now."
-          : bd && bd.upstream ? "'" + name + "' tracks " + bd.upstream + ". Choose another branch to track."
-          : "Choose the remote branch '" + name + "' pulls from and pushes to.");
+        gone ? l10nT("'{0}', which '{1}' tracked, no longer exists on the remote. Choose the branch it tracks now.", bd.upstream, name)
+          : bd && bd.upstream ? l10nT("'{0}' tracks {1}. Choose another branch to track.", name, bd.upstream)
+          : l10nT("Choose the remote branch '{0}' pulls from and pushes to.", name));
 
       // Switch to it, or start something from it.
       if (local && gone) add(0, "tracked", trackedItem);
       if (kind === "tag") {
-        add(0, "checkout", (l) => subItem(l, "arrow-swap", "Checkout Tag (detached)", () => subAct("gitstudio.tag.checkout", name, "tag")));
+        add(0, "checkout", (l) => subItem(l, "arrow-swap", l10nT("Checkout Tag (detached)"), () => subAct("gitstudio.tag.checkout", name, "tag")));
       } else if (!current) {
         // Not the check: in this menu that marks the branch that IS checked out.
-        add(0, "checkout", (l) => subItem(l, kind === "remote" ? "cloud-download" : "arrow-swap", "Checkout", () =>
+        add(0, "checkout", (l) => subItem(l, kind === "remote" ? "cloud-download" : "arrow-swap", l10nT("Checkout"), () =>
           subAct(kind === "remote" ? "gitstudio.remoteBranch.checkout" : "gitstudio.branch.checkout", name, refType)));
       }
       // Nothing to pull without an upstream, nor from one deleted from its
       // remote: the pull could only fail. Push… can still publish the branch.
       if (current && bd && bd.upstream && !gone) {
-        add(0, "pullRebase", (l) => subItemLive(l, "arrow-down", "Pull using Rebase", "Pulling…", "pullRebase", name));
-        add(0, "pullMerge", (l) => subItemLive(l, "arrow-down", "Pull using Merge", "Pulling…", "pullMerge", name));
+        add(0, "pullRebase", (l) => subItemLive(l, "arrow-down", l10nT("Pull using Rebase"), l10nT("Pulling…"), "pullRebase", name));
+        add(0, "pullMerge", (l) => subItemLive(l, "arrow-down", l10nT("Pull using Merge"), l10nT("Pulling…"), "pullMerge", name));
       } else if (local && !current && bd && bd.upstream && !gone) {
         // Fast-forward this branch from its upstream WITHOUT checking it out.
         add(0, "pullFf", (l) => subItemLive(l, "arrow-down",
-          "Pull " + (bd.behind ? bd.behind + (bd.behind === 1 ? " Commit " : " Commits ") : "") + "into '" + name + "'",
-          "Pulling…", "pullFf", name,
-          "Fast-forwards '" + name + "' from " + bd.upstream + " — no checkout"));
+          bd.behind
+            ? (bd.behind === 1
+              ? l10nT("Pull 1 Commit into '{0}'", name)
+              : l10nT("Pull {0} Commits into '{1}'", bd.behind, name))
+            : l10nT("Pull into '{0}'", name),
+          l10nT("Pulling…"), "pullFf", name,
+          l10nT("Fast-forwards '{0}' from {1} — no checkout", name, bd.upstream)));
       }
-      add(0, "newBranch", (l) => subItem(l, "add", "New Branch from '" + name + "'…", () => subAct("gitstudio.branch.new", name, refType)));
-      add(0, "worktree", (l) => subItem(l, "worktree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, refType)));
+      add(0, "newBranch", (l) => subItem(l, "add", l10nT("New Branch from '") + name + "'…", () => subAct("gitstudio.branch.new", name, refType)));
+      add(0, "worktree", (l) => subItem(l, "worktree", l10nT("New Worktree from '") + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, refType)));
 
       // Against what HEAD is on (nothing to compare the current branch with).
       if (!current) {
-        add(1, "compare", (l) => subItem(l, "git-compare", "Compare with " + cur, () => subAct("gitstudio.branch.compare", name, refType)));
-        add(1, "merge", (l) => subItem(l, "git-merge", "Merge '" + name + "' into " + cur, () => subAct("gitstudio.branch.merge", name, refType)));
+        add(1, "compare", (l) => subItem(l, "git-compare", l10nT("Compare with {0}", cur), () => subAct("gitstudio.branch.compare", name, refType)));
+        add(1, "merge", (l) => subItem(l, "git-merge", l10nT("Merge '{0}' into {1}", name, cur), () => subAct("gitstudio.branch.merge", name, refType)));
         // Not the pull-request glyph: a rebase opens no pull request. The
         // replayed, reordered list is GitStudio's glyph for a rebase.
         if (kind !== "tag") {
-          add(1, "rebase", (l) => subItem(l, "list-ordered", "Rebase " + cur + " onto '" + name + "'", () => subAct("gitstudio.branch.rebase", name, refType)));
+          add(1, "rebase", (l) => subItem(l, "list-ordered", l10nT("Rebase {0} onto '{1}'", cur, name), () => subAct("gitstudio.branch.rebase", name, refType)));
         }
       }
 
       // Publish it.
       if (kind === "tag") {
-        add(2, "push", (l) => subItem(l, "cloud-upload", "Push Tag to Remote…", () => subAct("gitstudio.tag.push", name, "tag")));
+        add(2, "push", (l) => subItem(l, "cloud-upload", l10nT("Push Tag to Remote…"), () => subAct("gitstudio.tag.push", name, "tag")));
       } else if (current) {
         // Push opens the review modal (see openPushModal) rather than pushing in
         // place, so every push route funnels through the same confirmation.
-        add(2, "push", (l) => subItem(l, "arrow-up", "Push…", () => {
+        add(2, "push", (l) => subItem(l, "arrow-up", l10nT("Push…"), () => {
           closeBranchMenu();
           vscode.postMessage({ type: "requestPushPreview" });
         }));
       } else if (local) {
-        add(2, "push", (l) => subItem(l, "arrow-up", "Push…", () => subAct("gitstudio.branch.push", name, refType)));
+        add(2, "push", (l) => subItem(l, "arrow-up", l10nT("Push…"), () => subAct("gitstudio.branch.push", name, refType)));
       }
       if ((local || current) && !gone) add(2, "tracked", trackedItem);
 
       // Its name.
-      if (local || current) add(3, "rename", (l) => subItem(l, "edit", "Rename…", () => subAct("gitstudio.branch.rename", name, refType)));
-      add(3, "copy", (l) => subItem(l, "copy", kind === "tag" ? "Copy Tag Name" : "Copy Branch Name", () => branchAct("copyName", name)));
+      if (local || current) add(3, "rename", (l) => subItem(l, "edit", l10nT("Rename…"), () => subAct("gitstudio.branch.rename", name, refType)));
+      add(3, "copy", (l) => subItem(l, "copy", kind === "tag" ? l10nT("Copy Tag Name") : l10nT("Copy Branch Name"), () => branchAct("copyName", name)));
       if (local || current) add(3, "favorite", (l) => favoriteItem(l, name, bd));
 
       // What cannot be taken back without Undo.
       if (local || current) add(4, "reset", (l) => resetToUpstreamItem(l, name, bd));
       if (kind === "tag") {
-        add(4, "delete", (l) => subItem(l, "trash", "Delete Tag", () => subAct("gitstudio.tag.delete", name, "tag"), true));
+        add(4, "delete", (l) => subItem(l, "trash", l10nT("Delete Tag"), () => subAct("gitstudio.tag.delete", name, "tag"), true));
       } else if (!current) {
         add(4, "delete", (l) => subItem(l, "trash", "Delete", () =>
           subAct(kind === "remote" ? "gitstudio.remoteBranch.delete" : "gitstudio.branch.delete", name, refType), true));
@@ -7599,17 +7625,17 @@ export class CommitViewProvider
         menu.classList.add("is-drilled");
         head.removeAttribute("aria-hidden");
         head.insertBefore(el("i", "codicon codicon-chevron-left bm-back"), head.firstChild);
-        head.title = "Back to the branches (Left or Escape)";
+        head.title = l10nT("Back to the branches (Left or Escape)");
         // A way back, as a screen reader meets it: a button that says so —
         // no Tab stop, as nothing in the menu has one — and the actions'
         // list says the keys that go back.
         head.setAttribute("role", "button");
-        head.setAttribute("aria-label", "Back to the branches");
+        head.setAttribute("aria-label", l10nT("Back to the branches"));
         head.tabIndex = -1;
         head.addEventListener("click", () => closeBmSub());
         const hint = el("span", "bm-sr");
         hint.id = "bm-back-hint";
-        hint.textContent = "Left or Escape goes back to the branches";
+        hint.textContent = l10nT("Left or Escape goes back to the branches");
         menu.appendChild(hint);
         list.setAttribute("aria-describedby", "bm-back-hint");
         branchMenu.appendChild(menu);
@@ -7645,12 +7671,12 @@ export class CommitViewProvider
     const BM_ACTIONS = [
       // Fetch sits on TOP: it's the read-only "what's out there?" action the
       // rest of the menu builds on.
-      { a: "fetch", icon: "sync", label: "Fetch" },
-      { a: "pull", icon: "arrow-down", label: "Pull", terms: ["update"] },
+      { a: "fetch", icon: "sync", label: l10nT("Fetch") },
+      { a: "pull", icon: "arrow-down", label: l10nT("Pull"), terms: ["update"] },
       // It opens the push review first, so it asks for more, as "…" says.
-      { a: "push", icon: "arrow-up", label: "Push…" },
-      { a: "new", icon: "add", label: "New Branch…", terms: ["create branch"] },
-      { a: "checkoutRef", icon: "tag", label: "Checkout Tag or Revision…", terms: ["detach"] },
+      { a: "push", icon: "arrow-up", label: l10nT("Push…") },
+      { a: "new", icon: "add", label: l10nT("New Branch…"), terms: ["create branch"] },
+      { a: "checkoutRef", icon: "tag", label: l10nT("Checkout Tag or Revision…"), terms: ["detach"] },
     ];
     /** An action's match: on its label (without its "…"), or on one of its terms. */
     function bmScoreAction(q, it) {
@@ -7666,11 +7692,11 @@ export class CommitViewProvider
     function promptNewBranch(value) {
       closeBranchMenu();
       openRefPrompt({
-        title: "New Branch",
-        hint: "Creates the branch at HEAD and switches to it.",
+        title: l10nT("New Branch"),
+        hint: l10nT("Creates the branch at HEAD and switches to it."),
         placeholder: "feature/my-change",
         value: value || "",
-        confirmLabel: "Create Branch",
+        confirmLabel: l10nT("Create Branch"),
         candidates: [],
         allowFreeText: true,
         validate: "refName",
@@ -7683,15 +7709,15 @@ export class CommitViewProvider
     function promptCheckoutRef(value) {
       closeBranchMenu();
       openRefPrompt({
-        title: "Checkout Tag or Revision",
-        hint: "Pick a tag or branch, or type any revision (a sha, origin/main~3). Checks out as a detached HEAD.",
-        placeholder: "v1.2.0   a1b2c3d   origin/main~3",
+        title: l10nT("Checkout Tag or Revision"),
+        hint: l10nT("Pick a tag or branch, or type any revision (a sha, origin/main~3). Checks out as a detached HEAD."),
+        placeholder: l10nT("v1.2.0   a1b2c3d   origin/main~3"),
         value: value || "",
-        confirmLabel: "Checkout",
+        confirmLabel: l10nT("Checkout"),
         candidates: allRefCandidates(),
         allowFreeText: true,
         // git would read it as one of its options.
-        validate: function (v) { return /^-/.test(v) ? "A revision can't start with '-'." : null; },
+        validate: function (v) { return /^-/.test(v) ? l10nT("A revision can't start with '-'.") : null; },
         // A ref picked from the list goes with its kind, and the host checks
         // out that ref by its full name: a tag and a branch can share the
         // short one, and git would take the branch. What was typed goes as
@@ -7724,7 +7750,11 @@ export class CommitViewProvider
       // Fetch/pull/push all run IN PLACE — the dialog stays open, the item
       // itself spins until the real op finishes, and the branch rows' ↑/↓
       // badges refresh live.
-      const busyLabels = { fetch: "Fetching…", pull: "Pulling…", push: "Pushing…" };
+      const busyLabels = {
+        fetch: l10nT("Fetching…"),
+        pull: l10nT("Pulling…"),
+        push: l10nT("Pushing…"),
+      };
       // Nothing to pull into the branch HEAD is on when it tracks nothing, or
       // tracks a branch gone from its remote — the pull could only fail. Its
       // own actions offer no Pull then either (openBranchActions): one rule.
@@ -7748,10 +7778,10 @@ export class CommitViewProvider
             const line = el("div", "bm-why", bIcon("info") + "<span></span>");
             line.id = "bm-why";
             line.querySelector("span").textContent = detached
-              ? "Detached at " + (hs.branch || "HEAD") + " — check out a branch to pull or push"
+              ? l10nT("Detached at {0} — check out a branch to pull or push", hs.branch || "HEAD")
               : cur.gone
-                ? "'" + cur.name + "' tracks " + cur.upstream + ", which no longer exists on the remote"
-                : "'" + cur.name + "' has no upstream to pull from";
+                ? l10nT("'{0}' tracks {1}, which no longer exists on the remote", cur.name, cur.upstream)
+                : l10nT("'{0}' has no upstream to pull from", cur.name);
             list.appendChild(line);
           }
           continue;
@@ -7912,13 +7942,13 @@ export class CommitViewProvider
         list.appendChild(wrap);
       }
 
-      group("favorites", "Favorites", favs);
-      group("recents", "Recents", recents);
-      group("local", "Local", others);
-      for (const g of remotes) group("remote:" + g.remote, "Remote", g.rows, { remote: g.remote, paged: true });
+      group("favorites", l10nT("Favorites"), favs);
+      group("recents", l10nT("Recents"), recents);
+      group("local", l10nT("Local"), others);
+      for (const g of remotes) group("remote:" + g.remote, l10nT("Remote"), g.rows, { remote: g.remote, paged: true });
       // Tags can number in the thousands: paged, never capped, so every tag
       // stays reachable.
-      group("tags", "Tags", tags, { paged: true });
+      group("tags", l10nT("Tags"), tags, { paged: true });
 
       const anyRef = favs.length || recents.length || others.length || tags.length ||
         remotes.some((g) => g.rows.length);
@@ -7932,7 +7962,7 @@ export class CommitViewProvider
         // typed as a revision (a sha, origin/main~3). The new branch is the
         // first, so Enter makes it — unless an action matched.
         const none = el("div", "bm-empty bm-none");
-        none.textContent = "No branch or tag matches '" + branchQuery + "'";
+        none.textContent = l10nT("No branch or tag matches '") + branchQuery + "'";
         list.appendChild(none);
         const offer = (key, icon, label, run) => {
           const b = el("button", "bm-action", bIcon(icon) + "<span></span>");
@@ -7947,8 +7977,8 @@ export class CommitViewProvider
           list.appendChild(b);
         };
         const typed = branchQuery;
-        offer("a:newNamed", "add", "New Branch '" + typed + "'…", () => promptNewBranch(typed));
-        offer("a:checkoutNamed", "arrow-swap", "Checkout Revision '" + typed + "'…", () => promptCheckoutRef(typed));
+        offer("a:newNamed", "add", l10nT("New Branch '") + typed + "'…", () => promptNewBranch(typed));
+        offer("a:checkoutNamed", "arrow-swap", l10nT("Checkout Revision '") + typed + "'…", () => promptCheckoutRef(typed));
       }
       // The whole list is showing: the width it needs is the width to keep
       // while a query narrows it (the branches may have just arrived).
@@ -8259,24 +8289,24 @@ export class CommitViewProvider
     /** Named validators, so a spec can cross postMessage without a function. */
     var DLG_VALIDATORS = {
       refName: function (v) {
-        if (/\s/.test(v)) return "Cannot contain spaces.";
-        if (/^[-.]|[.]{2}|[~^:?*\[\\]|[.]$|[/]$|@\{/.test(v)) return "Not a valid git ref name.";
-        if (v === "@") return "Not a valid git ref name.";
+        if (/\s/.test(v)) return l10nT("Cannot contain spaces.");
+        if (/^[-.]|[.]{2}|[~^:?*\[\\]|[.]$|[/]$|@\{/.test(v)) return l10nT("Not a valid git ref name.");
+        if (v === "@") return l10nT("Not a valid git ref name.");
         return null;
       },
       remoteName: function (v) {
-        if (/\s/.test(v)) return "Cannot contain spaces.";
-        if (!/^[A-Za-z0-9._-]+$/.test(v)) return "Use letters, digits, dot, dash or underscore.";
+        if (/\s/.test(v)) return l10nT("Cannot contain spaces.");
+        if (!/^[A-Za-z0-9._-]+$/.test(v)) return l10nT("Use letters, digits, dot, dash or underscore.");
         return null;
       },
       url: function (v) {
         // Deliberately permissive: git remotes are legitimately https://, ssh://,
         // git@host:path, and plain local paths.
-        if (/\s/.test(v)) return "A remote URL cannot contain spaces.";
+        if (/\s/.test(v)) return l10nT("A remote URL cannot contain spaces.");
         return null;
       },
       nonEmpty: function (v) {
-        return v.trim() ? null : "Required.";
+        return v.trim() ? null : l10nT("Required.");
       },
     };
 
@@ -8376,11 +8406,11 @@ export class CommitViewProvider
     function dialogFoot(panel, confirmLabel, danger, onConfirm) {
       var foot = el("div", "rp-foot");
       var cancel = document.createElement("button");
-      cancel.textContent = "Cancel";
+      cancel.textContent = l10nT("Cancel");
       cancel.addEventListener("click", function () { closeDialog(undefined); });
       var ok = document.createElement("button");
       ok.className = "primary" + (danger ? " danger" : "");
-      ok.textContent = confirmLabel || "OK";
+      ok.textContent = confirmLabel || l10nT("OK");
       ok.addEventListener("click", onConfirm);
       foot.appendChild(cancel);
       foot.appendChild(ok);
@@ -8451,7 +8481,7 @@ export class CommitViewProvider
           for (var i = 0; i < candidates.length; i++) {
             if (candidates[i].name === v) return null;
           }
-          return "Pick one of the listed entries.";
+          return l10nT("Pick one of the listed entries.");
         }
         return null;
       }
@@ -8465,7 +8495,7 @@ export class CommitViewProvider
         var fix = DLG_SANITIZE.refName(v);
         if (!fix || fix === v || problem(fix)) return;
 
-        sug.appendChild(el("span", "rp-sug-lead", "Use instead"));
+        sug.appendChild(el("span", "rp-sug-lead", l10nT("Use instead")));
         // textContent, never el()'s innerHTML: a ref name may contain < > &.
         var nameEl = el("code", "rp-sug-name");
         nameEl.textContent = fix;
@@ -8473,8 +8503,8 @@ export class CommitViewProvider
 
         var useBtn = el("button", "rp-sug-btn");
         useBtn.type = "button";
-        useBtn.textContent = "Use";
-        useBtn.title = "Replace what you typed with this";
+        useBtn.textContent = l10nT("Use");
+        useBtn.title = l10nT("Replace what you typed with this");
         useBtn.addEventListener("click", function () {
           input.value = fix;
           input.focus();
@@ -8486,12 +8516,12 @@ export class CommitViewProvider
 
         var copyBtn = el("button", "rp-sug-btn");
         copyBtn.type = "button";
-        copyBtn.textContent = "Copy";
-        copyBtn.title = "Copy it to edit somewhere else";
+        copyBtn.textContent = l10nT("Copy");
+        copyBtn.title = l10nT("Copy it to edit somewhere else");
         copyBtn.addEventListener("click", function () {
           var done = function () {
-            copyBtn.textContent = "Copied";
-            setTimeout(function () { copyBtn.textContent = "Copy"; }, 1200);
+            copyBtn.textContent = l10nT("Copied");
+            setTimeout(function () { copyBtn.textContent = l10nT("Copy"); }, 1200);
           };
           try {
             if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -8536,7 +8566,7 @@ export class CommitViewProvider
         if (!candidates.length) return;
         if (!shown.length) {
           list.appendChild(el("div", "rp-empty",
-            spec.strict ? "No matches" : "No match — Enter uses what you typed"));
+            spec.strict ? l10nT("No matches") : l10nT("No match — Enter uses what you typed")));
           return;
         }
         shown.forEach(function (c, i) {
@@ -8662,8 +8692,8 @@ export class CommitViewProvider
         var wrap = el("div", "rp-inputwrap");
         input = document.createElement("input");
         input.type = "text";
-        input.placeholder = "Filter";
-        input.setAttribute("aria-label", "Filter " + spec.title);
+        input.placeholder = l10nT("Filter");
+        input.setAttribute("aria-label", l10nT("Filter {0}", spec.title));
         wrap.appendChild(input);
         panel.appendChild(wrap);
       }
@@ -8675,7 +8705,7 @@ export class CommitViewProvider
       // No confirm button: a pick IS the commit, exactly like the branch menu.
       var foot = el("div", "rp-foot");
       var cancel = document.createElement("button");
-      cancel.textContent = "Cancel";
+      cancel.textContent = l10nT("Cancel");
       cancel.addEventListener("click", function () { closeDialog(undefined); });
       foot.appendChild(cancel);
       panel.appendChild(foot);
@@ -8692,7 +8722,7 @@ export class CommitViewProvider
         if (sel < 0) sel = 0;
         list.textContent = "";
         if (!shown.length) {
-          list.appendChild(el("div", "rp-empty", "No matches"));
+          list.appendChild(el("div", "rp-empty", l10nT("No matches")));
           return;
         }
         shown.forEach(function (c, i) {
@@ -8866,8 +8896,8 @@ export class CommitViewProvider
       const search = el("div", "bm-search");
       const input = document.createElement("input");
       input.type = "text";
-      input.placeholder = "Search for branches and actions";
-      input.setAttribute("aria-label", "Search branches and actions");
+      input.placeholder = l10nT("Search for branches and actions");
+      input.setAttribute("aria-label", l10nT("Search branches and actions"));
       input.setAttribute("role", "combobox");
       input.setAttribute("aria-expanded", "true");
       input.setAttribute("aria-autocomplete", "list");
@@ -8897,7 +8927,7 @@ export class CommitViewProvider
       const list = el("div", "bm-list");
       list.id = "bm-list";
       list.setAttribute("role", "listbox");
-      list.setAttribute("aria-label", "Branches and actions");
+      list.setAttribute("aria-label", l10nT("Branches and actions"));
       // The highlight follows the pointer, but not while a submenu is open —
       // the way to it can cross other rows — and not when the list scrolls
       // under a pointer that has not moved.
@@ -9021,16 +9051,17 @@ export class CommitViewProvider
       const modal = el("div", "push-modal");
       modal.setAttribute("role", "dialog");
       modal.setAttribute("aria-modal", "true");
-      modal.setAttribute("aria-label", "Confirm push");
+      modal.setAttribute("aria-label", l10nT("Confirm push"));
 
       const head = el("div", "pm-head");
       head.appendChild(el("i", "codicon codicon-arrow-up"));
       const title = el("div", "pm-title");
-      title.innerHTML = "Push to <b></b>";
+      title.appendChild(document.createTextNode(l10nT("Push to") + " "));
+      title.appendChild(el("b"));
       title.querySelector("b").textContent = data.target;
       head.appendChild(title);
       const close = el("button", "pm-close", '<i class="codicon codicon-close" aria-hidden="true"></i>');
-      close.setAttribute("aria-label", "Close");
+      close.setAttribute("aria-label", l10nT("Close"));
       close.addEventListener("click", () => { if (!pushBusy) closePushModal(); });
       head.appendChild(close);
       modal.appendChild(head);
@@ -9038,10 +9069,10 @@ export class CommitViewProvider
       if (data.worktree) {
         const where = el("div", "pm-where", '<i class="codicon codicon-worktree" aria-hidden="true"></i>');
         const whereText = el("span");
-        whereText.textContent = "From the worktree " + data.worktree.name + " — " + data.worktree.shownPath;
+        whereText.textContent = l10nT("From the worktree ") + data.worktree.name + " — " + data.worktree.shownPath;
         where.appendChild(whereText);
         modal.appendChild(where);
-        modal.setAttribute("aria-label", "Confirm push from the worktree " + data.worktree.name);
+        modal.setAttribute("aria-label", l10nT("Confirm push from the worktree ") + data.worktree.name);
       }
 
       const stats = el("div", "pm-stats");
@@ -9066,8 +9097,8 @@ export class CommitViewProvider
         const b = el("span", data.needsForce ? "pm-rewrite" : "pm-behind",
           '<i class="codicon codicon-' + (data.needsForce ? "warning" : "arrow-down") + '"></i>');
         b.appendChild(document.createTextNode(data.needsForce
-          ? "Rewrites the remote branch"
-          : data.behind + " behind — pull first"));
+          ? l10nT("Rewrites the remote branch")
+          : data.behind + l10nT(" behind — pull first")));
         stats.appendChild(b);
       }
       modal.appendChild(stats);
@@ -9078,7 +9109,7 @@ export class CommitViewProvider
       // below are what all of them change together. Clicking a file opens its
       // diff in the editor; the modal stays.
       const R = window.GsChangeRows;
-      body.appendChild(R ? R.sectionLabel("Commits to push") : el("div", "cr-section-label", "Commits to push"));
+      body.appendChild(R ? R.sectionLabel(l10nT("Commits to push")) : el("div", "cr-section-label", l10nT("Commits to push")));
       data.commits.forEach((c) => {
         if (!R) { body.appendChild(el("div", "cr-commit", esc(c.sha.slice(0, 7) + "  " + c.subject))); return; }
         body.appendChild(R.commitRow(c, {
@@ -9089,9 +9120,9 @@ export class CommitViewProvider
           }),
         }));
       });
-      body.appendChild(R ? R.sectionLabel("Files changed") : el("div", "cr-section-label", "Files changed"));
+      body.appendChild(R ? R.sectionLabel(l10nT("Files changed")) : el("div", "cr-section-label", l10nT("Files changed")));
       if (!data.files.length) {
-        body.appendChild(R ? R.emptyNote("No file changes in these commits.") : el("div", "cr-empty", "No file changes in these commits."));
+        body.appendChild(R ? R.emptyNote(l10nT("No file changes in these commits.")) : el("div", "cr-empty", l10nT("No file changes in these commits.")));
       } else {
         data.files.forEach((f) => {
           if (!R) { body.appendChild(el("div", "cr-file", esc(f.path))); return; }
@@ -9108,21 +9139,21 @@ export class CommitViewProvider
       const foot = el("div", "pm-foot");
       const alt = el("div", "pm-foot-alt");
       const undo = el("button", "pm-btn danger", '<i class="codicon codicon-discard"></i>');
-      undo.appendChild(document.createTextNode("Undo commits…"));
-      undo.title = "Undo these local commits — reset them back to staged / unstaged changes";
+      undo.appendChild(document.createTextNode(l10nT("Undo commits…")));
+      undo.title = l10nT("Undo these local commits — reset them back to staged / unstaged changes");
       undo.addEventListener("click", () => { if (!pushBusy) vscode.postMessage({ type: "discardLocalCommits" }); });
       alt.appendChild(undo);
       // Branch off instead of pushing here — create a new branch at these commits.
       const newBranch = el("button", "pm-btn ghost", '<i class="codicon codicon-git-branch"></i>');
-      newBranch.appendChild(document.createTextNode("New branch…"));
-      newBranch.title = "Create a new branch from these commits (and switch to it)";
+      newBranch.appendChild(document.createTextNode(l10nT("New branch…")));
+      newBranch.title = l10nT("Create a new branch from these commits (and switch to it)");
       newBranch.addEventListener("click", () => {
         if (pushBusy) return;
         openRefPrompt({
-          title: "New Branch from These Commits",
-          hint: "Creates the branch at the current commit and switches to it.",
+          title: l10nT("New Branch from These Commits"),
+          hint: l10nT("Creates the branch at the current commit and switches to it."),
           placeholder: "feature/my-change",
-          confirmLabel: "Create Branch",
+          confirmLabel: l10nT("Create Branch"),
           candidates: [],
           allowFreeText: true,
           validate: "refName",
@@ -9133,7 +9164,7 @@ export class CommitViewProvider
       });
       alt.appendChild(newBranch);
       foot.appendChild(alt);
-      const cancel = el("button", "pm-btn secondary", "Cancel");
+      const cancel = el("button", "pm-btn secondary", l10nT("Cancel"));
       cancel.addEventListener("click", () => { if (!pushBusy) closePushModal(); });
       foot.appendChild(cancel);
       // A plain push CANNOT succeed once the branch diverged in both
@@ -9142,14 +9173,14 @@ export class CommitViewProvider
       // doomed. In that state the button becomes the force, and says so.
       const pushB = el("button", "pm-btn primary" + (data.needsForce ? " danger" : ""),
         '<i class="codicon codicon-' + (data.needsForce ? "repo-force-push" : "arrow-up") + '"></i>');
-      pushB.appendChild(document.createTextNode(data.needsForce ? "Force push" : "Push"));
+      pushB.appendChild(document.createTextNode(data.needsForce ? l10nT("Force push") : l10nT("Push")));
       pushForce = !!data.needsForce;
       if (data.needsForce) {
         pushB.title =
-          "You rewrote a commit the remote already has, so a normal push is refused. "
-          + "This replaces only the versions you rewrote — nobody else's commits are on the remote branch.";
+          l10nT("You rewrote a commit the remote already has, so a normal push is refused. ")
+          + l10nT("This replaces only the versions you rewrote — nobody else's commits are on the remote branch.");
       }
-      if (!data.canPush) { pushB.disabled = true; pushB.title = data.reason || "Cannot push"; }
+      if (!data.canPush) { pushB.disabled = true; pushB.title = data.reason || l10nT("Cannot push"); }
       pushB.addEventListener("click", () => {
         if (pushBusy || !data.canPush) return;
         pushBusy = true;
@@ -9176,7 +9207,7 @@ export class CommitViewProvider
       pushBusy = false;
       let err = pushModal.querySelector(".pm-error");
       if (!err) { err = el("div", "pm-error"); pushModal.querySelector(".pm-body").appendChild(err); }
-      err.textContent = text || "Operation failed.";
+      err.textContent = text || l10nT("Operation failed.");
       pushModal.querySelectorAll(".pm-btn").forEach((b) => { b.disabled = false; });
       const pushB = pushModal.querySelector(".pm-btn.primary");
       // A rejection git blames on fast-forward means the same push will be
@@ -9189,9 +9220,9 @@ export class CommitViewProvider
         pushB.textContent = "";
         const ic = el("i", "codicon codicon-repo-force-push");
         pushB.appendChild(ic);
-        pushB.appendChild(document.createTextNode("Force push"));
+        pushB.appendChild(document.createTextNode(l10nT("Force push")));
         pushB.title =
-          "The remote refused a normal push. This uses --force-with-lease, "
+          l10nT("The remote refused a normal push. This uses --force-with-lease, ")
           + "which still refuses if someone else pushed.";
         pushForce = true;
       }
@@ -9249,9 +9280,9 @@ export class CommitViewProvider
 
     // ---- Rendering -------------------------------------------------------
     const GROUP_DEFS = [
-      { kind: "merge", label: "Merge Conflicts", staged: false },
-      { kind: "staged", label: "Staged", staged: true },
-      { kind: "unstaged", label: "Unstaged", staged: false },
+      { kind: "merge", label: l10nT("Merge Conflicts"), staged: false },
+      { kind: "staged", label: l10nT("Staged"), staged: true },
+      { kind: "unstaged", label: l10nT("Unstaged"), staged: false },
     ];
 
     // Signature of everything the file-list render depends on (layout + each
@@ -9408,7 +9439,8 @@ export class CommitViewProvider
       }
       changesTotal.textContent = String(files.size);
       changesTotal.classList.toggle("visible", files.size > 0);
-      changesTotal.setAttribute("aria-label", countWords(files.size, "changed file", "changed files"));
+      changesTotal.setAttribute("aria-label",
+        countWords(files.size, l10nT("changed file"), l10nT("changed files")));
 
       const groups = [];
       if (stagingModel === "checkboxes") {
@@ -9505,10 +9537,10 @@ export class CommitViewProvider
       // said "none" over a staged part.
       master.indeterminate = !master.checked &&
         all.some(function (f) { return f.state !== "unstaged"; });
-      const masterTip = master.checked ? "Uncheck all" : "Check all";
+      const masterTip = master.checked ? l10nT("Uncheck all") : l10nT("Check all");
       if (master.dataset.tip !== masterTip) master.dataset.tip = masterTip;
       setAttr(header, "aria-checked", master.indeterminate ? "mixed" : master.checked ? "true" : "false");
-      setAttr(header, "aria-label", "Changes, " + countWords(all.length));
+      setAttr(header, "aria-label", l10nT("Changes, {0}", countWords(all.length)));
       header.querySelector(".gcount").textContent = String(all.length);
 
       const stagedByPath = new Map();
@@ -9603,13 +9635,13 @@ export class CommitViewProvider
       });
       header.__activate = function (how) { if (how === "space") toggleAll(); };
       const glabel = el("span", "glabel");
-      glabel.textContent = "Changes";
+      glabel.textContent = l10nT("Changes");
       const gcount = el("span", "gcount");
       const actions = el("span", "group-actions");
       const discardAllNow = function () {
         vscode.postMessage({ type: "discardAll", group: "unstaged" });
       };
-      const discardAll = rowBtn(ICON_DISCARD, "Discard All", function (ev) {
+      const discardAll = rowBtn(ICON_DISCARD, l10nT("Discard All"), function (ev) {
         ev.stopPropagation();
         discardAllNow();
       });
@@ -9620,7 +9652,7 @@ export class CommitViewProvider
       // UNCHECKED ones. Ctrl/cmd-click takes everything, matching the split
       // model's headers; right-click offers the two halves by name, because
       // there is no second header to modifier-click.
-      header.title = "Changes — Ctrl/Cmd-click to select every file, " +
+      header.title = l10nT("Changes — Ctrl/Cmd-click to select every file, ") +
         "right-click to select just the checked or unchecked ones";
       const selectKeys = function (keys) {
         selectedRows.clear();
@@ -9652,25 +9684,25 @@ export class CommitViewProvider
         const checked = keysFor("checked");
         const unchecked = keysFor("unchecked");
         const items = [];
-        items.push({ icon: "check-all", label: "Select All (" + all.length + ")",
+        items.push({ icon: "check-all", label: l10nT("Select All (") + all.length + ")",
           fn: function () { selectKeys(keysFor("all")); } });
         if (checked.length > 0) {
-          items.push({ icon: "check", label: "Select Checked (" + checked.length + ")",
+          items.push({ icon: "check", label: l10nT("Select Checked (") + checked.length + ")",
             fn: function () { selectKeys(checked); } });
         }
         if (unchecked.length > 0) {
-          items.push({ icon: "circle-outline", label: "Select Unchecked (" + unchecked.length + ")",
+          items.push({ icon: "circle-outline", label: l10nT("Select Unchecked (") + unchecked.length + ")",
             fn: function () { selectKeys(unchecked); } });
         }
         items.push({ sep: true });
-        items.push({ icon: "git-stash", label: "Stash Everything Staged",
+        items.push({ icon: "git-stash", label: l10nT("Stash Everything Staged"),
           fn: function () { vscode.postMessage({ type: "stashStaged" }); } });
-        items.push({ icon: "git-stash", label: "Stash All Changes",
+        items.push({ icon: "git-stash", label: l10nT("Stash All Changes"),
           fn: function () { vscode.postMessage({ type: "stash" }); } });
         // The header's own button, for the keyboard (it is out of the tab order).
         items.push({ sep: true });
-        items.push({ icon: "discard", label: "Discard All", danger: true, fn: discardAllNow });
-        openActionMenu("Changes", items, header, null);
+        items.push({ icon: "discard", label: l10nT("Discard All"), danger: true, fn: discardAllNow });
+        openActionMenu(l10nT("Changes"), items, header, null);
       };
       header.__menu = menu;
       header.addEventListener("contextmenu", menu);
@@ -9690,7 +9722,7 @@ export class CommitViewProvider
       // Named by its file for the pointer's tooltip; the ROW is the tick for
       // the keyboard (Space) and for a screen reader (aria-checked), so the
       // box itself is out of the tab order and the accessibility tree.
-      ck.setAttribute("aria-label", "Include " + path + " in the commit");
+      ck.setAttribute("aria-label", l10nT("Include {0} in the commit", path));
       ck.tabIndex = -1;
       ck.setAttribute("aria-hidden", "true");
       ck.checked = state === "staged";
@@ -9700,10 +9732,10 @@ export class CommitViewProvider
       ck.indeterminate = state === "partial";
       row.setAttribute("aria-checked", state === "staged" ? "true" : state === "partial" ? "mixed" : "false");
       ck.title = state === "staged"
-        ? "Included in the commit — click to remove it"
+        ? l10nT("Included in the commit — click to remove it")
         : state === "partial"
-          ? "Partly included — click to include the rest"
-          : "Not included — click to include it";
+          ? l10nT("Partly included — click to include the rest")
+          : l10nT("Not included — click to include it");
       const tick = function () {
         // Ticking the file supersedes any hunk view of it — the indexes it was
         // showing describe a state that no longer exists.
@@ -9771,7 +9803,7 @@ export class CommitViewProvider
       if (!twist) return;
       if (twist.classList.contains("open") !== open) twist.classList.toggle("open", open);
       setAttr(twist, "aria-expanded", open ? "true" : "false");
-      const tip = open ? "Hide individual changes" : "Show individual changes";
+      const tip = open ? l10nT("Hide individual changes") : l10nT("Show individual changes");
       if (twist.dataset.tip !== tip && twist.getAttribute("title") !== tip) twist.title = tip;
       setAttr(row, "aria-expanded", open ? "true" : "false");
     }
@@ -9826,11 +9858,11 @@ export class CommitViewProvider
       wrap.dataset.level = String(level);
       const hunks = hunkCache.get(path);
       if (!hunks) {
-        wrap.appendChild(el("div", "hunk-empty", "Reading changes…"));
+        wrap.appendChild(el("div", "hunk-empty", l10nT("Reading changes…")));
         return wrap;
       }
       if (hunks.length === 0) {
-        wrap.appendChild(el("div", "hunk-empty", "No separate changes to pick from."));
+        wrap.appendChild(el("div", "hunk-empty", l10nT("No separate changes to pick from.")));
         return wrap;
       }
       for (const h of hunks) {
@@ -9847,10 +9879,10 @@ export class CommitViewProvider
         hck.checked = state === "staged";
         hck.indeterminate = state === "partial";
         hck.title = state === "staged"
-          ? "Staged — click to unstage this change"
+          ? l10nT("Staged — click to unstage this change")
           : state === "partial"
-            ? "Partly staged — click to stage the rest"
-            : "Include this change in the commit";
+            ? l10nT("Partly staged — click to stage the rest")
+            : l10nT("Include this change in the commit");
         const tickHunk = function () {
           // Paint the new state immediately. The host round trip re-reads git
           // and repaints authoritatively a moment later; without this the tick
@@ -9868,10 +9900,10 @@ export class CommitViewProvider
         const lines = el("span", "hunk-lines");
         // 1-based, matching what the editor's gutter shows.
         lines.textContent = h.lineCount > 1
-          ? "L" + (h.start + 1) + "–" + (h.end + 1)
-          : "L" + (h.start + 1);
+          ? l10nT("L{0}–{1}", h.start + 1, h.end + 1)
+          : l10nT("L{0}", h.start + 1);
         const prev = el("span", "hunk-preview");
-        prev.textContent = h.preview || "(whitespace only)";
+        prev.textContent = h.preview || l10nT("(whitespace only)");
         hrow.append(hck, lines, prev);
 
         // Clicking the row opens the file's diff at THIS change — the same way
@@ -9882,10 +9914,10 @@ export class CommitViewProvider
         hrow.setAttribute("aria-level", String(level));
         hrow.setAttribute("aria-checked", state === "staged" ? "true" : state === "partial" ? "mixed" : "false");
         hrow.setAttribute("aria-label", (h.lineCount > 1
-          ? "Lines " + (h.start + 1) + " to " + (h.end + 1)
-          : "Line " + (h.start + 1)) + ": " + (h.preview || "whitespace only"));
+          ? l10nT("Lines {0} to {1}", h.start + 1, h.end + 1)
+          : l10nT("Line {0}", h.start + 1)) + ": " + (h.preview || l10nT("whitespace only")));
         hrow.dataset.tkey = "h:" + path + ":" + h.index;
-        hrow.dataset.tip = "Open this change in the diff";
+        hrow.dataset.tip = l10nT("Open this change in the diff");
         const openHunk = function () {
           vscode.postMessage({
             type: "openDiff", path: path, staged: false, line: h.start,
@@ -9912,7 +9944,7 @@ export class CommitViewProvider
       const header = group.firstChild;
       header.__list = list;
       setAttr(header, "aria-expanded", isCollapsed ? "false" : "true");
-      setAttr(header, "aria-label", def.label + ", " + countWords(list.length));
+      setAttr(header, "aria-label", l10nT("{0}, {1}", def.label, countWords(list.length)));
       const gcount = header.querySelector(".gcount");
       if (gcount.textContent !== String(list.length)) gcount.textContent = String(list.length);
 
@@ -9940,8 +9972,8 @@ export class CommitViewProvider
       const gdot = el("span", "gdot");
       const glabel = el("span", "glabel");
       glabel.textContent = def.label;
-      header.title = def.label + " — click to collapse, " +
-        "Ctrl/Cmd-click to select every file in it, right-click for its actions";
+      header.title = l10nT("{0} — click to collapse, ", def.label) +
+        l10nT("Ctrl/Cmd-click to select every file in it, right-click for its actions");
       const gcount = el("span", "gcount");
 
       // Select the whole section. Ctrl/cmd-click matches the row modifier, and a
@@ -9971,17 +10003,17 @@ export class CommitViewProvider
       // the tab order.
       const acts = [];
       if (def.kind === "staged") {
-        acts.push({ svg: ICON_UNSTAGE, icon: "remove", label: "Unstage All", fn: () => {
+        acts.push({ svg: ICON_UNSTAGE, icon: "remove", label: l10nT("Unstage All"), fn: () => {
           queueGroup("staged", "unstage");
           vscode.postMessage({ type: "unstageAll", group: def.kind });
         } });
       } else {
-        acts.push({ svg: ICON_STAGE, icon: "add", label: "Stage All", fn: () => {
+        acts.push({ svg: ICON_STAGE, icon: "add", label: l10nT("Stage All"), fn: () => {
           queueGroup(def.kind, "stage");
           vscode.postMessage({ type: "stageAll", group: def.kind });
         } });
         if (def.kind === "unstaged") {
-          acts.push({ svg: ICON_DISCARD, icon: "discard", label: "Discard All", danger: true, fn: () => {
+          acts.push({ svg: ICON_DISCARD, icon: "discard", label: l10nT("Discard All"), danger: true, fn: () => {
             vscode.postMessage({ type: "discardAll", group: def.kind });
           } });
         }
@@ -9996,7 +10028,7 @@ export class CommitViewProvider
         const items = acts.map((a) => ({ icon: a.icon, label: a.label, fn: a.fn, danger: a.danger }));
         // What Ctrl/Cmd-click on the header does, from the keyboard.
         items.push({ sep: true });
-        items.push({ icon: "check-all", label: "Select All (" + list.length + ")", fn: () => {
+        items.push({ icon: "check-all", label: l10nT("Select All (") + list.length + ")", fn: () => {
           selectedRows.clear();
           for (let i = 0; i < list.length; i++) selectedRows.add(rowKey(def.kind, list[i].path));
           selectionAnchor = list.length > 0 ? rowKey(def.kind, list[list.length - 1].path) : null;
@@ -10005,8 +10037,8 @@ export class CommitViewProvider
         if (def.kind !== "merge") {
           items.push({ sep: true });
           items.push(def.kind === "staged"
-            ? { icon: "git-stash", label: "Stash Everything Staged", fn: () => vscode.postMessage({ type: "stashStaged" }) }
-            : { icon: "git-stash", label: "Stash All Changes", fn: () => vscode.postMessage({ type: "stash" }) });
+            ? { icon: "git-stash", label: l10nT("Stash Everything Staged"), fn: () => vscode.postMessage({ type: "stashStaged" }) }
+            : { icon: "git-stash", label: l10nT("Stash All Changes"), fn: () => vscode.postMessage({ type: "stash" }) });
         }
         openActionMenu(def.label, items, header, null);
       };
@@ -10073,7 +10105,8 @@ export class CommitViewProvider
         row.__paths = collectFolderFiles(dir, []);
         if (row.classList.contains("collapsed") !== isCollapsed) row.classList.toggle("collapsed", isCollapsed);
         setAttr(row, "aria-expanded", isCollapsed ? "false" : "true");
-        setAttr(row, "aria-label", dir.name + ", folder, " + countWords(row.__paths.length));
+        setAttr(row, "aria-label",
+          l10nT("{0}, {1}", dir.name + l10nT(", folder"), countWords(row.__paths.length)));
         nodes.push(row);
         if (!isCollapsed) renderNode(nodes, def, dir, depth + 1, opts);
       }
@@ -10106,17 +10139,17 @@ export class CommitViewProvider
       // buttons are the pointer's, and out of the tab order.
       const acts = [];
       if (def.staged) {
-        acts.push({ svg: ICON_UNSTAGE, icon: "remove", tip: "Unstage folder", label: "Unstage Folder", fn: () => {
+        acts.push({ svg: ICON_UNSTAGE, icon: "remove", tip: l10nT("Unstage folder"), label: l10nT("Unstage Folder"), fn: () => {
           queueFiles(row.__paths, "unstage");
           vscode.postMessage({ type: "unstageFolder", paths: row.__paths });
         } });
       } else {
-        acts.push({ svg: ICON_STAGE, icon: "add", tip: "Stage folder", label: "Stage Folder", fn: () => {
+        acts.push({ svg: ICON_STAGE, icon: "add", tip: l10nT("Stage folder"), label: l10nT("Stage Folder"), fn: () => {
           queueFiles(row.__paths, "stage");
           vscode.postMessage({ type: "stageFolder", paths: row.__paths });
         } });
         if (def.kind === "unstaged") {
-          acts.push({ svg: ICON_DISCARD, icon: "discard", tip: "Discard folder", label: "Discard Folder", danger: true, fn: () => {
+          acts.push({ svg: ICON_DISCARD, icon: "discard", tip: l10nT("Discard folder"), label: l10nT("Discard Folder"), danger: true, fn: () => {
             vscode.postMessage({ type: "discardFolder", paths: row.__paths });
           } });
         }
@@ -10136,7 +10169,7 @@ export class CommitViewProvider
         // A conflicted file is not stashed; the other folders' files can be.
         if (def.kind !== "merge") {
           items.push({ sep: true });
-          items.push({ icon: "git-stash", label: "Stash This Folder",
+          items.push({ icon: "git-stash", label: l10nT("Stash This Folder"),
             fn: () => vscode.postMessage({ type: "stashPaths", paths: row.__paths }) });
         }
         openActionMenu(name, items, row, "folder");
@@ -10238,19 +10271,19 @@ export class CommitViewProvider
 
       const actions = el("span", "row-actions");
       if (def.staged) {
-        actions.appendChild(rowBtn(ICON_UNSTAGE, "Unstage file", (ev) => {
+        actions.appendChild(rowBtn(ICON_UNSTAGE, l10nT("Unstage file"), (ev) => {
           ev.stopPropagation();
           queueOp(e.path, "unstage");
           vscode.postMessage({ type: "unstage", path: e.path });
         }));
       } else {
-        actions.appendChild(rowBtn(ICON_STAGE, "Stage file", (ev) => {
+        actions.appendChild(rowBtn(ICON_STAGE, l10nT("Stage file"), (ev) => {
           ev.stopPropagation();
           queueOp(e.path, "stage");
           vscode.postMessage({ type: "stage", path: e.path });
         }));
         if (def.kind === "unstaged") {
-          actions.appendChild(rowBtn(ICON_DISCARD, "Discard changes", (ev) => {
+          actions.appendChild(rowBtn(ICON_DISCARD, l10nT("Discard changes"), (ev) => {
             ev.stopPropagation();
             vscode.postMessage({ type: "discard", path: e.path });
           }));
@@ -10281,28 +10314,28 @@ export class CommitViewProvider
           return;
         }
         const items = [
-          { icon: "git-compare", label: "Open Changes", fn: open },
+          { icon: "git-compare", label: l10nT("Open Changes"), fn: open },
         ];
         if (letter !== "D") {
-          items.push({ icon: "go-to-file", label: "Open File",
+          items.push({ icon: "go-to-file", label: l10nT("Open File"),
             fn: () => vscode.postMessage({ type: "openFile", path: e.path }) });
         }
         items.push({ sep: true });
         if (def.staged) {
-          items.push({ icon: "remove", label: "Unstage",
+          items.push({ icon: "remove", label: l10nT("Unstage"),
             fn: () => { queueOp(e.path, "unstage"); vscode.postMessage({ type: "unstage", path: e.path }); } });
         } else {
-          items.push({ icon: "add", label: "Stage",
+          items.push({ icon: "add", label: l10nT("Stage"),
             fn: () => { queueOp(e.path, "stage"); vscode.postMessage({ type: "stage", path: e.path }); } });
           if (letter !== "!") {
-            items.push({ icon: "discard", label: "Discard Changes", danger: true,
+            items.push({ icon: "discard", label: l10nT("Discard Changes"), danger: true,
               fn: () => vscode.postMessage({ type: "discard", path: e.path }) });
           }
         }
         items.push({ sep: true });
-        items.push({ icon: "git-stash", label: "Stash This File",
+        items.push({ icon: "git-stash", label: l10nT("Stash This File"),
           fn: () => vscode.postMessage({ type: "stashPaths", paths: [e.path] }) });
-        items.push({ icon: "git-stash", label: def.staged ? "Stash Everything Staged" : "Stash All Changes",
+        items.push({ icon: "git-stash", label: def.staged ? l10nT("Stash Everything Staged") : l10nT("Stash All Changes"),
           fn: () => vscode.postMessage(
             def.staged ? { type: "stashStaged" } : { type: "stash" }) });
         openActionMenu(fileName, items, row, "file");
@@ -10374,8 +10407,8 @@ export class CommitViewProvider
       b.addEventListener("click", onClick);
       return b;
     }
-    const TIP_APPLY = "Apply: put these changes back and keep the stash";
-    const TIP_POP = "Pop: put these changes back and delete the stash";
+    const TIP_APPLY = l10nT("Apply: put these changes back and keep the stash");
+    const TIP_POP = l10nT("Pop: put these changes back and delete the stash");
     /**
      * Where some of a stash's files come back, named as the groups on screen
      * name it: a file comes back as it was stashed — staged if it was — so a
@@ -10385,10 +10418,10 @@ export class CommitViewProvider
     function landsIn(files) {
       const staged = files.some((f) => f.staged);
       const unstaged = files.some((f) => f.staged !== "all");
-      const asWas = " as " + (files.length === 1 ? "it was" : "they were") + " stashed";
-      if (stagingModel === "checkboxes") return "into Changes" + (staged ? ", staged" + asWas : "");
-      if (!staged) return "into Unstaged";
-      return (unstaged ? "into Staged and Unstaged" : "into Staged") + asWas;
+      const asWas = files.length === 1 ? l10nT(" as it was stashed") : l10nT(" as they were stashed");
+      if (stagingModel === "checkboxes") return l10nT("into Changes") + (staged ? l10nT(", staged") + asWas : "");
+      if (!staged) return l10nT("into Unstaged");
+      return (unstaged ? l10nT("into Staged and Unstaged") : l10nT("into Staged")) + asWas;
     }
     /** Some of a stash's files, by path, as its list has them. */
     function stashFilesOf(s, paths) {
@@ -10397,13 +10430,16 @@ export class CommitViewProvider
     }
     /** Move / Copy's tips, for the files they would bring back ("this file" for one). */
     function tipMove(files) {
-      return "Move: take " + (files.length === 1 ? "this file" : "these " + files.length + " files") +
-        " out of the stash, back " + landsIn(files);
+      return l10nT("Move: take {0} out of the stash, back {1}",
+        files.length === 1 ? l10nT("this file") : l10nT("these {0} files", files.length),
+        landsIn(files));
     }
     function tipCopy(files) {
       const one = files.length === 1;
-      return "Copy: bring " + (one ? "this file" : "these " + files.length + " files") +
-        " back " + landsIn(files) + ", and keep " + (one ? "it" : "them") + " in the stash";
+      return l10nT("Copy: bring {0} back {1}, and keep {2} in the stash",
+        one ? l10nT("this file") : l10nT("these {0} files", files.length),
+        landsIn(files),
+        one ? l10nT("it") : l10nT("them"));
     }
 
     // ---- Stashes group ---------------------------------------------------
@@ -10551,7 +10587,12 @@ export class CommitViewProvider
       return sha ? { sha: sha, paths: paths } : null;
     }
 
-    function countFiles(n) { return n === 1 ? "1 file" : String(n) + " files"; }
+    function countFiles(n) { return countWords(n); }
+
+    /** The selection menu's capitals ("Stage 3 Files"), where the count names a menu item. */
+    function countFilesCap(n) {
+      return n === 1 ? l10nT("1 File") : l10nT("{0} Files", n);
+    }
 
     /**
      * Everything a stash row shows, so an identical re-post touches nothing.
@@ -10633,12 +10674,15 @@ export class CommitViewProvider
       const header = el("div", "group-header");
       stashItem(header, "group:stashes", 1);
       header.setAttribute("aria-expanded", stashGroupCollapsed ? "false" : "true");
-      header.setAttribute("aria-label", "Stashes, " + countWords(list.length, "stash", "stashes"));
+      header.setAttribute("aria-label",
+        l10nT("Stashes, {0}", countWords(list.length, l10nT("stash"), l10nT("stashes"))));
       const glabel = el("span", "glabel");
-      glabel.textContent = "Stashes";
+      glabel.textContent = l10nT("Stashes");
       const gcount = el("span", "gcount");
       gcount.textContent = String(list.length);
-      header.title = "Stashes — click to " + (stashGroupCollapsed ? "show" : "hide") + " them";
+      header.title = stashGroupCollapsed
+        ? l10nT("Stashes — click to show them")
+        : l10nT("Stashes — click to hide them");
       header.append(el("span", "twisty", ICON_CHEVRON), el("span", "gdot"), glabel, el("span", "group-actions"));
       // None yet (a drag of the working tree's files shows the header): no "0".
       if (list.length > 0) header.appendChild(gcount);
@@ -10698,7 +10742,7 @@ export class CommitViewProvider
         ? '<i class="codicon codicon-warning" aria-hidden="true"></i>'
         : '<i class="codicon codicon-loading codicon-modifier-spin" aria-hidden="true"></i>'));
       const text = el("span", "name");
-      text.textContent = failed ? "Its files couldn't be read." : "Reading its files…";
+      text.textContent = failed ? l10nT("Its files couldn't be read.") : l10nT("Reading its files…");
       row.appendChild(text);
       if (!failed) row.setAttribute("aria-busy", "true");
       return row;
@@ -10779,14 +10823,14 @@ export class CommitViewProvider
 
     function stashItems(s) {
       return [
-        { icon: "diff-multiple", label: "Open All Changes",
+        { icon: "diff-multiple", label: l10nT("Open All Changes"),
           fn: () => vscode.postMessage({ type: "stashOpenAll", sha: s.sha }) },
         { sep: true },
-        { icon: "git-stash-apply", label: "Apply", tip: TIP_APPLY, fn: () => stashAct(s, "apply") },
-        { icon: "git-stash-pop", label: "Pop", tip: TIP_POP, fn: () => stashAct(s, "pop") },
-        { icon: "git-branch", label: "Create Branch…", fn: () => stashAct(s, "branch") },
+        { icon: "git-stash-apply", label: l10nT("Apply"), tip: TIP_APPLY, fn: () => stashAct(s, "apply") },
+        { icon: "git-stash-pop", label: l10nT("Pop"), tip: TIP_POP, fn: () => stashAct(s, "pop") },
+        { icon: "git-branch", label: l10nT("Create Branch…"), fn: () => stashAct(s, "branch") },
         { sep: true },
-        { icon: "trash", label: "Drop…", danger: true, fn: () => stashAct(s, "drop") },
+        { icon: "trash", label: l10nT("Drop…"), danger: true, fn: () => stashAct(s, "drop") },
       ];
     }
 
@@ -10816,15 +10860,15 @@ export class CommitViewProvider
       // The pointer's buttons, out of the tab order: the keyboard has them
       // in the row's menu (Shift+F10), as a file row's are.
       const actions = el("span", "row-actions");
-      const applyBtn = wordBtn("Apply", TIP_APPLY, (ev) => { ev.stopPropagation(); stashAct(s, "apply"); });
-      const popBtn = wordBtn("Pop", TIP_POP, (ev) => { ev.stopPropagation(); stashAct(s, "pop"); });
+      const applyBtn = wordBtn(l10nT("Apply"), TIP_APPLY, (ev) => { ev.stopPropagation(); stashAct(s, "apply"); });
+      const popBtn = wordBtn(l10nT("Pop"), TIP_POP, (ev) => { ev.stopPropagation(); stashAct(s, "pop"); });
       applyBtn.classList.add("stash-quick");
       applyBtn.dataset.act = "apply";
       popBtn.classList.add("stash-quick");
       popBtn.dataset.act = "pop";
       actions.append(applyBtn, popBtn);
       actions.appendChild(rowBtn('<i class="codicon codicon-ellipsis" aria-hidden="true"></i>',
-        "More Actions…", (ev) => { ev.stopPropagation(); openActionMenu(s.text, stashItems(s), row, "git-stash"); }));
+        l10nT("More Actions…"), (ev) => { ev.stopPropagation(); openActionMenu(s.text, stashItems(s), row, "git-stash"); }));
       row.appendChild(actions);
 
       const setOpen = (want) => {
@@ -10899,10 +10943,10 @@ export class CommitViewProvider
         const under = dir.path + "/";
         const insideFiles = all.filter((f) => f.path.indexOf(under) === 0);
         const inside = insideFiles.map((f) => f.path);
-        row.setAttribute("aria-label", dir.name + ", folder, " + countWords(inside.length));
+        row.setAttribute("aria-label", dir.name + l10nT(", folder, ") + countWords(inside.length));
         const factions = el("span", "row-actions");
-        const moveBtn = wordBtn("Move", tipMove(insideFiles), (ev) => { ev.stopPropagation(); stashFilesAct(s, inside, "move"); });
-        const copyBtn = wordBtn("Copy", tipCopy(insideFiles), (ev) => { ev.stopPropagation(); stashFilesAct(s, inside, "copy"); });
+        const moveBtn = wordBtn(l10nT("Move"), tipMove(insideFiles), (ev) => { ev.stopPropagation(); stashFilesAct(s, inside, "move"); });
+        const copyBtn = wordBtn(l10nT("Copy"), tipCopy(insideFiles), (ev) => { ev.stopPropagation(); stashFilesAct(s, inside, "copy"); });
         moveBtn.dataset.act = "move";
         copyBtn.dataset.act = "copy";
         factions.append(moveBtn, copyBtn);
@@ -10923,8 +10967,8 @@ export class CommitViewProvider
           if (ev) ev.preventDefault();
           const n = countWords(inside.length);
           openActionMenu(dir.name, [
-            { icon: "git-stash-pop", label: "Move " + n + " to Changes", tip: tipMove(insideFiles), fn: () => stashFilesAct(s, inside, "move") },
-            { icon: "git-stash-apply", label: "Copy " + n + " to Changes", tip: tipCopy(insideFiles), fn: () => stashFilesAct(s, inside, "copy") },
+            { icon: "git-stash-pop", label: l10nT("Move {0} to Changes", n), tip: tipMove(insideFiles), fn: () => stashFilesAct(s, inside, "move") },
+            { icon: "git-stash-apply", label: l10nT("Copy {0} to Changes", n), tip: tipCopy(insideFiles), fn: () => stashFilesAct(s, inside, "copy") },
           ], row, "folder");
         };
         row.addEventListener("contextmenu", row.__menu);
@@ -10957,7 +11001,7 @@ export class CommitViewProvider
       stashRowOrder.push(key);
       paintRowSelected(row);
       if (busy) row.setAttribute("aria-busy", "true");
-      row.title = f.oldPath ? f.path + " (was " + f.oldPath + ")" : f.path;
+      row.title = f.oldPath ? l10nT("{0} (was {1})", f.path, f.oldPath) : f.path;
       row.appendChild(el("span", "file-icon", ICON_FILE));
       const slash = f.path.lastIndexOf("/");
       const name = el("span", "name");
@@ -10975,15 +11019,15 @@ export class CommitViewProvider
       }
       if (f.staged) {
         const w = el("span", "stash-staged");
-        w.textContent = f.staged === "all" ? "staged" : "partly staged";
+        w.textContent = f.staged === "all" ? l10nT("staged") : l10nT("partly staged");
         w.dataset.tip = f.staged === "all"
-          ? "Staged when it was stashed: it comes back staged"
-          : "Staged, then changed again, when it was stashed: both versions come back";
+          ? l10nT("Staged when it was stashed: it comes back staged")
+          : l10nT("Staged, then changed again, when it was stashed: both versions come back");
         row.appendChild(w);
       }
       const actions = el("span", "row-actions");
-      const moveBtn = wordBtn("Move", tipMove([f]), (ev) => { ev.stopPropagation(); stashFilesAct(s, [f.path], "move"); });
-      const copyBtn = wordBtn("Copy", tipCopy([f]), (ev) => { ev.stopPropagation(); stashFilesAct(s, [f.path], "copy"); });
+      const moveBtn = wordBtn(l10nT("Move"), tipMove([f]), (ev) => { ev.stopPropagation(); stashFilesAct(s, [f.path], "move"); });
+      const copyBtn = wordBtn(l10nT("Copy"), tipCopy([f]), (ev) => { ev.stopPropagation(); stashFilesAct(s, [f.path], "copy"); });
       moveBtn.dataset.act = "move";
       copyBtn.dataset.act = "copy";
       actions.append(moveBtn, copyBtn);
@@ -10994,7 +11038,7 @@ export class CommitViewProvider
       // The staged word gives way at the narrowest widths; its tip keeps it
       // for the pointer, and the row's name below for a screen reader.
       status.dataset.tip = statusTitle(letter) +
-        (f.staged === "all" ? ", staged" : f.staged === "part" ? ", partly staged" : "");
+        (f.staged === "all" ? l10nT(", staged") : f.staged === "part" ? l10nT(", partly staged") : "");
       row.appendChild(status);
       // Its name in words — the file, its folder, its change, its staging —
       // rather than the row's text run together ("login.ts src/auth Move to
@@ -11003,8 +11047,8 @@ export class CommitViewProvider
       row.setAttribute("aria-label", [
         slash === -1 ? f.path : f.path.slice(slash + 1),
         folder,
-        statusTitle(letter).toLowerCase() + (f.oldPath ? " from " + f.oldPath : ""),
-        f.staged === "all" ? "staged" : f.staged === "part" ? "partly staged" : "",
+        statusTitle(letter).toLowerCase() + (f.oldPath ? l10nT(" from {0}", f.oldPath) : ""),
+        f.staged === "all" ? l10nT("staged") : f.staged === "part" ? l10nT("partly staged") : "",
       ].filter(Boolean).join(", "));
 
       const open = () => vscode.postMessage({ type: "stashOpenFile", sha: s.sha, path: f.path });
@@ -11014,22 +11058,22 @@ export class CommitViewProvider
         const sel = stashSelection();
         if (sel && sel.sha === s.sha && selectedRows.has(key) && sel.paths.length > 1) {
           const n = countFiles(sel.paths.length);
-          openActionMenu(n + " from “" + s.text + "”", [
-            { icon: "git-stash-pop", label: "Move " + n + " to Changes", tip: tipMove(stashFilesOf(s, sel.paths)), fn: () => stashFilesAct(s, sel.paths, "move") },
-            { icon: "git-stash-apply", label: "Copy " + n + " to Changes", tip: tipCopy(stashFilesOf(s, sel.paths)), fn: () => stashFilesAct(s, sel.paths, "copy") },
+          openActionMenu(l10nT("{0} from “{1}”", n, s.text), [
+            { icon: "git-stash-pop", label: l10nT("Move {0} to Changes", n), tip: tipMove(stashFilesOf(s, sel.paths)), fn: () => stashFilesAct(s, sel.paths, "move") },
+            { icon: "git-stash-apply", label: l10nT("Copy {0} to Changes", n), tip: tipCopy(stashFilesOf(s, sel.paths)), fn: () => stashFilesAct(s, sel.paths, "copy") },
             { sep: true },
-            { icon: "close", label: "Clear Selection", fn: clearSelection },
+            { icon: "close", label: l10nT("Clear Selection"), fn: clearSelection },
           ], row);
           return;
         }
-        const items = [{ icon: "git-compare", label: "Open Changes", fn: open }];
+        const items = [{ icon: "git-compare", label: l10nT("Open Changes"), fn: open }];
         if (f.staged && !f.onlyStaged) {
-          items.push({ icon: "git-compare", label: "Open Staged Changes",
+          items.push({ icon: "git-compare", label: l10nT("Open Staged Changes"),
             fn: () => vscode.postMessage({ type: "stashOpenFile", sha: s.sha, path: f.path, staged: true }) });
         }
         items.push({ sep: true });
-        items.push({ icon: "git-stash-pop", label: "Move to Changes", tip: tipMove([f]), fn: () => stashFilesAct(s, [f.path], "move") });
-        items.push({ icon: "git-stash-apply", label: "Copy to Changes", tip: tipCopy([f]), fn: () => stashFilesAct(s, [f.path], "copy") });
+        items.push({ icon: "git-stash-pop", label: l10nT("Move to Changes"), tip: tipMove([f]), fn: () => stashFilesAct(s, [f.path], "move") });
+        items.push({ icon: "git-stash-apply", label: l10nT("Copy to Changes"), tip: tipCopy([f]), fn: () => stashFilesAct(s, [f.path], "copy") });
         openActionMenu(name.textContent, items, row);
       };
       row.addEventListener("click", (ev) => {
@@ -11141,7 +11185,7 @@ export class CommitViewProvider
       // The lead action — the one this stop is waiting for — gets a row of
       // its own when the banner is too narrow for every button side by side.
       if (op.conflicts > 0) {
-        acts.appendChild(opButton("Resolve Conflicts…", "primary op-lead", function () {
+        acts.appendChild(opButton(l10nT("Resolve Conflicts…"), "primary op-lead", function () {
           vscode.postMessage({ type: "resolveConflicts" });
         }, "", false));
       }
@@ -11259,7 +11303,7 @@ export class CommitViewProvider
         document.body.classList.toggle("no-repo", !msg.hasRepo && !discovering);
         document.body.classList.toggle("discovering", discovering);
         loadingEl.classList.toggle("visible", discovering);
-        if (discovering) loadingText.textContent = "Looking for a repository…";
+        if (discovering) loadingText.textContent = l10nT("Looking for a repository…");
         renderHeader(msg);
         renderOpBanner(msg.hasRepo ? msg.operation : undefined);
         generateBtn.classList.toggle("visible", !!msg.aiEnabled);
@@ -11615,25 +11659,25 @@ function isRefusal(result: unknown): result is { ok: false; stderr: string } {
 function markedConflictsMessage(held: string[], stagedTheRest: boolean): string {
   if (held.length === 1 && !stagedTheRest) {
     return (
-      `${held[0]} still contains conflict markers. Staging it would mark the conflict ` +
-      "resolved and commit the markers — resolve them first."
+      l10n.t("{0} still contains conflict markers. Staging it would mark the conflict ", held[0]) +
+      l10n.t("resolved and commit the markers — resolve them first.")
     );
   }
   const head = held.slice(0, 3).join(", ");
   const list = held.length > 3 ? `${head} and ${held.length - 3} more` : head;
-  const count = held.length === 1 ? "1 file still contains" : `${held.length} files still contain`;
+  const count = held.length === 1 ? l10n.t("1 file still contains") : l10n.t("{0} files still contain", held.length);
   return (
-    (stagedTheRest ? "Staged everything else. " : "") +
-    `${count} conflict markers (${list}) — staging a file with markers in it tells git ` +
-    "the conflict is settled. Resolve them first."
+    (stagedTheRest ? l10n.t("Staged everything else. ") : "") +
+    l10n.t("{0} conflict markers ({1}) — staging a file with markers in it tells git ", count, list) +
+    l10n.t("the conflict is settled. Resolve them first.")
   );
 }
 
 /** "src/a.ts", or "3 files" — what a failed stage/unstage/discard was about. */
 function describePaths(paths: string[]): string {
   if (paths.length === 1) return paths[0];
-  if (paths.length === 0) return "the changes";
-  return `${paths.length} files`;
+  if (paths.length === 0) return l10n.t("the changes");
+  return l10n.t("{0} files", paths.length);
 }
 
 /**
@@ -11647,27 +11691,32 @@ function describePaths(paths: string[]): string {
 function discardConsequence(files: FileEntry[], partlyStaged: number): string {
   const untracked = files.filter((f) => f.status === "U").length;
   const tracked = files.length - untracked;
-  const gone = "These edits were never committed, so nothing — not even Undo — can bring them back.";
+  const gone = l10n.t("These edits were never committed, so nothing — not even Undo — can bring them back.");
   if (files.length === 1) {
     if (untracked === 1) {
-      return "The file is deleted. Git has never tracked it, so nothing — not even Undo — can bring it back.";
+      return l10n.t("The file is deleted. Git has never tracked it, so nothing — not even Undo — can bring it back.");
     }
     return partlyStaged === 1
-      ? `Its unstaged edits are lost; the part you staged stays staged. ${gone}`
-      : `The file goes back to its committed version. ${gone}`;
+      ? l10n.t("Its unstaged edits are lost; the part you staged stays staged. {0}", gone)
+      : l10n.t("The file goes back to its committed version. {0}", gone);
   }
   const parts: string[] = [];
   if (tracked > 0) {
     parts.push(
       partlyStaged > 0
-        ? `Unstaged edits are lost; ${partlyStaged === 1 ? "the file that has staged changes keeps them" : `the ${partlyStaged} files that have staged changes keep them`}.`
+        ? l10n.t(
+            "Unstaged edits are lost; {0}.",
+            partlyStaged === 1
+              ? l10n.t("the file that has staged changes keeps them")
+              : l10n.t("the {0} files that have staged changes keep them", partlyStaged),
+          )
         : tracked === 1
-          ? "The changed file goes back to its committed version."
-          : `All ${tracked} changed files go back to their committed version.`,
+          ? l10n.t("The changed file goes back to its committed version.")
+          : l10n.t("All {0} changed files go back to their committed version.", tracked),
     );
   }
   if (untracked > 0) {
-    parts.push(untracked === 1 ? "The untracked file is deleted." : `The ${untracked} untracked files are deleted.`);
+    parts.push(untracked === 1 ? l10n.t("The untracked file is deleted.") : l10n.t("The {0} untracked files are deleted.", untracked));
   }
   parts.push(gone);
   return parts.join(" ");

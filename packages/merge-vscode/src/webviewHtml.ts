@@ -15,6 +15,8 @@
 // asWebviewUri returns; it is opaque.
 
 import * as vscode from "vscode";
+import * as l10n from "@vscode/l10n";
+import { l10nWebviewScript } from "@gitstudio/l10n/index";
 
 export function mergeWebviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
   const nonce = getNonce();
@@ -24,14 +26,14 @@ export function mergeWebviewHtml(webview: vscode.Webview, extensionUri: vscode.U
   const styleUri = dist("webview", "main.css");
   const workerUri = dist("webview", "editor.worker.js");
   const csp = [
-    `default-src 'none'`,
+    "default-src 'none'",
     `img-src ${webview.cspSource} https: data:`,
     // Monaco injects styles at runtime; the bundled stylesheet is same-origin.
     `style-src ${webview.cspSource} 'unsafe-inline'`,
     `font-src ${webview.cspSource} data:`,
     // cspSource lets the blob worker importScripts() the bundled worker.
     `script-src 'nonce-${nonce}' ${webview.cspSource}`,
-    `worker-src blob:`,
+    "worker-src blob:",
   ].join("; ");
   return `<!DOCTYPE html>
 <html lang="en">
@@ -40,7 +42,7 @@ export function mergeWebviewHtml(webview: vscode.Webview, extensionUri: vscode.U
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link href="${styleUri}" rel="stylesheet" />
-  <title>Merge</title>
+  <title>${l10n.t("Merge")}</title>
   <style>
     html, body, #root { height: 100%; margin: 0; padding: 0; }
     body {
@@ -60,7 +62,8 @@ export function mergeWebviewHtml(webview: vscode.Webview, extensionUri: vscode.U
   </style>
 </head>
 <body>
-  <div id="root"><div id="placeholder">Loading editor…</div></div>
+  <div id="root"><div id="placeholder">${l10n.t("Loading editor…")}</div></div>
+  ${l10nWebviewScript(nonce)}
   <script nonce="${nonce}">
     window.__JBMERGE__ = { workerUri: "${workerUri}" };
   </script>
@@ -74,7 +77,7 @@ export function conflictsWebviewHtml(webview: vscode.Webview, extensionUri: vsco
   const dist = (...parts: string[]) =>
     webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "dist", ...parts));
   const csp = [
-    `default-src 'none'`,
+    "default-src 'none'",
     `img-src ${webview.cspSource} data:`,
     `style-src ${webview.cspSource}`,
     `font-src ${webview.cspSource} data:`,
@@ -88,10 +91,11 @@ export function conflictsWebviewHtml(webview: vscode.Webview, extensionUri: vsco
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link href="${dist("codicons", "codicon.css")}" rel="stylesheet" />
   <link href="${dist("webview", "conflicts.css")}" rel="stylesheet" />
-  <title>Conflicts</title>
+  <title>${l10n.t("Conflicts")}</title>
 </head>
 <body>
   <div id="root"></div>
+  ${l10nWebviewScript(nonce)}
   <script nonce="${nonce}" src="${dist("webview", "conflicts.js")}"></script>
 </body>
 </html>`;

@@ -58,6 +58,7 @@ import {
   willDropText,
 } from "./opText";
 import { patchElement, type PatchOptions } from "./patch";
+import * as l10n from "@vscode/l10n";
 
 export interface DashboardTimers {
   set(fn: () => void, ms: number): number;
@@ -210,19 +211,19 @@ function anchorElement(onConnect: () => void): HTMLElement {
 /** The attributes a hold in progress takes from a new state; the rest (its sweep) is its own. */
 const HOLD_ATTRS = ["aria-disabled", "disabled", "title", "aria-label"] as const;
 
-function plural(n: number, word: string): string {
-  return `${n} ${word}${n === 1 ? "" : "s"}`;
+function plural(n: number, one: string, many: string): string {
+  return l10n.t("{0} {1}", n, n === 1 ? one : many);
 }
 
 /** A resolved row's choice in one or two words (the pill adds the side's name: choicePill). */
 export function choiceText(choice: ConflictFileView["choice"]): string {
   return choice === "yours"
-    ? "kept yours"
+    ? l10n.t("kept yours")
     : choice === "theirs"
-      ? "kept theirs"
+      ? l10n.t("kept theirs")
       : choice === "merged"
-        ? "merged"
-        : "resolved";
+        ? l10n.t("merged")
+        : l10n.t("resolved");
 }
 
 /** The commit card's verb, by operation. */
@@ -230,15 +231,15 @@ function commitVerb(op: OperationView): string {
   switch (op.kind) {
     case "rebase":
     case "rebase-merge-step":
-      return "Replaying";
+      return l10n.t("Replaying");
     case "cherry-pick":
-      return "Picking";
+      return l10n.t("Picking");
     case "revert":
-      return "Reverting";
+      return l10n.t("Reverting");
     case "am":
-      return "Applying";
+      return l10n.t("Applying");
     default:
-      return "Commit";
+      return l10n.t("Commit");
   }
 }
 
@@ -309,7 +310,7 @@ export class ConflictsDashboard {
     this.element = el("div", "cd-dash");
     // A label on a plain div is ignored; as a region it is a landmark.
     this.element.setAttribute("role", "region");
-    this.element.setAttribute("aria-label", "Conflicts");
+    this.element.setAttribute("aria-label", l10n.t("Conflicts"));
     this.anchor = anchorElement(() => this.reattached());
     this.element.appendChild(this.anchor);
     this.patchOpts = {
@@ -530,7 +531,7 @@ export class ConflictsDashboard {
     mark.title = state.brand.name;
     // Which operation's conflicts (POLISH A5.4). A finished stash apply keeps
     // its own heading: git reports nothing in progress by then.
-    const heading = state.finished ? "Stash conflicts" : dashboardHeading(op);
+    const heading = state.finished ? l10n.t("Stash conflicts") : dashboardHeading(op);
     const title = el("h1", "cd-title", heading);
     root.setAttribute("aria-label", heading);
     const headline = el("div", "cd-headline");
@@ -597,14 +598,14 @@ export class ConflictsDashboard {
 
     if (op.pause) {
       const p = el("div", "cd-pause");
-      p.append(codicon("debug-pause"), el("span", "cd-pause-text", op.pause.detail || "Paused"));
+      p.append(codicon("debug-pause"), el("span", "cd-pause-text", op.pause.detail || l10n.t("Paused")));
       p.appendChild(
         el(
           "span",
           "cd-pause-sub",
           op.pause.reason === "exec-failed"
-            ? "A command in the plan failed. Fix what it needs, then continue."
-            : "Nothing to resolve here. Continue when you are ready.",
+            ? l10n.t("A command in the plan failed. Fix what it needs, then continue.")
+            : l10n.t("Nothing to resolve here. Continue when you are ready."),
         ),
       );
       root.appendChild(p);
@@ -640,7 +641,7 @@ export class ConflictsDashboard {
       bar.setAttribute("aria-valuemin", "0");
       bar.setAttribute("aria-valuemax", String(state.total));
       bar.setAttribute("aria-valuenow", String(resolvedCount));
-      bar.setAttribute("aria-label", "Files resolved");
+      bar.setAttribute("aria-label", l10n.t("Files resolved"));
       row.append(bar, el("span", "cd-progress-label", `${resolvedCount} of ${state.total} resolved`));
       root.appendChild(row);
     }
@@ -653,14 +654,14 @@ export class ConflictsDashboard {
       const card = state.finished
         ? { title: state.finished.title, note: state.finished.text }
         : blocked
-          ? { title: "Not ready to continue yet", note: op.continueBlocked! }
+          ? { title: l10n.t("Not ready to continue yet"), note: op.continueBlocked! }
           : successCard(op);
       const done = el("div", `cd-done${blocked ? " is-blocked" : ""}`);
       const note = el("span", "cd-done-note", card.note);
       note.id = "cd-done-note";
       done.append(codicon(blocked ? "warning" : "pass-filled", "cd-done-icon"), el("h2", "cd-done-title", card.title), note);
       if (!state.finished && !blocked) {
-        done.appendChild(el("span", "cd-done-hint", "Hold Undo on a file to bring its conflict back."));
+        done.appendChild(el("span", "cd-done-hint", l10n.t("Hold Undo on a file to bring its conflict back.")));
       }
       root.appendChild(done);
     }
@@ -673,7 +674,7 @@ export class ConflictsDashboard {
         el(
           "div",
           "cd-empty",
-          op.kind === "none" ? "No conflicted files." : "No conflicted files at this step.",
+          op.kind === "none" ? l10n.t("No conflicted files.") : l10n.t("No conflicted files at this step."),
         ),
       );
     }
@@ -858,7 +859,7 @@ export class ConflictsDashboard {
     const actions = el("span", "cd-tip-actions");
     if (tip.why) {
       const why = tip.why;
-      const b = el("button", "cd-link", "Why?");
+      const b = el("button", "cd-link", l10n.t("Why?"));
       b.type = "button";
       b.dataset.key = "tip-why";
       b.title = why;
@@ -866,7 +867,7 @@ export class ConflictsDashboard {
       actions.appendChild(b);
     }
     actions.appendChild(
-      this.button("Got it", "Don't show this again", "tip-dismiss", false, () => this.post({ type: "dismissTip", id: tip.id })),
+      this.button(l10n.t("Got it"), l10n.t("Don't show this again"), "tip-dismiss", false, () => this.post({ type: "dismissTip", id: tip.id })),
     );
     t.appendChild(actions);
     return t;
@@ -887,7 +888,7 @@ export class ConflictsDashboard {
       if (word) this.pillWords.add(word);
     }
     const choices = (["yours", "theirs", "merged"] as const).map((choice) => `✓ ${choicePill({ choice, shape: "text" }, op).text}`);
-    choices.push("✓ deleted", "✓ resolved");
+    choices.push(l10n.t("✓ deleted"), l10n.t("✓ resolved"));
     const sizer = el("div", "cd-sizer");
     sizer.setAttribute("aria-hidden", "true");
     const cell = el("span", "cd-sizer-cell");
@@ -947,7 +948,7 @@ export class ConflictsDashboard {
     const status = el("span", "cd-status");
     if (busy) {
       const s = el("span", "cd-spinner");
-      s.setAttribute("aria-label", "Working");
+      s.setAttribute("aria-label", l10n.t("Working"));
       status.appendChild(s);
     } else if (resolved) {
       const ring = el("span", "cd-check");
@@ -989,8 +990,8 @@ export class ConflictsDashboard {
       if (f.shape === "both-deleted") {
         actions.appendChild(
           this.button(
-            "Delete the file",
-            "Neither side has this file — delete it and stage the deletion",
+            l10n.t("Delete the file"),
+            l10n.t("Neither side has this file — delete it and stage the deletion"),
             `delete:${f.path}`,
             disabled,
             () => this.post({ type: "delete", path: f.path, seq: this.press(f.path) }),
@@ -1004,12 +1005,12 @@ export class ConflictsDashboard {
           const commit = f.shape === "submodule" ? f.commits?.[role] : undefined;
           actions.appendChild(
             this.button(
-              missing ? "Delete the file" : `Accept ${roleWord(role)}`,
+              missing ? l10n.t("Delete the file") : l10n.t("Accept {0}", roleWord(role)),
               missing
-                ? `${roleWord(role)}${side.name ? ` (${side.name})` : ""} has no version of this file — accepting it deletes the file`
+                ? l10n.t("{0}{1} has no version of this file — accepting it deletes the file", roleWord(role), side.name ? ` (${side.name})` : "")
                 : f.shape === "submodule"
-                  ? `Point the submodule at ${role}'s commit${commit ? ` ${commit.slice(0, 7)}` : ""}${side.name ? ` (${side.name})` : ""} and stage it`
-                  : `Resolve the whole file with ${role}${side.description ? ` — ${side.description}` : side.name ? ` (${side.name})` : ""}`,
+                  ? l10n.t("Point the submodule at {0}'s commit{1}{2} and stage it", role, commit ? ` ${commit.slice(0, 7)}` : "", side.name ? ` (${side.name})` : "")
+                  : l10n.t("Resolve the whole file with {0}{1}", role, side.description ? ` — ${side.description}` : side.name ? ` (${side.name})` : ""),
               `accept:${role}:${f.path}`,
               disabled,
               () => this.post({ type: "accept", path: f.path, role, seq: this.press(f.path) }),
@@ -1020,8 +1021,8 @@ export class ConflictsDashboard {
         if (hasText(f.shape)) {
           actions.appendChild(
             this.button(
-              "Merge…",
-              "Resolve it change by change in the merge editor",
+              l10n.t("Merge…"),
+              l10n.t("Resolve it change by change in the merge editor"),
               `merge:${f.path}`,
               disabled,
               () => this.post({ type: "merge", path: f.path }),
@@ -1092,11 +1093,11 @@ export class ConflictsDashboard {
     const btn = el("button", "cd-undo-hold cd-slot-yours");
     btn.type = "button";
     btn.dataset.key = `restore:${path}`;
-    btn.title = "Hold to bring the conflict back (hold Enter or Space from the keyboard)";
-    btn.setAttribute("aria-label", `Hold to undo the resolution of ${path}`);
+    btn.title = l10n.t("Hold to bring the conflict back (hold Enter or Space from the keyboard)");
+    btn.setAttribute("aria-label", l10n.t("Hold to undo the resolution of {0}", path));
     gate(btn, g);
     const fill = el("span", "cd-undo-fill");
-    const label = el("span", "cd-undo-label", "Hold to undo");
+    const label = el("span", "cd-undo-label", l10n.t("Hold to undo"));
     btn.append(fill, label);
 
     let timer = 0;
@@ -1190,7 +1191,7 @@ export class ConflictsDashboard {
     // the 3 conflicted files first", "3 files still have conflicts"): the
     // footer read "30 conflicting files  30 files still have conflicts".
     const why = op.verbs.continue && !op.canContinue ? continueBlockedText(op, pending) : "";
-    if (pending > 0 && !why) foot.appendChild(el("span", "cd-counter", plural(pending, "conflicting file")));
+    if (pending > 0 && !why) foot.appendChild(el("span", "cd-counter", plural(pending, l10n.t("conflicting file"), l10n.t("conflicting files"))));
 
     if (op.canSkip && op.verbs.skip) {
       foot.appendChild(
@@ -1242,7 +1243,7 @@ export class ConflictsDashboard {
       foot.appendChild(
         // Secondary: beside Continue there is ONE primary action (the verifier
         // found two identical primary buttons on the finished card).
-        this.button("Close", "Close this dashboard", "close", false, () => this.post({ type: "close" })),
+        this.button(l10n.t("Close"), l10n.t("Close this dashboard"), "close", false, () => this.post({ type: "close" })),
       );
     }
     return foot;
@@ -1256,13 +1257,13 @@ export class ConflictsDashboard {
         ? abortConfirm(op)
         : which === "skip"
           ? skipConfirm(op)
-          : { question: "Drop the empty commit?", detail: willDropText(op), confirm: "Drop it and continue" };
+          : { question: l10n.t("Drop the empty commit?"), detail: willDropText(op), confirm: l10n.t("Drop it and continue") };
     const row = el("div", "cd-confirm");
     row.setAttribute("role", "alertdialog");
     row.setAttribute("aria-label", ask.question);
     const text = el("div", "cd-confirm-text");
     text.append(el("strong", "cd-confirm-q", ask.question), el("span", "cd-confirm-d", ask.detail));
-    const keep = this.button("Keep going", "Leave everything as it is", "confirm-keep", false, () => {
+    const keep = this.button(l10n.t("Keep going"), l10n.t("Leave everything as it is"), "confirm-keep", false, () => {
       this.confirming = undefined;
       this.rerender(which ? triggerKey(which) : undefined);
     });

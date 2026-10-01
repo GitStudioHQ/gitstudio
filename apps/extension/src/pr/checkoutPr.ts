@@ -26,6 +26,7 @@ import { listGitHubRemotes, type GitHubRepoContext } from "./repoContext";
 import { applyOrAsk, checkoutOp, type Applied } from "../git/inTheWay";
 import { promptPick } from "../ui/dialogs";
 import { saidCheckedOutElsewhere } from "../views/branchElsewhere";
+import * as l10n from "@vscode/l10n";
 
 // Checkout a pull request the way `gh pr checkout` does: onto its REAL head
 // branch, tracking it where it lives, so a push from here reaches the pull
@@ -85,12 +86,12 @@ export async function checkoutPullRequest(ctx: GitHubRepoContext, pr: PullReques
   }
 
   const outcome = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: `Checking out PR #${n}…`, cancellable: true },
+    { location: vscode.ProgressLocation.Notification, title: l10n.t("Checking out PR #{0}…", n), cancellable: true },
     async (_progress, token): Promise<Outcome> => {
       const ac = new AbortController();
       token.onCancellationRequested(() => ac.abort());
       const signal = ac.signal;
-      if (!headRepo) return copy(ctx, n, `The repository PR #${n}'s branch came from is gone`, signal);
+      if (!headRepo) return copy(ctx, n, l10n.t("The repository PR #{0}'s branch came from is gone", n), signal);
 
       // The remote that names the head's repository — added when there is none.
       const found = await remoteFor(entry, headRepo);
@@ -98,7 +99,7 @@ export async function checkoutPullRequest(ctx: GitHubRepoContext, pr: PullReques
       let added: string | undefined;
       if (!remote) {
         const made = await addHeadRemote(ctx, headRepo, sameRepo);
-        if ("error" in made) return { kind: "error", message: `Couldn't check out PR #${n}: ${made.error}` };
+        if ("error" in made) return { kind: "error", message: l10n.t("Couldn't check out PR #{0}: {1}", n, made.error) };
         remote = added = made.name;
       }
       const target: PrBranchTarget = {
@@ -113,7 +114,7 @@ export async function checkoutPullRequest(ctx: GitHubRepoContext, pr: PullReques
       if ("error" in fetched) {
         if (added) await entry.ctx.process.run(["remote", "remove", "--", added]).catch(() => undefined);
         if (fetched.gone) return copy(ctx, n, `${pr.head.ref} is gone from ${headRepo}`, signal);
-        return { kind: "error", message: `Couldn't fetch PR #${n}'s branch from ${headRepo}: ${fetched.error}` };
+        return { kind: "error", message: l10n.t("Couldn't fetch PR #{0}'s branch from {1}: {2}", n, headRepo, fetched.error) };
       }
       return { kind: "planned", target, plan: await planPrBranch(entry.ctx.process, target, fetched.sha), ...(added ? { added } : {}) };
     },
@@ -125,22 +126,23 @@ export async function checkoutPullRequest(ctx: GitHubRepoContext, pr: PullReques
   let done: string | undefined;
   if (outcome.kind === "copy") {
     done = await applyCopy(entry, pr, outcome.plan);
-    if (done) done = `${outcome.why}, so it was checked out as ${outcome.plan.local} at its last commit — a push from there can't reach the pull request. ${done}`;
+    if (done) done = l10n.t("{0}, so it was checked out as {1} at its last commit — a push from there can't reach the pull request. {2}", outcome.why, outcome.plan.local, done);
   } else {
     done = await land(entry, pr, outcome.target, outcome.plan);
     if (!done && outcome.added) await forgetUnused(entry, outcome.added);
-    if (done && outcome.added) done += ` (Added the remote ${outcome.added} for ${headRepo}.)`;
+    if (done && outcome.added) done += l10n.t(" (Added the remote {0} for {1}.)", outcome.added, headRepo ?? "");
     if (done && !sameRepo && !pr.maintainerCanModify) {
       const viewer = await opts.viewer?.().catch(() => undefined);
       if (viewer && headRepo && !same(viewer, outcome.target.headOwner)) {
-        done += ` Its author doesn't let maintainers edit it, so a push to it will be refused.`;
+        done += l10n.t(" Its author doesn't let maintainers edit it, so a push to it will be refused.");
       }
     }
   }
   if (!done) return;
   opts.onCheckedOut?.();
-  const open = await vscode.window.showInformationMessage(done, "Open Pull Request");
-  if (open === "Open Pull Request") {
+  const openLabel = l10n.t("Open Pull Request");
+  const open = await vscode.window.showInformationMessage(done, openLabel);
+  if (open === openLabel) {
     // With its repository: the toast waits until clicked, and a number alone
     // is resolved against the repository active THEN — #7 of another one.
     void vscode.commands.executeCommand("gitstudio.pr.openDescription", { pr, ctx });
@@ -182,15 +184,15 @@ async function addHeadRemote(ctx: GitHubRepoContext, repo: string, sameRepo: boo
   const like = (remotes.find((r) => r.name === ctx.remoteName) ?? remotes.find((r) => r.name === "origin") ?? remotes[0])?.fetchUrl;
   const url = owner && name ? remoteUrlLike(like, owner, name) : undefined;
   const remote = newRemoteName(sameRepo ? "upstream" : (owner ?? ""), remotes.map((r) => r.name));
-  if (!url || !remote) return { error: `"${repo}" isn't a repository GitStudio can add as a remote.` };
+  if (!url || !remote) return { error: l10n.t("\"{0}\" isn't a repository GitStudio can add as a remote.", repo) };
   const r = await addRemote(ctx.entry.ctx.process, remote, url);
-  return r.code === 0 ? { name: remote } : { error: `git couldn't add the remote ${remote}: ${firstLine(r.stderr)}` };
+  return r.code === 0 ? { name: remote } : { error: l10n.t("git couldn't add the remote {0}: {1}", remote, firstLine(r.stderr)) };
 }
 
 /** The head is gone: its last commit, as pr/<n>, from the pull request's repository. */
 async function copy(ctx: GitHubRepoContext, n: number, why: string, signal: AbortSignal): Promise<Outcome> {
   const fetched = await fetchPrHead(ctx.entry.ctx.process, ctx.remoteName, n, { signal });
-  if ("error" in fetched) return { kind: "error", message: `${why}, and PR #${n}'s last commit couldn't be fetched: ${fetched.error}` };
+  if ("error" in fetched) return { kind: "error", message: l10n.t("{0}, and PR #{1}'s last commit couldn't be fetched: {2}", why, n, fetched.error) };
   return { kind: "copy", why, plan: await planPrHead(ctx.entry.ctx.process, n, fetched.sha) };
 }
 
@@ -202,7 +204,7 @@ async function copy(ctx: GitHubRepoContext, n: number, why: string, signal: Abor
 async function land(entry: RepoEntry, pr: PullRequest, target: PrBranchTarget, plan: PrBranchPlan, asked = false): Promise<string | undefined> {
   const n = pr.number;
   const { local, trackingName } = plan;
-  const tracking = `tracking ${trackingName}`;
+  const tracking = l10n.t("tracking {0}", trackingName);
   // A branch named unlike the one it tracks (alice-main for alice's main):
   // git's default push (push.default=simple) refuses it, so say how it goes.
   const how = local === target.headRef ? "" : ` ${pushHint(target)}`;
@@ -210,7 +212,7 @@ async function land(entry: RepoEntry, pr: PullRequest, target: PrBranchTarget, p
     case "elsewhere":
       if (!(await saidCheckedOutElsewhere(entry.ctx, plan.ref, "checkout"))) {
         void vscode.window.showWarningMessage(
-          `${local} is checked out in another worktree (${plan.worktree}). Switch to it there, or check out a different branch in that worktree first.`,
+          l10n.t("{0} is checked out in another worktree ({1}). Switch to it there, or check out a different branch in that worktree first.", local, plan.worktree ?? ""),
         );
       }
       return undefined;
@@ -218,7 +220,7 @@ async function land(entry: RepoEntry, pr: PullRequest, target: PrBranchTarget, p
     case "create": {
       const applied = await applyOrAsk(entry.ctx, checkoutOp(["checkout", "-b", local, plan.sha]));
       if (settled(applied, n)) return undefined;
-      return (await tracked(entry, target, plan)) ?? `Checked out PR #${n} as ${local}, ${tracking}.${how}`;
+      return (await tracked(entry, target, plan)) ?? l10n.t("Checked out PR #{0} as {1}, {2}.{3}", n, local, tracking, how);
     }
 
     case "current": {
@@ -228,8 +230,8 @@ async function land(entry: RepoEntry, pr: PullRequest, target: PrBranchTarget, p
       }
       const failed = await tracked(entry, target, plan);
       if (failed) return failed;
-      if (plan.checkedOut) return `You're already on ${local}, the branch of PR #${n}${plan.setUpstream ? `; it now tracks ${trackingName}` : ""}.${how}`;
-      return `Checked out PR #${n} as ${local}, ${tracking}.${how}`;
+      if (plan.checkedOut) return l10n.t("You're already on {0}, the branch of PR #{1}{2}.{3}", local, n, plan.setUpstream ? l10n.t("; it now tracks {0}", trackingName) : "", how);
+      return l10n.t("Checked out PR #{0} as {1}, {2}.{3}", n, local, tracking, how);
     }
 
     case "fast-forward": {
@@ -238,16 +240,16 @@ async function land(entry: RepoEntry, pr: PullRequest, target: PrBranchTarget, p
         // fast-forward merge, through the door like any other.
         const applied = await applyOrAsk(entry.ctx, { kind: "merge", target: plan.sha, args: ["merge", "--ff-only", plan.sha] });
         if (settled(applied, n)) return undefined;
-        return (await tracked(entry, target, plan)) ?? `Updated ${local} to the latest of PR #${n} (${commitsWord(plan.behind)} brought in).${how}`;
+        return (await tracked(entry, target, plan)) ?? l10n.t("Updated {0} to the latest of PR #{1} ({2} brought in).{3}", local, n, commitsWord(plan.behind), how);
       }
-      const moved = await moveLocalBranch(entry.ctx.process, plan, `update ${local} to pull request #${n}`);
+      const moved = await moveLocalBranch(entry.ctx.process, plan, l10n.t("update {0} to pull request #{1}", local, n));
       if (moved.code !== 0) {
-        void vscode.window.showErrorMessage(`Couldn't update ${local}: ${firstLine(moved.stderr)}`);
+        void vscode.window.showErrorMessage(l10n.t("Couldn't update {0}: {1}", local, firstLine(moved.stderr)));
         return undefined;
       }
       const applied = await applyOrAsk(entry.ctx, checkoutOp(["checkout", local]));
       if (settled(applied, n)) return undefined;
-      return (await tracked(entry, target, plan)) ?? `Checked out PR #${n} as ${local}, updated to its latest and ${tracking}.${how}`;
+      return (await tracked(entry, target, plan)) ?? l10n.t("Checked out PR #{0} as {1}, updated to its latest and {2}.{3}", n, local, tracking, how);
     }
 
     case "ahead": {
@@ -257,52 +259,52 @@ async function land(entry: RepoEntry, pr: PullRequest, target: PrBranchTarget, p
       }
       const failed = await tracked(entry, target, plan);
       if (failed) return failed;
-      const yours = `${commitsWord(plan.ahead)} of yours ${plan.ahead === 1 ? "isn't" : "aren't"} pushed to it yet`;
-      return plan.checkedOut ? `You're on ${local}, the branch of PR #${n}: ${yours}.${how}` : `Checked out PR #${n} as ${local}, ${tracking}: ${yours}.${how}`;
+      const yours = l10n.t("{0} of yours {1} pushed to it yet", commitsWord(plan.ahead), plan.ahead === 1 ? l10n.t("isn't") : l10n.t("aren't"));
+      return plan.checkedOut ? l10n.t("You're on {0}, the branch of PR #{1}: {2}.{3}", local, n, yours, how) : l10n.t("Checked out PR #{0} as {1}, {2}: {3}.{4}", n, local, tracking, yours, how);
     }
 
     case "diverged": {
       const choice = await promptPick({
-        title: `${local} has commits that PR #${n} doesn't`,
+        title: l10n.t("{0} has commits that PR #{1} doesn't", local, n),
         hint:
-          `${local} has ${commitsWord(plan.ahead)} that ${trackingName} doesn't, and ${trackingName} has ${commitsWord(plan.behind)} that ${local} doesn't — ` +
-          `made here, or from before the pull request was force-pushed.`,
+          l10n.t("{0} has {1} that {2} doesn't, and {3} has {4} that {5} doesn't — ", local, commitsWord(plan.ahead), trackingName, trackingName, commitsWord(plan.behind), local) +
+          l10n.t("made here, or from before the pull request was force-pushed."),
         choices: [
           {
             id: "keep",
-            label: plan.checkedOut ? `Stay on ${local} as it is` : `Checkout ${local} as it is`,
+            label: plan.checkedOut ? l10n.t("Stay on {0} as it is", local) : l10n.t("Checkout {0} as it is", local),
             icon: "git-branch",
-            description: "Your commits stay. The pull request's newer commits aren't brought in: pull to merge them.",
+            description: l10n.t("Your commits stay. The pull request's newer commits aren't brought in: pull to merge them."),
           },
           ...(plan.checkedOut
             ? []
             : [
                 {
                   id: "replace",
-                  label: `Reset ${local} to the pull request's version`,
+                  label: l10n.t("Reset {0} to the pull request's version", local),
                   icon: "warning",
                   danger: true,
-                  description: `${local}'s own commits stay only in the reflog.`,
+                  description: l10n.t("{0}'s own commits stay only in the reflog.", local),
                 },
               ]),
-          { id: "cancel", label: "Cancel", icon: "close", description: "Nothing changes." },
+          { id: "cancel", label: l10n.t("Cancel"), icon: "close", description: l10n.t("Nothing changes.") },
         ],
       });
       if (choice === "keep") {
         if (plan.checkedOut) return undefined;
         const applied = await applyOrAsk(entry.ctx, checkoutOp(["checkout", local]));
         if (settled(applied, n)) return undefined;
-        return (await tracked(entry, target, plan)) ?? `Checked out ${local} as it was (not updated to PR #${n}).`;
+        return (await tracked(entry, target, plan)) ?? l10n.t("Checked out {0} as it was (not updated to PR #{1}).", local, n);
       }
       if (choice === "replace") {
-        const moved = await moveLocalBranch(entry.ctx.process, plan, `reset ${local} to pull request #${n}`);
+        const moved = await moveLocalBranch(entry.ctx.process, plan, l10n.t("reset {0} to pull request #{1}", local, n));
         if (moved.code !== 0) {
-          void vscode.window.showErrorMessage(`Couldn't move ${local}: ${firstLine(moved.stderr)}`);
+          void vscode.window.showErrorMessage(l10n.t("Couldn't move {0}: {1}", local, firstLine(moved.stderr)));
           return undefined;
         }
         const applied = await applyOrAsk(entry.ctx, checkoutOp(["checkout", local]));
         if (settled(applied, n)) return undefined;
-        return (await tracked(entry, target, plan)) ?? `Checked out PR #${n} as ${local}, ${tracking}.`;
+        return (await tracked(entry, target, plan)) ?? l10n.t("Checked out PR #{0} as {1}, {2}.", n, local, tracking);
       }
       return undefined;
     }
@@ -311,23 +313,23 @@ async function land(entry: RepoEntry, pr: PullRequest, target: PrBranchTarget, p
       if (asked) return undefined;
       const alt = await freeBranchName(entry.ctx.process, target);
       const useWords: Record<string, string> = {
-        same: `It is at the pull request's latest. It will track ${trackingName}.`,
-        behind: `Brings in the pull request's ${commitsWord(plan.behind)} (a fast-forward). It will track ${trackingName}.`,
-        ahead: `It has ${commitsWord(plan.ahead)} the pull request doesn't. It will track ${trackingName}, so a push adds them to it.`,
+        same: l10n.t("It is at the pull request's latest. It will track {0}.", trackingName),
+        behind: l10n.t("Brings in the pull request's {0} (a fast-forward). It will track {1}.", commitsWord(plan.behind), trackingName),
+        ahead: l10n.t("It has {0} the pull request doesn't. It will track {1}, so a push adds them to it.", commitsWord(plan.ahead), trackingName),
       };
       const choice = await promptPick({
-        title: `There's already a branch named ${local}`,
+        title: l10n.t("There's already a branch named {0}", local),
         hint:
-          `${local} tracks ${plan.tracksName ?? "no remote branch"} — it isn't ${trackingName}, the branch of PR #${n}.` +
-          (plan.worktree ? ` It is checked out in the worktree at ${plan.worktree}.` : ""),
+          l10n.t("{0} tracks {1} — it isn't {2}, the branch of PR #{3}.", local, plan.tracksName ?? "no remote branch", trackingName, n) +
+          (plan.worktree ? l10n.t(" It is checked out in the worktree at {0}.", plan.worktree) : ""),
         choices: [
           ...(alt
-            ? [{ id: "alt", label: `Checkout as ${alt}`, icon: "git-branch", description: `A new branch, ${tracking}. ${pushHint(target)}` }]
+            ? [{ id: "alt", label: l10n.t("Checkout as {0}", alt), icon: "git-branch", description: l10n.t("A new branch, {0}. {1}", tracking, pushHint(target)) }]
             : []),
           ...(plan.relation && plan.relation !== "diverged" && !plan.worktree
-            ? [{ id: "use", label: `Use ${local}`, icon: "arrow-swap", description: useWords[plan.relation] }]
+            ? [{ id: "use", label: l10n.t("Use {0}", local), icon: "arrow-swap", description: useWords[plan.relation] }]
             : []),
-          { id: "cancel", label: "Cancel", icon: "close", description: "Nothing changes." },
+          { id: "cancel", label: l10n.t("Cancel"), icon: "close", description: l10n.t("Nothing changes.") },
         ],
       });
       if (choice === "alt" && alt) {
@@ -347,7 +349,7 @@ async function tracked(entry: RepoEntry, target: PrBranchTarget, plan: PrBranchP
   if (!plan.setUpstream) return undefined;
   const r = await trackPrBranch(entry.ctx.process, target, plan.local);
   if (r.code === 0) return undefined;
-  return `Checked out ${plan.local}, but couldn't make it track ${plan.trackingName}: ${firstLine(r.stderr)}`;
+  return l10n.t("Checked out {0}, but couldn't make it track {1}: {2}", plan.local, plan.trackingName, firstLine(r.stderr));
 }
 
 /**
@@ -360,43 +362,43 @@ async function applyCopy(entry: RepoEntry, pr: PullRequest, plan: PrHeadPlan): P
   switch (plan.kind) {
     case "elsewhere":
       if (!(await saidCheckedOutElsewhere(entry.ctx, `refs/heads/${local}`, "checkout"))) {
-        void vscode.window.showWarningMessage(`${local} is checked out in another worktree (${plan.worktree}).`);
+        void vscode.window.showWarningMessage(l10n.t("{0} is checked out in another worktree ({1}).", local, plan.worktree ?? ""));
       }
       return undefined;
     case "create": {
       const applied = await applyOrAsk(entry.ctx, checkoutOp(["checkout", "-b", local, plan.sha]));
-      return settled(applied, n) ? undefined : `Checked out PR #${n} as ${local}.`;
+      return settled(applied, n) ? undefined : l10n.t("Checked out PR #{0} as {1}.", n, local);
     }
     case "current": {
-      if (plan.checkedOut) return `${local} is checked out and already matches PR #${n}.`;
+      if (plan.checkedOut) return l10n.t("{0} is checked out and already matches PR #{1}.", local, n);
       const applied = await applyOrAsk(entry.ctx, checkoutOp(["checkout", local]));
-      return settled(applied, n) ? undefined : `Checked out PR #${n} as ${local}.`;
+      return settled(applied, n) ? undefined : l10n.t("Checked out PR #{0} as {1}.", n, local);
     }
     case "fast-forward": {
       if (plan.checkedOut) {
         const applied = await applyOrAsk(entry.ctx, { kind: "merge", target: plan.sha, args: ["merge", "--ff-only", plan.sha] });
-        return settled(applied, n) ? undefined : `Updated ${local} to the latest of PR #${n}.`;
+        return settled(applied, n) ? undefined : l10n.t("Updated {0} to the latest of PR #{1}.", local, n);
       }
       const moved = await movePrBranch(entry.ctx.process, plan);
       if (moved.code !== 0) {
-        void vscode.window.showErrorMessage(`Couldn't update ${local}: ${firstLine(moved.stderr)}`);
+        void vscode.window.showErrorMessage(l10n.t("Couldn't update {0}: {1}", local, firstLine(moved.stderr)));
         return undefined;
       }
       const applied = await applyOrAsk(entry.ctx, checkoutOp(["checkout", local]));
-      return settled(applied, n) ? undefined : `Checked out PR #${n} as ${local}, updated to its latest.`;
+      return settled(applied, n) ? undefined : l10n.t("Checked out PR #{0} as {1}, updated to its latest.", n, local);
     }
     case "diverged": {
       const choice = await promptPick({
-        title: `${local} has commits that PR #${n} doesn't`,
+        title: l10n.t("{0} has commits that PR #{1} doesn't", local, n),
         hint: divergedMessage(n, plan),
         choices: [
-          { id: "keep", label: `Checkout ${local} as it is`, icon: "git-branch", description: "Your commits stay. The PR's newer commits aren't brought in." },
-          { id: "cancel", label: "Cancel", icon: "close", description: "Nothing changes." },
+          { id: "keep", label: l10n.t("Checkout {0} as it is", local), icon: "git-branch", description: l10n.t("Your commits stay. The PR's newer commits aren't brought in.") },
+          { id: "cancel", label: l10n.t("Cancel"), icon: "close", description: l10n.t("Nothing changes.") },
         ],
       });
       if (choice !== "keep" || plan.checkedOut) return undefined;
       const applied = await applyOrAsk(entry.ctx, checkoutOp(["checkout", local]));
-      return settled(applied, n) ? undefined : `Checked out ${local} as it was (not updated to PR #${n}).`;
+      return settled(applied, n) ? undefined : l10n.t("Checked out {0} as it was (not updated to PR #{1}).", local, n);
     }
   }
 }
@@ -408,7 +410,7 @@ async function applyCopy(entry: RepoEntry, pr: PullRequest, plan: PrHeadPlan): P
  * destination spelled out.
  */
 function pushHint(t: Pick<PrBranchTarget, "remote" | "headRef">): string {
-  return `GitStudio's Push reaches the pull request; from a terminal, git push ${t.remote} HEAD:${t.headRef}.`;
+  return l10n.t("GitStudio's Push reaches the pull request; from a terminal, git push {0} HEAD:{1}.", t.remote, t.headRef);
 }
 
 /** True when the door already said everything (cancelled, refused, failed). */
@@ -417,7 +419,7 @@ function settled(applied: Applied, n: number): boolean {
     return true;
   }
   if (applied.result.code !== 0) {
-    void vscode.window.showErrorMessage(`Couldn't check out PR #${n}: ${firstLine(applied.result.stderr)}`);
+    void vscode.window.showErrorMessage(l10n.t("Couldn't check out PR #{0}: {1}", n, firstLine(applied.result.stderr)));
     return true;
   }
   return false;

@@ -26,6 +26,7 @@
  */
 
 import { type GitRunner, localNameFor, planRemoteCheckout } from "./checkoutRemote";
+import * as l10n from "@vscode/l10n";
 
 export interface RefCheckoutPlan {
   /** Argv for `ctx.process.run`. */
@@ -76,13 +77,13 @@ export function optionLikeCheckout(fullName: string): OptionLikeRef | undefined 
   const local = fullName.startsWith("refs/heads/");
   const onArgv = local ? name : localNameFor(name);
   if (!onArgv.startsWith("-")) return undefined;
-  const whose = local ? "" : ` (from ${name})`;
+  const whose = local ? "" : l10n.t(" (from {0})", name);
   return {
     name: onArgv,
     local,
     message:
-      `Git can't safely check out a branch whose name starts with "-": "${onArgv}"${whose} would be read as an option. ` +
-      (local ? "Rename it, then check it out." : "Create a branch from it under another name instead."),
+      l10n.t("Git can't safely check out a branch whose name starts with \"-\": \"{0}\"{1} would be read as an option. ", onArgv, whose) +
+      (local ? l10n.t("Rename it, then check it out.") : l10n.t("Create a branch from it under another name instead.")),
   };
 }
 
@@ -132,8 +133,8 @@ export async function planRefCheckout(
   if (fullName.startsWith("refs/heads/")) {
     return {
       args: ["checkout", name],
-      success: `Switched to ${name}`,
-      undoLabel: `Checkout ${name}`,
+      success: l10n.t("Switched to {0}", name),
+      undoLabel: l10n.t("Checkout {0}", name),
       detaches: false,
       branch: fullName,
     };
@@ -152,8 +153,8 @@ export async function planRefCheckout(
     // The full name, so the detach lands on the tag and never on a branch of
     // the same name.
     args: ["checkout", "--detach", fullName],
-    success: `Checked out ${name}`,
-    undoLabel: `Checkout ${name}`,
+    success: l10n.t("Checked out {0}", name),
+    undoLabel: l10n.t("Checkout {0}", name),
     detaches: true,
   };
 }

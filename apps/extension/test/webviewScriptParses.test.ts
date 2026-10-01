@@ -4,6 +4,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import "./webviewL10n";
 
 // Our webviews' JavaScript lives inside a template literal of HTML, so it is a
 // STRING as far as the compiler is concerned. tsc, eslint and esbuild all check

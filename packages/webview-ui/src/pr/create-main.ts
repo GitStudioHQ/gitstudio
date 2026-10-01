@@ -12,6 +12,8 @@
 // The component itself (prCreate.ts) is host-agnostic; the desktop can mount
 // the same class.
 
+import "@gitstudio/l10n/webview";
+
 import { installSolidAccent } from "../styles/solidAccent";
 import "../styles/pr-create.css";
 import type { PrCreateHostMessage, PrCreateMessageToHost } from "@gitstudio/host-bridge/prProtocol";

@@ -14,6 +14,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { readManifest } from "./manifest";
 import { GITSTUDIO_SUPPORT_COMMAND } from "../src/merge/mergeIds";
 import { askAndOpenSupport, COFFEE_URL, SPONSOR_URL, supportPickSpec, supportUrl } from "../src/ui/support";
 import { changesViewPage, findChrome, runChangesView, statePayload, type ThemeName } from "./changesViewPage";
@@ -26,7 +27,7 @@ interface MenuEntry {
   when?: string;
   group?: string;
 }
-const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as {
+const pkg = readManifest() as {
   sponsor?: { url?: string };
   badges: { url: string; href: string; description: string }[];
   contributes: {

@@ -37,6 +37,7 @@ import {
 } from "@gitstudio/host-bridge/worktreesProtocol";
 import type { ChangeCommit, ChangeFile } from "@gitstudio/host-bridge/changeRows";
 import { commitRow, emptyNote, fileRow, isCommitOpen, moreLine, sectionLabel, setCommitFiles } from "../changeRows/changeRows";
+import * as l10n from "@vscode/l10n";
 
 /** What the host says about the platform — how Reveal reads. */
 export interface WorktreesLabels {
@@ -94,7 +95,7 @@ export class WorktreesView {
   private readonly rows = new Map<string, RowState>();
   private order: string[] = [];
   private state: "ok" | "noRepo" | "discovering" | "failed" | "pending" = "pending";
-  private labels: WorktreesLabels = { reveal: "Reveal in File Manager" };
+  private labels: WorktreesLabels = { reveal: l10n.t("Reveal in File Manager") };
   private query = "";
   private observer: IntersectionObserver | undefined;
   /** The rows in view now — the host reads tier 1 for these. */
@@ -117,12 +118,12 @@ export class WorktreesView {
     this.filter = el("input", "wt-filter-input");
     this.filter.type = "text";
     this.filter.spellcheck = false;
-    this.filter.setAttribute("aria-label", "Filter worktrees");
+    this.filter.setAttribute("aria-label", l10n.t("Filter worktrees"));
     this.filterBox.appendChild(this.filter);
     this.top.append(this.filterBox);
     this.list = el("div", "wt-list");
     this.list.setAttribute("role", "tree");
-    this.list.setAttribute("aria-label", "Worktrees");
+    this.list.setAttribute("aria-label", l10n.t("Worktrees"));
     // Prune is a quiet link under the list — where the rows it forgets are
     // (the missing sort last) — and there only when git would prune one.
     this.foot = el("div", "wt-foot");
@@ -227,7 +228,7 @@ export class WorktreesView {
       case "busy": {
         const s = this.rows.get(msg.path);
         if (!s) return;
-        s.busy = msg.busy ? (msg.label ?? "Working…") : undefined;
+        s.busy = msg.busy ? (msg.label ?? l10n.t("Working…")) : undefined;
         if (s.busy && this.menuFor === s) {
           // Its menu offers nothing while it runs: gone, the keyboard back on the row.
           const had = !!this.menu?.contains(document.activeElement);
@@ -311,7 +312,7 @@ export class WorktreesView {
     const rows = [...this.rows.values()].map((s) => s.row);
     const n = rows.filter((r) => r.kind !== "bare").length;
     this.filterBox.hidden = n <= WORKTREE_FILTER_AFTER;
-    this.filter.placeholder = `Filter ${n} worktrees`;
+    this.filter.placeholder = l10n.t("Filter {0} worktrees", n);
     this.top.hidden = this.filterBox.hidden;
     const prunable = prunableCount(rows);
     // In whole words, as the view's title menu ("Prune Missing Worktrees…")
@@ -319,10 +320,12 @@ export class WorktreesView {
     // that are gone, or folders that aren't worktrees any more.
     const allGone = rows.every((r) => !r.unlinked || r.locked);
     this.foot.hidden = prunable === 0;
-    this.pruneBtn.textContent = `Prune ${prunable} missing worktree${prunable === 1 ? "" : "s"}…`;
+    this.pruneBtn.textContent = prunable === 1
+      ? l10n.t("Prune 1 missing worktree…")
+      : l10n.t("Prune {0} missing worktrees…", prunable);
     this.pruneBtn.dataset.tip = allGone
-      ? `Forget the ${prunable === 1 ? "worktree" : `${prunable} worktrees`} whose folder is gone`
-      : `Forget the ${prunable === 1 ? "worktree" : `${prunable} worktrees`} git can prune: ${prunable === 1 ? "its folder is gone, or isn't a worktree any more" : "their folders are gone, or aren't worktrees any more"}`;
+      ? l10n.t("Forget the {0} whose folder is gone", prunable === 1 ? l10n.t("worktree") : l10n.t("{0} worktrees", prunable))
+      : l10n.t("Forget the {0} git can prune: {1}", prunable === 1 ? l10n.t("worktree") : l10n.t("{0} worktrees", prunable), prunable === 1 ? l10n.t("its folder is gone, or isn't a worktree any more") : l10n.t("their folders are gone, or aren't worktrees any more"));
     this.pruneBtn.setAttribute("aria-label", this.pruneBtn.dataset.tip);
 
     this.note.replaceChildren();
@@ -330,32 +333,32 @@ export class WorktreesView {
     if (this.state === "noRepo" || this.state === "discovering" || (this.state === "failed" && n === 0)) {
       const title =
         this.state === "discovering"
-          ? "Looking for a repository…"
+          ? l10n.t("Looking for a repository…")
           : this.state === "failed"
-            ? "Couldn't read the worktrees"
-            : "No repository open";
+            ? l10n.t("Couldn't read the worktrees")
+            : l10n.t("No repository open");
       const hint =
         this.state === "discovering"
           ? ""
           : this.state === "failed"
-            ? "Something interrupted reading them — they refresh on their own."
-            : "Open a folder that is a git repository to see its worktrees.";
+            ? l10n.t("Something interrupted reading them — they refresh on their own.")
+            : l10n.t("Open a folder that is a git repository to see its worktrees.");
       this.note.append(el("div", "wt-note-title", title));
       if (hint) this.note.append(el("div", "wt-note-hint", hint));
       return;
     }
     if (this.state === "ok" && n === 1) {
       this.note.append(
-        el("div", "wt-note-title", "Work on another branch, side by side"),
+        el("div", "wt-note-title", l10n.t("Work on another branch, side by side")),
         el(
           "div",
           "wt-note-hint",
-          "A worktree is a second folder of this repository with its own branch checked out — no stashing, no switching.",
+          l10n.t("A worktree is a second folder of this repository with its own branch checked out — no stashing, no switching."),
         ),
       );
       const add = el("button", "gs-btn gs-btn--primary wt-add");
       add.type = "button";
-      add.append(codicon("add"), el("span", undefined, "New Worktree…"));
+      add.append(codicon("add"), el("span", undefined, l10n.t("New Worktree…")));
       add.addEventListener("click", () => this.post({ type: "add" }));
       this.note.append(add);
       return;
@@ -380,7 +383,7 @@ export class WorktreesView {
     this.list.classList.toggle("wt-filtered", !!q);
     if (q && shown === 0) {
       this.note.hidden = false;
-      this.note.replaceChildren(el("div", "wt-note-hint", `No worktree matches “${this.filter.value.trim()}”.`));
+      this.note.replaceChildren(el("div", "wt-note-hint", l10n.t("No worktree matches “{0}”.", this.filter.value.trim())));
     } else if (q) {
       this.note.hidden = true;
     }
@@ -489,7 +492,7 @@ export class WorktreesView {
     // rest they take no room.
     const actions = el("span", "wt-actions");
     if (caps.openNew.ok) {
-      const open = iconButton("empty-window", "Open in New Window");
+      const open = iconButton("empty-window", l10n.t("Open in New Window"));
       open.dataset.action = "openNew";
       open.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -497,7 +500,7 @@ export class WorktreesView {
       });
       actions.appendChild(open);
     }
-    const more = iconButton("ellipsis", `More actions for ${r.name}`, "wt-more");
+    const more = iconButton("ellipsis", l10n.t("More actions for {0}", r.name), "wt-more");
     more.dataset.action = "more";
     more.setAttribute("aria-haspopup", "menu");
     more.addEventListener("click", (e) => {
@@ -621,12 +624,12 @@ export class WorktreesView {
     const parts: HTMLElement[] = [];
     const det = s.loaded;
     if (!det) {
-      d.replaceChildren(el("div", "cr-loading wt-loading", "Loading…"));
+      d.replaceChildren(el("div", "cr-loading wt-loading", l10n.t("Loading…")));
       this.syncTreeItems();
       return;
     }
     if (det.filesUnread) {
-      parts.push(emptyNote("Couldn't read its uncommitted changes."));
+      parts.push(emptyNote(l10n.t("Couldn't read its uncommitted changes.")));
     } else if (det.files.length > 0) {
       // Grouped as VS Code's Source Control groups them — the label says
       // which side a file is on, so no file wears a tag for it.
@@ -665,9 +668,9 @@ export class WorktreesView {
         kept.delete(c.sha);
         parts.push(item);
       }
-      if (sec.more) parts.push(moreLine("and more — the Commit Graph shows them all"));
+      if (sec.more) parts.push(moreLine(l10n.t("and more — the Commit Graph shows them all")));
     }
-    if (parts.length === 0) parts.push(emptyNote("Nothing to commit or push."));
+    if (parts.length === 0) parts.push(emptyNote(l10n.t("Nothing to commit or push.")));
     const verbs = this.verbs(s);
     if (verbs) parts.push(verbs);
     d.replaceChildren(...parts);
@@ -688,8 +691,12 @@ export class WorktreesView {
     const caps = worktreeCaps(r);
     const out = r.ahead > 0 || (r.status?.unpublished ?? 0) > 0;
     const shown: [WorktreeAction, string, string, string][] = [];
-    if (caps.pull.ok && r.behind > 0) shown.push(["pull", "repo-pull", "Pull", `Pull ${r.behind} commit${r.behind === 1 ? "" : "s"} into ${r.name}, in its own folder`]);
-    if (caps.push.ok && out) shown.push(["push", "repo-push", "Push…", `Review what ${r.name} would push`]);
+    if (caps.pull.ok && r.behind > 0) {
+      shown.push(["pull", "repo-pull", l10n.t("Pull"), r.behind === 1
+        ? l10n.t("Pull 1 commit into {0}, in its own folder", r.name)
+        : l10n.t("Pull {0} commits into {1}, in its own folder", r.behind, r.name)]);
+    }
+    if (caps.push.ok && out) shown.push(["push", "repo-push", l10n.t("Push…"), l10n.t("Review what {0} would push", r.name)]);
     if (shown.length === 0) return undefined;
     const strip = el("div", "wt-verbs");
     strip.setAttribute("role", "none");
@@ -740,25 +747,25 @@ export class WorktreesView {
     const caps = worktreeCaps(r);
     const menu = el("div", "wt-menu");
     menu.setAttribute("role", "menu");
-    menu.setAttribute("aria-label", `Actions for ${r.name}`);
+    menu.setAttribute("aria-label", l10n.t("Actions for {0}", r.name));
     const ok = (gate: Gate | boolean): boolean => gate === true || (typeof gate === "object" && gate.ok);
     type Item = [WorktreeAction, string, string, Gate | boolean, boolean?];
     const groups: Item[][] = [
       [
         // A window, not a folder: Reveal's folder is two items down.
-        ["openHere", "window", "Open in This Window", r.kind === "bare" ? false : caps.openHere],
-        ["openNew", "empty-window", "Open in New Window", r.kind === "bare" ? false : caps.openNew],
+        ["openHere", "window", l10n.t("Open in This Window"), r.kind === "bare" ? false : caps.openHere],
+        ["openNew", "empty-window", l10n.t("Open in New Window"), r.kind === "bare" ? false : caps.openNew],
         ["reveal", "folder", this.labels.reveal, caps.reveal],
-        ["terminal", "terminal", "Open in Terminal", caps.terminal],
-        ["copyPath", "copy", "Copy Path", true],
+        ["terminal", "terminal", l10n.t("Open in Terminal"), caps.terminal],
+        ["copyPath", "copy", l10n.t("Copy Path"), true],
       ],
       [
-        ["pull", "repo-pull", "Pull", caps.pull],
-        ["push", "repo-push", "Push…", caps.push],
+        ["pull", "repo-pull", l10n.t("Pull"), caps.pull],
+        ["push", "repo-push", l10n.t("Push…"), caps.push],
       ],
       [
-        r.locked ? ["unlock", "unlock", "Unlock", caps.unlock] : ["lock", "lock", "Lock…", caps.lock],
-        caps.forget ? ["forget", "close", "Forget Worktree…", true, true] : ["remove", "trash", "Remove Worktree…", caps.remove, true],
+        r.locked ? ["unlock", "unlock", l10n.t("Unlock"), caps.unlock] : ["lock", "lock", l10n.t("Lock…"), caps.lock],
+        caps.forget ? ["forget", "close", l10n.t("Forget Worktree…"), true, true] : ["remove", "trash", l10n.t("Remove Worktree…"), caps.remove, true],
       ],
     ];
     for (const group of groups) {
@@ -1066,8 +1073,8 @@ function keyOf(n: HTMLElement): string {
 
 /** An open row's uncommitted files, in the groups VS Code's Source Control shows. */
 const FILE_GROUPS: [string, NonNullable<ChangeFile["area"]>[]][] = [
-  ["Conflicts", ["conflicted"]],
-  ["Staged changes", ["staged"]],
-  ["Changes", ["unstaged", "untracked"]],
+  [l10n.t("Conflicts"), ["conflicted"]],
+  [l10n.t("Staged changes"), ["staged"]],
+  [l10n.t("Changes"), ["unstaged", "untracked"]],
 ];
 

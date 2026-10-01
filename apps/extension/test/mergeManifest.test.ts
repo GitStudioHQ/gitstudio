@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { readManifest } from "./manifest";
 import {
   checkManifest,
   configurationProperties,
@@ -19,9 +19,7 @@ import {
 // manifest is checked against, so a merge capability one product contributes
 // and the other does not fails here.
 
-const manifest = JSON.parse(
-  readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"),
-) as {
+const manifest = readManifest() as {
   contributes: {
     commands: { command: string; title: string }[];
     menus: Record<string, { command?: string; when?: string; group?: string }[]>;

@@ -1,6 +1,7 @@
 import { parseGitHubRemote, parseRemote } from "@gitstudio/engine/forge/parseRemote";
 import { sshAliasResolver } from "@gitstudio/git-service/sshAliases";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
+import * as l10n from "@vscode/l10n";
 
 // Resolves the active repository's GitHub coordinates ({owner, repo}) from its
 // configured remotes, using the engine's `parseGitHubRemote` — the same parser
@@ -81,7 +82,7 @@ export async function resolveGitHubContext(
 }
 
 /** Said while RepoManager is still finding the workspace's repositories. */
-export const LOOKING_FOR_A_REPOSITORY = "Looking for a repository…";
+export const LOOKING_FOR_A_REPOSITORY = l10n.t("Looking for a repository…");
 
 /**
  * Why the active repository has no GitHub context, in words for the Pull
@@ -93,7 +94,7 @@ export const LOOKING_FOR_A_REPOSITORY = "Looking for a repository…";
 export async function whyNoGitHub(repos: RepoManager): Promise<string> {
   const entry = repos.getActive();
   if (!entry) {
-    return repos.isDiscovering?.() ? LOOKING_FOR_A_REPOSITORY : "Open a Git repository to see its pull requests.";
+    return repos.isDiscovering?.() ? LOOKING_FOR_A_REPOSITORY : l10n.t("Open a Git repository to see its pull requests.");
   }
   let remotes: Remote[] = [];
   try {
@@ -102,7 +103,7 @@ export async function whyNoGitHub(repos: RepoManager): Promise<string> {
     // Treated as no remotes.
   }
   if (remotes.length === 0) {
-    return "This repository has no remotes. Pull requests show here once a remote points at github.com.";
+    return l10n.t("This repository has no remotes. Pull requests show here once a remote points at github.com.");
   }
   const hosts = Array.from(
     new Set(
@@ -112,5 +113,5 @@ export async function whyNoGitHub(repos: RepoManager): Promise<string> {
       }),
     ),
   );
-  return `None of this repository's remotes is on github.com: ${hosts.join(", ")}. Pull requests are available for github.com repositories.`;
+  return l10n.t("None of this repository's remotes is on github.com: {0}. Pull requests are available for github.com repositories.", hosts.join(", "));
 }

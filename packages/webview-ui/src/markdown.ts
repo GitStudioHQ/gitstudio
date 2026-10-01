@@ -1,3 +1,4 @@
+import * as l10n from "@vscode/l10n";
 // GitHub-flavored Markdown → safe HTML, for every GitStudio surface that shows
 // GitHub's prose: the desktop's README cards, issue/PR bodies, release notes,
 // gists and AI chat, and the VS Code extension's pull request pages. Moved

@@ -170,8 +170,8 @@ test("the door asks Stash & Retry or Cancel, in the engine's words, and files no
     .join("\n");
   assert.match(code, /runApplying\(/, "recognised by the engine, from git's state");
   assert.match(code, /changesInTheWayMessage\(/, "said in the engine's words — which files, in the way of what");
-  assert.match(code, /label:\s*"Stash & Retry"/);
-  assert.match(code, /label:\s*"Cancel"/);
+  assert.match(code, /label:\s*l10n\.t\("Stash & Retry"\)/);
+  assert.match(code, /label:\s*l10n\.t\("Cancel"\)/);
   assert.match(code, /stashAndRetry\(/, "and Stash & Retry does it");
   assert.match(code, /stashAndRetryPull\(/, "…for a pull too");
   assert.match(code, /stashRetryNote\(/, "saying where the changes are when they are not back");

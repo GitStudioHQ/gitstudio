@@ -12,6 +12,7 @@
     "check-types": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@gitstudio/engine": "*"
+    "@gitstudio/engine": "*",
+    "@vscode/l10n": "^0.0.18"
   }
 }

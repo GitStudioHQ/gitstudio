@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as plan from "@gitstudio/engine/rebase/planEdit";
+import "./webviewL10n";
 
 // Issue #27: "Unable to fixup/squash last commit (HEAD) to previous …
 // It says 'The top commit has nothing above it to fold into.' which does not

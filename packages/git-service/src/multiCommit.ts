@@ -12,6 +12,7 @@ import {
 import { buildRebasePlan, type RebasePlanRow } from "./rebasePlan";
 import type { RebaseOutcome, RebasePlan } from "./RebaseRunner";
 import { DROP_MAX_REPLAY, carriedBranches, isPublished, revParse, rewriteBlocker, type DropOutcome } from "./dropCommit";
+import * as l10n from "@vscode/l10n";
 
 // Several commits at once, for both products (issue #32): the graph's and the
 // Commits list's multi-selection menu.
@@ -75,15 +76,15 @@ export interface ManyRequest {
 }
 
 /** The dirty-tree refusals, in the runner's own words for the same state. */
-export const DROP_MANY_DIRTY_MESSAGE = "You have uncommitted changes. Commit or stash them, then drop the commits.";
-export const SQUASH_DIRTY_MESSAGE = "You have uncommitted changes. Commit or stash them, then squash the commits.";
+export const DROP_MANY_DIRTY_MESSAGE = l10n.t("You have uncommitted changes. Commit or stash them, then drop the commits.");
+export const SQUASH_DIRTY_MESSAGE = l10n.t("You have uncommitted changes. Commit or stash them, then squash the commits.");
 
 /** A confirmation that went stale. */
 export const MANY_MOVED_MESSAGE =
-  "The branch has moved since you chose these commits, so nothing was changed. Look at the history again and retry.";
+  l10n.t("The branch has moved since you chose these commits, so nothing was changed. Look at the history again and retry.");
 
 /** Squash was confirmed with no message. */
-export const SQUASH_EMPTY_MESSAGE = "The squashed commit needs a message.";
+export const SQUASH_EMPTY_MESSAGE = l10n.t("The squashed commit needs a message.");
 
 function refused(reason: ManyRefusal, verb: "drop" | "squash"): ManyRefused {
   return { ok: false, reason, message: manyRefusalMessage(reason, verb) };

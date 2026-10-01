@@ -1,3 +1,5 @@
+import * as l10n from "@vscode/l10n";
+import { l10nWebviewScript } from "@gitstudio/l10n/index";
 // A new pull request's form, as its editor tab loads it: the shared form's
 // bundle (packages/webview-ui/src/pr/create-main.ts → dist/webview/pr-create.js
 // + .css), the codicons, and a `#root` for it — under a strict CSP.
@@ -51,6 +53,7 @@ export function prCreateHtml(p: PrCreateHtmlParts): string {
 </head>
 <body>
   <div id="root"></div>
+  ${l10nWebviewScript(p.nonce)}
   <script nonce="${attr(p.nonce)}" src="${attr(p.formJs)}"></script>
 </body>
 </html>`;

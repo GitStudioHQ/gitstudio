@@ -5,6 +5,8 @@ import { getNonce } from "../webview/html";
 // app's own tokens below so this panel is a pixel-for-pixel match of the app's
 // "AI Models" settings — the same violet, cards, pills, gallery and fields.
 import tokensCss from "../../../../packages/webview-ui/src/styles/tokens.css";
+import * as l10n from "@vscode/l10n";
+import { l10nWebviewScript } from "@gitstudio/l10n/index";
 
 /** Real brand marks (from the app's Lobehub icon set, MIT) — monochrome inline
  * SVG using currentColor. Keyed by our provider ids; injected into the webview.
@@ -60,7 +62,7 @@ export class AiSettingsPanel {
     }
     const panel = vscode.window.createWebviewPanel(
       "gitstudio.aiSettings",
-      "GitStudio · AI",
+      l10n.t("GitStudio · AI"),
       vscode.ViewColumn.Active,
       {
         enableScripts: true,
@@ -207,7 +209,7 @@ export class AiSettingsPanel {
       const r = await this.brain.testConnection();
       await this.postResult(r.ok, r.message);
     } catch (e) {
-      await this.postResult(false, e instanceof Error ? e.message : "Couldn't connect.");
+      await this.postResult(false, e instanceof Error ? e.message : l10n.t("Couldn't connect."));
     }
   }
 
@@ -217,7 +219,7 @@ export class AiSettingsPanel {
       vscode.Uri.joinPath(extensionUri, "dist", "codicons", "codicon.css"),
     );
     const csp = [
-      `default-src 'none'`,
+      "default-src 'none'",
       `style-src 'nonce-${nonce}' ${webview.cspSource}`,
       `font-src ${webview.cspSource}`,
       `script-src 'nonce-${nonce}'`,
@@ -406,10 +408,11 @@ export class AiSettingsPanel {
 </head>
 <body>
   <div class="wrap">
-    <h1><i class="codicon codicon-sparkle"></i> GitStudio AI</h1>
-    <p class="lead">Connect a model to write commit messages and review your changes. Bring your own API key, run a model locally (fully private), or use your editor's built-in AI. It's optional and never blocks Git.</p>
+    <h1><i class="codicon codicon-sparkle"></i> ${l10n.t("GitStudio AI")}</h1>
+    <p class="lead">${l10n.t("Connect a model to write commit messages and review your changes. Bring your own API key, run a model locally (fully private), or use your editor's built-in AI. It's optional and never blocks Git.")}</p>
     <div id="card"></div>
   </div>
+  ${l10nWebviewScript(nonce)}
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const LOGO_PATHS = ${JSON.stringify(LOGO_PATHS)};

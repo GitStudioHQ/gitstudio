@@ -61,6 +61,7 @@ import { renderMarkdown } from "../markdown";
 import { patchChildren } from "../conflicts/patch";
 import { ageWords } from "./prList";
 import { avatarSrc } from "./avatarSrc";
+import * as l10n from "@vscode/l10n";
 
 export interface PullRequestPageOptions {
   post(message: PrPageMessageToHost): void;
@@ -148,8 +149,8 @@ function when(iso: string, now: number, cls = "prp-when"): HTMLElement {
   return t;
 }
 
-function plural(n: number, one: string, many = `${one}s`): string {
-  return `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
+function plural(n: number, one: string, many: string): string {
+  return l10n.t("{0} {1}", n.toLocaleString("en-US"), n === 1 ? one : many);
 }
 
 /** A small hash of a string, to key a rendered body by its text. */
@@ -223,7 +224,7 @@ function prose(src: string, repo: string, key: string, empty?: string): HTMLElem
   const box = el("div", "prp-md");
   box.dataset.key = `md-${key}-${hash(src)}`;
   if (!src.trim()) {
-    box.appendChild(el("p", "prp-md-empty", empty ?? "No description provided."));
+    box.appendChild(el("p", "prp-md-empty", empty ?? l10n.t("No description provided.")));
     return box;
   }
   box.innerHTML = renderBody(src);
@@ -238,16 +239,16 @@ const PR_ACTIONS_MORE = PR_ACTIONS.more;
 /** Where the keyboard goes when the merge box opens: the method chosen. */
 const MERGE_FOCUS = ".prp-method.is-on input";
 /** Where it goes when the merge box can't open: the status line that says why. */
-const WHY_NO_MERGE = '[data-key="status-merge"], [data-key="status-done"]';
+const WHY_NO_MERGE = "[data-key=\"status-merge\"], [data-key=\"status-done\"]";
 
 /** The tabs: the desktop's words and glyphs (the shared PR_TABS). */
 const TAB_WORDS: Record<PrPageTab, { label: string; icon: string }> = PR_TABS;
 
 type Verdict = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
 const VERDICT_WORDS: Record<Verdict, { label: string; icon: string; hint: string }> = {
-  COMMENT: { label: "Comment", icon: "comment", hint: "Feedback without an explicit approval" },
-  APPROVE: { label: "Approve", icon: "check", hint: "The change is good to merge" },
-  REQUEST_CHANGES: { label: "Request changes", icon: "request-changes", hint: "Must be addressed before merging" },
+  COMMENT: { label: l10n.t("Comment"), icon: "comment", hint: l10n.t("Feedback without an explicit approval") },
+  APPROVE: { label: l10n.t("Approve"), icon: "check", hint: l10n.t("The change is good to merge") },
+  REQUEST_CHANGES: { label: l10n.t("Request changes"), icon: "request-changes", hint: l10n.t("Must be addressed before merging") },
 };
 
 export class PullRequestPage {
@@ -486,7 +487,7 @@ export class PullRequestPage {
   private buildSkeleton(): HTMLElement {
     const sk = el("div", "prp-skeleton");
     sk.setAttribute("aria-busy", "true");
-    sk.setAttribute("aria-label", "Loading the pull request");
+    sk.setAttribute("aria-label", l10n.t("Loading the pull request"));
     for (const w of ["tabs", "line-1", "line-2", "block", "line-3", "block-2"]) sk.appendChild(el("span", `prp-sk prp-sk-${w}`));
     return sk;
   }
@@ -506,10 +507,10 @@ export class PullRequestPage {
     const titleRow = el("div", "prp-title-row");
     const pill = el("span", `prp-state tone-${st.tone}`);
     pill.append(codicon(st.codicon), el("span", "prp-state-word", st.word));
-    pill.title = `This pull request is ${st.word.toLowerCase()}`;
+    pill.title = l10n.t("This pull request is {0}", st.word.toLowerCase());
     titleRow.appendChild(pill);
     const h1 = el("h1", "prp-title");
-    h1.append(el("span", "prp-title-text", pr?.title ?? s.preview?.title ?? `Pull request #${s.number}`), el("span", "prp-title-num", ` #${s.number}`));
+    h1.append(el("span", "prp-title-text", pr?.title ?? s.preview?.title ?? l10n.t("Pull request #{0}", s.number)), el("span", "prp-title-num", ` #${s.number}`));
     titleRow.appendChild(h1);
     head.appendChild(titleRow);
 
@@ -521,18 +522,18 @@ export class PullRequestPage {
     const headRef = pr?.headRef ?? s.preview?.headRef ?? "";
     const baseRef = pr?.baseRef ?? s.preview?.baseRef ?? "";
     const headName = pr?.isFork && pr.headOwner ? `${pr.headOwner}:${headRef}` : headRef;
-    const verb = kind === "merged" ? "merged" : "wants to merge";
+    const verb = kind === "merged" ? l10n.t("merged") : l10n.t("wants to merge");
     const n = pr?.commitCount;
-    sub.appendChild(el("span", "prp-sub-text", ` ${verb} ${n !== undefined ? `${plural(n, "commit")} ` : ""}into `));
-    sub.appendChild(this.branchChip(baseRef, false, `The branch it ${kind === "merged" ? "went" : "goes"} into`));
-    sub.appendChild(el("span", "prp-sub-text", " from "));
-    const headChip = this.branchChip(headName, !!pr?.isFork, pr?.isFork ? `From ${pr.headRepo ?? "a fork that was deleted"}` : "Its branch");
+    sub.appendChild(el("span", "prp-sub-text", l10n.t(" {0} {1}into ", verb, n !== undefined ? `${plural(n, l10n.t("commit"), l10n.t("commits"))} ` : "")));
+    sub.appendChild(this.branchChip(baseRef, false, l10n.t("The branch it {0} into", kind === "merged" ? l10n.t("went") : l10n.t("goes"))));
+    sub.appendChild(el("span", "prp-sub-text", l10n.t(" from ")));
+    const headChip = this.branchChip(headName, !!pr?.isFork, pr?.isFork ? l10n.t("From {0}", pr.headRepo ?? l10n.t("a fork that was deleted")) : l10n.t("Its branch"));
     if (s.checkedOut) {
       headChip.classList.add("is-current");
-      headChip.title = "Its branch — the one checked out here";
+      headChip.title = l10n.t("Its branch — the one checked out here");
     }
     sub.appendChild(headChip);
-    if (s.checkedOut) sub.appendChild(el("span", "prp-here", "Checked out"));
+    if (s.checkedOut) sub.appendChild(el("span", "prp-here", l10n.t("Checked out")));
     if (pr) {
       sub.appendChild(el("span", "prp-dot", "·"));
       const opened = el("span", "prp-sub-text");
@@ -563,7 +564,7 @@ export class PullRequestPage {
   private buildActions(s: PrPageViewState, pr: PrDetail): HTMLElement {
     const row = el("div", "prp-actions");
     row.setAttribute("role", "toolbar");
-    row.setAttribute("aria-label", "Pull request actions");
+    row.setAttribute("aria-label", l10n.t("Pull request actions"));
     const acts = prPageActions(pr);
     const pending = s.review?.comments.length ?? 0;
     const add = (a: PrPageAction, primary: boolean) => {
@@ -586,15 +587,15 @@ export class PullRequestPage {
       }
       if (a === "review") {
         chevron = true;
-        label = pending > 0 ? `Review (${pending} pending)` : w.label;
-        title = pending > 0 ? `Submit your review — ${plural(pending, "pending comment")} will be sent with it` : w.title;
+        label = pending > 0 ? l10n.t("Review ({0} pending)", pending) : w.label;
+        title = pending > 0 ? l10n.t("Submit your review — {0} will be sent with it", plural(pending, l10n.t("pending comment"), l10n.t("pending comments"))) : w.title;
         b.setAttribute("aria-expanded", this.panel === "review" ? "true" : "false");
         if (pending > 0) b.classList.add("has-pending");
       }
       const busyWord: Partial<Record<PrPageAction, [string, string]>> = {
-        markReady: ["ready", "Marking ready…"],
-        reopen: ["reopen", "Reopening…"],
-        checkout: ["checkout", "Checking out…"],
+        markReady: ["ready", l10n.t("Marking ready…")],
+        reopen: ["reopen", l10n.t("Reopening…")],
+        checkout: ["checkout", l10n.t("Checking out…")],
       };
       const busy = busyWord[a];
       if (busy && this.isBusy(busy[0])) {
@@ -602,7 +603,7 @@ export class PullRequestPage {
         b.disabled = true;
       }
       if (a === "merge" && this.isBusy("merge")) {
-        label = "Merging…";
+        label = l10n.t("Merging…");
         b.disabled = true;
       }
       b.appendChild(el("span", "prp-btn-label", label));
@@ -624,13 +625,13 @@ export class PullRequestPage {
     const end = el("span", "prp-actions-end");
     const refresh = button("prp-icon-btn", "refresh", "refresh");
     refresh.appendChild(codicon("refresh"));
-    refresh.title = "Refresh — read the pull request again";
-    refresh.setAttribute("aria-label", "Refresh the pull request");
+    refresh.title = l10n.t("Refresh — read the pull request again");
+    refresh.setAttribute("aria-label", l10n.t("Refresh the pull request"));
     end.appendChild(refresh);
     const gh = button("prp-icon-btn", "github", "openOnGitHub");
     gh.appendChild(codicon("link-external"));
-    gh.title = "Open on GitHub";
-    gh.setAttribute("aria-label", "Open this pull request on GitHub");
+    gh.title = l10n.t("Open on GitHub");
+    gh.setAttribute("aria-label", l10n.t("Open this pull request on GitHub"));
     end.appendChild(gh);
     row.appendChild(end);
     return row;
@@ -639,7 +640,7 @@ export class PullRequestPage {
   /** Reviews, checks, and whether it can be merged — or how it ended. */
   private buildStatus(s: PrPageViewState, pr: PrDetail): HTMLElement | undefined {
     const box = el("section", "prp-status");
-    box.setAttribute("aria-label", "Status");
+    box.setAttribute("aria-label", l10n.t("Status"));
     if (pr.kind === "merged" || pr.kind === "closed") {
       const line = el("div", `prp-status-row tone-${PR_STATES[pr.kind].tone}`);
       line.dataset.key = "status-done";
@@ -651,10 +652,14 @@ export class PullRequestPage {
       const text = el("div", "prp-status-text");
       const title = el("div", "prp-status-title");
       if (pr.kind === "merged") {
-        title.append(`Merged${pr.mergedBy ? ` by ${who(pr.mergedBy)}` : ""} into ${pr.baseRef} `);
+        title.append(
+          pr.mergedBy
+            ? l10n.t("Merged by {0} into {1} ", who(pr.mergedBy), pr.baseRef)
+            : l10n.t("Merged into {0} ", pr.baseRef),
+        );
         if (pr.mergedAt) title.appendChild(when(pr.mergedAt, s.now));
       } else {
-        title.append("Closed without merging ");
+        title.append(l10n.t("Closed without merging "));
         if (pr.closedAt) title.appendChild(when(pr.closedAt, s.now));
       }
       text.appendChild(title);
@@ -671,23 +676,23 @@ export class PullRequestPage {
     // requires no review has none, and the reviewers' own verdicts speak.
     const decision = pr.reviewDecision;
     if (decision === "CHANGES_REQUESTED" || (!decision && blockers.length > 0)) {
-      reviewLine = { tone: "failure", icon: REVIEW_DECISIONS.CHANGES_REQUESTED.codicon, title: "Changes requested", detail: blockers.length ? `By ${blockers.join(", ")}.` : undefined };
+      reviewLine = { tone: "failure", icon: REVIEW_DECISIONS.CHANGES_REQUESTED.codicon, title: l10n.t("Changes requested"), detail: blockers.length ? l10n.t("By {0}.", blockers.join(", ")) : undefined };
     } else if (decision === "APPROVED" || (!decision && approvers.length > 0)) {
-      reviewLine = { tone: "success", icon: REVIEW_DECISIONS.APPROVED.codicon, title: "Approved", detail: approvers.length ? `By ${approvers.join(", ")}.` : undefined };
+      reviewLine = { tone: "success", icon: REVIEW_DECISIONS.APPROVED.codicon, title: l10n.t("Approved"), detail: approvers.length ? l10n.t("By {0}.", approvers.join(", ")) : undefined };
     } else if (decision === "REVIEW_REQUIRED") {
-      reviewLine = { tone: "pending", icon: REVIEW_DECISIONS.REVIEW_REQUIRED.codicon, title: "Review required", detail: waiting.length ? `Waiting on ${waiting.join(", ")}.` : "At least one approving review is required to merge." };
+      reviewLine = { tone: "pending", icon: REVIEW_DECISIONS.REVIEW_REQUIRED.codicon, title: l10n.t("Review required"), detail: waiting.length ? l10n.t("Waiting on {0}.", waiting.join(", ")) : l10n.t("At least one approving review is required to merge.") };
     } else {
-      reviewLine = { tone: "muted", icon: "eye", title: waiting.length ? "Review requested" : "No reviews yet", detail: waiting.length ? `Waiting on ${waiting.join(", ")}.` : undefined };
+      reviewLine = { tone: "muted", icon: "eye", title: waiting.length ? l10n.t("Review requested") : l10n.t("No reviews yet"), detail: waiting.length ? l10n.t("Waiting on {0}.", waiting.join(", ")) : undefined };
     }
     box.appendChild(this.statusRow("status-reviews", reviewLine.tone, reviewLine.icon, reviewLine.title, reviewLine.detail));
     // Checks.
     const ci = CI_STATES[pr.ci.state];
-    const checks = this.statusRow("status-checks", ci.tone, ci.codicon, ciWords(pr.ci), pr.ci.state === "none" ? "Nothing runs on this branch's commits." : undefined);
+    const checks = this.statusRow("status-checks", ci.tone, ci.codicon, ciWords(pr.ci), pr.ci.state === "none" ? l10n.t("Nothing runs on this branch's commits.") : undefined);
     if (pr.ci.state !== "none") {
       const show = button("prp-link", "status-show-checks", "tab");
       show.dataset.value = "checks";
-      show.textContent = "Show checks";
-      show.title = "Every check on its latest commit";
+      show.textContent = l10n.t("Show checks");
+      show.title = l10n.t("Every check on its latest commit");
       checks.querySelector(".prp-status-text")?.append(" ", show);
     }
     box.appendChild(checks);
@@ -700,10 +705,10 @@ export class PullRequestPage {
       // The fix, unless the header's own primary action is already it.
       if (m.fix && !(m.fix === "markReady" && prPageActions(pr).primary === "markReady")) {
         const words = {
-          updateBranch: [PR_PAGE_ACTION_WORDS.updateBranch.label, PR_PAGE_ACTION_WORDS.updateBranch.icon, `Merge ${pr.baseRef} into this branch on GitHub`, "updateBranch", "Updating…"],
-          checkout: ["Checkout to resolve", PR_PAGE_ACTION_WORDS.checkout.icon, "Check out its branch here, to merge the base into it and resolve the conflicts", "checkout", "Checking out…"],
-          markReady: [PR_PAGE_ACTION_WORDS.markReady.label, PR_PAGE_ACTION_WORDS.markReady.icon, PR_PAGE_ACTION_WORDS.markReady.title, "markReady", "Marking ready…"],
-          refresh: ["Refresh", "refresh", "Ask GitHub again", "refresh", "Refreshing…"],
+          updateBranch: [PR_PAGE_ACTION_WORDS.updateBranch.label, PR_PAGE_ACTION_WORDS.updateBranch.icon, l10n.t("Merge {0} into this branch on GitHub", pr.baseRef), "updateBranch", l10n.t("Updating…")],
+          checkout: [l10n.t("Checkout to resolve"), PR_PAGE_ACTION_WORDS.checkout.icon, l10n.t("Check out its branch here, to merge the base into it and resolve the conflicts"), "checkout", l10n.t("Checking out…")],
+          markReady: [PR_PAGE_ACTION_WORDS.markReady.label, PR_PAGE_ACTION_WORDS.markReady.icon, PR_PAGE_ACTION_WORDS.markReady.title, "markReady", l10n.t("Marking ready…")],
+          refresh: [l10n.t("Refresh"), "refresh", l10n.t("Ask GitHub again"), "refresh", l10n.t("Refreshing…")],
         }[m.fix];
         const b = button("gs-btn prp-btn prp-status-fix", `fix-${m.fix}`, words[3]);
         b.appendChild(codicon(words[1]));
@@ -742,16 +747,16 @@ export class PullRequestPage {
   private buildMergePanel(s: PrPageViewState, pr: PrDetail): HTMLElement {
     const panel = el("section", "prp-panel prp-merge");
     panel.dataset.key = "panel-merge";
-    panel.setAttribute("aria-label", "Merge this pull request");
+    panel.setAttribute("aria-label", l10n.t("Merge this pull request"));
     const methods = this.methods(pr);
     const method = this.method && methods.includes(this.method) ? this.method : methods[0];
     this.method = method;
     const head = el("div", "prp-panel-head");
-    head.append(codicon("git-merge"), el("h2", "prp-panel-title", `Merge #${pr.number} into ${pr.baseRef}`));
+    head.append(codicon("git-merge"), el("h2", "prp-panel-title", l10n.t("Merge #{0} into {1}", pr.number, pr.baseRef)));
     panel.appendChild(head);
     const list = el("div", "prp-methods");
     list.setAttribute("role", "radiogroup");
-    list.setAttribute("aria-label", "How to merge");
+    list.setAttribute("aria-label", l10n.t("How to merge"));
     for (const m of methods) {
       const w = MERGE_METHODS[m];
       const on = m === method;
@@ -776,35 +781,35 @@ export class PullRequestPage {
     if (method !== "rebase") {
       const field = el("label", "prp-field");
       field.dataset.key = "merge-title-field";
-      field.appendChild(el("span", "prp-field-label", "Commit title"));
+      field.appendChild(el("span", "prp-field-label", l10n.t("Commit title")));
       const input = el("input", "prp-input prp-merge-title");
       input.type = "text";
       input.dataset.key = `merge-title-${method}`;
       input.spellcheck = false;
-      input.setAttribute("aria-label", "Commit title");
+      input.setAttribute("aria-label", l10n.t("Commit title"));
       field.appendChild(input);
       panel.appendChild(field);
     }
     const sameRepo = !pr.isFork;
     if (pr.repo.deleteBranchOnMerge) {
-      panel.appendChild(el("p", "prp-note", `GitHub deletes ${pr.headRef} after it is merged.`));
+      panel.appendChild(el("p", "prp-note", l10n.t("GitHub deletes {0} after it is merged.", pr.headRef)));
     } else if (sameRepo && pr.viewer.canDeleteBranch) {
       const check = el("label", "prp-check");
       check.dataset.key = "delete-branch";
       const box = el("input", "prp-check-input prp-delete-branch");
       box.type = "checkbox";
       box.dataset.act = "deleteBranch";
-      check.append(box, el("span", "prp-check-label", `Delete ${pr.headRef} on GitHub after merging`));
+      check.append(box, el("span", "prp-check-label", l10n.t("Delete {0} on GitHub after merging", pr.headRef)));
       panel.appendChild(check);
     }
     const foot = el("div", "prp-panel-foot");
     const go = button("gs-btn gs-btn--primary prp-btn", "merge-confirm", "mergeConfirm");
     go.appendChild(codicon(MERGE_METHODS[method].icon));
-    go.appendChild(el("span", "prp-btn-label", this.isBusy("merge") ? "Merging…" : MERGE_METHODS[method].confirm));
+    go.appendChild(el("span", "prp-btn-label", this.isBusy("merge") ? l10n.t("Merging…") : MERGE_METHODS[method].confirm));
     go.disabled = this.isBusy("merge");
     go.title = MERGE_METHODS[method].what(pr.commitCount || 1, pr.baseRef);
-    const cancel = button("gs-btn prp-btn", "merge-cancel", "closePanel", "Cancel");
-    cancel.title = "Close without merging";
+    const cancel = button("gs-btn prp-btn", "merge-cancel", "closePanel", l10n.t("Cancel"));
+    cancel.title = l10n.t("Close without merging");
     foot.append(go, cancel);
     panel.appendChild(foot);
     return panel;
@@ -815,17 +820,17 @@ export class PullRequestPage {
   private buildReviewPanel(s: PrPageViewState, pr: PrDetail): HTMLElement {
     const panel = el("section", "prp-panel prp-review");
     panel.dataset.key = "panel-review";
-    panel.setAttribute("aria-label", "Your review");
+    panel.setAttribute("aria-label", l10n.t("Your review"));
     const review = s.review;
     const pending = review?.comments ?? [];
     const head = el("div", "prp-panel-head");
-    head.append(codicon("comment-discussion"), el("h2", "prp-panel-title", `Review #${pr.number}`));
+    head.append(codicon("comment-discussion"), el("h2", "prp-panel-title", l10n.t("Review #{0}", pr.number)));
     panel.appendChild(head);
     const verdicts = reviewVerdictsFor(pr);
     if (!verdicts.find((v) => v.event === this.verdict)?.allowed) this.verdict = "COMMENT";
     const list = el("div", "prp-verdicts");
     list.setAttribute("role", "radiogroup");
-    list.setAttribute("aria-label", "Your verdict");
+    list.setAttribute("aria-label", l10n.t("Your verdict"));
     for (const v of verdicts) {
       const w = VERDICT_WORDS[v.event];
       const on = v.event === this.verdict;
@@ -850,26 +855,26 @@ export class PullRequestPage {
     }
     panel.appendChild(list);
     const field = el("label", "prp-field");
-    field.appendChild(el("span", "prp-field-label", "Summary"));
+    field.appendChild(el("span", "prp-field-label", l10n.t("Summary")));
     const area = el("textarea", "prp-textarea prp-review-body");
     area.dataset.key = "review-body";
     area.dataset.draft = "review";
     area.rows = 4;
-    area.placeholder = this.verdict === "COMMENT" && pending.length === 0 ? "Write a comment (a Comment review needs one)" : "Leave a summary (optional)";
-    area.setAttribute("aria-label", "Review summary");
+    area.placeholder = this.verdict === "COMMENT" && pending.length === 0 ? l10n.t("Write a comment (a Comment review needs one)") : l10n.t("Leave a summary (optional)");
+    area.setAttribute("aria-label", l10n.t("Review summary"));
     field.appendChild(area);
     panel.appendChild(field);
 
     const box = el("div", "prp-pending");
     box.dataset.key = "pending";
     if (pending.length === 0) {
-      box.appendChild(el("p", "prp-note", "No line comments yet. In Files, open a file and click + beside a changed line to add one."));
+      box.appendChild(el("p", "prp-note", l10n.t("No line comments yet. In Files, open a file and click + beside a changed line to add one.")));
     } else {
       const title = el("div", "prp-pending-title");
-      title.append(codicon("comment-draft"), el("span", "", `${plural(pending.length, "pending comment")} will be sent with this review`));
+      title.append(codicon("comment-draft"), el("span", "", l10n.t("{0} will be sent with this review", plural(pending.length, l10n.t("pending comment"), l10n.t("pending comments")))));
       box.appendChild(title);
       if (review?.stale) {
-        box.appendChild(el("p", "prp-note tone-pending", `Written on ${review.headSha.slice(0, 7)} — the pull request has moved on to ${pr.headSha.slice(0, 7)}. They are sent on the commit they were written on.`));
+        box.appendChild(el("p", "prp-note tone-pending", l10n.t("Written on {0} — the pull request has moved on to {1}. They are sent on the commit they were written on.", review.headSha.slice(0, 7), pr.headSha.slice(0, 7))));
       }
       const ul = el("ul", "prp-pending-list");
       pending.forEach((c, i) => {
@@ -878,9 +883,9 @@ export class PullRequestPage {
         b.dataset.path = c.path;
         b.dataset.line = String(c.line);
         b.dataset.side = c.side;
-        const where = `${c.path}:${c.startLine && c.startLine !== c.line ? `${c.startLine}–` : ""}${c.line}${c.side === "LEFT" ? " (removed lines)" : ""}`;
+        const where = `${c.path}:${c.startLine && c.startLine !== c.line ? `${c.startLine}–` : ""}${c.line}${c.side === "LEFT" ? l10n.t(" (removed lines)") : ""}`;
         b.append(codicon("comment-draft"), el("span", "prp-pending-where", where), el("span", "prp-pending-body", c.body.split("\n")[0]));
-        b.title = `Open ${c.path} at line ${c.line}`;
+        b.title = l10n.t("Open {0} at line {1}", c.path, c.line);
         li.appendChild(b);
         ul.appendChild(li);
       });
@@ -892,30 +897,30 @@ export class PullRequestPage {
     if (this.confirmDiscard) {
       const q = el("div", "prp-confirm");
       q.setAttribute("role", "alertdialog");
-      q.setAttribute("aria-label", "Discard your pending comments?");
-      q.append(codicon("warning"), el("span", "prp-confirm-text", `Discard ${plural(pending.length, "pending comment")}? They haven't been sent to GitHub, and this can't be undone.`));
-      const yes = button("gs-btn prp-btn prp-btn-danger", "discard-yes", "discardYes", "Discard");
-      yes.title = "Delete them — nothing is sent";
-      const no = button("gs-btn prp-btn", "discard-no", "discardNo", "Keep them");
-      no.title = "Keep your pending comments";
+      q.setAttribute("aria-label", l10n.t("Discard your pending comments?"));
+      q.append(codicon("warning"), el("span", "prp-confirm-text", l10n.t("Discard {0}? They haven't been sent to GitHub, and this can't be undone.", plural(pending.length, l10n.t("pending comment"), l10n.t("pending comments")))));
+      const yes = button("gs-btn prp-btn prp-btn-danger", "discard-yes", "discardYes", l10n.t("Discard"));
+      yes.title = l10n.t("Delete them — nothing is sent");
+      const no = button("gs-btn prp-btn", "discard-no", "discardNo", l10n.t("Keep them"));
+      no.title = l10n.t("Keep your pending comments");
       q.append(yes, no);
       foot.appendChild(q);
     } else {
       const busy = this.isBusy("review");
       const go = button("gs-btn gs-btn--primary prp-btn", "review-submit", "submitReview");
       go.appendChild(codicon(VERDICT_WORDS[this.verdict].icon));
-      go.appendChild(el("span", "prp-btn-label", busy ? "Submitting…" : "Submit review"));
+      go.appendChild(el("span", "prp-btn-label", busy ? l10n.t("Submitting…") : l10n.t("Submit review")));
       go.disabled = busy;
-      go.title = `Send your review as ${VERDICT_WORDS[this.verdict].label}${pending.length ? `, with ${plural(pending.length, "comment")}` : ""}`;
+      go.title = l10n.t("Send your review as {0}{1}", VERDICT_WORDS[this.verdict].label, pending.length ? l10n.t(", with {0}", plural(pending.length, l10n.t("comment"), l10n.t("comments"))) : "");
       foot.appendChild(go);
       if (pending.length > 0) {
-        const discard = button("gs-btn prp-btn", "review-discard", "discard", "Discard pending comments…");
-        discard.title = "Throw your pending comments away without sending them";
+        const discard = button("gs-btn prp-btn", "review-discard", "discard", l10n.t("Discard pending comments…"));
+        discard.title = l10n.t("Throw your pending comments away without sending them");
         discard.disabled = busy;
         foot.appendChild(discard);
       }
-      const cancel = button("gs-btn prp-btn", "review-close", "closePanel", "Close");
-      cancel.title = pending.length ? "Close this box — your pending comments are kept" : "Close this box";
+      const cancel = button("gs-btn prp-btn", "review-close", "closePanel", l10n.t("Close"));
+      cancel.title = pending.length ? l10n.t("Close this box — your pending comments are kept") : l10n.t("Close this box");
       foot.appendChild(cancel);
     }
     panel.appendChild(foot);
@@ -927,7 +932,7 @@ export class PullRequestPage {
   private buildTabs(s: PrPageViewState, pr: PrDetail): HTMLElement {
     const nav = el("div", "prp-tabs");
     nav.setAttribute("role", "tablist");
-    nav.setAttribute("aria-label", "Pull request");
+    nav.setAttribute("aria-label", l10n.t("Pull request"));
     const counts: Record<PrPageTab, string | undefined> = {
       conversation: String(pr.timeline.filter((t) => t.kind === "comment").length + pr.threads.reduce((n, t) => n + t.totalComments, 0)),
       commits: String(pr.commitCount),
@@ -969,19 +974,19 @@ export class PullRequestPage {
     const grid = el("div", "prp-conv");
     const main = el("div", "prp-conv-main");
     const rail = el("aside", "prp-rail");
-    rail.setAttribute("aria-label", "About this pull request");
+    rail.setAttribute("aria-label", l10n.t("About this pull request"));
     grid.append(main, rail);
     into.appendChild(grid);
 
     // The description, as its author's first comment.
-    main.appendChild(this.entry("desc", pr.author, "opened this", pr.createdAt, s, prose(pr.body, s.repo, "desc"), "prp-entry-desc"));
+    main.appendChild(this.entry("desc", pr.author, l10n.t("opened this"), pr.createdAt, s, prose(pr.body, s.repo, "desc"), "prp-entry-desc"));
 
     if (pr.timelineTotal > pr.timeline.length) {
       const more = el("p", "prp-note prp-timeline-cut");
       more.dataset.key = "timeline-cut";
-      more.append(`Showing the latest ${pr.timeline.length} of ${pr.timelineTotal.toLocaleString("en-US")} events. `);
+      more.append(l10n.t("Showing the latest {0} of {1} events. ", pr.timeline.length, pr.timelineTotal.toLocaleString("en-US")));
       const gh = button("prp-link", "timeline-gh", "openOnGitHub");
-      gh.textContent = "Open on GitHub for the rest";
+      gh.textContent = l10n.t("Open on GitHub for the rest");
       more.appendChild(gh);
       main.appendChild(more);
     }
@@ -998,21 +1003,21 @@ export class PullRequestPage {
     if (loose.length > 0) {
       const sec = el("section", "prp-loose");
       sec.dataset.key = "loose-threads";
-      sec.appendChild(el("h3", "prp-section-title", "Review threads"));
+      sec.appendChild(el("h3", "prp-section-title", l10n.t("Review threads")));
       for (const t of loose) sec.appendChild(this.thread(t, s));
       main.appendChild(sec);
     }
     if (pr.threadsTotal > pr.threads.length) {
-      main.appendChild(el("p", "prp-note", `Showing ${pr.threads.length} of ${pr.threadsTotal} review threads. Open on GitHub for the rest.`));
+      main.appendChild(el("p", "prp-note", l10n.t("Showing {0} of {1} review threads. Open on GitHub for the rest.", pr.threads.length, pr.threadsTotal)));
     }
     main.appendChild(this.composer(s));
 
     // The rail: who reviews it, who it is assigned to, its labels.
-    rail.appendChild(this.railSection("Reviewers", pr.reviewers.length === 0 ? "No one yet" : undefined, pr.reviewers.map((r) => this.reviewerRow(r))));
+    rail.appendChild(this.railSection(l10n.t("Reviewers"), pr.reviewers.length === 0 ? l10n.t("No one yet") : undefined, pr.reviewers.map((r) => this.reviewerRow(r))));
     rail.appendChild(
       this.railSection(
-        "Assignees",
-        pr.assignees.length === 0 ? "No one" : undefined,
+        l10n.t("Assignees"),
+        pr.assignees.length === 0 ? l10n.t("No one") : undefined,
         pr.assignees.map((a) => {
           const row = el("div", "prp-person");
           row.dataset.key = `assignee-${a.login}`;
@@ -1025,10 +1030,10 @@ export class PullRequestPage {
     for (const l of pr.labels) {
       const c = el("span", "prp-label", l.name);
       c.style.setProperty("--prp-label", `#${l.color}`);
-      c.title = `Label: ${l.name}`;
+      c.title = l10n.t("Label: {0}", l.name);
       labels.appendChild(c);
     }
-    rail.appendChild(this.railSection("Labels", pr.labels.length === 0 ? "None" : undefined, pr.labels.length ? [labels] : []));
+    rail.appendChild(this.railSection(l10n.t("Labels"), pr.labels.length === 0 ? l10n.t("None") : undefined, pr.labels.length ? [labels] : []));
   }
 
   private railSection(title: string, empty: string | undefined, rows: HTMLElement[]): HTMLElement {
@@ -1060,9 +1065,9 @@ export class PullRequestPage {
     }
     if (r.requested) {
       const tag = el("span", "prp-verdict-tag tone-pending");
-      tag.append(codicon("clock"), el("span", "prp-verdict-tag-word", r.verdict ? "Asked again" : "Awaiting review"));
+      tag.append(codicon("clock"), el("span", "prp-verdict-tag-word", r.verdict ? l10n.t("Asked again") : l10n.t("Awaiting review")));
       tags.appendChild(tag);
-      said.push(r.verdict ? "asked to review again" : "asked to review");
+      said.push(r.verdict ? l10n.t("asked to review again") : l10n.t("asked to review"));
     }
     if (tags.childNodes.length) text.appendChild(tags);
     row.appendChild(text);
@@ -1091,7 +1096,7 @@ export class PullRequestPage {
 
   private timelineItem(item: PrTimelineItem, s: PrPageViewState, pr: PrDetail, threads: PrThread[]): HTMLElement {
     if (item.kind === "comment") {
-      const sending = item.sending ? el("span", "prp-sending", "Sending…") : undefined;
+      const sending = item.sending ? el("span", "prp-sending", l10n.t("Sending…")) : undefined;
       return this.entry(item.id, item.author, "commented", item.createdAt, s, prose(item.body, s.repo, item.id), item.sending ? "is-sending" : "", sending);
     }
     if (item.kind === "review") {
@@ -1104,7 +1109,7 @@ export class PullRequestPage {
       line.appendChild(badge);
       const text = el("span", "prp-event-text");
       text.append(avatar(item.author, 18), el("strong", "prp-author", who(item.author)), ` ${v.verb} `, when(item.createdAt, s.now));
-      if (item.sending) text.appendChild(el("span", "prp-sending", "Sending…"));
+      if (item.sending) text.appendChild(el("span", "prp-sending", l10n.t("Sending…")));
       line.appendChild(text);
       wrap.appendChild(line);
       if (item.body.trim()) {
@@ -1141,15 +1146,15 @@ export class PullRequestPage {
     const place = el("span", "prp-thread-path", t.path);
     if (line) place.appendChild(el("span", "prp-thread-line", `:${t.startLine && t.startLine !== line ? `${t.startLine}–` : ""}${line}`));
     where.append(codicon("file"), place);
-    where.title = t.outdated ? `Open ${t.path} — the lines this was written on have changed since` : `Open ${t.path} at line ${line}`;
+    where.title = t.outdated ? l10n.t("Open {0} — the lines this was written on have changed since", t.path ?? "") : l10n.t("Open {0} at line {1}", t.path, line ?? "");
     head.appendChild(where);
-    if (t.outdated) head.appendChild(this.tag("Outdated", "history", "The code it was written on has changed since"));
-    if (t.resolved) head.appendChild(this.tag(t.resolvedBy ? `Resolved by ${t.resolvedBy}` : "Resolved", "check", "This conversation is resolved"));
+    if (t.outdated) head.appendChild(this.tag(l10n.t("Outdated"), "history", l10n.t("The code it was written on has changed since")));
+    if (t.resolved) head.appendChild(this.tag(t.resolvedBy ? l10n.t("Resolved by {0}", t.resolvedBy) : l10n.t("Resolved"), "check", l10n.t("This conversation is resolved")));
     head.appendChild(el("span", "prp-grow"));
     if (t.resolved) {
       const toggle = button("prp-link", `thread-toggle-${t.id}`, "toggleThread");
       toggle.dataset.thread = t.id;
-      toggle.textContent = collapsed ? `Show ${plural(t.comments.length, "comment")}` : "Hide";
+      toggle.textContent = collapsed ? l10n.t("Show {0}", plural(t.comments.length, l10n.t("comment"), l10n.t("comments"))) : l10n.t("Hide");
       toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
       head.appendChild(toggle);
     }
@@ -1160,24 +1165,24 @@ export class PullRequestPage {
       row.dataset.key = `comment-${c.id}`;
       const top = el("div", "prp-thread-comment-head");
       top.append(avatar(c.author, 20), el("strong", "prp-author", who(c.author)), " ", when(c.createdAt, s.now));
-      if (c.sending) top.appendChild(el("span", "prp-sending", "Sending…"));
+      if (c.sending) top.appendChild(el("span", "prp-sending", l10n.t("Sending…")));
       row.appendChild(top);
       row.appendChild(prose(c.body, s.repo, c.id, " "));
       box.appendChild(row);
     }
-    if (t.totalComments > t.comments.length) box.appendChild(el("p", "prp-note", `${t.totalComments - t.comments.length} more on GitHub.`));
+    if (t.totalComments > t.comments.length) box.appendChild(el("p", "prp-note", l10n.t("{0} more on GitHub.", t.totalComments - t.comments.length)));
     const foot = el("div", "prp-thread-foot");
     if (t.canReply) {
       const area = el("textarea", "prp-textarea prp-reply");
       area.dataset.key = `reply-${t.id}`;
       area.dataset.draft = `reply:${t.id}`;
       area.rows = 1;
-      area.placeholder = "Reply…";
-      area.setAttribute("aria-label", `Reply to the conversation on ${t.path}`);
+      area.placeholder = l10n.t("Reply…");
+      area.setAttribute("aria-label", l10n.t("Reply to the conversation on {0}", t.path));
       foot.appendChild(area);
-      const send = button("gs-btn prp-btn", `reply-send-${t.id}`, "reply", this.isBusy(`reply:${t.id}`) ? "Replying…" : "Reply");
+      const send = button("gs-btn prp-btn", `reply-send-${t.id}`, "reply", this.isBusy(`reply:${t.id}`) ? l10n.t("Replying…") : l10n.t("Reply"));
       send.dataset.thread = t.id;
-      send.title = "Post your reply on GitHub";
+      send.title = l10n.t("Post your reply on GitHub");
       send.disabled = this.isBusy(`reply:${t.id}`) || !(this.drafts.get(`reply:${t.id}`) ?? "").trim();
       foot.appendChild(send);
     }
@@ -1188,9 +1193,9 @@ export class PullRequestPage {
       r.dataset.value = t.resolved ? "unresolve" : "resolve";
       const busy = this.isBusy(`resolve:${t.id}`);
       r.appendChild(codicon(t.resolved ? "issue-reopened" : "check"));
-      r.appendChild(el("span", "prp-btn-label", busy ? (t.resolved ? "Unresolving…" : "Resolving…") : t.resolved ? "Unresolve" : "Resolve conversation"));
+      r.appendChild(el("span", "prp-btn-label", busy ? (t.resolved ? l10n.t("Unresolving…") : l10n.t("Resolving…")) : t.resolved ? l10n.t("Unresolve") : l10n.t("Resolve conversation")));
       r.disabled = busy;
-      r.title = t.resolved ? "Open this conversation again" : "Mark this conversation resolved";
+      r.title = t.resolved ? l10n.t("Open this conversation again") : l10n.t("Mark this conversation resolved");
       foot.appendChild(r);
     }
     if (foot.childNodes.length) box.appendChild(foot);
@@ -1213,16 +1218,16 @@ export class PullRequestPage {
     area.dataset.key = "comment-body";
     area.dataset.draft = "comment";
     area.rows = 3;
-    area.placeholder = "Leave a comment — Markdown works";
-    area.setAttribute("aria-label", "Add a comment to the conversation");
+    area.placeholder = l10n.t("Leave a comment — Markdown works");
+    area.setAttribute("aria-label", l10n.t("Add a comment to the conversation"));
     card.appendChild(area);
     const foot = el("div", "prp-composer-foot");
-    foot.appendChild(el("span", "prp-hint", "Ctrl+Enter to send"));
+    foot.appendChild(el("span", "prp-hint", l10n.t("Ctrl+Enter to send")));
     const busy = this.isBusy("comment");
     const send = button("gs-btn gs-btn--primary prp-btn", "comment-send", "comment");
-    send.append(codicon("comment"), el("span", "prp-btn-label", busy ? "Commenting…" : "Comment"));
+    send.append(codicon("comment"), el("span", "prp-btn-label", busy ? l10n.t("Commenting…") : l10n.t("Comment")));
     send.disabled = busy || !(this.drafts.get("comment") ?? "").trim();
-    send.title = "Post your comment on GitHub";
+    send.title = l10n.t("Post your comment on GitHub");
     foot.appendChild(send);
     card.appendChild(foot);
     box.appendChild(card);
@@ -1233,14 +1238,14 @@ export class PullRequestPage {
 
   private buildCommits(into: HTMLElement, s: PrPageViewState, pr: PrDetail): void {
     if (pr.commits.length === 0) {
-      into.appendChild(el("p", "prp-empty", "No commits."));
+      into.appendChild(el("p", "prp-empty", l10n.t("No commits.")));
       return;
     }
     if (pr.commitCount > pr.commits.length) {
-      into.appendChild(el("p", "prp-note", `Showing the latest ${pr.commits.length} of ${pr.commitCount} commits. Open on GitHub for the rest.`));
+      into.appendChild(el("p", "prp-note", l10n.t("Showing the latest {0} of {1} commits. Open on GitHub for the rest.", pr.commits.length, pr.commitCount)));
     }
     const list = el("ul", "prp-commits");
-    list.setAttribute("aria-label", "Commits");
+    list.setAttribute("aria-label", l10n.t("Commits"));
     for (const c of pr.commits) {
       const li = el("li", "prp-commit");
       li.dataset.key = `commit-${c.sha}`;
@@ -1262,27 +1267,27 @@ export class PullRequestPage {
       row.appendChild(g);
       row.appendChild(el("span", "prp-sha", c.shortSha));
       row.title = `${c.headline}\n${c.sha}`;
-      row.setAttribute("aria-label", `Commit ${c.shortSha}: ${c.headline}, by ${c.author?.login ?? c.authorName}, ${ageWords(c.committedAt, s.now)}${c.ci !== "none" ? `, ${CI_STATES[c.ci].word.toLowerCase()}` : ""}`);
+      row.setAttribute("aria-label", l10n.t("Commit {0}: {1}, by {2}, {3}{4}", c.shortSha, c.headline, c.author?.login ?? c.authorName, ageWords(c.committedAt, s.now), c.ci !== "none" ? `, ${CI_STATES[c.ci].word.toLowerCase()}` : ""));
       li.appendChild(row);
       if (open) {
         const detail = el("div", "prp-commit-detail");
         if (c.body.trim()) detail.appendChild(el("pre", "prp-commit-body", c.body.trim()));
         const files = s.commitFiles[c.sha];
         if (!files || files.status === "loading") {
-          detail.appendChild(el("p", "prp-note", "Loading its files…"));
+          detail.appendChild(el("p", "prp-note", l10n.t("Loading its files…")));
         } else if (files.status === "failed") {
           const p = el("p", "prp-note tone-failure");
-          p.append(`Couldn't load its files. ${files.error ?? ""} `);
+          p.append(l10n.t("Couldn't load its files. {0} ", files.error ?? ""));
           const retry = button("prp-link", `commit-retry-${c.sha}`, "commitRetry");
           retry.dataset.sha = c.sha;
-          retry.textContent = "Retry";
-          retry.title = "Read its files again";
+          retry.textContent = l10n.t("Retry");
+          retry.title = l10n.t("Read its files again");
           p.appendChild(retry);
           detail.appendChild(p);
         } else {
           const ul = el("ul", "prp-flat-files");
           for (const f of files.files ?? []) ul.appendChild(this.fileRow(f, `cf-${c.sha}`, 0, s, { sha: c.sha }));
-          if ((files.files ?? []).length === 0) ul.appendChild(el("li", "prp-note", "No file changes."));
+          if ((files.files ?? []).length === 0) ul.appendChild(el("li", "prp-note", l10n.t("No file changes.")));
           detail.appendChild(ul);
         }
         li.appendChild(detail);
@@ -1304,12 +1309,12 @@ export class PullRequestPage {
     if (commit) head.appendChild(el("span", "prp-checks-on", `on ${commit.shortSha}`));
     into.appendChild(head);
     if (pr.checks.length === 0) {
-      into.appendChild(el("p", "prp-empty", "No checks run on this pull request's latest commit."));
+      into.appendChild(el("p", "prp-empty", l10n.t("No checks run on this pull request's latest commit.")));
       return;
     }
-    if (pr.checksTotal > pr.checks.length) into.appendChild(el("p", "prp-note", `Showing ${pr.checks.length} of ${pr.checksTotal} checks.`));
+    if (pr.checksTotal > pr.checks.length) into.appendChild(el("p", "prp-note", l10n.t("Showing {0} of {1} checks.", pr.checks.length, pr.checksTotal)));
     const list = el("ul", "prp-checks");
-    list.setAttribute("aria-label", "Checks");
+    list.setAttribute("aria-label", l10n.t("Checks"));
     pr.checks.forEach((c, i) => list.appendChild(this.checkRow(c, i, s)));
     into.appendChild(list);
   }
@@ -1333,19 +1338,19 @@ export class PullRequestPage {
     // Required, and Details: each in its own column, empty or not, so every
     // row's Details sits in the same place.
     const req = el("span", "prp-check-req");
-    if (c.required) req.appendChild(this.tag("Required", "lock", "Required to pass before merging"));
+    if (c.required) req.appendChild(this.tag(l10n.t("Required"), "lock", l10n.t("Required to pass before merging")));
     li.appendChild(req);
     const link = el("span", "prp-check-link");
     if (c.url) {
       const b = button("prp-ghost", `check-details-${i}`, "openUrl");
       b.dataset.url = c.url;
-      b.append(codicon("link-external"), el("span", "prp-btn-label", "Details"));
-      b.title = `Open ${c.name}'s details`;
-      b.setAttribute("aria-label", `Details of ${c.name}`);
+      b.append(codicon("link-external"), el("span", "prp-btn-label", l10n.t("Details")));
+      b.title = l10n.t("Open {0}'s details", c.name);
+      b.setAttribute("aria-label", l10n.t("Details of {0}", c.name));
       link.appendChild(b);
     }
     li.appendChild(link);
-    li.setAttribute("aria-label", `${c.workflow ? `${c.workflow} / ` : ""}${c.name}: ${said}${c.required ? ", required" : ""}`);
+    li.setAttribute("aria-label", `${c.workflow ? `${c.workflow} / ` : ""}${c.name}: ${said}${c.required ? l10n.t(", required") : ""}`);
     return li;
   }
 
@@ -1354,43 +1359,43 @@ export class PullRequestPage {
   private buildFiles(into: HTMLElement, s: PrPageViewState, pr: PrDetail): void {
     const bar = el("div", "prp-files-head");
     const sum = el("span", "prp-files-sum");
-    sum.append(plural(pr.changedFiles, "file"), " ");
+    sum.append(plural(pr.changedFiles, l10n.t("file"), l10n.t("files")), " ");
     if (pr.additions > 0) sum.appendChild(el("span", "prp-add", `+${pr.additions.toLocaleString("en-US")}`));
     if (pr.deletions > 0) sum.appendChild(el("span", "prp-del", `−${pr.deletions.toLocaleString("en-US")}`));
     bar.appendChild(sum);
     bar.appendChild(el("span", "prp-grow"));
     const open = pr.kind === "open" || pr.kind === "draft";
     if (open) {
-      const hint = el("span", "prp-hint", "Open a file, then click + beside a changed line to comment");
+      const hint = el("span", "prp-hint", l10n.t("Open a file, then click + beside a changed line to comment"));
       bar.appendChild(hint);
       if (!s.review?.started && (s.review?.comments.length ?? 0) === 0) {
         const start = button("gs-btn prp-btn", "files-start-review", "startReview");
-        start.append(codicon(PR_PAGE_ACTION_WORDS.review.icon), el("span", "prp-btn-label", "Start review"));
-        start.title = "Open the first file, ready for your comments";
+        start.append(codicon(PR_PAGE_ACTION_WORDS.review.icon), el("span", "prp-btn-label", l10n.t("Start review")));
+        start.title = l10n.t("Open the first file, ready for your comments");
         bar.appendChild(start);
       }
     }
     into.appendChild(bar);
     const files = s.files;
     if (!files) {
-      into.appendChild(el("p", "prp-note", "Loading the changed files…"));
+      into.appendChild(el("p", "prp-note", l10n.t("Loading the changed files…")));
       return;
     }
     if (files.error) {
       const p = el("p", "prp-note tone-failure");
-      p.textContent = `Couldn't load the changed files. ${files.error}`;
+      p.textContent = l10n.t("Couldn't load the changed files. {0}", files.error);
       into.appendChild(p);
       if (files.items.length === 0) return;
     } else if (files.items.length < pr.changedFiles) {
-      into.appendChild(el("p", "prp-note", `Showing ${files.items.length} of ${pr.changedFiles} files${pr.changedFiles > 3000 ? " — GitHub lists at most 3,000" : ""}. Open on GitHub for the rest.`));
+      into.appendChild(el("p", "prp-note", l10n.t("Showing {0} of {1} files{2}. Open on GitHub for the rest.", files.items.length, pr.changedFiles, pr.changedFiles > 3000 ? l10n.t(" — GitHub lists at most 3,000") : "")));
     }
     if (files.items.length === 0) {
-      into.appendChild(el("p", "prp-empty", "No changed files."));
+      into.appendChild(el("p", "prp-empty", l10n.t("No changed files.")));
       return;
     }
     const tree = el("ul", "prp-tree");
     tree.setAttribute("role", "tree");
-    tree.setAttribute("aria-label", "Changed files");
+    tree.setAttribute("aria-label", l10n.t("Changed files"));
     const walk = (nodes: PrFileNode[], depth: number, parent: HTMLElement) => {
       for (const n of nodes) {
         if (n.kind === "file") {
@@ -1449,23 +1454,23 @@ export class PullRequestPage {
       if (threads > 0) {
         const t = el("span", "prp-file-badge");
         t.append(codicon("comment"), el("span", "", String(threads)));
-        t.title = `${plural(threads, "conversation")} on this file`;
+        t.title = l10n.t("{0} on this file", plural(threads, l10n.t("conversation"), l10n.t("conversations")));
         b.appendChild(t);
       }
       if (pending > 0) {
         const t = el("span", "prp-file-badge is-pending");
         t.append(codicon("comment-draft"), el("span", "", `${pending} pending`));
-        t.title = `${plural(pending, "pending comment")} of yours on this file`;
+        t.title = l10n.t("{0} of yours on this file", plural(pending, l10n.t("pending comment"), l10n.t("pending comments")));
         b.appendChild(t);
       }
     }
     const counts = el("span", "prp-file-counts");
-    if (f.noDiff && f.additions === 0 && f.deletions === 0) counts.appendChild(el("span", "prp-file-binary", "Binary"));
+    if (f.noDiff && f.additions === 0 && f.deletions === 0) counts.appendChild(el("span", "prp-file-binary", l10n.t("Binary")));
     if (f.additions > 0) counts.appendChild(el("span", "prp-add", `+${f.additions}`));
     if (f.deletions > 0) counts.appendChild(el("span", "prp-del", `−${f.deletions}`));
     b.appendChild(counts);
-    b.title = `${st.word}: ${f.previousPath ? `${f.previousPath} → ` : ""}${f.path}${f.noDiff ? " (GitHub shows no diff for it)" : ""}`;
-    b.setAttribute("aria-label", `${f.path}, ${st.word.toLowerCase()}${f.previousPath ? ` from ${f.previousPath}` : ""}, ${f.additions} added, ${f.deletions} removed`);
+    b.title = `${st.word}: ${f.previousPath ? `${f.previousPath} → ` : ""}${f.path}${f.noDiff ? l10n.t(" (GitHub shows no diff for it)") : ""}`;
+    b.setAttribute("aria-label", l10n.t("{0}, {1}{2}, {3} added, {4} removed", f.path, st.word.toLowerCase(), f.previousPath ? l10n.t(" from {0}", f.previousPath) : "", f.additions, f.deletions));
     li.appendChild(b);
     return li;
   }
@@ -1780,7 +1785,7 @@ export class PullRequestPage {
     }
     const menu = el("div", "prp-menu");
     menu.setAttribute("role", "menu");
-    menu.setAttribute("aria-label", "More actions");
+    menu.setAttribute("aria-label", l10n.t("More actions"));
     // The desktop's More actions: Update branch · Close pull request · Copy
     // link, a line between the groups. Open on GitHub and Refresh have their
     // own buttons at the header's end.
@@ -1795,7 +1800,7 @@ export class PullRequestPage {
       const b = button("prp-menu-item", `menu-${a}`, a);
       b.setAttribute("role", "menuitem");
       const busy = a === "close" && this.isBusy("close");
-      b.append(codicon(w.icon), el("span", "prp-menu-label", busy ? "Closing…" : w.label));
+      b.append(codicon(w.icon), el("span", "prp-menu-label", busy ? l10n.t("Closing…") : w.label));
       b.disabled = busy;
       b.title = w.title;
       if (a === "close") b.classList.add("is-danger");

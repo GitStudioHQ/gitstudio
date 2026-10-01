@@ -20,6 +20,7 @@ import { parseConflictMarkers } from "@gitstudio/engine/conflict/markers";
 import type { MergeSides, ReadSidesOptions } from "@gitstudio/git-service/ConflictOps";
 import type { OperationView } from "@gitstudio/host-bridge/conflictsProtocol";
 import type { ConflictType, MergeInitPayload } from "@gitstudio/host-bridge/protocol";
+import * as l10n from "@vscode/l10n";
 
 /** The one read the payload is built from (ConflictOps in production, a fake in tests). */
 export interface SidesReader {
@@ -43,7 +44,7 @@ export interface PayloadInput {
 }
 
 /** Labels used when there is no operation to name the sides. */
-export const GENERIC_LABELS = { yours: "Yours", theirs: "Theirs" } as const;
+export const GENERIC_LABELS = { yours: l10n.t("Yours"), theirs: l10n.t("Theirs") } as const;
 
 /**
  * Builds the payload from the role-mapped sides. `op` is included when an

@@ -5,17 +5,18 @@
 // "All" scope stopped looking at the author email while the graph's still
 // did, so the same query counted different commits in the two lists.
 
+import * as l10n from "@vscode/l10n";
 import type { WireRow } from "@gitstudio/host-bridge/graphProtocol";
 
 /** What the search query matches against. */
 export type SearchScope = "all" | "message" | "author" | "sha" | "refs";
 
 export const SEARCH_SCOPES: ReadonlyArray<{ id: SearchScope; label: string }> = [
-  { id: "all", label: "All" },
-  { id: "message", label: "Message" },
-  { id: "author", label: "Author" },
-  { id: "sha", label: "SHA" },
-  { id: "refs", label: "Branch+Tag" },
+  { id: "all", label: l10n.t("All") },
+  { id: "message", label: l10n.t("Message") },
+  { id: "author", label: l10n.t("Author") },
+  { id: "sha", label: l10n.t("SHA") },
+  { id: "refs", label: l10n.t("Branch+Tag") },
 ];
 
 /** One localStorage key for both lists, so the preference follows the user. */

@@ -3,6 +3,7 @@ import type { GitRef } from "@gitstudio/host-bridge/git";
 import { refLabel } from "@gitstudio/host-bridge/graphRefFilter";
 import type { RepoManager } from "../git/repoManager";
 import { codeSpan } from "../ui/markdownCode";
+import * as l10n from "@vscode/l10n";
 
 // The tree has two levels: fixed category roots (Local / Remotes / Tags) and
 // the refs grouped under them. Stashes are listed in the Changes view (its
@@ -10,9 +11,9 @@ import { codeSpan } from "../ui/markdownCode";
 type RefCategory = "local" | "remotes" | "tags";
 
 const CATEGORY_LABELS: Record<RefCategory, string> = {
-  local: "Local",
-  remotes: "Remotes",
-  tags: "Tags",
+  local: l10n.t("Local"),
+  remotes: l10n.t("Remotes"),
+  tags: l10n.t("Tags"),
 };
 
 /** Union of the rows the Branches tree renders. */
@@ -36,12 +37,17 @@ class CategoryNode extends vscode.TreeItem {
     );
     const noun =
       category === "remotes"
-        ? "remote-tracking branch"
+        ? l10n.t("remote-tracking branch")
         : category === "tags"
-          ? "tag"
-          : "local branch";
-    const plural = noun.endsWith("h") ? `${noun}es` : `${noun}s`;
-    this.tooltip = `${count} ${count === 1 ? noun : plural}`;
+          ? l10n.t("tag")
+          : l10n.t("local branch");
+    const plural =
+      category === "remotes"
+        ? l10n.t("remote-tracking branches")
+        : category === "tags"
+          ? l10n.t("tags")
+          : l10n.t("local branches");
+    this.tooltip = l10n.t("{0} {1}", count, count === 1 ? noun : plural);
   }
 }
 
@@ -114,12 +120,12 @@ function buildRefTooltip(ref: GitRef): vscode.MarkdownString {
         : "$(tag)";
   md.appendMarkdown(`${icon} **${escapeMarkdown(refNodeLabel(ref))}**`);
   if (ref.type === "head" && ref.isCurrent) {
-    md.appendMarkdown(` · $(check) current`);
+    md.appendMarkdown(l10n.t(" · $(check) current"));
   }
   md.appendMarkdown(`\n\n`);
-  md.appendMarkdown(`$(git-commit) \`${ref.sha.slice(0, 7)}\``);
+  md.appendMarkdown(l10n.t("$(git-commit) `{0}`", ref.sha.slice(0, 7)));
   if (ref.upstream) {
-    md.appendMarkdown(`\n\n$(cloud) tracking ${codeSpan(ref.upstream)}`);
+    md.appendMarkdown(l10n.t("\n\n$(cloud) tracking {0}", codeSpan(ref.upstream)));
   }
   return md;
 }

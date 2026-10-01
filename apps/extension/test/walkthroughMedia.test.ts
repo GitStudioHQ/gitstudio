@@ -98,5 +98,9 @@ test("staging or committing in the Changes view checks off the staging step", ()
     /if \(failure === undefined && what\?\.verb === "stage"\) \{\s*markWalkthrough\("staged"\);/,
     "a stage that worked marks it",
   );
-  assert.match(view, /setStatusBarMessage\("\$\(check\) Committed", 3000\);\s*markWalkthrough\("committed"\);/, "so does a commit");
+  assert.match(
+    view,
+    /void vscode\.window\.setStatusBarMessage\(l10n\.t\("\$\(check\) Committed"\), 3000\);\s*markWalkthrough\("committed"\);/,
+    "so does a commit",
+  );
 });

@@ -1,3 +1,5 @@
+import * as l10n from "@vscode/l10n";
+import { l10nWebviewScript } from "@gitstudio/l10n/index";
 // The Pull Requests view's page: the shared list's bundle
 // (packages/webview-ui/src/pr/list-main.ts → dist/webview/pr-list.js + .css),
 // the codicons, and a `#root` for it — under a strict CSP.
@@ -44,10 +46,11 @@ export function prListHtml(p: PrListHtmlParts): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link href="${attr(p.codiconCss)}" rel="stylesheet" />
   <link href="${attr(p.listCss)}" rel="stylesheet" />
-  <title>Pull Requests</title>
+  <title>${l10n.t("Pull Requests")}</title>
 </head>
 <body>
   <div id="root"></div>
+  ${l10nWebviewScript(p.nonce)}
   <script nonce="${attr(p.nonce)}" src="${attr(p.listJs)}"></script>
 </body>
 </html>`;

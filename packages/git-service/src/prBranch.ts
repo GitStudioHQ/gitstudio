@@ -42,6 +42,7 @@
 import { nativePath } from "./folderPath";
 import type { GitRunResult } from "./GitProcess";
 import type { PrGitRunner } from "./prCheckout";
+import * as l10n from "@vscode/l10n";
 
 /** The pull request's branch, and where it lives. */
 export interface PrBranchTarget {
@@ -116,9 +117,9 @@ export function isSafeRemoteName(name: string): boolean {
 }
 
 function nameProblem(t: Pick<PrBranchTarget, "headRef" | "remote">, local?: string): string | undefined {
-  if (!isSafeRemoteName(t.remote)) return `"${t.remote}" isn't a remote name.`;
-  if (!isSafeBranchName(t.headRef)) return `"${t.headRef}" isn't a branch name git takes.`;
-  if (local !== undefined && !isSafeBranchName(local)) return `"${local}" isn't a branch name git takes.`;
+  if (!isSafeRemoteName(t.remote)) return l10n.t("\"{0}\" isn't a remote name.", t.remote);
+  if (!isSafeBranchName(t.headRef)) return l10n.t("\"{0}\" isn't a branch name git takes.", t.headRef);
+  if (local !== undefined && !isSafeBranchName(local)) return l10n.t("\"{0}\" isn't a branch name git takes.", local);
   return undefined;
 }
 
@@ -141,12 +142,12 @@ export async function fetchPrBranch(
   const tracking = `refs/remotes/${t.remote}/${t.headRef}`;
   const f = await proc.run(["fetch", "--no-tags", "--", t.remote, `+refs/heads/${t.headRef}:${tracking}`], opts);
   if (f.code !== 0) {
-    const said = firstLine(f.stderr) || `git fetch exited with ${f.code}`;
+    const said = firstLine(f.stderr) || l10n.t("git fetch exited with {0}", f.code);
     return { error: said, ...(/couldn't find remote ref|no such ref|not our ref/i.test(f.stderr) ? { gone: true } : {}) };
   }
   const r = await proc.run(["rev-parse", "--verify", "--quiet", `${tracking}^{commit}`], opts);
   const sha = r.stdout.trim();
-  if (r.code !== 0 || !/^[0-9a-f]{40,64}$/.test(sha)) return { error: `Couldn't read ${t.remote}/${t.headRef} after fetching it.` };
+  if (r.code !== 0 || !/^[0-9a-f]{40,64}$/.test(sha)) return { error: l10n.t("Couldn't read {0}/{1} after fetching it.", t.remote, t.headRef) };
   return { sha };
 }
 
@@ -188,7 +189,7 @@ async function readLocal(proc: PrGitRunner, t: PrBranchTarget, local: string, op
   } else {
     tracks = "other";
     const branch = upMerge.replace(/^refs\/heads\//, "");
-    tracksName = upRemote === "." ? `the local branch ${branch}` : `${upRemote}/${branch}`;
+    tracksName = upRemote === "." ? l10n.t("the local branch {0}", branch) : `${upRemote}/${branch}`;
   }
   const worktree = checkedOut ? undefined : worktreeHolding(worktrees.stdout, ref);
   return {
@@ -282,7 +283,8 @@ export async function moveLocalBranch(
   why: string,
   opts?: { signal?: AbortSignal },
 ): Promise<GitRunResult> {
-  if (!plan.localSha) return { code: 1, stdout: "", stderr: `${plan.local} doesn't exist yet.` };
+  if (!plan.localSha) return { code: 1, stdout: "", stderr: l10n.t("{0} doesn't exist yet.", plan.local) };
+  // English on purpose: the `-m` text is the reflog entry git stores.
   return proc.run(["update-ref", "-m", `GitStudio: ${why}`, plan.ref, plan.sha, plan.localSha], opts);
 }
 
@@ -383,8 +385,8 @@ export function newRemoteName(preferred: string, taken: readonly string[]): stri
 
 /** `git remote add <name> <url>` — only a checked name, only a URL. */
 export async function addRemote(proc: PrGitRunner, name: string, url: string, opts?: { signal?: AbortSignal }): Promise<GitRunResult> {
-  if (!isSafeRemoteName(name)) return { code: 1, stdout: "", stderr: `"${name}" isn't a remote name.` };
-  if (!/^(https:\/\/|ssh:\/\/|[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+:)/.test(url)) return { code: 1, stdout: "", stderr: `"${url}" isn't a remote URL.` };
+  if (!isSafeRemoteName(name)) return { code: 1, stdout: "", stderr: l10n.t("\"{0}\" isn't a remote name.", name) };
+  if (!/^(https:\/\/|ssh:\/\/|[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+:)/.test(url)) return { code: 1, stdout: "", stderr: l10n.t("\"{0}\" isn't a remote URL.", url) };
   return proc.run(["remote", "add", "--", name, url], opts);
 }
 

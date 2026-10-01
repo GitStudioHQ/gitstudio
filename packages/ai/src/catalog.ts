@@ -8,6 +8,7 @@
 // speaks openai-compat (Gemini exposes a compat endpoint; local servers too).
 
 import type { ModelTier } from "./types";
+import * as l10n from "@vscode/l10n";
 
 /**
  * How a connection reaches its model:
@@ -52,8 +53,8 @@ export interface ProviderPreset {
 export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: "anthropic",
-    label: "Anthropic (Claude)",
-    blurb: "Claude Opus, Sonnet & Haiku — strongest for code & agentic work.",
+    label: l10n.t("Anthropic (Claude)"),
+    blurb: l10n.t("Claude Opus, Sonnet & Haiku — strongest for code & agentic work."),
     wire: "anthropic",
     baseUrl: "https://api.anthropic.com",
     models: { fast: "claude-haiku-4-5", mid: "claude-sonnet-4-6", deep: "claude-opus-4-8" },
@@ -64,7 +65,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: "openai",
     label: "OpenAI",
-    blurb: "GPT-4o / o-series via the OpenAI API.",
+    blurb: l10n.t("GPT-4o / o-series via the OpenAI API."),
     wire: "openai-compat",
     baseUrl: "https://api.openai.com/v1",
     models: { fast: "gpt-4o-mini", mid: "gpt-4o", deep: "gpt-4o" },
@@ -74,8 +75,8 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   },
   {
     id: "claude-code",
-    label: "Claude Code (local)",
-    blurb: "Drive your installed `claude` CLI with its own login — no API key.",
+    label: l10n.t("Claude Code (local)"),
+    blurb: l10n.t("Drive your installed `claude` CLI with its own login — no API key."),
     wire: "cli",
     baseUrl: "",
     models: { fast: "haiku", mid: "sonnet", deep: "opus" },
@@ -83,12 +84,12 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     local: true,
     keyUrl: "https://docs.anthropic.com/en/docs/claude-code",
     icon: "terminal",
-    note: "Needs the `claude` CLI on your PATH and signed in. Model names map to `claude --model`.",
+    note: l10n.t("Needs the `claude` CLI on your PATH and signed in. Model names map to `claude --model`."),
   },
   {
     id: "codex",
-    label: "Codex (local)",
-    blurb: "Drive your installed `codex` CLI with its ChatGPT/OpenAI login — no API key.",
+    label: l10n.t("Codex (local)"),
+    blurb: l10n.t("Drive your installed `codex` CLI with its ChatGPT/OpenAI login — no API key."),
     wire: "cli",
     baseUrl: "",
     models: { fast: "", mid: "", deep: "" },
@@ -96,12 +97,12 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     local: true,
     keyUrl: "https://github.com/openai/codex",
     icon: "terminal",
-    note: "Needs the `codex` CLI on your PATH and signed in.",
+    note: l10n.t("Needs the `codex` CLI on your PATH and signed in."),
   },
   {
     id: "gemini-cli",
-    label: "Gemini CLI (local)",
-    blurb: "Drive your installed `gemini` CLI with its Google login — no API key.",
+    label: l10n.t("Gemini CLI (local)"),
+    blurb: l10n.t("Drive your installed `gemini` CLI with its Google login — no API key."),
     wire: "cli",
     baseUrl: "",
     models: { fast: "gemini-2.5-flash", mid: "gemini-2.5-flash", deep: "gemini-2.5-pro" },
@@ -109,12 +110,12 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     local: true,
     keyUrl: "https://github.com/google-gemini/gemini-cli",
     icon: "terminal",
-    note: "Needs the `gemini` CLI on your PATH and signed in.",
+    note: l10n.t("Needs the `gemini` CLI on your PATH and signed in."),
   },
   {
     id: "openrouter",
     label: "OpenRouter",
-    blurb: "One key, hundreds of models (Claude, GPT, Llama, Gemini, …).",
+    blurb: l10n.t("One key, hundreds of models (Claude, GPT, Llama, Gemini, …)."),
     wire: "openai-compat",
     baseUrl: "https://openrouter.ai/api/v1",
     models: {
@@ -128,8 +129,8 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   },
   {
     id: "google",
-    label: "Google Gemini",
-    blurb: "Gemini 2.5 Pro & Flash via the OpenAI-compatible endpoint.",
+    label: l10n.t("Google Gemini"),
+    blurb: l10n.t("Gemini 2.5 Pro & Flash via the OpenAI-compatible endpoint."),
     wire: "openai-compat",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
     models: { fast: "gemini-2.5-flash", mid: "gemini-2.5-flash", deep: "gemini-2.5-pro" },
@@ -140,7 +141,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: "groq",
     label: "Groq",
-    blurb: "Open models at very low latency.",
+    blurb: l10n.t("Open models at very low latency."),
     wire: "openai-compat",
     baseUrl: "https://api.groq.com/openai/v1",
     models: {
@@ -155,7 +156,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: "mistral",
     label: "Mistral",
-    blurb: "Mistral & Codestral models.",
+    blurb: l10n.t("Mistral & Codestral models."),
     wire: "openai-compat",
     baseUrl: "https://api.mistral.ai/v1",
     models: { fast: "mistral-small-latest", mid: "mistral-large-latest", deep: "mistral-large-latest" },
@@ -165,8 +166,8 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   },
   {
     id: "xai",
-    label: "xAI (Grok)",
-    blurb: "Grok models from xAI.",
+    label: l10n.t("xAI (Grok)"),
+    blurb: l10n.t("Grok models from xAI."),
     wire: "openai-compat",
     baseUrl: "https://api.x.ai/v1",
     models: { fast: "grok-3-mini", mid: "grok-3", deep: "grok-4" },
@@ -177,7 +178,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: "deepseek",
     label: "DeepSeek",
-    blurb: "DeepSeek-V3 chat & R1 reasoning.",
+    blurb: l10n.t("DeepSeek-V3 chat & R1 reasoning."),
     wire: "openai-compat",
     baseUrl: "https://api.deepseek.com",
     models: { fast: "deepseek-chat", mid: "deepseek-chat", deep: "deepseek-reasoner" },
@@ -187,8 +188,8 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   },
   {
     id: "together",
-    label: "Together AI",
-    blurb: "A broad catalog of open models.",
+    label: l10n.t("Together AI"),
+    blurb: l10n.t("A broad catalog of open models."),
     wire: "openai-compat",
     baseUrl: "https://api.together.xyz/v1",
     models: {
@@ -202,8 +203,8 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   },
   {
     id: "ollama",
-    label: "Ollama (local)",
-    blurb: "Run models on your own machine — fully private, no key.",
+    label: l10n.t("Ollama (local)"),
+    blurb: l10n.t("Run models on your own machine — fully private, no key."),
     wire: "openai-compat",
     baseUrl: "http://localhost:11434/v1",
     models: { fast: "llama3.2", mid: "qwen2.5-coder", deep: "qwen2.5-coder:32b" },
@@ -211,12 +212,12 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     local: true,
     keyUrl: "https://ollama.com/download",
     icon: "vm",
-    note: "Start Ollama, then `ollama pull qwen2.5-coder`. Nothing leaves your machine.",
+    note: l10n.t("Start Ollama, then `ollama pull qwen2.5-coder`. Nothing leaves your machine."),
   },
   {
     id: "lmstudio",
-    label: "LM Studio (local)",
-    blurb: "Local models via LM Studio's server — private, no key.",
+    label: l10n.t("LM Studio (local)"),
+    blurb: l10n.t("Local models via LM Studio's server — private, no key."),
     wire: "openai-compat",
     baseUrl: "http://localhost:1234/v1",
     models: { fast: "local-model", mid: "local-model", deep: "local-model" },
@@ -224,24 +225,24 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     local: true,
     keyUrl: "https://lmstudio.ai",
     icon: "vm",
-    note: "Enable LM Studio's local server (Developer ▸ Start Server), then load a model.",
+    note: l10n.t("Enable LM Studio's local server (Developer ▸ Start Server), then load a model."),
   },
   {
     id: "azure",
-    label: "Azure OpenAI",
-    blurb: "OpenAI models hosted in your Azure tenant.",
+    label: l10n.t("Azure OpenAI"),
+    blurb: l10n.t("OpenAI models hosted in your Azure tenant."),
     wire: "openai-compat",
     baseUrl: "https://YOUR-RESOURCE.openai.azure.com/openai/deployments/YOUR-DEPLOYMENT",
     models: { fast: "gpt-4o-mini", mid: "gpt-4o", deep: "gpt-4o" },
     needsKey: true,
     keyUrl: "https://portal.azure.com",
     icon: "azure",
-    note: "Set the base URL to your deployment and append `?api-version=…` if required.",
+    note: l10n.t("Set the base URL to your deployment and append `?api-version=…` if required."),
   },
   {
     id: "custom",
-    label: "Custom (OpenAI-compatible)",
-    blurb: "Any server that speaks /chat/completions.",
+    label: l10n.t("Custom (OpenAI-compatible)"),
+    blurb: l10n.t("Any server that speaks /chat/completions."),
     wire: "openai-compat",
     baseUrl: "",
     models: { fast: "", mid: "", deep: "" },

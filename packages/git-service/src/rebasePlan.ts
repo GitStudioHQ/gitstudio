@@ -1,3 +1,4 @@
+import * as l10n from "@vscode/l10n";
 // Turning the rebase planner's on-screen list into git's todo script.
 //
 // This is the one place display order becomes git order, and it is shared by the
@@ -128,7 +129,7 @@ export function buildRebasePlan(
   opts?: BuildOptions,
 ): RebasePlanResult {
   if (displayRows.length === 0) {
-    return { ok: false, message: "Nothing to rebase." };
+    return { ok: false, message: l10n.t("Nothing to rebase.") };
   }
 
   // The reversal. Everything below reads `plan`, never the display order.
@@ -139,11 +140,11 @@ export function buildRebasePlan(
     return {
       ok: false,
       expected: true,
-      message: `The oldest commit can't be "${firstKept.action}" — there's nothing older for it to fold into.`,
+      message: l10n.t("The oldest commit can't be \"{0}\" — there's nothing older for it to fold into.", firstKept.action),
     };
   }
   if (!opts?.allowDropAll && !plan.some((r) => r.action !== "drop")) {
-    return { ok: false, expected: true, message: "Dropping every commit would erase the whole range." };
+    return { ok: false, expected: true, message: l10n.t("Dropping every commit would erase the whole range.") };
   }
 
   // This string becomes a script git RUNS. TypeScript's union is erased at
@@ -155,7 +156,7 @@ export function buildRebasePlan(
   if (bad) {
     return {
       ok: false,
-      message: `Refusing to rebase: unrecognised plan entry ${JSON.stringify(bad.action)}.`,
+      message: l10n.t("Refusing to rebase: unrecognised plan entry {0}.", JSON.stringify(bad.action)),
     };
   }
 

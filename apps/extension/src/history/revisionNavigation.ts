@@ -12,6 +12,7 @@ import {
   REVISION_SCHEME,
 } from "./revisionContentProvider";
 import { resolveActiveFile } from "./historyContext";
+import * as l10n from "@vscode/l10n";
 
 /** A resolved working-tree file, plus the rev when invoked from a diff editor. */
 interface ResolvedFile {
@@ -45,7 +46,7 @@ export class RevisionNavigator implements vscode.Disposable {
       rel,
       "HEAD",
       undefined,
-      `${baseName(rel)} (HEAD ↔ Working Tree)`,
+      l10n.t("{0} (HEAD ↔ Working Tree)", baseName(rel)),
     );
   }
 
@@ -64,11 +65,11 @@ export class RevisionNavigator implements vscode.Disposable {
         follow: true,
       });
     } catch (err) {
-      void vscode.window.showErrorMessage(failed("File history", err instanceof Error ? err.message : String(err)));
+      void vscode.window.showErrorMessage(failed(l10n.t("File history"), err instanceof Error ? err.message : String(err)));
       return;
     }
     if (history.length === 0) {
-      void vscode.window.showInformationMessage(notice(`No history for ${baseName(rel)}.`));
+      void vscode.window.showInformationMessage(notice(l10n.t("No history for {0}.", baseName(rel))));
       return;
     }
 
@@ -128,11 +129,11 @@ export class RevisionNavigator implements vscode.Disposable {
 
     const next = base + delta;
     if (next < 0) {
-      void vscode.window.showInformationMessage(notice("Already at the newest revision"));
+      void vscode.window.showInformationMessage(notice(l10n.t("Already at the newest revision")));
       return;
     }
     if (next >= history.length) {
-      void vscode.window.showInformationMessage(notice("Already at the oldest revision"));
+      void vscode.window.showInformationMessage(notice(l10n.t("Already at the oldest revision")));
       return;
     }
 
@@ -184,8 +185,8 @@ async function pickRevision(
   fileName: string,
 ): Promise<{ entry: FileHistoryEntry; index: number } | undefined> {
   const picked = await promptPick({
-    title: `Open ${fileName} at Revision`,
-    hint: "Pick a revision to diff against your working tree.",
+    title: l10n.t("Open {0} at Revision", fileName),
+    hint: l10n.t("Pick a revision to diff against your working tree."),
     choices: history.map((e, index) => ({
       id: String(index),
       label: e.subject,

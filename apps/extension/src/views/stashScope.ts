@@ -1,3 +1,5 @@
+import * as l10n from "@vscode/l10n";
+
 /**
  * What a stash was asked to cover, and how to say it.
  *
@@ -18,16 +20,16 @@ export interface StashRequest {
 export function describeStashScope(request?: StashRequest): string {
   // Checked first: the combination is refused downstream, so the description
   // must not imply the paths were honoured.
-  if (request?.stagedOnly) return "everything staged";
+  if (request?.stagedOnly) return l10n.t("everything staged");
   const count = request?.paths?.filter((p) => p.length > 0).length ?? 0;
-  if (count === 1) return "1 selected file";
-  if (count > 1) return `${count} selected files`;
-  return "all changes";
+  if (count === 1) return l10n.t("1 selected file");
+  if (count > 1) return l10n.t("{0} selected files", count);
+  return l10n.t("all changes");
 }
 
 /** Up to three names, then "and N more" — enough to recognise, short enough to read. */
 export function listForHint(paths: readonly string[]): string {
   const names = paths.map((p) => p.split("/").pop() ?? p);
   if (names.length <= 3) return names.join(", ");
-  return `${names.slice(0, 3).join(", ")} and ${names.length - 3} more`;
+  return l10n.t("{0} and {1} more", names.slice(0, 3).join(", "), names.length - 3);
 }

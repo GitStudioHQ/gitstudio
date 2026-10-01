@@ -15,6 +15,7 @@
 import type { GitContext } from "@gitstudio/git-service/GitContext";
 import { parseGitHubRemote } from "@gitstudio/engine/forge/parseRemote";
 import { sshAliasResolver } from "@gitstudio/git-service/sshAliases";
+import * as l10n from "@vscode/l10n";
 
 /** An SSH host alias → the host it stands for (~/.ssh/config's HostName). */
 type ResolveHost = (host: string) => string | undefined;
@@ -50,7 +51,7 @@ export async function commitWebUrlIn(
 ): Promise<{ url: string } | { reason: string }> {
   const remotes = await ctx.remotes.list();
   if (remotes.length === 0) {
-    return { reason: "this repository has no remote to open the commit on." };
+    return { reason: l10n.t("this repository has no remote to open the commit on.") };
   }
   let upstreamRemote: string | undefined;
   try {
@@ -67,7 +68,7 @@ export async function commitWebUrlIn(
   const url = remote ? commitWebUrl(remote.fetchUrl, sha, resolveHost) : undefined;
   if (!url) {
     const names = remotes.map((r) => r.name).join(", ");
-    return { reason: `no remote of this repository (${names}) is a GitHub, GitLab or Bitbucket address.` };
+    return { reason: l10n.t("no remote of this repository ({0}) is a GitHub, GitLab or Bitbucket address.", names) };
   }
   return { url };
 }

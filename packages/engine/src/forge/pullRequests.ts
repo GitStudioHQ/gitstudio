@@ -15,6 +15,7 @@
 // The shapes are the wire's (host-bridge/prProtocol), so a row a host sends
 // and the rules that fill it can't disagree.
 import type { CiRollup, CiState, PrKind, ReviewDecision } from "@gitstudio/host-bridge/prProtocol";
+import * as l10n from "@vscode/l10n";
 
 export type { CiRollup, CiState, PrKind, ReviewDecision };
 
@@ -88,20 +89,20 @@ export type PrActionId =
  * menu. `title` is what the control says on hover, in words.
  */
 export const PR_ACTIONS: Record<PrActionId, { label: string; icon: string; title: string }> = {
-  open: { label: "Open", icon: "git-pull-request", title: "Open the pull request's page" },
-  checkout: { label: "Checkout", icon: "git-branch", title: "Check out its branch here, tracking it on GitHub, so a push reaches the pull request" },
-  review: { label: "Review", icon: "comment", title: "Comment, approve or request changes" },
-  approve: { label: "Approve", icon: "check", title: "Approve this pull request — opens the review box" },
-  merge: { label: "Merge", icon: "git-merge", title: "Merge this pull request — choose how" },
-  markReady: { label: "Mark ready", icon: "eye", title: "Convert this draft to ready for review" },
-  updateBranch: { label: "Update branch", icon: "git-merge", title: "Merge the base branch into this one, on GitHub" },
-  close: { label: "Close pull request", icon: "git-pull-request-closed", title: "Close it without merging (you can reopen it)" },
-  reopen: { label: "Reopen pull request", icon: "git-pull-request", title: "Reopen this pull request" },
-  copyLink: { label: "Copy link", icon: "copy", title: "Copy the pull request's link" },
-  openOnGitHub: { label: "Open on GitHub", icon: "link-external", title: "Open this pull request on GitHub" },
-  refresh: { label: "Refresh", icon: "refresh", title: "Read the pull request again" },
-  more: { label: "More actions", icon: "ellipsis", title: "More actions" },
-  newPullRequest: { label: "New pull request", icon: "git-pull-request", title: "Open a new pull request" },
+  open: { label: "Open", icon: "git-pull-request", title: l10n.t("Open the pull request's page") },
+  checkout: { label: "Checkout", icon: "git-branch", title: l10n.t("Check out its branch here, tracking it on GitHub, so a push reaches the pull request") },
+  review: { label: "Review", icon: "comment", title: l10n.t("Comment, approve or request changes") },
+  approve: { label: "Approve", icon: "check", title: l10n.t("Approve this pull request — opens the review box") },
+  merge: { label: "Merge", icon: "git-merge", title: l10n.t("Merge this pull request — choose how") },
+  markReady: { label: l10n.t("Mark ready"), icon: "eye", title: l10n.t("Convert this draft to ready for review") },
+  updateBranch: { label: l10n.t("Update branch"), icon: "git-merge", title: l10n.t("Merge the base branch into this one, on GitHub") },
+  close: { label: l10n.t("Close pull request"), icon: "git-pull-request-closed", title: l10n.t("Close it without merging (you can reopen it)") },
+  reopen: { label: l10n.t("Reopen pull request"), icon: "git-pull-request", title: l10n.t("Reopen this pull request") },
+  copyLink: { label: l10n.t("Copy link"), icon: "copy", title: l10n.t("Copy the pull request's link") },
+  openOnGitHub: { label: l10n.t("Open on GitHub"), icon: "link-external", title: l10n.t("Open this pull request on GitHub") },
+  refresh: { label: "Refresh", icon: "refresh", title: l10n.t("Read the pull request again") },
+  more: { label: l10n.t("More actions"), icon: "ellipsis", title: l10n.t("More actions") },
+  newPullRequest: { label: l10n.t("New pull request"), icon: "git-pull-request", title: l10n.t("Open a new pull request") },
 };
 
 /** A pull request page's sections — the desktop's tabs, in its words and glyphs. */
@@ -121,8 +122,8 @@ export const PR_TABS = {
  */
 export const REVIEW_DECISIONS: Record<ReviewDecision, { word: string; codicon: string; tone: PrTone }> = {
   APPROVED: { word: "Approved", codicon: "check", tone: "success" },
-  CHANGES_REQUESTED: { word: "Changes requested", codicon: "request-changes", tone: "failure" },
-  REVIEW_REQUIRED: { word: "Review required", codicon: "eye", tone: "pending" },
+  CHANGES_REQUESTED: { word: l10n.t("Changes requested"), codicon: "request-changes", tone: "failure" },
+  REVIEW_REQUIRED: { word: l10n.t("Review required"), codicon: "eye", tone: "pending" },
 };
 
 /** GraphQL's answer → ours; anything else (null, a value GitHub adds later) is none. */
@@ -134,9 +135,9 @@ export type ReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
 
 /** The three verdicts a reviewer submits — the words both products' review boxes offer. */
 export const REVIEW_VERDICTS: ReadonlyArray<{ event: ReviewEvent; label: string; icon: string; hint: string }> = [
-  { event: "COMMENT", label: "Comment", icon: "comment", hint: "Feedback without an explicit approval" },
-  { event: "APPROVE", label: "Approve", icon: "check", hint: "The change is good to merge" },
-  { event: "REQUEST_CHANGES", label: "Request changes", icon: "request-changes", hint: "Must be addressed before merging" },
+  { event: "COMMENT", label: "Comment", icon: "comment", hint: l10n.t("Feedback without an explicit approval") },
+  { event: "APPROVE", label: "Approve", icon: "check", hint: l10n.t("The change is good to merge") },
+  { event: "REQUEST_CHANGES", label: l10n.t("Request changes"), icon: "request-changes", hint: l10n.t("Must be addressed before merging") },
 ];
 
 // ── Checks ────────────────────────────────────────────────────────────────────
@@ -218,10 +219,10 @@ export function ciFromRollupState(state: string | null | undefined): CiState {
  * colour doing the rest, so red and green are never the only difference.
  */
 export const CI_STATES: Record<CiState, { word: string; short: string; codicon: string; tone: PrTone }> = {
-  success: { word: "Checks passed", short: "Passed", codicon: "check", tone: "success" },
-  failure: { word: "Checks failed", short: "Failed", codicon: "close", tone: "failure" },
-  pending: { word: "Checks running", short: "Running", codicon: "sync", tone: "pending" },
-  none: { word: "No checks", short: "No checks", codicon: "circle-slash", tone: "muted" },
+  success: { word: l10n.t("Checks passed"), short: "Passed", codicon: "check", tone: "success" },
+  failure: { word: l10n.t("Checks failed"), short: "Failed", codicon: "close", tone: "failure" },
+  pending: { word: l10n.t("Checks running"), short: "Running", codicon: "sync", tone: "pending" },
+  none: { word: l10n.t("No checks"), short: l10n.t("No checks"), codicon: "circle-slash", tone: "muted" },
 };
 
 /** Check-run states GitHub counts as failed (its merge box's reading). */
@@ -282,13 +283,17 @@ export function ciWords(ci: CiRollup | CiState): string {
   const counted = (n: number | undefined) => r !== undefined && r.total > 0 && (n ?? 0) > 0;
   switch (state) {
     case "success":
-      return r && r.total > 0 ? `All ${r.total} check${r.total === 1 ? "" : "s"} passed` : "Checks passed";
+      return r && r.total > 0
+        ? r.total === 1
+          ? l10n.t("All 1 check passed")
+          : l10n.t("All {0} checks passed", r.total)
+        : l10n.t("Checks passed");
     case "failure":
-      return counted(r?.failed) && r ? `${r.failed} of ${r.total} check${r.total === 1 ? "" : "s"} failed` : "Checks failed";
+      return counted(r?.failed) && r ? `${r.failed} of ${r.total} check${r.total === 1 ? "" : "s"} failed` : l10n.t("Checks failed");
     case "pending":
-      return counted(r?.pending) && r ? `${r.pending} of ${r.total} check${r.total === 1 ? "" : "s"} running` : "Checks running";
+      return counted(r?.pending) && r ? `${r.pending} of ${r.total} check${r.total === 1 ? "" : "s"} running` : l10n.t("Checks running");
     default:
-      return "No checks";
+      return l10n.t("No checks");
   }
 }
 

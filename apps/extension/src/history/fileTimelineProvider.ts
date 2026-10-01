@@ -13,6 +13,7 @@ import {
   type TimelineOptions,
   type TimelineProvider,
 } from "./timelineApi";
+import * as l10n from "@vscode/l10n";
 
 /** The source id this provider registers under (also its TimelineItem.source). */
 export const FILE_HISTORY_SOURCE = "gitstudio-file-history";
@@ -29,7 +30,7 @@ const DEFAULT_LIMIT = 50;
  */
 export class FileTimelineProvider implements TimelineProvider {
   readonly id = FILE_HISTORY_SOURCE;
-  readonly label = "GitStudio File History";
+  readonly label = l10n.t("GitStudio File History");
 
   private readonly changeEmitter =
     new vscode.EventEmitter<TimelineChangeEvent | undefined>();
@@ -132,7 +133,7 @@ export class FileTimelineProvider implements TimelineProvider {
     // the file (the commit that introduced it), so the left side is empty.
     const sides = historyChangeSides(e);
     item.command = {
-      title: "Open Changes",
+      title: l10n.t("Open Changes"),
       command: "vscode.diff",
       arguments: [
         revisionSideUri(root, rel, sides.left),

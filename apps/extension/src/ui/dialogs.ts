@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import * as l10n from "@vscode/l10n";
 
 // GitStudio's own dialogs — the host-side half.
 //
@@ -180,7 +181,7 @@ export function registerDialogHost(h: DialogHost): vscode.Disposable {
 async function run(spec: DialogSpec): Promise<DialogResult | undefined> {
   if (!host) {
     void vscode.window.showWarningMessage(
-      "GitStudio: the Changes view isn't available, so this action can't ask for input. Open the GitStudio sidebar and try again.",
+      l10n.t("GitStudio: the Changes view isn't available, so this action can't ask for input. Open the GitStudio sidebar and try again."),
     );
     return undefined;
   }

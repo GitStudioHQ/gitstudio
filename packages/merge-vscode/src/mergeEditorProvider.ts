@@ -18,6 +18,7 @@ import { closeMergeEditorTabs, dismissSidesTip, fileUri, sidesTipFor, type Merge
 import { MergeSession } from "./mergeSession";
 import type { MergeRepo } from "./product";
 import { mergeWebviewHtml } from "./webviewHtml";
+import * as l10n from "@vscode/l10n";
 
 export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
   static register(host: MergeHostCore): vscode.Disposable {
@@ -223,15 +224,15 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
         // seeded from it); only an Apply that CHANGES it asks first.
         if (sync.mirror.appliedOverResolution(message.text)) {
           const go = await this.host.product.ask({
-            title: `Replace the resolution already in ${name}?`,
+            title: l10n.t("Replace the resolution already in {0}?", name),
             message:
-              `${name} had no conflict markers left when the merge editor opened: it was already resolved, by hand ` +
-              `or by git rerere. Apply replaces that with the Result shown here, and stages it.`,
-            confirmLabel: "Replace and stage",
+              l10n.t("{0} had no conflict markers left when the merge editor opened: it was already resolved, by hand ", name) +
+              l10n.t("or by git rerere. Apply replaces that with the Result shown here, and stages it."),
+            confirmLabel: l10n.t("Replace and stage"),
             danger: true,
           });
           if (!go) {
-            sync.post({ type: "outcome", kind: "failed", text: `Nothing was written. ${name} keeps the resolution it had.` });
+            sync.post({ type: "outcome", kind: "failed", text: l10n.t("Nothing was written. {0} keeps the resolution it had.", name) });
             break;
           }
         }
@@ -241,7 +242,7 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
           sync.post({
             type: "outcome",
             kind: "failed",
-            text: `Nothing was written. ${name} changed outside the merge editor: reload the merge, or keep that edit, first.`,
+            text: l10n.t("Nothing was written. {0} changed outside the merge editor: reload the merge, or keep that edit, first.", name),
           });
           break;
         }
@@ -256,7 +257,7 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
         if (undo) {
           await undo();
         } else {
-          sync.post({ type: "outcome", kind: "failed", text: "There is no Apply to undo here any more." });
+          sync.post({ type: "outcome", kind: "failed", text: l10n.t("There is no Apply to undo here any more.") });
         }
         break;
       }

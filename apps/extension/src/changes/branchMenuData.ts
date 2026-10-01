@@ -1,5 +1,6 @@
 import type { GitRef } from "@gitstudio/git-service/index";
 import { resettableBranches } from "@gitstudio/git-service/branchReset";
+import * as l10n from "@vscode/l10n";
 
 // What the Changes view's branch menu is sent: its rows, built from one
 // for-each-ref listing. No `vscode` here, so a test can feed it what real git
@@ -119,22 +120,22 @@ export function pickedRefName(
 export function branchActionWords(action: string | undefined, ref?: string): string {
   switch (action) {
     case "fetch":
-      return "Fetch";
+      return l10n.t("Fetch");
     case "pull":
-      return "Pull";
+      return l10n.t("Pull");
     case "pullMerge":
-      return "Pull using Merge";
+      return l10n.t("Pull using Merge");
     case "pullRebase":
-      return "Pull using Rebase";
+      return l10n.t("Pull using Rebase");
     case "push":
-      return "Push";
+      return l10n.t("Push");
     case "pullFf":
-      return ref ? `Pull into '${ref}'` : "Pull";
+      return ref ? l10n.t("Pull into '{0}'", ref) : l10n.t("Pull");
     case "new":
-      return ref ? `New Branch '${ref.trim()}'` : "New Branch";
+      return ref ? l10n.t("New Branch '{0}'", ref.trim()) : l10n.t("New Branch");
     case "checkoutRef":
-      return ref ? `Checkout '${ref.trim()}'` : "Checkout";
+      return ref ? l10n.t("Checkout '{0}'", ref.trim()) : l10n.t("Checkout");
     default:
-      return action ?? "The branch action";
+      return action ?? l10n.t("The branch action");
   }
 }

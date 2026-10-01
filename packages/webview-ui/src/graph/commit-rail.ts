@@ -81,6 +81,7 @@ import {
   reconcile,
   type Selection,
 } from "./multiSelect";
+import * as l10n from "@vscode/l10n";
 
 // ── Layout constants (the sidebar's visual contract) ────────────────────────
 const ROW_HEIGHT = 40;
@@ -1432,7 +1433,7 @@ export class CommitRail extends LitElement {
         );
       }
     }
-    const subject = esc(isWip ? row.subject || "Uncommitted changes" : row.subject);
+    const subject = esc(isWip ? row.subject || l10n.t("Uncommitted changes") : row.subject);
     const chips = row.refs.length ? this.chipsHtml(row.refs) : "";
     const who = isWip ? "" : esc(shortAuthor(row.author));
     const age = isWip ? "now" : esc(relTime(row.authorDate));
@@ -1441,16 +1442,16 @@ export class CommitRail extends LitElement {
       ? `\n${row.refs.map((r) => chipLabel(r)).join(", ")}`
       : "";
     const tip = isWip
-      ? "Uncommitted changes — open in the Commit Graph for details"
+      ? l10n.t("Uncommitted changes — open in the Commit Graph for details")
       : `${row.shortSha} · ${row.subject}\n${row.author} · ${absTime(row.authorDate)}${tipRefs}`;
 
     const acts = isWip
       ? `<span class="acts">` +
-        `<button class="ibtn" data-act="open" tabindex="-1" title="Open in Commit Graph"><span class="codicon codicon-link-external"></span></button>` +
+        `<button class="ibtn" data-act="open" tabindex="-1" title="${l10n.t("Open in Commit Graph")}"><span class="codicon codicon-link-external"></span></button>` +
         `</span>`
       : `<span class="acts">` +
-        `<button class="ibtn" data-act="copy" tabindex="-1" title="Copy SHA ${esc(row.shortSha)}"><span class="codicon codicon-copy"></span></button>` +
-        `<button class="ibtn" data-act="open" tabindex="-1" title="Open in Commit Graph"><span class="codicon codicon-link-external"></span></button>` +
+        `<button class="ibtn" data-act="copy" tabindex="-1" title="${l10n.t("Copy SHA {0}", esc(row.shortSha))}"><span class="codicon codicon-copy"></span></button>` +
+        `<button class="ibtn" data-act="open" tabindex="-1" title="${l10n.t("Open in Commit Graph")}"><span class="codicon codicon-link-external"></span></button>` +
         `</span>`;
 
     return (
@@ -1489,7 +1490,7 @@ export class CommitRail extends LitElement {
       twins: e.twins,
       title:
         e.ref.kind === "tag"
-          ? `tag: ${e.label}`
+          ? l10n.t("tag: {0}", e.label)
           : [e.label, ...e.twins.map((t) => refDisplayName(t))].join(", "),
     }));
 
@@ -2103,8 +2104,8 @@ export class CommitRail extends LitElement {
           <span class="codicon codicon-search" aria-hidden="true"></span>
           <input
             type="text"
-            placeholder="Search commits"
-            aria-label="Search commits (${this.scopeLabel()})"
+            placeholder="${l10n.t("Search commits")}"
+            aria-label="${l10n.t("Search commits ({0})", this.scopeLabel())}"
             .value=${this.searchQuery}
             @input=${this.onSearchInput}
             @keydown=${this.onSearchKeyDown}
@@ -2116,21 +2117,21 @@ export class CommitRail extends LitElement {
                 >
                 <button
                   class="ibtn nav"
-                  title="Previous match (Shift+Enter)"
+                  title="${l10n.t("Previous match (Shift+Enter)")}"
                   @click=${() => this.stepMatch(-1)}
                 >
                   <span class="codicon codicon-chevron-up"></span>
                 </button>
                 <button
                   class="ibtn nav"
-                  title="Next match (Enter)"
+                  title="${l10n.t("Next match (Enter)")}"
                   @click=${() => this.stepMatch(1)}
                 >
                   <span class="codicon codicon-chevron-down"></span>
                 </button>
                 <button
                   class="ibtn"
-                  title="Clear (Esc)"
+                  title="${l10n.t("Clear (Esc)")}"
                   @click=${() => {
                     this.clearSearch();
                     this.focusSearch();
@@ -2142,7 +2143,7 @@ export class CommitRail extends LitElement {
             : html`
                 <button
                   class="ibtn anchor ${this.searchScope !== "all" ? "scoped" : ""}"
-                  title="Search in: ${this.scopeLabel()}"
+                  title="${l10n.t("Search in: {0}", this.scopeLabel())}"
                   aria-haspopup="menu"
                   aria-expanded=${this.scopeOpen ? "true" : "false"}
                   @click=${(e: MouseEvent) => {
@@ -2158,7 +2159,7 @@ export class CommitRail extends LitElement {
         ${this.headInGraph()
           ? html`<button
               class="ibtn"
-              title="Jump to HEAD"
+              title="${l10n.t("Jump to HEAD")}"
               @click=${() => this.reveal(this.head)}
             >
               <span class="codicon codicon-target"></span>
@@ -2166,7 +2167,7 @@ export class CommitRail extends LitElement {
           : nothing}
         <button
           class="ibtn"
-          title="Refresh"
+          title="${l10n.t("Refresh")}"
           @click=${() => this.onAction({ type: "refresh" })}
         >
           <span class="codicon codicon-refresh"></span>
@@ -2192,7 +2193,7 @@ export class CommitRail extends LitElement {
   }
 
   private scopeLabel(): string {
-    return SEARCH_SCOPES.find((s) => s.id === this.searchScope)?.label ?? "All";
+    return SEARCH_SCOPES.find((s) => s.id === this.searchScope)?.label ?? l10n.t("All");
   }
 
   /**
@@ -2206,8 +2207,8 @@ export class CommitRail extends LitElement {
     return html`
       <button
         class="ibtn anchor branches ${filtered ? "scoped" : ""}"
-        title="Branches: ${label}"
-        aria-label="Filter branches: ${label}"
+        title="${l10n.t("Branches: {0}", label)}"
+        aria-label="${l10n.t("Filter branches: {0}", label)}"
         aria-haspopup="menu"
         aria-expanded=${this.branchesOpen ? "true" : "false"}
         @click=${(e: MouseEvent) => {
@@ -2255,11 +2256,11 @@ export class CommitRail extends LitElement {
       <div
         class="pop branches"
         role="menu"
-        aria-label="Branches"
+        aria-label="${l10n.t("Branches")}"
         style="left:${x}px;top:${y}px;max-height:${maxH}px"
         @keydown=${this.onPopKeyDown}
       >
-        <div class="hd">Show branches</div>
+        <div class="hd">${l10n.t("Show branches")}</div>
         <div class="presets">
           ${REF_PRESETS.map((p) => {
             const why = presetUnavailable(p.id, refs);
@@ -2283,8 +2284,8 @@ export class CommitRail extends LitElement {
           <span class="codicon codicon-search" aria-hidden="true"></span>
           <input
             type="text"
-            placeholder="Filter branches…"
-            aria-label="Filter the branch list"
+            placeholder="${l10n.t("Filter branches…")}"
+            aria-label="${l10n.t("Filter the branch list")}"
             .value=${this.branchQuery}
             @input=${(e: Event) => {
               this.branchQuery = (e.target as HTMLInputElement).value;
@@ -2305,16 +2306,16 @@ export class CommitRail extends LitElement {
                 >
                   <span class="codicon codicon-${kindIcon(r.kind)}" aria-hidden="true"></span>
                   <span class="nm">${refDisplayName(r.fullName)}</span>
-                  ${r.isCurrent ? html`<span class="cur">current</span>` : nothing}
+                  ${r.isCurrent ? html`<span class="cur">${l10n.t("current")}</span>` : nothing}
                   ${selected.has(r.fullName)
                     ? html`<span class="codicon codicon-check check"></span>`
                     : nothing}
                 </button>`,
               )}
-              ${g.hidden ? html`<div class="hint">${g.hidden} more — type to narrow</div>` : nothing}`,
+              ${g.hidden ? html`<div class="hint">${l10n.t("{0} more — type to narrow", g.hidden)}</div>` : nothing}`,
           )}
           ${groups.length === 0 && refs.length
-            ? html`<div class="hint">No branches match</div>`
+            ? html`<div class="hint">${l10n.t("No branches match")}</div>`
             : nothing}
         </div>
         <div class="sep" role="separator"></div>
@@ -2334,11 +2335,11 @@ export class CommitRail extends LitElement {
       <div
         class="pop"
         role="menu"
-        aria-label="Search scope"
+        aria-label="${l10n.t("Search scope")}"
         style="left:${x}px;top:${y}px"
         @keydown=${this.onPopKeyDown}
       >
-        <div class="hd">Search in</div>
+        <div class="hd">${l10n.t("Search in")}</div>
         ${SEARCH_SCOPES.map(
           (s) => html`
             <button
@@ -2379,7 +2380,7 @@ export class CommitRail extends LitElement {
       <div
         class="pop chipmenu"
         role="menu"
-        aria-label="Filter by ${title}"
+        aria-label="${l10n.t("Filter by {0}", title)}"
         style="left:${m.x}px;top:${m.y}px"
         @keydown=${this.onPopKeyDown}
       >
@@ -2392,7 +2393,7 @@ export class CommitRail extends LitElement {
           @click=${() => pick(m.refs)}
         >
           <span class="codicon codicon-filter"></span>
-          ${m.kind === "tag" ? "Show only this tag" : "Show only this branch"}
+          ${m.kind === "tag" ? l10n.t("Show only this tag") : l10n.t("Show only this branch")}
         </button>
         ${this.refFilter
           ? html`
@@ -2405,12 +2406,12 @@ export class CommitRail extends LitElement {
                   pick(inFilter ? removeRefs(this.refFilter, m.refs) : addRefs(this.refFilter, m.refs))}
               >
                 <span class="codicon codicon-${inFilter ? "dash" : "add"}"></span>
-                ${inFilter ? "Remove from filter" : "Add to filter"}
+                ${inFilter ? l10n.t("Remove from filter") : l10n.t("Add to filter")}
               </button>
               <div class="sep" role="separator"></div>
               <button class="mi" role="menuitem" data-chip-action="all" @click=${() => pick(null)}>
                 <span class="codicon codicon-list-flat"></span>
-                Show all branches
+                ${l10n.t("Show all branches")}
               </button>
             `
           : nothing}
@@ -2436,7 +2437,7 @@ export class CommitRail extends LitElement {
         ${known
           ? nothing
           : html`<div class="sep" role="separator"></div>
-              <div class="hint">Not in the branch list yet — refresh</div>`}
+              <div class="hint">${l10n.t("Not in the branch list yet — refresh")}</div>`}
       </div>
     `;
   }
@@ -2446,7 +2447,7 @@ export class CommitRail extends LitElement {
       <div
         class="pop commitmenu"
         role="menu"
-        aria-label="Commit actions"
+        aria-label="${l10n.t("Commit actions")}"
         style="left:${menu.x}px;top:${menu.y}px"
         @keydown=${this.onPopKeyDown}
       >
@@ -2484,7 +2485,7 @@ export class CommitRail extends LitElement {
       <div
         class="scroller"
         role="listbox"
-        aria-label="Commits"
+        aria-label="${l10n.t("Commits")}"
         aria-multiselectable="true"
         aria-activedescendant=${this.selectedSha ? `gs-rail-${this.selectedSha}` : nothing}
         tabindex="0"
@@ -2503,8 +2504,8 @@ export class CommitRail extends LitElement {
           ${this.hasMore
             ? this.loadMoreArmed
               ? nothing
-              : "loading older commits…"
-            : "· start of history ·"}
+              : l10n.t("loading older commits…")
+            : l10n.t("· start of history ·")}
         </div>
       </div>
       <div class="reftip" role="tooltip" hidden></div>
@@ -2513,7 +2514,7 @@ export class CommitRail extends LitElement {
 
   private skeletonTpl() {
     return html`
-      <div class="skel" aria-label="Loading history…">
+      <div class="skel" aria-label="${l10n.t("Loading history…")}">
         ${Array.from({ length: 10 }, () => html`
           <div class="srow">
             <span class="srail"></span>
@@ -2533,7 +2534,7 @@ export class CommitRail extends LitElement {
     return html`
       <div class="state" role="status">
         <span class="spinner" aria-hidden="true"></span>
-        <span class="t">Looking for a repository…</span>
+        <span class="t">${l10n.t("Looking for a repository…")}</span>
       </div>
     `;
   }
@@ -2542,8 +2543,8 @@ export class CommitRail extends LitElement {
     return html`
       <div class="state">
         <span class="codicon codicon-source-control"></span>
-        <span class="t">No repository open</span>
-        <span class="s">Open a folder that's under Git and its history will appear here.</span>
+        <span class="t">${l10n.t("No repository open")}</span>
+        <span class="s">${l10n.t("Open a folder that's under Git and its history will appear here.")}</span>
       </div>
     `;
   }
@@ -2552,8 +2553,8 @@ export class CommitRail extends LitElement {
     return html`
       <div class="state">
         <span class="codicon codicon-git-commit"></span>
-        <span class="t">No commits yet</span>
-        <span class="s">Your history will appear here after the first commit.</span>
+        <span class="t">${l10n.t("No commits yet")}</span>
+        <span class="s">${l10n.t("Your history will appear here after the first commit.")}</span>
       </div>
     `;
   }
@@ -2562,11 +2563,11 @@ export class CommitRail extends LitElement {
     return html`
       <div class="state">
         <span class="codicon codicon-warning"></span>
-        <span class="t">Couldn't load history</span>
+        <span class="t">${l10n.t("Couldn't load history")}</span>
         ${this.errorMessage
           ? html`<span class="s">${this.errorMessage}</span>`
           : nothing}
-        <button @click=${() => this.onAction({ type: "refresh" })}>Retry</button>
+        <button @click=${() => this.onAction({ type: "refresh" })}>${l10n.t("Retry")}</button>
       </div>
     `;
   }

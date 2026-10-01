@@ -1,3 +1,4 @@
+import * as l10n from "@vscode/l10n";
 // Stage a resolved file, and say so only when git actually did.
 //
 // `GitProcess.run` never throws on a non-zero exit — it resolves with the code
@@ -33,7 +34,7 @@ export async function stageResolvedPath(proc: GitRunner, rel: string): Promise<S
 }
 
 function stagingFailed(reason: string): string {
-  return `The file is saved, but git could not stage it (${reason}). Stage it with git add before you continue.`;
+  return l10n.t("The file is saved, but git could not stage it ({0}). Stage it with git add before you continue.", reason);
 }
 
 /** git's first non-empty line, without the "fatal: " / "error: " prefix. */

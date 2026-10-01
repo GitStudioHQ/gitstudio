@@ -7,6 +7,7 @@
 import { spawn } from "node:child_process";
 import { auditSpawn } from "@gitstudio/git-service/spawnAudit";
 import type { AiProvider, CompleteRequest } from "./aiFeatures";
+import * as l10n from "@vscode/l10n";
 
 interface CliSpec {
   command: string;
@@ -26,17 +27,17 @@ export const CLI_SPECS: Record<string, CliSpec> = {
       ...(model ? ["--model", model] : []),
       prompt,
     ],
-    install: "Install Claude Code and run `claude login` (docs.anthropic.com/claude-code).",
+    install: l10n.t("Install Claude Code and run `claude login` (docs.anthropic.com/claude-code)."),
   },
   codex: {
     command: "codex",
     args: (prompt, model) => ["exec", ...(model ? ["--model", model] : []), prompt],
-    install: "Install the Codex CLI and sign in (github.com/openai/codex).",
+    install: l10n.t("Install the Codex CLI and sign in (github.com/openai/codex)."),
   },
   "gemini-cli": {
     command: "gemini",
     args: (prompt, model) => ["-p", ...(model ? ["--model", model] : []), prompt],
-    install: "Install the Gemini CLI and sign in (github.com/google-gemini/gemini-cli).",
+    install: l10n.t("Install the Gemini CLI and sign in (github.com/google-gemini/gemini-cli)."),
   },
 };
 

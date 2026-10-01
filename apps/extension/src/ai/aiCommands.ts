@@ -8,10 +8,12 @@ import {
   OPENAI_KEY_SECRET,
 } from "./aiFeatures";
 import { getNonce } from "../webview/html";
+import * as l10n from "@vscode/l10n";
+import { l10nWebviewScript } from "@gitstudio/l10n/index";
 
 /** Shown in a result panel when no model is connected / the request was declined. */
 const UNAVAILABLE_MESSAGE =
-  "No AI model is connected. Connect one from the ✨ button in the Changes view, then try again.";
+  l10n.t("No AI model is connected. Connect one from the ✨ button in the Changes view, then try again.");
 
 // Command implementations for the AI layer: key management
 // (SecretStorage — never sent to a webview), the seamless model picker, and the
@@ -26,10 +28,10 @@ export async function setApiKey(
   brain: AiFeatures,
 ): Promise<void> {
   const key = await promptInput({
-    title: "Set Anthropic API Key",
-    hint: "Encrypted at rest in GitStudio's own store — not your OS keychain, so it never raises a password prompt. The key stays host-side and is never sent to a webview.",
+    title: l10n.t("Set Anthropic API Key"),
+    hint: l10n.t("Encrypted at rest in GitStudio's own store — not your OS keychain, so it never raises a password prompt. The key stays host-side and is never sent to a webview."),
     placeholder: "sk-ant-…",
-    confirmLabel: "Save Key",
+    confirmLabel: l10n.t("Save Key"),
     secret: true,
   });
   if (key === undefined) {
@@ -37,12 +39,12 @@ export async function setApiKey(
   }
   const trimmed = key.trim();
   if (trimmed.length === 0) {
-    void vscode.window.showWarningMessage("GitStudio: no key entered.");
+    void vscode.window.showWarningMessage(l10n.t("GitStudio: no key entered."));
     return;
   }
   await brain.setAnthropicKey(trimmed);
   void vscode.window.showInformationMessage(
-    "GitStudio: Anthropic API key saved. AI features are now available.",
+    l10n.t("GitStudio: Anthropic API key saved. AI features are now available."),
   );
 }
 
@@ -53,7 +55,7 @@ export async function clearApiKey(
 ): Promise<void> {
   await brain.clearAnthropicKey();
   void vscode.window.showInformationMessage(
-    "GitStudio: Anthropic API key cleared.",
+    l10n.t("GitStudio: Anthropic API key cleared."),
   );
 }
 
@@ -66,10 +68,10 @@ export async function setOpenAIKey(
   brain: AiFeatures,
 ): Promise<void> {
   const key = await promptInput({
-    title: "Set OpenAI API Key",
-    hint: "For OpenAI / Codex / OpenRouter. Leave blank for a local, keyless server (Ollama / LM Studio). Encrypted at rest in GitStudio's own store and never sent to a webview.",
-    placeholder: "sk-…   (blank for a local, keyless server)",
-    confirmLabel: "Save Key",
+    title: l10n.t("Set OpenAI API Key"),
+    hint: l10n.t("For OpenAI / Codex / OpenRouter. Leave blank for a local, keyless server (Ollama / LM Studio). Encrypted at rest in GitStudio's own store and never sent to a webview."),
+    placeholder: l10n.t("sk-…   (blank for a local, keyless server)"),
+    confirmLabel: l10n.t("Save Key"),
     secret: true,
   });
   if (key === undefined) {
@@ -79,13 +81,13 @@ export async function setOpenAIKey(
   if (trimmed.length === 0) {
     await brain.clearOpenAiKey();
     void vscode.window.showInformationMessage(
-      "GitStudio: OpenAI API key cleared (keyless / local mode).",
+      l10n.t("GitStudio: OpenAI API key cleared (keyless / local mode)."),
     );
     return;
   }
   await brain.setOpenAiKey(trimmed);
   void vscode.window.showInformationMessage(
-    "GitStudio: OpenAI API key saved.",
+    l10n.t("GitStudio: OpenAI API key saved."),
   );
 }
 
@@ -96,7 +98,7 @@ export async function clearOpenAIKey(
 ): Promise<void> {
   await brain.clearOpenAiKey();
   void vscode.window.showInformationMessage(
-    "GitStudio: OpenAI API key cleared.",
+    l10n.t("GitStudio: OpenAI API key cleared."),
   );
 }
 
@@ -216,23 +218,24 @@ export async function generateCommitMessageCommand(
     return;
   }
   const message = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Window, title: "Drafting a commit message with AI…" },
+    { location: vscode.ProgressLocation.Window, title: l10n.t("Drafting a commit message with AI…") },
     () => draftCommitMessage(brain, entry),
   );
   if (!message) {
     void vscode.window.showInformationMessage(
-      "GitStudio: nothing staged, or AI is unavailable.",
+      l10n.t("GitStudio: nothing staged, or AI is unavailable."),
     );
     return;
   }
+  const copy = l10n.t("Copy");
   const action = await vscode.window.showInformationMessage(
     message,
     { modal: false },
-    "Copy",
+    copy,
   );
-  if (action === "Copy") {
+  if (action === copy) {
     await vscode.env.clipboard.writeText(message);
-    void vscode.window.setStatusBarMessage("$(check) Commit message copied", 2000);
+    void vscode.window.setStatusBarMessage(l10n.t("$(check) Commit message copied"), 2000);
   }
 }
 
@@ -245,7 +248,7 @@ async function generateForSourceControl(
   const entry = resolveRepoForSourceControl(repos, sourceControl);
   if (!entry) {
     void vscode.window.showInformationMessage(
-      "GitStudio: couldn't match this Source Control repository.",
+      l10n.t("GitStudio: couldn't match this Source Control repository."),
     );
     return;
   }
@@ -254,12 +257,12 @@ async function generateForSourceControl(
     return;
   }
   const drafted = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.SourceControl, title: "Drafting a commit message with AI…" },
+    { location: vscode.ProgressLocation.SourceControl, title: l10n.t("Drafting a commit message with AI…") },
     () => draftCommitMessageWithFallback(brain, entry),
   );
   if (!drafted) {
     void vscode.window.showInformationMessage(
-      "GitStudio: nothing to draft (stage changes first), or AI is unavailable.",
+      l10n.t("GitStudio: nothing to draft (stage changes first), or AI is unavailable."),
     );
     return;
   }
@@ -268,7 +271,7 @@ async function generateForSourceControl(
   }
   if (drafted.unstaged) {
     void vscode.window.setStatusBarMessage(
-      "$(sparkle) Drafted from unstaged changes (nothing was staged)",
+      l10n.t("$(sparkle) Drafted from unstaged changes (nothing was staged)"),
       4000,
     );
   }
@@ -312,11 +315,12 @@ function asSourceControl(arg: unknown): SourceControlLike | undefined {
 
 /** Offer a one-click path into the model picker when no provider is set up. */
 async function offerAiSetup(): Promise<void> {
+  const selectLabel = l10n.t("Select AI Model…");
   const choice = await vscode.window.showInformationMessage(
-    notice("Set up AI to draft commit messages"),
-    "Select AI Model…",
+    notice(l10n.t("Set up AI to draft commit messages")),
+    selectLabel,
   );
-  if (choice === "Select AI Model…") {
+  if (choice === selectLabel) {
     await vscode.commands.executeCommand("gitstudio.ai.selectModel");
   }
 }
@@ -336,22 +340,22 @@ export async function selectModelCommand(
 
   const lmModels = await brain.listLmModels();
   for (const m of lmModels) {
-    const vendor = m.vendor || "Language Model";
+    const vendor = m.vendor || l10n.t("Language Model");
     const family = m.family || m.name || m.id;
     choices.push({
       id: `lm:${m.id}`,
       label: `${vendor} · ${family}`,
       icon: "sparkle",
       detail: m.name && m.name !== family ? m.name : undefined,
-      description: "VS Code Language Model (zero-key) — Copilot / Cursor",
+      description: l10n.t("VS Code Language Model (zero-key) — Copilot / Cursor"),
     });
   }
 
   choices.push({
     id: "anthropic",
-    label: "Claude (Anthropic)",
+    label: l10n.t("Claude (Anthropic)"),
     icon: "key",
-    description: "Use Anthropic directly with your API key.",
+    description: l10n.t("Use Anthropic directly with your API key."),
   });
 
   const baseUrl = vscode.workspace
@@ -359,16 +363,16 @@ export async function selectModelCommand(
     .get<string>("openai.baseUrl", "https://api.openai.com/v1");
   choices.push({
     id: "openai",
-    label: "OpenAI / local (OpenAI-compatible)",
+    label: l10n.t("OpenAI / local (OpenAI-compatible)"),
     icon: "server",
     detail: baseUrl,
     description:
-      "OpenAI, Codex, OpenRouter, or a local server (Ollama / LM Studio). Base URL / model / key.",
+      l10n.t("OpenAI, Codex, OpenRouter, or a local server (Ollama / LM Studio). Base URL / model / key."),
   });
 
   const pick = await promptPick({
-    title: "Select AI Model",
-    hint: "Which model should the AI features use?",
+    title: l10n.t("Select AI Model"),
+    hint: l10n.t("Which model should the AI features use?"),
     choices,
   });
   if (!pick) {
@@ -382,7 +386,7 @@ export async function selectModelCommand(
     await cfg.update("provider", "copilot", vscode.ConfigurationTarget.Global);
     await brain.refreshEnabled();
     const label = choices.find((c) => c.id === pick)?.label ?? modelId;
-    void vscode.window.showInformationMessage(`GitStudio: using ${label}.`);
+    void vscode.window.showInformationMessage(l10n.t("GitStudio: using {0}.", label));
     return;
   }
 
@@ -393,7 +397,7 @@ export async function selectModelCommand(
     } else {
       await brain.refreshEnabled();
       void vscode.window.showInformationMessage(
-        "GitStudio: using Claude (Anthropic).",
+        l10n.t("GitStudio: using Claude (Anthropic)."),
       );
     }
     return;
@@ -411,10 +415,10 @@ async function configureOpenAi(
   cfg: vscode.WorkspaceConfiguration,
 ): Promise<void> {
   const baseUrl = await promptInput({
-    title: "OpenAI-compatible Base URL",
+    title: l10n.t("OpenAI-compatible Base URL"),
     hint: "https://api.openai.com/v1 · http://localhost:11434/v1 (Ollama) · http://localhost:1234/v1 (LM Studio)",
     value: cfg.get<string>("openai.baseUrl", "https://api.openai.com/v1"),
-    confirmLabel: "Continue",
+    confirmLabel: l10n.t("Continue"),
     validate: "url",
   });
   if (baseUrl === undefined) {
@@ -429,10 +433,10 @@ async function configureOpenAi(
   }
 
   const model = await promptInput({
-    title: "OpenAI-compatible Model",
-    hint: "Model ID for commit messages and explain — gpt-4o-mini, llama3.1, qwen2.5-coder.",
+    title: l10n.t("OpenAI-compatible Model"),
+    hint: l10n.t("Model ID for commit messages and explain — gpt-4o-mini, llama3.1, qwen2.5-coder."),
     value: cfg.get<string>("openai.modelFast", ""),
-    confirmLabel: "Continue",
+    confirmLabel: l10n.t("Continue"),
   });
   if (model === undefined) {
     return; // cancelled
@@ -484,12 +488,12 @@ export async function explainDiffCommand(
   }
   const diff = await activeDiff(entry);
   if (diff.trim().length === 0) {
-    void vscode.window.showInformationMessage("GitStudio: no diff to explain.");
+    void vscode.window.showInformationMessage(l10n.t("GitStudio: no diff to explain."));
     return;
   }
 
-  const panel = createResultPanel("Explain Diff", "What this change does, in plain language");
-  panel.postStatus("Reading the diff…");
+  const panel = createResultPanel(l10n.t("Explain Diff"), l10n.t("What this change does, in plain language"));
+  panel.postStatus(l10n.t("Reading the diff…"));
   const source = new vscode.CancellationTokenSource();
   panel.onDidDispose(() => source.cancel());
   const controller = new AbortController();
@@ -523,14 +527,14 @@ export async function summarizeChangesCommand(
   }
   const diff = await activeDiff(entry);
   if (diff.trim().length === 0) {
-    void vscode.window.showInformationMessage("GitStudio: no changes to summarize.");
+    void vscode.window.showInformationMessage(l10n.t("GitStudio: no changes to summarize."));
     return;
   }
 
-  const panel = createResultPanel("Summarize Changes", "A high-level summary of your current changes");
-  panel.postStatus("Summarizing your changes…");
+  const panel = createResultPanel(l10n.t("Summarize Changes"), l10n.t("A high-level summary of your current changes"));
+  panel.postStatus(l10n.t("Summarizing your changes…"));
   const result = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Window, title: "Summarizing with AI…" },
+    { location: vscode.ProgressLocation.Window, title: l10n.t("Summarizing with AI…") },
     () => brain.summarizeChanges(diff),
   );
   if (result) {
@@ -555,13 +559,13 @@ export async function reviewChangesCommand(
   const diff = await activeDiff(entry);
   if (diff.trim().length === 0) {
     void vscode.window.showInformationMessage(
-      "GitStudio: no changes to review — stage or edit some files first.",
+      l10n.t("GitStudio: no changes to review — stage or edit some files first."),
     );
     return;
   }
 
-  const panel = createResultPanel("Code Review", "AI review of your current changes");
-  panel.postStatus("Reviewing your changes…");
+  const panel = createResultPanel(l10n.t("Code Review"), l10n.t("AI review of your current changes"));
+  panel.postStatus(l10n.t("Reviewing your changes…"));
   const source = new vscode.CancellationTokenSource();
   panel.onDidDispose(() => source.cancel());
   const controller = new AbortController();
@@ -578,7 +582,7 @@ export async function reviewChangesCommand(
   );
   if (result === null && acc.trim().length === 0) {
     panel.postStatus(
-      "No AI model is connected. Connect one from the ✨ button in the Changes view, then run the review again.",
+      l10n.t("No AI model is connected. Connect one from the ✨ button in the Changes view, then run the review again."),
       "error",
     );
   } else if (result !== null) {
@@ -648,7 +652,7 @@ function createResultPanel(title: string, subtitle = ""): ResultPanel {
 
 function resultHtml(nonce: string, title: string, subtitle: string): string {
   const csp = [
-    `default-src 'none'`,
+    "default-src 'none'",
     `style-src 'nonce-${nonce}'`,
     `script-src 'nonce-${nonce}'`,
   ].join("; ");
@@ -844,9 +848,9 @@ function resultHtml(nonce: string, title: string, subtitle: string): string {
       </div>
       <div class="summary">
         <div class="acts" id="act">
-          <button class="copy-all" id="copyAll" data-copy="all" hidden aria-label="Copy full review">
+          <button class="copy-all" id="copyAll" data-copy="all" hidden aria-label="${l10n.t("Copy full review")}">
             <span class="ci"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></span>
-            <span class="cl">Copy report</span>
+            <span class="cl">${l10n.t("Copy report")}</span>
           </button>
         </div>
         <div class="counts" id="sum"></div>
@@ -855,6 +859,7 @@ function resultHtml(nonce: string, title: string, subtitle: string): string {
     <div id="out" class="doc"></div>
   </div>
   <div class="sr" id="sr" aria-live="polite"></div>
+  ${l10nWebviewScript(nonce)}
   <script nonce="${nonce}">
     (function () {
       var TICK = String.fromCharCode(96); // backtick (avoid a literal one here)
@@ -909,8 +914,8 @@ function resultHtml(nonce: string, title: string, subtitle: string): string {
         clearTimeout(b._t); b.classList.remove("ok", "err"); b.classList.add(ok ? "ok" : "err");
         var icon = b.querySelector(".ci") || b; var label = b.querySelector(".cl");
         icon.innerHTML = ok ? CHECK_SVG : ALERT_SVG; if (label) label.textContent = ok ? "Copied" : "Failed";
-        announce(ok ? (kind === "all" ? "Review copied" : "Finding copied") : "Copy failed");
-        b._t = setTimeout(function () { b.classList.remove("ok", "err"); icon.innerHTML = COPY_SVG; if (label) label.textContent = "Copy report"; }, 1600);
+        announce(ok ? (kind === "all" ? l10nT("Review copied") : l10nT("Finding copied")) : l10nT("Copy failed"));
+        b._t = setTimeout(function () { b.classList.remove("ok", "err"); icon.innerHTML = COPY_SVG; if (label) label.textContent = l10nT("Copy report"); }, 1600);
       }
       // ONE delegated listener on the stable document — immune to re-render.
       document.addEventListener("click", function (e) {
@@ -1013,7 +1018,7 @@ function resultHtml(nonce: string, title: string, subtitle: string): string {
           if (li.querySelector(":scope > .copy-btn")) return;
           var b = document.createElement("button");
           b.className = "copy-btn"; b.type = "button";
-          b.setAttribute("data-copy", "finding"); b.setAttribute("aria-label", "Copy finding");
+          b.setAttribute("data-copy", "finding"); b.setAttribute("aria-label", l10nT("Copy finding"));
           b.innerHTML = COPY_SVG; li.appendChild(b);
         });
         renderSummary();
@@ -1030,7 +1035,7 @@ function resultHtml(nonce: string, title: string, subtitle: string): string {
         var clean = total === 0 && /no substantive issues|looks clean/i.test(txt);
         sum.innerHTML = "";
         function pill(cls, label) { var e = document.createElement("span"); e.className = "count " + cls; e.innerHTML = '<span class="dot"></span>' + label; sum.appendChild(e); }
-        if (clean) { pill("clean", "No issues"); return; }
+        if (clean) { pill("clean", l10nT("No issues")); return; }
         if (total) pill("total", total + (total === 1 ? " finding" : " findings"));
         if (c.high) pill("high", c.high + " High");
         if (c.med) pill("med", c.med + " Medium");
@@ -1063,7 +1068,7 @@ function resultHtml(nonce: string, title: string, subtitle: string): string {
         }
       }
 
-      status("Waiting for the model…", "loading");
+      status(l10nT("Waiting for the model…"), "loading");
       window.addEventListener("message", function (event) {
         var msg = event.data;
         if (!msg) return;

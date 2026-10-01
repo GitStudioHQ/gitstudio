@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
+import "./webviewL10n";
 
 // The rebase workspace's stop banner offered Continue and Abort only. It now
 // offers Skip where git names it as the way out (OperationProvider's canSkip —

@@ -4,6 +4,7 @@ import { mergeCommitFiles } from "@gitstudio/git-service/CommitDetailsProvider";
 import type { RepoEntry } from "../git/repoManager";
 import { toRevisionUri } from "../history/revisionContentProvider";
 import { promptPick } from "../ui/dialogs";
+import * as l10n from "@vscode/l10n";
 
 // The ref-comparison engine, lifted out of the retired Search & Compare view so
 // the branch-compare panel (and any future consumer) can reuse the same
@@ -187,7 +188,7 @@ async function assertRef(repo: RepoEntry, ref: string): Promise<void> {
     `${ref}^{commit}`,
   ]);
   if (r.code !== 0 || !r.stdout.trim()) {
-    throw new Error(`Unknown ref: ${ref}`);
+    throw new Error(l10n.t("Unknown ref: {0}", ref));
   }
 }
 

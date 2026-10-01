@@ -8,6 +8,7 @@ import type {
   CompleteRequest,
   ModelTier,
 } from "./aiFeatures";
+import * as l10n from "@vscode/l10n";
 
 // The OpenAI-compatible bring-your-own-endpoint provider. A SINGLE provider that
 // covers OpenAI, Codex, OpenRouter, Ollama, LM Studio, and any other server that
@@ -129,7 +130,8 @@ export class OpenAiProvider implements AiProvider {
     };
     const key = await this.opts.getKey();
     if (typeof key === "string" && key.trim().length > 0) {
-      headers["Authorization"] = `Bearer ${key.trim()}`;
+      // English on purpose: an HTTP header value, spoken to a model server.
+    headers["Authorization"] = `Bearer ${key.trim()}`;
     }
     return headers;
   }
@@ -143,13 +145,13 @@ export class OpenAiProvider implements AiProvider {
   private friendlyFor(status: number): string {
     switch (status) {
       case 401:
-        return "The OpenAI-compatible endpoint rejected the API key (401). Run “GitStudio: Set OpenAI API Key”, or clear it for a local server.";
+        return l10n.t("The OpenAI-compatible endpoint rejected the API key (401). Run “GitStudio: Set OpenAI API Key”, or clear it for a local server.");
       case 404:
-        return "The OpenAI-compatible endpoint returned 404 — check the base URL and model ID in settings.";
+        return l10n.t("The OpenAI-compatible endpoint returned 404 — check the base URL and model ID in settings.");
       case 429:
-        return "OpenAI rate limit hit — try again in a moment.";
+        return l10n.t("OpenAI rate limit hit — try again in a moment.");
       default:
-        return `OpenAI-compatible request failed (HTTP ${status}).`;
+        return l10n.t("OpenAI-compatible request failed (HTTP {0}).", status);
     }
   }
 
@@ -160,7 +162,7 @@ export class OpenAiProvider implements AiProvider {
   /** A friendly note for a connection-level failure (local server down, etc.). */
   private reportNetwork(cfg: OpenAiConfig): void {
     this.report(
-      `Couldn't reach ${cfg.baseUrl} — is the model server running?`,
+      l10n.t("Couldn't reach {0} — is the model server running?", cfg.baseUrl),
     );
   }
 

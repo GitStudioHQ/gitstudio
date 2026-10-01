@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { NO_REPOSITORY } from "../ui/notify";
 import type { RepoManager } from "../git/repoManager";
 import { terminalIcon, terminalLabel, terminalTooltip } from "./terminalBadge";
+import * as l10n from "@vscode/l10n";
 
 /**
  * The GitStudio status-bar cluster: small, single-purpose segments that each go
@@ -26,8 +27,8 @@ const UPDATE_DEBOUNCE_MS = 500;
  * name the status bar's menu lists it by (its id is `gitstudio.<segment>`).
  */
 const SEGMENTS = {
-  graph: { setting: "showGraph", priority: -8, name: "GitStudio Commit Graph" },
-  terminal: { setting: "showTerminal", priority: -9, name: "GitStudio Terminal" },
+  graph: { setting: "showGraph", priority: -8, name: l10n.t("GitStudio Commit Graph") },
+  terminal: { setting: "showTerminal", priority: -9, name: l10n.t("GitStudio Terminal") },
 } as const;
 
 type SegmentId = keyof typeof SEGMENTS;
@@ -62,9 +63,9 @@ export class StatusCluster implements vscode.Disposable {
     // wrong: a merge arrow means merging, not history.
     graph.text = "$(git-commit)";
     graph.command = "gitstudio.showCommitGraph";
-    graph.tooltip = "GitStudio: Commit Graph";
+    graph.tooltip = l10n.t("GitStudio: Commit Graph");
     // An icon alone: say what it is.
-    graph.accessibilityInformation = { label: "Show Commit Graph", role: "button" };
+    graph.accessibilityInformation = { label: l10n.t("Show Commit Graph"), role: "button" };
 
     const terminal = this.items.get("terminal")!;
     terminal.command = "gitstudio.openTerminal";
@@ -138,7 +139,7 @@ export class StatusCluster implements vscode.Disposable {
   private terminalName(): string {
     const active = this.repos.getActive();
     const leaf = active?.root.split(/[\\/]/).pop() ?? "repo";
-    return `GitStudio: ${leaf}`;
+    return l10n.t("GitStudio: {0}", leaf);
   }
 
   /** Repaints the terminal button's icon, count and hover. */

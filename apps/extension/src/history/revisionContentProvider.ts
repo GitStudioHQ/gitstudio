@@ -5,6 +5,7 @@ import type { BlameCommit } from "@gitstudio/host-bridge/blame";
 import type { FileHistoryEntry } from "@gitstudio/git-service/index";
 import { HistoryProvider } from "@gitstudio/git-service/HistoryProvider";
 import { sameFolder } from "@gitstudio/git-service/WorktreeProvider";
+import * as l10n from "@vscode/l10n";
 
 /** The URI scheme our historical file contents are served under. */
 export const REVISION_SCHEME = "gitstudio-rev";
@@ -246,7 +247,7 @@ export async function openRevisionDiff(
       : toRevisionUri(root, againstRev, rel);
 
   const fileName = baseName(rel);
-  const rightLabel = againstRev === undefined ? "Working Tree" : shortRev(againstRev);
+  const rightLabel = againstRev === undefined ? l10n.t("Working Tree") : shortRev(againstRev);
   const computedTitle =
     title ?? `${fileName} (${shortRev(rev)} ↔ ${rightLabel})`;
 

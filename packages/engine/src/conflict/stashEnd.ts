@@ -13,13 +13,13 @@
 // conflicts, the stash entry is still in the stash list.
 
 import type { ConflictFileView, ConflictsSnapshot, ConflictsState } from "@gitstudio/host-bridge/conflictsProtocol";
+import * as l10n from "@vscode/l10n";
 
 export const STASH_FINISHED: NonNullable<ConflictsState["finished"]> = {
-  title: "Stash applied",
-  text:
-    "Every conflict is resolved, and your stashed changes are in your files. git keeps the stash entry " +
-    "when applying it stops on conflicts, so it is still in your stash list — drop it once you are happy " +
-    "with the result.",
+  title: l10n.t("Stash applied"),
+  text: l10n.t(
+    "Every conflict is resolved, and your stashed changes are in your files. git keeps the stash entry when applying it stops on conflicts, so it is still in your stash list — drop it once you are happy with the result.",
+  ),
 };
 
 /** What the dashboard shows instead of an empty "nothing in progress" snapshot. */

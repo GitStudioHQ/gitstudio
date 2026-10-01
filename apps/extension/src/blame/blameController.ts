@@ -8,6 +8,7 @@ import { notice, notifyCopied } from "../ui/notify";
 import { relativeTime } from "../util/relativeTime";
 import { commitWebUrlIn } from "../util/remoteUrl";
 import { blameChangeSides, openSidesDiff, toRevisionUri } from "../history/revisionContentProvider";
+import * as l10n from "@vscode/l10n";
 
 // How long after the selection settles before we run a blame — fast enough to
 // feel live, slow enough not to spawn git on every cursor twitch.
@@ -79,7 +80,7 @@ export class BlameController implements vscode.Disposable {
       vscode.StatusBarAlignment.Left,
       -10,
     );
-    this.statusBar.name = "GitStudio Blame";
+    this.statusBar.name = l10n.t("GitStudio Blame");
     this.statusBar.command = "gitstudio.blame.showLineActions";
 
     void this.maybeDisableNativeBlame();
@@ -376,7 +377,7 @@ export class BlameController implements vscode.Disposable {
     }
     if (!this.resolveFor(editor.document)) {
       void vscode.window.showInformationMessage(
-        "GitStudio: this file isn't in an open Git repository.",
+        l10n.t("GitStudio: this file isn't in an open Git repository."),
       );
       return;
     }
@@ -560,7 +561,7 @@ export class BlameController implements vscode.Disposable {
     // Refuse to empty the gutter — an all-off column set renders nothing.
     if (!next.length) {
       void vscode.window.showInformationMessage(
-        "GitStudio: keep at least one blame column (Revision, Date, Author, or Commit number).",
+        l10n.t("GitStudio: keep at least one blame column (Revision, Date, Author, or Commit number)."),
       );
       return;
     }
@@ -612,7 +613,7 @@ export class BlameController implements vscode.Disposable {
     if (!commit || commit.sha === UNCOMMITTED_SHA) {
       if (commit && !quiet) {
         void vscode.window.showInformationMessage(
-          "GitStudio: this line has uncommitted changes — there's no revision yet.",
+          l10n.t("GitStudio: this line has uncommitted changes — there's no revision yet."),
         );
       }
       return undefined;
@@ -711,7 +712,7 @@ export class BlameController implements vscode.Disposable {
       // The commit added the file: there is no earlier version to open, and
       // an empty editor would say there was one with nothing in it.
       void vscode.window.showInformationMessage(
-        `GitStudio: ${rel.split("/").pop()} was added by ${short(at.commit.sha)}, so there is no earlier revision of it.`,
+        l10n.t("GitStudio: {0} was added by {1}, so there is no earlier revision of it.", rel.split("/").pop() ?? "", short(at.commit.sha)),
       );
       return;
     }
@@ -738,7 +739,7 @@ export class BlameController implements vscode.Disposable {
     }
     const found = await commitWebUrlIn(at.entry.ctx, at.commit.sha);
     if ("reason" in found) {
-      void vscode.window.showInformationMessage(`GitStudio: ${found.reason}`);
+      void vscode.window.showInformationMessage(l10n.t("GitStudio: {0}", found.reason));
       return;
     }
     await vscode.env.openExternal(vscode.Uri.parse(found.url));
@@ -818,7 +819,7 @@ export class BlameController implements vscode.Disposable {
       .catch((e: unknown) => {
         if (!controller.signal.aborted) {
           const msg = e instanceof Error ? e.message : String(e);
-          this.log?.(`blame failed for ${relPath}: ${msg}`);
+          this.log?.(l10n.t("blame failed for {0}: {1}", relPath, msg));
           console.error("[GitStudio] blame failed", e);
         }
         return undefined;
@@ -869,8 +870,8 @@ export class BlameController implements vscode.Disposable {
       }
       void vscode.window.showInformationMessage(
         notice(
-          "Inline blame is on, so the editor's built-in blame is turned off — " +
-            "each line is not annotated twice. You can turn it back on in Settings.",
+          l10n.t("Inline blame is on, so the editor's built-in blame is turned off — ") +
+            l10n.t("each line is not annotated twice. You can turn it back on in Settings."),
         ),
       );
     } catch {
@@ -938,26 +939,26 @@ class BlameHoverProvider implements vscode.HoverProvider {
 /** Inline label format: `  <Author>, <relative time> • <summary>`. */
 function inlineLabel(commit: BlameCommit): string {
   if (commit.sha === UNCOMMITTED_SHA) {
-    return "  You, now • Uncommitted changes";
+    return l10n.t("  You, now • Uncommitted changes");
   }
   return `  ${commit.author}, ${relativeTime(commit.authorTime)} • ${truncate(commit.summary, 60)}`;
 }
 
 function statusBarText(commit: BlameCommit): string {
   if (commit.sha === UNCOMMITTED_SHA) {
-    return "$(git-commit) Uncommitted changes";
+    return l10n.t("$(git-commit) Uncommitted changes");
   }
-  return `$(git-commit) ${commit.author}, ${relativeTime(commit.authorTime)}`;
+  return l10n.t("$(git-commit) {0}, {1}", commit.author, relativeTime(commit.authorTime));
 }
 
 function statusBarTooltip(commit: BlameCommit): vscode.MarkdownString {
   const md = new vscode.MarkdownString(undefined, true);
   if (commit.sha === UNCOMMITTED_SHA) {
-    md.appendMarkdown("Uncommitted changes");
+    md.appendMarkdown(l10n.t("Uncommitted changes"));
     return md;
   }
   md.appendMarkdown(`**${escapeMarkdown(commit.summary)}**\n\n`);
-  md.appendMarkdown(`$(git-commit) \`${short(commit.sha)}\``);
+  md.appendMarkdown(l10n.t("$(git-commit) `{0}`", short(commit.sha)));
   return md;
 }
 
@@ -1032,7 +1033,7 @@ function formatGutter(
   ordinals: Map<string, number>,
 ): string {
   if (commit.sha === UNCOMMITTED_SHA) {
-    return "Uncommitted";
+    return l10n.t("Uncommitted");
   }
   const parts: string[] = [];
   for (const field of opts.fields) {
@@ -1081,8 +1082,8 @@ function hoverMarkdown(commit: BlameCommit): vscode.MarkdownString {
   };
 
   if (commit.sha === UNCOMMITTED_SHA) {
-    md.appendMarkdown("$(git-commit) **Uncommitted changes**\n\n");
-    md.appendMarkdown("This line has local, not-yet-committed edits.");
+    md.appendMarkdown(l10n.t("$(git-commit) **Uncommitted changes**\n\n"));
+    md.appendMarkdown(l10n.t("This line has local, not-yet-committed edits."));
     return md;
   }
 
@@ -1092,11 +1093,11 @@ function hoverMarkdown(commit: BlameCommit): vscode.MarkdownString {
     `$(account) ${escapeMarkdown(commit.author)} <${escapeMarkdown(commit.authorMail)}>\n\n`,
   );
   md.appendMarkdown(
-    `$(calendar) ${escapeMarkdown(date.toLocaleString())} (${relativeTime(commit.authorTime)})\n\n`,
+    l10n.t("$(calendar) {0} ({1})\n\n", escapeMarkdown(date.toLocaleString()), relativeTime(commit.authorTime)),
   );
   const commitArg = encodeURIComponent(JSON.stringify([commit.sha]));
   md.appendMarkdown(
-    `$(git-commit) \`${short(commit.sha)}\` ` +
+    l10n.t("$(git-commit) `{0}` ", short(commit.sha)) +
       `&nbsp;[$(copy) Copy SHA](command:gitstudio.copyCommitSha?${commitArg})` +
       `&nbsp;[$(eye) Show in Graph](command:gitstudio.revealCommitInGraph?${commitArg})`,
   );

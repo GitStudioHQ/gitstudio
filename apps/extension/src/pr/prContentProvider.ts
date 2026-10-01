@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import type { GitHubApi } from "./githubApi";
+import * as l10n from "@vscode/l10n";
 
 // Serves the content of a file at a given commit SHA from a GitHub repo, so
 // `vscode.diff` can render base-vs-head for a PR's changed files without first
@@ -82,9 +83,9 @@ export class PrContentProvider
       case "missing":
         return "";
       case "binary":
-        return `Binary file (${size(content.bytes)}) at ${sha.slice(0, 7)} — its content isn't shown.`;
+        return l10n.t("Binary file ({0}) at {1} — its content isn't shown.", size(content.bytes), sha.slice(0, 7));
       case "too-large":
-        return `File too large to show (${size(content.bytes)}) at ${sha.slice(0, 7)}.`;
+        return l10n.t("File too large to show ({0}) at {1}.", size(content.bytes), sha.slice(0, 7));
     }
   }
 }

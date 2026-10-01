@@ -14,6 +14,8 @@
 // The component itself (prList.ts) is host-agnostic; the desktop can mount the
 // same class in its own Pull Requests section.
 
+import "@gitstudio/l10n/webview";
+
 import { installSolidAccent } from "../styles/solidAccent";
 import "../styles/pr-list.css";
 import type { PrListHostMessage, PrListMessageToHost } from "@gitstudio/host-bridge/prProtocol";

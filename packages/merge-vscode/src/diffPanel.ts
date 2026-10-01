@@ -16,6 +16,7 @@ import { baseName, collectUris, locate, resolveUriArg } from "./args";
 import { DEMO_DIFF } from "./demoContent";
 import type { MergeHostCore } from "./host";
 import { mergeWebviewHtml } from "./webviewHtml";
+import * as l10n from "@vscode/l10n";
 
 /**
  * One side of a diff, persisted across reloads (the panel's serialized state).
@@ -187,7 +188,7 @@ export class DiffPanel {
       });
       void this.panel.webview.postMessage({ type: "persistState", state: this.state });
     } catch (error) {
-      void this.host.notify("error", `couldn't load the diff — ${error instanceof Error ? error.message : String(error)}`);
+      void this.host.notify("error", l10n.t("couldn't load the diff — {0}", error instanceof Error ? error.message : String(error)));
     }
   }
 
@@ -271,12 +272,12 @@ export class DiffPanel {
         staged,
       );
       if (!result.ok) {
-        vscode.window.setStatusBarMessage(`$(info) ${this.host.product.displayName}: ${result.stderr}`, 4000);
+        vscode.window.setStatusBarMessage(l10n.t("$(info) {0}: {1}", this.host.product.displayName, result.stderr), 4000);
       }
     } catch (error) {
       void this.host.notify(
         "error",
-        `couldn't stage that change — ${error instanceof Error ? error.message : String(error)}`,
+        l10n.t("couldn't stage that change — {0}", error instanceof Error ? error.message : String(error)),
       );
     }
     this.host.changed(target.repo);
@@ -326,7 +327,7 @@ async function readUriText(uri: vscode.Uri): Promise<string> {
 
 function diffTitle(state: DiffPanelState): string {
   const base = state.fileName.split(/[\\/]/).pop() ?? state.fileName;
-  return `Diff: ${base}`;
+  return l10n.t("Diff: {0}", base);
 }
 
 /**
@@ -371,7 +372,7 @@ export function headState(uri: vscode.Uri, opts: { editable: boolean }): DiffPan
   return {
     fileName: uri.fsPath,
     leftLabel: `${name} (HEAD)`,
-    rightLabel: `${name} (Working Tree)`,
+    rightLabel: l10n.t("{0} (Working Tree)", name),
     // "head" is also what makes the panel stageable (ticks).
     leftSource: "head",
     leftUri: uri.toString(),
@@ -430,7 +431,7 @@ export class DiffCommands {
   async openChanges(arg?: unknown): Promise<void> {
     const uri = resolveUriArg(arg) ?? vscode.window.activeTextEditor?.document.uri;
     if (!uri) {
-      void this.host.notify("warn", "open a file to compare it against HEAD.");
+      void this.host.notify("warn", l10n.t("open a file to compare it against HEAD."));
       return;
     }
     if (this.host.product.openChangesEmbedded) {
@@ -444,7 +445,7 @@ export class DiffCommands {
   async stageWithTicks(arg?: unknown): Promise<void> {
     const uri = resolveUriArg(arg) ?? vscode.window.activeTextEditor?.document.uri;
     if (!uri || uri.scheme !== "file" || !locate(this.host.product.locator, uri)) {
-      void this.host.notify("info", "open a file in a Git repository to stage its changes.");
+      void this.host.notify("info", l10n.t("open a file in a Git repository to stage its changes."));
       return;
     }
     await DiffPanel.create(this.host, headState(uri, { editable: false }));
@@ -460,7 +461,7 @@ export class DiffCommands {
       return;
     }
     if (!locate(this.host.product.locator, uri)) {
-      void this.host.notify("warn", `${baseName(uri)} is not in an open Git repository, so it has no HEAD version.`);
+      void this.host.notify("warn", l10n.t("{0} is not in an open Git repository, so it has no HEAD version.", baseName(uri)));
       return;
     }
     await DiffPanel.create(this.host, headState(uri, { editable: true }));

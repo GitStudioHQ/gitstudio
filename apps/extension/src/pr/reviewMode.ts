@@ -15,6 +15,7 @@ import {
 import { replyToThread, setThreadResolved } from "@gitstudio/engine/forge/prPage";
 import { PrListError, type GraphqlFn } from "@gitstudio/engine/forge/prList";
 import type { PrPendingReview, PrThread } from "@gitstudio/host-bridge/prProtocol";
+import * as l10n from "@vscode/l10n";
 
 // Reviews of pull requests, in the editor (the VS Code Comments API). One
 // CommentController for the extension draws three kinds of thread on a pull
@@ -154,7 +155,7 @@ export class ReviewController implements vscode.Disposable {
     private readonly graphql: GraphqlFn,
     private readonly memory?: ReviewMemory,
   ) {
-    this.controller = vscode.comments.createCommentController("gitstudio.prReview", "GitStudio Pull Request Review");
+    this.controller = vscode.comments.createCommentController("gitstudio.prReview", l10n.t("GitStudio Pull Request Review"));
     this.controller.commentingRangeProvider = {
       provideCommentingRanges: (document) => this.commentingRanges(document),
     };
@@ -360,7 +361,7 @@ export class ReviewController implements vscode.Disposable {
   }
 
   private me(): vscode.CommentAuthorInformation {
-    return { name: this.login ? `@${this.login}` : "You" };
+    return { name: this.login ? `@${this.login}` : l10n.t("You") };
   }
 
   /**
@@ -386,7 +387,7 @@ export class ReviewController implements vscode.Disposable {
     }
     const comment = new ReviewComment_(new vscode.MarkdownString(reply.text), vscode.CommentMode.Preview, this.me(), thread);
     thread.comments = [...thread.comments, comment];
-    thread.label = "Pending review comment";
+    thread.label = l10n.t("Pending review comment");
     thread.contextValue = PENDING_THREAD;
     thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
     review.threads.set(thread, where!);
@@ -412,7 +413,7 @@ export class ReviewController implements vscode.Disposable {
         thread.dispose();
       } else if (pendingIn(thread) === 0) {
         r?.threads.delete(thread);
-        thread.label = "Comment posted";
+        thread.label = l10n.t("Comment posted");
         thread.contextValue = undefined;
       }
       if (r) this.touched(r.key);
@@ -462,12 +463,12 @@ export class ReviewController implements vscode.Disposable {
       if (outside.length > 0) {
         return {
           ok: false,
-          message: `GitHub takes review comments only on lines that are part of the diff, and ${outside.join(", ")} ${outside.length === 1 ? "isn't" : "aren't"}. Delete ${outside.length === 1 ? "that comment" : "those comments"} or move ${outside.length === 1 ? "it" : "them"} onto a changed line.`,
+          message: l10n.t("GitHub takes review comments only on lines that are part of the diff, and {0} {1}. Delete {2} or move {3} onto a changed line.", outside.join(", "), outside.length === 1 ? l10n.t("isn't") : l10n.t("aren't"), outside.length === 1 ? l10n.t("that comment") : l10n.t("those comments"), outside.length === 1 ? l10n.t("it") : l10n.t("them")),
         };
       }
     }
     if (event === "COMMENT" && comments.length === 0 && body.trim().length === 0) {
-      return { ok: false, message: "A Comment review needs something to say: write a summary, or add a comment on a changed line." };
+      return { ok: false, message: l10n.t("A Comment review needs something to say: write a summary, or add a comment on a changed line.") };
     }
     let sent: Awaited<ReturnType<GitHubApi["submitReview"]>>;
     try {
@@ -478,14 +479,14 @@ export class ReviewController implements vscode.Disposable {
         reviewPayload({ event, body, commitId: r?.headSha ?? head.headSha, comments }),
       );
     } catch (err) {
-      return { ok: false, message: messageOf(err, "Couldn't submit the review.") };
+      return { ok: false, message: messageOf(err, l10n.t("Couldn't submit the review.")) };
     }
     if (r) {
       // Posted: shown so until GitHub's copy of each thread arrives.
       const threads = [...r.threads.keys()];
       for (const t of threads) {
         t.comments = t.comments.map((c) => (c instanceof ReviewComment_ ? Object.assign(c, { contextValue: POSTED }) : c));
-        t.label = "Comment posted";
+        t.label = l10n.t("Comment posted");
         t.contextValue = undefined;
       }
       this.posted.set(key, [...(this.posted.get(key) ?? []), ...threads]);
@@ -503,7 +504,7 @@ export class ReviewController implements vscode.Disposable {
       const posted = thread.comments.filter((c) => c.contextValue === POSTED);
       if (posted.length > 0) {
         thread.comments = posted;
-        thread.label = "Comment posted";
+        thread.label = l10n.t("Comment posted");
         thread.contextValue = undefined;
       } else {
         thread.dispose();
@@ -538,7 +539,7 @@ export class ReviewController implements vscode.Disposable {
         reviewPayload({ event: "COMMENT", commitId: entry!.headSha, comments: [{ ...where, body: reply.text }] }),
       );
     } catch (err) {
-      void vscode.window.showWarningMessage(messageOf(err, "Couldn't post the comment."));
+      void vscode.window.showWarningMessage(messageOf(err, l10n.t("Couldn't post the comment.")));
       return;
     }
     // On GitHub now, so it carries no Delete — removing it here would not
@@ -546,10 +547,10 @@ export class ReviewController implements vscode.Disposable {
     const comment = new ReviewComment_(new vscode.MarkdownString(reply.text), vscode.CommentMode.Preview, this.me(), reply.thread, POSTED);
     reply.thread.comments = [...reply.thread.comments, comment];
     if (!this.reviewOf(reply.thread)) {
-      reply.thread.label = "Comment posted";
+      reply.thread.label = l10n.t("Comment posted");
       this.posted.set(key!, [...(this.posted.get(key!) ?? []), reply.thread]);
     }
-    void vscode.window.showInformationMessage("Comment posted to GitHub.");
+    void vscode.window.showInformationMessage(l10n.t("Comment posted to GitHub."));
   }
 
   // ── GitHub's threads ───────────────────────────────────────────────────────
@@ -611,7 +612,7 @@ export class ReviewController implements vscode.Disposable {
         ),
     );
     thread.contextValue = t.resolved ? THREAD_RESOLVED : THREAD_OPEN;
-    thread.label = t.resolved ? (t.resolvedBy ? `Resolved by ${t.resolvedBy}` : "Resolved") : undefined;
+    thread.label = t.resolved ? (t.resolvedBy ? l10n.t("Resolved by {0}", t.resolvedBy) : l10n.t("Resolved")) : undefined;
     thread.canReply = t.canReply;
     thread.collapsibleState = t.resolved ? vscode.CommentThreadCollapsibleState.Collapsed : vscode.CommentThreadCollapsibleState.Expanded;
   }
@@ -660,7 +661,7 @@ export class ReviewController implements vscode.Disposable {
     try {
       await this.replyToThread(g.key, g.data, reply.text);
     } catch (err) {
-      void vscode.window.showWarningMessage(messageOf(err, "Couldn't post the reply."));
+      void vscode.window.showWarningMessage(messageOf(err, l10n.t("Couldn't post the reply.")));
     }
   }
 
@@ -672,7 +673,7 @@ export class ReviewController implements vscode.Disposable {
     try {
       await this.resolveThread(g.key, g.data, resolved);
     } catch (err) {
-      void vscode.window.showWarningMessage(messageOf(err, resolved ? "Couldn't resolve the conversation." : "Couldn't unresolve the conversation."));
+      void vscode.window.showWarningMessage(messageOf(err, resolved ? l10n.t("Couldn't resolve the conversation.") : l10n.t("Couldn't unresolve the conversation.")));
     }
   }
 
@@ -739,7 +740,7 @@ export class ReviewController implements vscode.Disposable {
         const from = (c.startLine ?? c.line) - 1;
         const thread = this.controller.createCommentThread(uri, new vscode.Range(Math.max(0, from), 0, c.line - 1, 0), []);
         thread.comments = [new ReviewComment_(new vscode.MarkdownString(c.body), vscode.CommentMode.Preview, this.me(), thread)];
-        thread.label = "Pending review comment";
+        thread.label = l10n.t("Pending review comment");
         thread.contextValue = PENDING_THREAD;
         thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
         r.threads.set(thread, { path: c.path, side, line: c.line, ...(c.startLine !== undefined && c.startLine !== c.line ? { startLine: c.startLine } : {}) });
@@ -757,14 +758,14 @@ export class ReviewController implements vscode.Disposable {
       return;
     }
     const n = this.pendingCount();
-    const pending = `${n} pending comment${n === 1 ? "" : "s"}`;
+    const pending = n === 1 ? l10n.t("1 pending comment") : l10n.t("{0} pending comments", n);
     if (this.reviews.size === 1) {
       const r = [...this.reviews.values()][0];
-      this.status.text = `$(comment-discussion) Reviewing #${r.number} · ${n} pending`;
-      this.status.tooltip = `Your review of ${r.owner}/${r.repo}#${r.number}${r.title ? ` (${r.title})` : ""}: ${pending}. Click to submit it.`;
+      this.status.text = l10n.t("$(comment-discussion) Reviewing #{0} · {1} pending", r.number, n);
+      this.status.tooltip = l10n.t("Your review of {0}/{1}#{2}{3}: {4}. Click to submit it.", r.owner, r.repo, r.number, r.title ? ` (${r.title})` : "", pending);
     } else {
-      this.status.text = `$(comment-discussion) ${this.reviews.size} reviews · ${n} pending`;
-      this.status.tooltip = `Your reviews of ${[...this.reviews.values()].map((r) => `${r.owner}/${r.repo}#${r.number}`).join(", ")}: ${pending}. Click to submit one.`;
+      this.status.text = l10n.t("$(comment-discussion) {0} reviews · {1} pending", this.reviews.size, n);
+      this.status.tooltip = l10n.t("Your reviews of {0}: {1}. Click to submit one.", [...this.reviews.values()].map((r) => `${r.owner}/${r.repo}#${r.number}`).join(", "), pending);
     }
     this.status.accessibilityInformation = { label: this.status.tooltip };
     this.status.show();

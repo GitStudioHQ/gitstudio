@@ -12,3 +12,4 @@ This product depends on third-party software, including:
 - Monaco Editor (MIT), Microsoft Corporation
 - vscode-diff (MIT)
 - DOMPurify (Apache-2.0 / MPL-2.0)
+- @vscode/l10n (MIT), Microsoft Corporation

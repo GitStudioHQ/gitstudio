@@ -26,6 +26,7 @@ import type {
   WireRebaseRow,
 } from "@gitstudio/host-bridge/rebaseProtocol";
 import { getRebaseHtml, getNonce } from "./rebaseHtml";
+import * as l10n from "@vscode/l10n";
 
 // A CustomTextEditorProvider that renders any `git-rebase-todo` document as the
 // interactive-rebase webview. Registered with priority "default" and the
@@ -161,11 +162,11 @@ export class RebaseTodoEditorProvider
     const ok = await vscode.workspace.applyEdit(edit);
     if (!ok) {
       this.selfWrites.delete(newText);
-      void vscode.window.showErrorMessage(notice("Could not write the rebase plan"));
+      void vscode.window.showErrorMessage(notice(l10n.t("Could not write the rebase plan")));
       return;
     }
     await document.save();
-    flash("Rebase plan applied");
+    flash(l10n.t("Rebase plan applied"));
   }
 
   /**
@@ -175,10 +176,10 @@ export class RebaseTodoEditorProvider
    */
   private async abort(document: vscode.TextDocument): Promise<void> {
     const ok = await promptConfirm({
-      title: "Abort this interactive rebase?",
+      title: l10n.t("Abort this interactive rebase?"),
       message:
-        "The branch goes back to where it was before the rebase started. No commits are changed.",
-      confirmLabel: "Abort Rebase",
+        l10n.t("The branch goes back to where it was before the rebase started. No commits are changed."),
+      confirmLabel: l10n.t("Abort Rebase"),
     });
     if (!ok) {
       return;
@@ -290,5 +291,5 @@ function applyRowOrder(
 }
 
 function flash(message: string): void {
-  void vscode.window.setStatusBarMessage(`$(check) ${message}`, 2500);
+  void vscode.window.setStatusBarMessage(l10n.t("$(check) {0}", message), 2500);
 }

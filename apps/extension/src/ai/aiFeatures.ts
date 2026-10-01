@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import * as l10n from "@vscode/l10n";
 import {
   buildCommitStyleSystem,
   buildCommitPrompt,
@@ -630,8 +631,10 @@ export class AiFeatures implements vscode.Disposable {
     return {
       imported,
       message: imported
-        ? `Imported ${imported} key${imported === 1 ? "" : "s"} into GitStudio's own encrypted store. Your editor's keychain entry has been cleared.`
-        : "No GitStudio keys were found in the editor's secret storage.",
+        ? imported === 1
+          ? l10n.t("Imported 1 key into GitStudio's own encrypted store. Your editor's keychain entry has been cleared.")
+          : l10n.t("Imported {0} keys into GitStudio's own encrypted store. Your editor's keychain entry has been cleared.", imported)
+        : l10n.t("No GitStudio keys were found in the editor's secret storage."),
     };
   }
 
@@ -646,7 +649,7 @@ export class AiFeatures implements vscode.Disposable {
   async testConnection(): Promise<{ ok: boolean; message: string }> {
     const provider = await this.getProvider();
     if (!provider) {
-      return { ok: false, message: "No model is connected yet — pick one below." };
+      return { ok: false, message: l10n.t("No model is connected yet — pick one below.") };
     }
     this.lastProviderError = undefined;
     this.suppressErrorToast = true;
@@ -660,22 +663,22 @@ export class AiFeatures implements vscode.Disposable {
         signal: controller.signal,
       });
       if (r && r.trim().length > 0) {
-        return { ok: true, message: "Success — the model replied. You're all set." };
+        return { ok: true, message: l10n.t("Success — the model replied. You're all set.") };
       }
       if (controller.signal.aborted) {
-        return { ok: false, message: "Timed out after 15s — is the server running and the model loaded?" };
+        return { ok: false, message: l10n.t("Timed out after 15s — is the server running and the model loaded?") };
       }
       // The provider swallows the real reason into onError; surface it here.
       const detail = this.takeLastError();
       return {
         ok: false,
         message:
-          detail || "No response from the model — check the server, base URL and model ID.",
+          detail || l10n.t("No response from the model — check the server, base URL and model ID."),
       };
     } catch (e) {
       return {
         ok: false,
-        message: e instanceof Error ? e.message : "Test failed.",
+        message: e instanceof Error ? e.message : l10n.t("Test failed."),
       };
     } finally {
       clearTimeout(timer);

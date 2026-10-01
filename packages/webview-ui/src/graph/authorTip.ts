@@ -1,4 +1,5 @@
 import { css } from "lit";
+import * as l10n from "@vscode/l10n";
 import { gravatarUrl, avatarHue, authorInitials } from "./avatar";
 import { escapeTip, placeCard } from "./refTip";
 
@@ -148,7 +149,7 @@ function cardHtml(f: AuthorFacts): string {
     `<div class="atip">` +
     `<div class="atip-head">${face}` +
     `<div class="atip-id"><div class="atip-name">${escapeTip(f.name)}</div>` +
-    `<div class="atip-mail">${escapeTip(f.email || "no email recorded")}</div></div></div>` +
+    `<div class="atip-mail">${escapeTip(f.email || l10n.t("no email recorded"))}</div></div></div>` +
     span +
     `</div>`
   );

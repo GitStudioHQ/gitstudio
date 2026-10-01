@@ -32,6 +32,7 @@ import { GitHubApi, GitHubApiError, type PullRequest } from "./githubApi";
 import { prCreateHtml } from "./prCreateHtml";
 import { contextFor, resolvePrTargets, type PrTarget } from "./prTargets";
 import { listGitHubRemotes, type GitHubRemote, type GitHubRepoContext } from "./repoContext";
+import * as l10n from "@vscode/l10n";
 
 // A new pull request, as ONE form in an editor tab (the shared webview-ui
 // PullRequestCreate) — not a chain of questions in the sidebar. The host
@@ -93,41 +94,41 @@ interface Described {
 function describe(err: unknown): Described {
   if (err instanceof GitHubApiError) return { message: err.message, kind: err.kind, status: err.status, helpUrl: err.helpUrl };
   if (err instanceof PrListError) return { message: err.message, kind: err.kind };
-  return { message: err instanceof Error && err.message ? err.message : "GitHub didn't answer.", kind: "unknown" };
+  return { message: err instanceof Error && err.message ? err.message : l10n.t("GitHub didn't answer."), kind: "unknown" };
 }
 
 /** A first read that failed: why, and the one thing that can put it right. */
 function readFailure(err: Described, repo: string): PrListMessage {
-  const retry = { label: "Retry", icon: "refresh", action: { kind: "retry" } as PrListAction };
+  const retry = { label: l10n.t("Retry"), icon: "refresh", action: { kind: "retry" } as PrListAction };
   if (err.kind === "auth" && err.status === 401) {
     return {
       icon: "github",
       tone: "info",
-      title: "Sign in to GitHub to open a pull request",
-      detail: "GitStudio uses VS Code's GitHub account — no token to paste.",
-      buttons: [{ label: "Sign in to GitHub", icon: "sign-in", primary: true, action: { kind: "signIn", again: err.message.includes("expired") } }],
+      title: l10n.t("Sign in to GitHub to open a pull request"),
+      detail: l10n.t("GitStudio uses VS Code's GitHub account — no token to paste."),
+      buttons: [{ label: l10n.t("Sign in to GitHub"), icon: "sign-in", primary: true, action: { kind: "signIn", again: err.message.includes("expired") } }],
     };
   }
   if (err.kind === "auth" || err.kind === "forbidden") {
     return {
       icon: "warning",
       tone: "warning",
-      title: `GitHub refused to show ${repo}`,
+      title: l10n.t("GitHub refused to show {0}", repo),
       detail: err.message,
       buttons: [
         err.helpUrl
-          ? { label: "Authorize on GitHub", icon: "link-external", primary: true, action: { kind: "openUrl", url: err.helpUrl } }
-          : { label: "Open on GitHub", icon: "link-external", primary: true, action: { kind: "openUrl", url: `https://github.com/${repo}` } },
+          ? { label: l10n.t("Authorize on GitHub"), icon: "link-external", primary: true, action: { kind: "openUrl", url: err.helpUrl } }
+          : { label: l10n.t("Open on GitHub"), icon: "link-external", primary: true, action: { kind: "openUrl", url: `https://github.com/${repo}` } },
         retry,
       ],
     };
   }
   if (err.kind === "not-found") {
-    return { icon: "warning", tone: "warning", title: `GitHub has no repository ${repo}`, detail: "Or this GitHub sign-in can't see it.", buttons: [retry] };
+    return { icon: "warning", tone: "warning", title: l10n.t("GitHub has no repository {0}", repo), detail: l10n.t("Or this GitHub sign-in can't see it."), buttons: [retry] };
   }
-  if (err.kind === "rate-limit") return { icon: "clock", tone: "warning", title: "GitHub's rate limit was reached", detail: err.message, buttons: [retry] };
-  if (err.kind === "network") return { icon: "error", tone: "error", title: "Couldn't reach GitHub", detail: "Check your network connection.", buttons: [{ ...retry, primary: true }] };
-  return { icon: "error", tone: "error", title: `Couldn't read ${repo}`, detail: err.message, buttons: [{ ...retry, primary: true }] };
+  if (err.kind === "rate-limit") return { icon: "clock", tone: "warning", title: l10n.t("GitHub's rate limit was reached"), detail: err.message, buttons: [retry] };
+  if (err.kind === "network") return { icon: "error", tone: "error", title: l10n.t("Couldn't reach GitHub"), detail: l10n.t("Check your network connection."), buttons: [{ ...retry, primary: true }] };
+  return { icon: "error", tone: "error", title: l10n.t("Couldn't read {0}", repo), detail: err.message, buttons: [{ ...retry, primary: true }] };
 }
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
@@ -151,7 +152,7 @@ export class PrCreatePage {
       if (opts.head && opts.head !== existing.headBranch) void existing.chooseHead(opts.head);
       return existing;
     }
-    const panel = vscode.window.createWebviewPanel("gitstudio.newPullRequest", "New pull request", vscode.ViewColumn.Active, {
+    const panel = vscode.window.createWebviewPanel("gitstudio.newPullRequest", l10n.t("New pull request"), vscode.ViewColumn.Active, {
       enableScripts: true,
       retainContextWhenHidden: true,
       localResourceRoots: [vscode.Uri.joinPath(deps.extensionUri, "dist")],
@@ -212,7 +213,7 @@ export class PrCreatePage {
       codiconCss: dist("codicons", "codicon.css"),
       formCss: dist("webview", "pr-create.css"),
       formJs: dist("webview", "pr-create.js"),
-      title: "New pull request",
+      title: l10n.t("New pull request"),
     });
     this.disposables.push(
       panel.webview.onDidReceiveMessage((m: PrCreateMessageToHost) => void this.onMessage(m)),
@@ -265,9 +266,9 @@ export class PrCreatePage {
         name: r.name,
         repo: `${r.owner}/${r.repo}`,
         ...(data?.viewer && same(r.owner, data.viewer.login) && !(t && same(`${r.owner}/${r.repo}`, t.id))
-          ? { detail: "your fork" }
+          ? { detail: l10n.t("your fork") }
           : t && same(`${r.owner}/${r.repo}`, t.id)
-            ? { detail: "where it opens" }
+            ? { detail: l10n.t("where it opens") }
             : {}),
       })),
       bases: this.bases(data),
@@ -354,8 +355,8 @@ export class PrCreatePage {
         this.fail({
           icon: "repo",
           tone: "info",
-          title: "This repository has no GitHub remote",
-          detail: "Pull requests are opened on github.com repositories. Add a remote that points at one.",
+          title: l10n.t("This repository has no GitHub remote"),
+          detail: l10n.t("Pull requests are opened on github.com repositories. Add a remote that points at one."),
           buttons: [],
         });
         return;
@@ -363,12 +364,12 @@ export class PrCreatePage {
       this.targets = resolved.targets;
       const keep = this.target && this.targets.find((x) => same(x.id, this.target!.id));
       this.target = keep ?? resolved.target;
-      this.panel.title = `New pull request · ${this.target.id}`;
+      this.panel.title = l10n.t("New pull request · {0}", this.target.id);
 
       // The branches it can come from.
       const cur = await this.readBranches();
       if (this.branches.length === 0) {
-        this.fail({ icon: "git-branch", tone: "info", title: "This repository has no branches yet", detail: "Commit something first, then open a pull request from its branch.", buttons: [] });
+        this.fail({ icon: "git-branch", tone: "info", title: l10n.t("This repository has no branches yet"), detail: l10n.t("Commit something first, then open a pull request from its branch."), buttons: [] });
         return;
       }
       if (!this.headBranch || !this.branches.some((b) => b.name === this.headBranch)) this.headBranch = cur;
@@ -601,7 +602,7 @@ export class PrCreatePage {
         files: [],
         additions: 0,
         deletions: 0,
-        error: "error" in fetched ? `${base} couldn't be fetched from ${t.id}: ${fetched.error}` : `${base} couldn't be read.`,
+        error: "error" in fetched ? l10n.t("{0} couldn't be fetched from {1}: {2}", base, t.id, fetched.error) : l10n.t("{0} couldn't be read.", base),
       };
       return;
     }
@@ -775,9 +776,9 @@ export class PrCreatePage {
         d.code === 0 ? d.stdout.slice(0, 200_000) : "",
       );
       if (drafted && drafted.trim()) this.aiBody = { seq: ++this.sendSeq, body: drafted.trim() };
-      else this.notice = { icon: "info", tone: "info", title: "The AI had nothing to say about this change", buttons: [] };
+      else this.notice = { icon: "info", tone: "info", title: l10n.t("The AI had nothing to say about this change"), buttons: [] };
     } catch (err) {
-      this.notice = { icon: "warning", tone: "warning", title: `Couldn't draft the description: ${describe(err).message}`, buttons: [] };
+      this.notice = { icon: "warning", tone: "warning", title: l10n.t("Couldn't draft the description: {0}", describe(err).message), buttons: [] };
     } finally {
       this.busy = undefined;
       this.post();
@@ -819,8 +820,8 @@ export class PrCreatePage {
           this.notice = {
             icon: "warning",
             tone: "warning",
-            title: `Couldn't push ${h.branch} to ${now.remote}`,
-            detail: (pushed.stderr ?? "").split("\n").find((l) => l.trim()) ?? "git refused the push.",
+            title: l10n.t("Couldn't push {0} to {1}", h.branch, now.remote),
+            detail: (pushed.stderr ?? "").split("\n").find((l) => l.trim()) ?? l10n.t("git refused the push."),
             buttons: [],
           };
           return;
@@ -834,7 +835,7 @@ export class PrCreatePage {
         if (err instanceof GitHubApiError && err.kind === "validation" && /already exists/i.test(err.message)) {
           const existing = await this.deps.api.findOpenPullForHead(t.owner, t.repo, h.ref.includes(":") ? h.ref : `${t.owner}:${h.ref}`).catch(() => undefined);
           if (existing) {
-            void vscode.window.showInformationMessage(`${h.branch} already has an open pull request: #${existing.number}.`);
+            void vscode.window.showInformationMessage(l10n.t("{0} already has an open pull request: #{1}.", h.branch, existing.number));
             await this.deps.openPr(existing, contextFor(t, this.entry));
             this.dispose();
             return;
@@ -844,9 +845,9 @@ export class PrCreatePage {
         this.notice = {
           icon: "warning",
           tone: "warning",
-          title: `Couldn't create the pull request: ${why.message}`,
-          detail: "Everything you wrote is still here.",
-          buttons: why.kind === "auth" && why.status === 401 ? [{ label: "Sign in again", icon: "sign-in", action: { kind: "signIn", again: true } }] : [],
+          title: l10n.t("Couldn't create the pull request: {0}", why.message),
+          detail: l10n.t("Everything you wrote is still here."),
+          buttons: why.kind === "auth" && why.status === 401 ? [{ label: l10n.t("Sign in again"), icon: "sign-in", action: { kind: "signIn", again: true } }] : [],
         };
         return;
       }
@@ -854,9 +855,9 @@ export class PrCreatePage {
       const data = this.repoData.get(t.id.toLowerCase());
       const may = !!data && canSetMetadata(data.permission);
       const followUps: [string, Promise<unknown> | undefined][] = [
-        ["request its reviewers", may && req.reviewers.length > 0 ? this.deps.api.requestReviewers(t.owner, t.repo, pr.number, req.reviewers) : undefined],
-        ["add its assignees", may && req.assignees.length > 0 ? this.deps.api.addAssignees(t.owner, t.repo, pr.number, req.assignees) : undefined],
-        ["add its labels", may && req.labels.length > 0 ? this.deps.api.addLabels(t.owner, t.repo, pr.number, req.labels) : undefined],
+        [l10n.t("request its reviewers"), may && req.reviewers.length > 0 ? this.deps.api.requestReviewers(t.owner, t.repo, pr.number, req.reviewers) : undefined],
+        [l10n.t("add its assignees"), may && req.assignees.length > 0 ? this.deps.api.addAssignees(t.owner, t.repo, pr.number, req.assignees) : undefined],
+        [l10n.t("add its labels"), may && req.labels.length > 0 ? this.deps.api.addLabels(t.owner, t.repo, pr.number, req.labels) : undefined],
       ];
       const failed: string[] = [];
       await Promise.all(
@@ -865,14 +866,14 @@ export class PrCreatePage {
           try {
             await p;
           } catch (err) {
-            failed.push(`couldn't ${what} (${describe(err).message})`);
+            failed.push(l10n.t("couldn't {0} ({1})", what, describe(err).message));
           }
         }),
       );
       this.deps.list?.addPr(t.owner, t.repo, pr);
       await this.deps.openPr(pr, contextFor(t, this.entry));
-      const made = `Created ${req.draft ? "draft " : ""}pull request #${pr.number}.`;
-      if (failed.length > 0) void vscode.window.showWarningMessage(`${made} But GitStudio ${failed.join(", and ")}.`);
+      const made = l10n.t("Created {0}pull request #{1}.", req.draft ? l10n.t("draft ") : "", pr.number);
+      if (failed.length > 0) void vscode.window.showWarningMessage(l10n.t("{0} But GitStudio {1}.", made, failed.join(l10n.t(", and "))));
       else void vscode.window.showInformationMessage(made);
       this.dispose();
     } finally {

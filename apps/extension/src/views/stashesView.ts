@@ -18,6 +18,7 @@ import { detectOperation, notifyPaused } from "../git/pauseNotice";
 import { EMPTY_TREE, toRevisionUri } from "../history/revisionContentProvider";
 import { relativeTime } from "../util/relativeTime";
 import { failed, notice, NO_REPOSITORY } from "../ui/notify";
+import * as l10n from "@vscode/l10n";
 
 // The stash OPERATIONS — save, apply, pop, drop, create branch, copy or move
 // some of a stash's files to Changes, open a file's diff — for the Stashes
@@ -125,7 +126,7 @@ export async function showStash(
 }
 
 /** A stash clicked to look at has left the list. */
-const STASH_GONE_SHOWN = "That stash is no longer in the list.";
+const STASH_GONE_SHOWN = l10n.t("That stash is no longer in the list.");
 
 /**
  * The stash the user acted on, as the list holds it NOW — found by its sha,
@@ -143,7 +144,7 @@ async function pinStash(
     ? list.find((e) => e.sha === stash)
     : list.find((e) => e.ref === stash);
   if (!entry) {
-    void vscode.window.showInformationMessage(`GitStudio: ${gone}`);
+    void vscode.window.showInformationMessage(l10n.t("GitStudio: {0}", gone));
   }
   return entry;
 }
@@ -214,7 +215,7 @@ export async function saveStash(
 
   if (inScope.length === 0) {
     void vscode.window.showInformationMessage(
-      "GitStudio: nothing to stash — the working tree is clean.",
+      l10n.t("GitStudio: nothing to stash — the working tree is clean."),
     );
     return;
   }
@@ -250,34 +251,33 @@ export async function saveStash(
       : [
           {
             id: OPT_KEEP,
-            label: "Keep staged changes staged",
+            label: l10n.t("Keep staged changes staged"),
             icon: "check",
             detail: "--keep-index",
-            description: "The index survives, so a partly staged commit stays ready.",
+            description: l10n.t("The index survives, so a partly staged commit stays ready."),
           },
         ]),
     {
       id: OPT_MESSAGE,
-      label: "Add a message\u2026",
+      label: l10n.t("Add a message…"),
       icon: "pencil",
-      description: "Otherwise git labels it with the branch and its last commit.",
+      description: l10n.t("Otherwise git labels it with the branch and its last commit."),
     },
   ];
 
   const picked = await promptPickMany({
     title: stagedOnly
-      ? `Stash everything staged (${inScope.length} ${inScope.length === 1 ? "file" : "files"})`
-      : `Stash ${inScope.length} ${inScope.length === 1 ? "file" : "files"}`,
+      ? l10n.t("Stash everything staged ({0} {1})", inScope.length, inScope.length === 1 ? l10n.t("file") : l10n.t("files"))
+      : l10n.t("Stash {0} {1}", inScope.length, inScope.length === 1 ? l10n.t("file") : l10n.t("files")),
     hint: stagedOnly
       // No tickable rows for this mode, so the files are named here instead.
       // `git stash push --staged` with a pathspec silently mangles files
       // OUTSIDE the pathspec and still exits 0, so StashProvider refuses the
       // combination — offering per-file ticks here would be offering a choice
       // that cannot be honoured.
-      ? `${listForHint(inScope.map((f) => f.path))} — the index is stashed whole; `
-        + "the working tree is left alone."
-      : "Everything here is going. Untick anything you want to keep.",
-    confirmLabel: "Stash",
+      ? l10n.t("{0} — the index is stashed whole; the working tree is left alone.", listForHint(inScope.map((f) => f.path)))
+      : l10n.t("Everything here is going. Untick anything you want to keep."),
+    confirmLabel: l10n.t("Stash"),
     choices: [...fileChoices, ...extras],
   });
   if (picked === undefined) {
@@ -289,7 +289,7 @@ export async function saveStash(
     .map((id) => id.slice(FILE.length));
   if (!stagedOnly && chosenPaths.length === 0) {
     void vscode.window.showInformationMessage(
-      "GitStudio: nothing stashed — every file was unticked.",
+      l10n.t("GitStudio: nothing stashed — every file was unticked."),
     );
     return;
   }
@@ -297,10 +297,10 @@ export async function saveStash(
   let message = "";
   if (picked.includes(OPT_MESSAGE)) {
     const typed = await promptInput({
-      title: "Name this stash",
-      hint: "A label to recognise it by later.",
-      placeholder: "WIP: \u2026",
-      confirmLabel: "Stash",
+      title: l10n.t("Name this stash"),
+      hint: l10n.t("A label to recognise it by later."),
+      placeholder: l10n.t("WIP: …"),
+      confirmLabel: l10n.t("Stash"),
     });
     if (typed === undefined) {
       return; // cancelled
@@ -325,7 +325,12 @@ export async function saveStash(
     stagedOnly,
   });
   if (!result.ok) {
-    void vscode.window.showErrorMessage(failed("Stash", result.stderr));
+    // Git can refuse without a word: with a stale .git/index.lock in place,
+    // `git stash push` exits 1 having printed nothing at all, and "Stash
+    // failed." on its own leaves nobody anything to look at.
+    void vscode.window.showErrorMessage(
+      failed(l10n.t("Stash"), result.stderr.trim() || l10n.t("git refused")),
+    );
     return;
   }
   // A zero exit is not proof anything was stashed: `git stash push` with nothing
@@ -335,15 +340,15 @@ export async function saveStash(
   // have changes, just not ones git was asked to take.
   if (!result.created) {
     void vscode.window.showInformationMessage(
-      `GitStudio: ${stashBlockerMessage(
+      l10n.t("GitStudio: {0}", stashBlockerMessage(
         result.blocker ?? "cleanTree",
         stagedOnly ? "staged" : narrowed.length > 0 ? "selection" : "tree",
-      )}`,
+      )),
     );
     refresh();
     return;
   }
-  flash(`Stashed ${scope}`);
+  flash(l10n.t("Stashed {0}", scope));
   refresh();
 }
 
@@ -399,7 +404,7 @@ export async function applyStash(
     const before = await detectOperation(a.ctx);
     // Through the shared door: uncommitted work in the stash's way is said, with
     // Stash & Retry, instead of git's "would be overwritten by merge" in red.
-    return settleApplied(a, before, await applyWithStaging(a, entry, false), "Apply stash", "Applied stash", refresh);
+    return settleApplied(a, before, await applyWithStaging(a, entry, false), l10n.t("Apply stash"), l10n.t("Applied stash"), refresh);
   });
 }
 
@@ -425,9 +430,9 @@ export async function popStash(
     // Named by its message: "Pop stash@{0}" named whichever stash was on top
     // by the time the toast or Undo History was read.
     const applied = ledger
-      ? await ledger.runWithUndo(a, `Pop “${stashLabel(entry)}”`, run)
+      ? await ledger.runWithUndo(a, l10n.t("Pop “{0}”", stashLabel(entry)), run)
       : await run();
-    return settleApplied(a, before, applied, "Pop stash", "Popped stash", refresh);
+    return settleApplied(a, before, applied, l10n.t("Pop stash"), l10n.t("Popped stash"), refresh);
   });
 }
 
@@ -460,7 +465,7 @@ async function applyWithStaging(a: RepoEntry, entry: StashEntry, pop: boolean): 
   // stash once that applied — as git's pop keeps it after a conflict.
   const whole = await a.ctx.stashes.subset(entry.sha, files.map((f) => f.path), { unstaged: true });
   if (!whole.ok) {
-    void vscode.window.showErrorMessage(`GitStudio: ${whole.stderr}`);
+    void vscode.window.showErrorMessage(l10n.t("GitStudio: {0}", whole.stderr));
     return { result: first.result, settled: true };
   }
   const applied = await applyOrAsk(a.ctx, { kind: "stash", stash: whole.sha, cutFrom: entry.sha });
@@ -468,7 +473,7 @@ async function applyWithStaging(a: RepoEntry, entry: StashEntry, pop: boolean): 
     const dropped = await a.ctx.stashes.drop(entry.sha);
     if (!dropped.ok) {
       void vscode.window.showWarningMessage(
-        `GitStudio: its changes are back, but “${stashLabel(entry)}” couldn't be dropped — ${dropped.stderr.trim() || "git refused"}`,
+        l10n.t("GitStudio: its changes are back, but “{0}” couldn't be dropped — {1}", stashLabel(entry), dropped.stderr.trim() || "git refused"),
       );
     }
   }
@@ -493,12 +498,12 @@ function losesStaged(files: readonly StashFile[]): boolean {
 function readdsNew(files: readonly StashFile[]): string | null {
   const added = files.some((f) => f.status === "A" && !!f.staged);
   const renamed = files.some((f) => f.status === "R" && !!f.staged);
-  return added && renamed ? "a new or renamed file" : added ? "a new file" : renamed ? "a renamed file" : null;
+  return added && renamed ? l10n.t("a new or renamed file") : added ? l10n.t("a new file") : renamed ? l10n.t("a renamed file") : null;
 }
 
 /** "…unstaged", and the exception git makes, where there is one. */
 function unstagedWords(readds: string | null): string {
-  return readds ? `unstaged, but for ${readds}, which git adds back staged,` : "unstaged";
+  return readds ? l10n.t("unstaged, but for {0}, which git adds back staged,", readds) : "unstaged";
 }
 
 /**
@@ -540,7 +545,7 @@ async function applyPartWithStaging(
   if (picked.some((f) => f.onlyStaged)) {
     const cut = await a.ctx.stashes.subset(entry.sha, picked.map((f) => f.path), { unstaged: true });
     if (!cut.ok) {
-      void vscode.window.showErrorMessage(`GitStudio: ${cut.stderr}`);
+      void vscode.window.showErrorMessage(l10n.t("GitStudio: {0}", cut.stderr));
       return { result: first.result, settled: true };
     }
     plain = cut.sha;
@@ -556,29 +561,29 @@ async function askWithoutStaging(
   lossy: boolean,
   readds: string | null,
 ): Promise<boolean> {
-  const verb = pop ? "Pop" : "Apply";
+  const verb = pop ? l10n.t("Pop") : l10n.t("Apply");
   const choice = await promptPick({
-    title: `${verb} the stash without its staging?`,
+    title: l10n.t("{0} the stash without its staging?", verb),
     hint:
       why === "busy"
-        ? `“${stashLabel(entry)}” has staged changes, and git can only stage them again when nothing else is staged — your own staged changes are in the way. Nothing has changed yet.`
-        : `“${stashLabel(entry)}” has staged changes that no longer apply to what HEAD has now. Nothing has changed yet.`,
+        ? l10n.t("“{0}” has staged changes, and git can only stage them again when nothing else is staged — your own staged changes are in the way. Nothing has changed yet.", stashLabel(entry))
+        : l10n.t("“{0}” has staged changes that no longer apply to what HEAD has now. Nothing has changed yet.", stashLabel(entry)),
     choices: [
       {
         id: "unstaged",
-        label: `${verb} Unstaged`,
+        label: l10n.t("{0} Unstaged", verb),
         icon: pop ? "git-stash-pop" : "git-stash-apply",
         description: pop
-          ? `Its changes come back ${unstagedWords(readds)} and the stash is dropped.${lossy ? ` ${LOST_STAGED}` : ""}`
-          : `Its changes come back ${unstagedWords(readds).replace(/,$/, "")}. The stash is kept, staging and all.`,
+          ? l10n.t("Its changes come back {0} and the stash is dropped.{1}", unstagedWords(readds), lossy ? ` ${LOST_STAGED}` : "")
+          : l10n.t("Its changes come back {0}. The stash is kept, staging and all.", unstagedWords(readds).replace(/,$/, "")),
       },
       {
         id: "cancel",
-        label: "Cancel",
+        label: l10n.t("Cancel"),
         icon: "close",
         description: pop
-          ? "Nothing runs. Apply keeps the stash, so its staged versions stay in it."
-          : "Nothing runs.",
+          ? l10n.t("Nothing runs. Apply keeps the stash, so its staged versions stay in it.")
+          : l10n.t("Nothing runs."),
       },
     ],
   });
@@ -586,7 +591,7 @@ async function askWithoutStaging(
 }
 
 /** What a Pop or a Move without staging loses, said only where it loses it (losesStaged). */
-const LOST_STAGED = "Where a file was staged and then changed again, its staged version is not kept.";
+const LOST_STAGED = l10n.t("Where a file was staged and then changed again, its staged version is not kept.");
 
 /** The same question for files taken out of a stash, in the words for one file or several. */
 async function askPartWithoutStaging(
@@ -595,33 +600,33 @@ async function askPartWithoutStaging(
   move: boolean,
   picked: readonly StashFile[],
 ): Promise<boolean> {
-  const verb = move ? "Move" : "Copy";
+  const verb = move ? l10n.t("Move") : l10n.t("Copy");
   const one = picked.length === 1;
   const back = unstagedWords(readdsNew(picked));
-  const them = one ? `“${picked[0].path.split("/").pop()}”` : `These ${picked.length} files`;
+  const them = one ? `“${picked[0].path.split("/").pop()}”` : l10n.t("These {0} files", picked.length);
   const was = one ? "was" : "were";
   const choice = await promptPick({
-    title: one ? `${verb} the file without its staging?` : `${verb} the files without their staging?`,
+    title: one ? l10n.t("{0} the file without its staging?", verb) : l10n.t("{0} the files without their staging?", verb),
     hint:
       why === "busy"
-        ? `${them} ${was} staged in “${stashLabel(entry)}”, and git can only stage ${one ? "it" : "them"} again when nothing else is staged — your own staged changes are in the way. Nothing has changed yet.`
-        : `${them} ${was} staged in “${stashLabel(entry)}”, and ${one ? "its staged version no longer applies" : "their staged versions no longer apply"} to what HEAD has now. Nothing has changed yet.`,
+        ? l10n.t("{0} {1} staged in “{2}”, and git can only stage {3} again when nothing else is staged — your own staged changes are in the way. Nothing has changed yet.", them, was, stashLabel(entry), one ? l10n.t("it") : l10n.t("them"))
+        : l10n.t("{0} {1} staged in “{2}”, and {3} to what HEAD has now. Nothing has changed yet.", them, was, stashLabel(entry), one ? l10n.t("its staged version no longer applies") : l10n.t("their staged versions no longer apply")),
     choices: [
       {
         id: "unstaged",
-        label: `${verb} Unstaged`,
+        label: l10n.t("{0} Unstaged", verb),
         icon: move ? "git-stash-pop" : "git-stash-apply",
         description: move
-          ? `${one ? "Its changes come" : "Their changes come"} back ${back} and leave the stash.${
-              !losesStaged(picked) ? "" : one ? " It was staged and then changed again, so its staged version is not kept." : ` ${LOST_STAGED}`
+          ? `${one ? l10n.t("Its changes come") : l10n.t("Their changes come")} back ${back} and leave the stash.${
+              !losesStaged(picked) ? "" : one ? l10n.t(" It was staged and then changed again, so its staged version is not kept.") : ` ${LOST_STAGED}`
             }`
-          : `${one ? "Its changes come" : "Their changes come"} back ${back.replace(/,$/, "")}. The stash keeps ${one ? "it" : "them"}, staging and all.`,
+          : l10n.t("{0} back {1}. The stash keeps {2}, staging and all.", one ? l10n.t("Its changes come") : l10n.t("Their changes come"), back.replace(/,$/, ""), one ? l10n.t("it") : l10n.t("them")),
       },
       {
         id: "cancel",
-        label: "Cancel",
+        label: l10n.t("Cancel"),
         icon: "close",
-        description: `Nothing runs. ${one ? "It stays" : "They stay"} in the stash, staging and all.`,
+        description: l10n.t("Nothing runs. {0} in the stash, staging and all.", one ? l10n.t("It stays") : l10n.t("They stay")),
       },
     ],
   });
@@ -683,11 +688,11 @@ export async function dropStash(
   return once(entry, async () => {
     const files = (await a.ctx.stashes.files(entry.sha))?.length;
     const ok = await promptConfirm({
-      title: `Drop “${stashLabel(entry)}”?`,
+      title: l10n.t("Drop “{0}”?", stashLabel(entry)),
       message:
-        (files === undefined ? "The stash leaves" : `Its ${countFiles(files)} ${files === 1 ? "leaves" : "leave"}`) +
-        " the stash list. Undo (Ctrl/Cmd+Alt+G Z) puts it back.",
-      confirmLabel: "Drop",
+        (files === undefined ? l10n.t("The stash leaves") : l10n.t("Its {0} {1}", countFiles(files), files === 1 ? l10n.t("leaves") : l10n.t("leave"))) +
+        l10n.t(" the stash list. Undo (Ctrl/Cmd+Alt+G Z) puts it back."),
+      confirmLabel: l10n.t("Drop"),
       danger: true,
     });
     if (!ok) {
@@ -698,9 +703,9 @@ export async function dropStash(
     const run = () => a.ctx.stashes.drop(entry.sha);
     // Refs only: a drop takes a stash off the stack and never touches the tree.
     const result = ledger
-      ? await ledger.runWithUndo(a, `Drop “${stashLabel(entry)}”`, run, { refsOnly: true })
+      ? await ledger.runWithUndo(a, l10n.t("Drop “{0}”", stashLabel(entry)), run, { refsOnly: true })
       : await run();
-    reportStashOp(result, "Drop stash", "Dropped stash", refresh);
+    reportStashOp(result, l10n.t("Drop stash"), l10n.t("Dropped stash"), refresh);
     return result.ok ? { kind: "done" } : result.gone ? GONE : KEPT;
   });
 }
@@ -723,10 +728,10 @@ export async function branchFromStash(
   }
   return once(entry, async () => {
     const name = await promptInput({
-      title: `Create branch from “${stashLabel(entry)}”`,
-      hint: "The stash is applied on the new branch and dropped once it applies cleanly.",
+      title: l10n.t("Create branch from “{0}”", stashLabel(entry)),
+      hint: l10n.t("The stash is applied on the new branch and dropped once it applies cleanly."),
       placeholder: "feature/from-stash",
-      confirmLabel: "Create Branch",
+      confirmLabel: l10n.t("Create Branch"),
       validate: "refName",
     });
     if (!name) {
@@ -736,7 +741,7 @@ export async function branchFromStash(
     // user's to change, said as that rather than as git's error.
     const refused = await stashBranchNameRefusal(a.ctx.process, name);
     if (refused) {
-      void vscode.window.showWarningMessage(`GitStudio: ${refused}`);
+      void vscode.window.showWarningMessage(l10n.t("GitStudio: {0}", refused));
       return KEPT;
     }
     hooks?.onConfirmed?.();
@@ -748,7 +753,7 @@ export async function branchFromStash(
     // with the stash unapplied, and said so in red.
     const before = await detectOperation(a.ctx);
     const applied = await applyOrAsk(a.ctx, { kind: "stash", stash: entry.sha, branch: name });
-    return settleApplied(a, before, applied, "Create branch from stash", `Created branch ${name}`, refresh);
+    return settleApplied(a, before, applied, l10n.t("Create branch from stash"), l10n.t("Created branch {0}", name), refresh);
   });
 }
 
@@ -794,18 +799,18 @@ export async function copyStashFiles(
     const files = await a.ctx.stashes.files(entry.sha);
     const picked = files ? pickedFiles(files, paths) : [];
     if (picked.length === 0) {
-      void vscode.window.showInformationMessage("GitStudio: those files are no longer in the stash.");
+      void vscode.window.showInformationMessage(l10n.t("GitStudio: those files are no longer in the stash."));
       refresh();
       return KEPT;
     }
     const part = await a.ctx.stashes.subset(entry.sha, picked.map((f) => f.path));
     if (!part.ok) {
-      void vscode.window.showErrorMessage(`GitStudio: ${part.stderr}`);
+      void vscode.window.showErrorMessage(l10n.t("GitStudio: {0}", part.stderr));
       return KEPT;
     }
     const before = await detectOperation(a.ctx);
     const applied = await applyPartWithStaging(a, entry, part.sha, false, picked);
-    return settleApplied(a, before, applied, "Copy to Changes", `Copied ${countFiles(picked.length)} to Changes`, refresh);
+    return settleApplied(a, before, applied, l10n.t("Copy to Changes"), l10n.t("Copied {0} to Changes", countFiles(picked.length)), refresh);
   });
 }
 
@@ -835,7 +840,7 @@ export async function moveStashFiles(
   const files = await a.ctx.stashes.files(entry.sha);
   const picked = files ? pickedFiles(files, paths) : [];
   if (!files || picked.length === 0) {
-    void vscode.window.showInformationMessage("GitStudio: those files are no longer in the stash.");
+    void vscode.window.showInformationMessage(l10n.t("GitStudio: those files are no longer in the stash."));
     refresh();
     return KEPT;
   }
@@ -850,14 +855,14 @@ export async function moveStashFiles(
       a.ctx.stashes.subset(entry.sha, files.filter((f) => !moving.has(f)).map((f) => f.path)),
     ]);
     if (!part.ok || !rest.ok) {
-      void vscode.window.showErrorMessage(`GitStudio: ${!part.ok ? part.stderr : !rest.ok ? rest.stderr : ""}`);
+      void vscode.window.showErrorMessage(l10n.t("GitStudio: {0}", !part.ok ? part.stderr : !rest.ok ? rest.stderr : ""));
       return KEPT;
     }
-    const label = `Move ${countFiles(picked.length)} out of “${stashLabel(entry)}”`;
+    const label = l10n.t("Move {0} out of “{1}”", countFiles(picked.length), stashLabel(entry));
     const run = async (): Promise<Applied & { outcome: StashOutcome }> => {
       const before = await detectOperation(a.ctx);
       const applied = await applyPartWithStaging(a, entry, part.sha, true, picked);
-      const outcome = await settleApplied(a, before, applied, "Move to Changes", undefined, refresh);
+      const outcome = await settleApplied(a, before, applied, l10n.t("Move to Changes"), undefined, refresh);
       if (outcome.kind !== "done") {
         return { ...applied, outcome };
       }
@@ -867,8 +872,8 @@ export async function moveStashFiles(
         void vscode.window.showWarningMessage(
           notice(
             replaced.gone
-              ? `the files are in Changes, but “${stashLabel(entry)}” had left the stash list meanwhile, so nothing more was changed.`
-              : `the files are in Changes, but the stash couldn't be updated — ${replaced.stderr.trim()}`,
+              ? l10n.t("the files are in Changes, but “{0}” had left the stash list meanwhile, so nothing more was changed.", stashLabel(entry))
+              : l10n.t("the files are in Changes, but the stash couldn't be updated — {0}", replaced.stderr.trim()),
           ),
         );
         return { ...applied, outcome: { kind: "done" } };
@@ -878,7 +883,7 @@ export async function moveStashFiles(
     const ledger = repos.getUndoLedger();
     const out = ledger ? await ledger.runWithUndo(a, label, run) : await run();
     if (out.outcome.kind === "done") {
-      flash(`Moved ${countFiles(picked.length)} to Changes`);
+      flash(l10n.t("Moved {0} to Changes", countFiles(picked.length)));
       refresh();
     }
     return out.outcome;
@@ -911,13 +916,13 @@ export async function openStashFile(
   }
   const file = (await a.ctx.stashes.files(entry.sha))?.find((f) => f.path === path);
   if (!file) {
-    void vscode.window.showInformationMessage(`GitStudio: “${path}” is no longer in that stash.`);
+    void vscode.window.showInformationMessage(l10n.t("GitStudio: “{0}” is no longer in that stash.", path));
     return false;
   }
   const name = path.split("/").pop() ?? path;
   if (file.binary) {
     void vscode.window.showInformationMessage(
-      `GitStudio: “${name}” is a binary file, so there is no text to compare. Copy it to Changes to open it.`,
+      l10n.t("GitStudio: “{0}” is a binary file, so there is no text to compare. Copy it to Changes to open it.", name),
     );
     return true;
   }
@@ -949,7 +954,7 @@ export function stashFileSides(
   const after =
     !staged && file.status === "D" ? { rev: EMPTY_TREE, path: file.path } : { rev: holder, path: file.path };
   const words = stashTitle(entry.message).text;
-  return { left: before, right: after, title: `before ↔ ${staged ? "staged in" : "stashed in"} “${words}”` };
+  return { left: before, right: after, title: l10n.t("before ↔ {0} “{1}”", staged ? l10n.t("staged in") : l10n.t("stashed in"), words) };
 }
 
 /**
@@ -964,12 +969,12 @@ export async function pickStash(repos: RepoManager, verb: string): Promise<strin
   }
   const list = await a.ctx.stashes.list();
   if (list.length === 0) {
-    void vscode.window.showInformationMessage("GitStudio: there are no stashes.");
+    void vscode.window.showInformationMessage(l10n.t("GitStudio: there are no stashes."));
     return undefined;
   }
   const counts = await Promise.all(list.map((e) => a.ctx.stashes.files(e.sha)));
   const choice = await promptPick({
-    title: `${verb} which stash?`,
+    title: l10n.t("{0} which stash?", verb),
     choices: list.map((e, i) => {
       const t = stashTitle(e.message);
       const n = counts[i]?.length;
@@ -1007,10 +1012,10 @@ function reportStashOp(
   } else if (result.gone) {
     // Left the list between the click and git running: the user's state,
     // said as that, and the list redrawn without it.
-    void vscode.window.showInformationMessage(`GitStudio: ${STASH_GONE_MESSAGE}`);
+    void vscode.window.showInformationMessage(l10n.t("GitStudio: {0}", STASH_GONE_MESSAGE));
     refresh();
   } else if (paused) {
-    notifyPaused("The stash hit conflicts. Resolve them, or cancel to put the files back — the stash is kept.");
+    notifyPaused(l10n.t("The stash hit conflicts. Resolve them, or cancel to put the files back — the stash is kept."));
     refresh();
   } else {
     void vscode.window.showErrorMessage(failed(action, result.stderr));
@@ -1019,5 +1024,5 @@ function reportStashOp(
 }
 
 function flash(message: string): void {
-  void vscode.window.setStatusBarMessage(`$(check) ${message}`, 2500);
+  void vscode.window.setStatusBarMessage(l10n.t("$(check) {0}", message), 2500);
 }

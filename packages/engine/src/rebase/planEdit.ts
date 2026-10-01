@@ -1,3 +1,4 @@
+import * as l10n from "@vscode/l10n";
 // Editing an interactive-rebase plan as a LIST (issue #32: "when doing e.g. 10
 // commits, I would love to select multiple and set the action at once").
 //
@@ -43,12 +44,66 @@ export const PLAN_ACTIONS: ReadonlyArray<{
   /** What it does to the selected commits, for the toolbar's tooltip. */
   does: string;
 }> = [
-  { id: "pick", label: "Pick", key: "P", does: "keep the selected commits as they are" },
-  { id: "reword", label: "Reword", key: "R", does: "keep them, and rewrite their messages" },
-  { id: "squash", label: "Squash", key: "S", does: "fold each into the commit before it, keeping both messages" },
-  { id: "fixup", label: "Fixup", key: "F", does: "fold each into the commit before it, dropping its message" },
-  { id: "edit", label: "Edit", key: "E", does: "pause at each so you can amend it" },
-  { id: "drop", label: "Drop", key: "D", does: "delete the selected commits" },
+  {
+    id: "pick",
+    get label() {
+      return l10n.t("Pick");
+    },
+    key: "P",
+    get does() {
+      return l10n.t("keep the selected commits as they are");
+    },
+  },
+  {
+    id: "reword",
+    get label() {
+      return l10n.t("Reword");
+    },
+    key: "R",
+    get does() {
+      return l10n.t("keep them, and rewrite their messages");
+    },
+  },
+  {
+    id: "squash",
+    get label() {
+      return l10n.t("Squash");
+    },
+    key: "S",
+    get does() {
+      return l10n.t("fold each into the commit before it, keeping both messages");
+    },
+  },
+  {
+    id: "fixup",
+    get label() {
+      return l10n.t("Fixup");
+    },
+    key: "F",
+    get does() {
+      return l10n.t("fold each into the commit before it, dropping its message");
+    },
+  },
+  {
+    id: "edit",
+    get label() {
+      return l10n.t("Edit");
+    },
+    key: "E",
+    get does() {
+      return l10n.t("pause at each so you can amend it");
+    },
+  },
+  {
+    id: "drop",
+    get label() {
+      return l10n.t("Drop");
+    },
+    key: "D",
+    get does() {
+      return l10n.t("delete the selected commits");
+    },
+  },
 ];
 
 /** The action a key names (git's todo letter, either case), if any. */
@@ -324,21 +379,22 @@ export function refusalText(
 ): string {
   const n = result.refused.length;
   if (!n) return "";
-  const where = order === "newest-first" ? "below" : "above";
-  const oldest = order === "newest-first" ? "oldest" : "first";
+  const where = order === "newest-first" ? l10n.t("below") : l10n.t("above");
+  const oldest = order === "newest-first" ? l10n.t("oldest") : l10n.t("first");
   const a = label(action);
-  const article = /^[aeiou]/i.test(a) ? "an" : "a";
+  const named = /^[aeiou]/i.test(a) ? l10n.t("an {0}", a.toLowerCase()) : l10n.t("a {0}", a.toLowerCase());
   const applied = result.changed.length;
   if (!applied) {
     return n === 1
-      ? `The ${oldest} commit you keep can't be ${article} ${a.toLowerCase()} — there's nothing ${where} it to fold into.`
-      : `None of these can be ${article} ${a.toLowerCase()} — nothing ${where} them is kept to fold into.`;
+      ? l10n.t("The {0} commit you keep can't be {1} — there's nothing {2} it to fold into.", oldest, named, where)
+      : l10n.t("None of these can be {0} — nothing {1} them is kept to fold into.", named, where);
   }
-  const done = `${a} set on ${applied} commit${applied === 1 ? "" : "s"}.`;
+  const done =
+    applied === 1 ? l10n.t("{0} set on 1 commit.", a) : l10n.t("{0} set on {1} commits.", a, applied);
   if (n === 1) {
-    return `${done} The ${oldest} one stays ${was ? label(was) : "as it was"} — there's nothing ${where} it to fold into.`;
+    return l10n.t("{0} The {1} one stays {2} — there's nothing {3} it to fold into.", done, oldest, was ? label(was) : l10n.t("as it was"), where);
   }
-  return `${done} The ${n} ${oldest} stay as they were — nothing ${where} them is kept to fold into.`;
+  return l10n.t("{0} The {1} {2} stay as they were — nothing {3} them is kept to fold into.", done, n, oldest, where);
 }
 
 // ── moving ──────────────────────────────────────────────────────────────────
@@ -407,5 +463,5 @@ export function moveKeysToGap(
 
 /** "3 selected" — the toolbar's count, and what a screen reader hears. */
 export function selectionCountText(n: number): string {
-  return n === 0 ? "None selected" : `${n} selected`;
+  return n === 0 ? l10n.t("None selected") : `${n} selected`;
 }

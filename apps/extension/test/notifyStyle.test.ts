@@ -36,6 +36,14 @@ test("the sentence: GitStudio once, a capital, a full stop", () => {
   assert.equal(notice("  spaced  "), "GitStudio: Spaced.");
 });
 
+test("the sentence in Chinese: 。？！ end it, so no Latin full stop follows", () => {
+  assert.equal(notice("已切到 main。"), "GitStudio: 已切到 main。");
+  assert.equal(notice("推完了！"), "GitStudio: 推完了！");
+  assert.equal(notice("没问题？"), "GitStudio: 没问题？");
+  assert.equal(notice("GitStudio: 草稿已保存。"), "GitStudio: 草稿已保存。", "the prefix never twice");
+  assert.equal(notice("没有句号"), "GitStudio: 没有句号.", "a sentence that ends in neither still gets one");
+});
+
 test("a failure: the action, then git's reason, whole, on one line", () => {
   assert.equal(
     failed("Push", "rejected: non-fast-forward\nhint: pull first"),
@@ -130,8 +138,8 @@ const EXEMPT: { rel: string; args: RegExp; why: string }[] = [
   },
   {
     rel: "ai/aiCommands.ts",
-    args: /^message,\s*\{ modal: false \},\s*"Copy",?$/,
-    why: "the commit message the AI drafted, offered to copy: the user's words, not GitStudio's",
+    args: /^message,\s*\{ modal: false \},\s*copy,?$/,
+    why: "the commit message the AI drafted, offered to copy: the user's words, not GitStudio's (copy is the button's own label, read once so the choice compares it)",
   },
 ];
 
@@ -140,11 +148,15 @@ test("every toast is built by notice(), failed() or NO_REPOSITORY, or is a 'GitS
   // one, or git's stderr passed straight through went unread, and the
   // graph's failures ("Cherry-pick failed: error: …"), about twenty branch
   // actions (git's stderr alone) and the rebase refusals were all of those.
-  const built = /^(notice\(|failed\(|NO_REPOSITORY\b|["'`]GitStudio: )/;
+  const built = /^(notice\(|failed\(|NO_REPOSITORY\b|l10n\.t\(["'`]GitStudio: )/;
+  // A ternary whose two branches are both "GitStudio: " messages still says
+  // one, whichever branch runs: the guard reads the branch sentences, not the
+  // choice between them.
+  const branchy = /\?\s*l10n\.t\(["'`]GitStudio: [\s\S]*:\s*l10n\.t\(["'`]GitStudio: /;
   const seen = new Set<number>();
   const hits = calls()
     .filter((c) => {
-      if (PR_SENTENCES_OWED.test(c.rel) || built.test(c.args)) return false;
+      if (PR_SENTENCES_OWED.test(c.rel) || built.test(c.args) || branchy.test(c.args)) return false;
       const i = EXEMPT.findIndex((e) => e.rel === c.rel && e.args.test(c.args.replace(/\s+/g, " ").trim()));
       if (i >= 0) {
         seen.add(i);

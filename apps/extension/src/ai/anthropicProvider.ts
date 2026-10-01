@@ -8,6 +8,7 @@ import type {
   CompleteRequest,
   ModelTier,
 } from "./aiFeatures";
+import * as l10n from "@vscode/l10n";
 
 // The Anthropic bring-your-own-key provider. Runs entirely on the extension
 // host (Node 22 → global fetch), so the API key never reaches a webview and
@@ -128,13 +129,13 @@ export class AnthropicProvider implements AiProvider {
   private friendlyFor(status: number): string {
     switch (status) {
       case 401:
-        return "The Anthropic API key is missing or invalid. Run “GitStudio: Set Anthropic API Key…”.";
+        return l10n.t("The Anthropic API key is missing or invalid. Run “GitStudio: Set Anthropic API Key…”.");
       case 429:
-        return "Anthropic rate limit hit — try again in a moment.";
+        return l10n.t("Anthropic rate limit hit — try again in a moment.");
       case 529:
-        return "Anthropic is temporarily overloaded — try again shortly.";
+        return l10n.t("Anthropic is temporarily overloaded — try again shortly.");
       default:
-        return `Anthropic request failed (HTTP ${status}).`;
+        return l10n.t("Anthropic request failed (HTTP {0}).", status);
     }
   }
 
@@ -162,14 +163,14 @@ export class AnthropicProvider implements AiProvider {
       const json = (await res.json()) as AnthropicMessageResponse;
       const text = extractAnthropicText(json);
       if (text === null && json.stop_reason === "refusal") {
-        this.report("The model declined this request.");
+        this.report(l10n.t("The model declined this request."));
       }
       return text;
     } catch (err) {
       if (isAbort(err)) {
         return null;
       }
-      this.report("Couldn't reach Anthropic (network error).");
+      this.report(l10n.t("Couldn't reach Anthropic (network error)."));
       return null;
     }
   }
@@ -228,7 +229,7 @@ export class AnthropicProvider implements AiProvider {
       if (isAbort(err)) {
         return null;
       }
-      this.report("Couldn't reach Anthropic (network error).");
+      this.report(l10n.t("Couldn't reach Anthropic (network error)."));
       return null;
     }
   }

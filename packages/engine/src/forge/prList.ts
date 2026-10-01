@@ -33,6 +33,7 @@ import type {
   PrReviewRequest,
 } from "@gitstudio/host-bridge/prProtocol";
 import { ciFromRollup, prKind, reviewDecisionOf } from "./pullRequests";
+import * as l10n from "@vscode/l10n";
 
 export type { PrFacet, PrListCounts, PrListFilters, PrListItem, PrListState, PrPerson, PrReviewRequest };
 
@@ -56,7 +57,7 @@ export const PR_FACETS: readonly PrFacet[] = ["author", "reviewRequested", "assi
 /** Each facet's name, as its control says it. */
 export const PR_FACET_WORDS: Record<PrFacet, string> = {
   author: "Author",
-  reviewRequested: "Review requested",
+  reviewRequested: l10n.t("Review requested"),
   assignee: "Assignee",
   label: "Label",
 };
@@ -203,7 +204,7 @@ export function searchQueryFor(req: Pick<PrListRequest, "owner" | "repo" | "filt
 
 function checkRepo(owner: string, repo: string): void {
   if (!OWNER_OR_REPO.test(owner) || !OWNER_OR_REPO.test(repo)) {
-    throw new PrListError(`"${owner}/${repo}" isn't a GitHub repository name.`, "query");
+    throw new PrListError(l10n.t("\"{0}/{1}\" isn't a GitHub repository name.", owner, repo), "query");
   }
 }
 
@@ -369,24 +370,24 @@ export function parsePrListResponse(
   const errors = res.errors;
   const limited = errorOf(errors, "RATE_LIMITED");
   if (limited) {
-    throw new PrListError(limited.message || "GitHub's rate limit was reached. Try again in a few minutes.", "rate-limit");
+    throw new PrListError(limited.message || l10n.t("GitHub's rate limit was reached. Try again in a few minutes."), "rate-limit");
   }
   const where = `${req.owner}/${req.repo}`;
   if (shape === "list" && (!data || !data.repository)) {
     if (errorOf(errors, "NOT_FOUND") || (data && data.repository === null)) {
       throw new PrListError(
-        `GitHub has no repository ${where} — or this sign-in can't see it.`,
+        l10n.t("GitHub has no repository {0} — or this sign-in can't see it.", where),
         "not-found",
       );
     }
     const forbidden = errorOf(errors, "FORBIDDEN");
-    if (forbidden) throw new PrListError(forbidden.message || `GitHub refused to list ${where}'s pull requests.`, "forbidden");
-    throw new PrListError(errors?.[0]?.message || "GitHub couldn't answer the query.", "query");
+    if (forbidden) throw new PrListError(forbidden.message || l10n.t("GitHub refused to list {0}'s pull requests.", where), "forbidden");
+    throw new PrListError(errors?.[0]?.message || l10n.t("GitHub couldn't answer the query."), "query");
   }
   if (shape === "search" && (!data || !data.list)) {
     const forbidden = errorOf(errors, "FORBIDDEN");
-    if (forbidden) throw new PrListError(forbidden.message || `GitHub refused to search ${where}.`, "forbidden");
-    throw new PrListError(errors?.[0]?.message || "GitHub couldn't answer the query.", "query");
+    if (forbidden) throw new PrListError(forbidden.message || l10n.t("GitHub refused to search {0}.", where), "forbidden");
+    throw new PrListError(errors?.[0]?.message || l10n.t("GitHub couldn't answer the query."), "query");
   }
   const list = shape === "list" ? data.repository.list : data.list;
   const items: PrListItem[] = [];
@@ -456,7 +457,7 @@ export async function fetchRepoInfo(graphql: GraphqlFn, owner: string, repo: str
   checkRepo(owner, repo);
   const res = await graphql(REPO_INFO_QUERY, { owner, name: repo });
   const limited = errorOf(res.errors, "RATE_LIMITED");
-  if (limited) throw new PrListError(limited.message || "GitHub's rate limit was reached.", "rate-limit");
+  if (limited) throw new PrListError(limited.message || l10n.t("GitHub's rate limit was reached."), "rate-limit");
   const r = (res.data as Json)?.repository;
   const name = splitName(r?.nameWithOwner);
   if (!r || !name) return undefined;
@@ -493,7 +494,7 @@ export async function fetchFacetOptions(graphql: GraphqlFn, owner: string, repo:
   const res = await graphql(FACET_OPTIONS_QUERY, { owner, name: repo });
   const r = (res.data as Json)?.repository;
   if (!r) {
-    throw new PrListError(res.errors?.[0]?.message || `GitHub has no repository ${owner}/${repo}.`, "not-found");
+    throw new PrListError(res.errors?.[0]?.message || l10n.t("GitHub has no repository {0}/{1}.", owner, repo), "not-found");
   }
   const labels = (r.labels?.nodes ?? [])
     .filter((l: Json) => l && typeof l.name === "string")

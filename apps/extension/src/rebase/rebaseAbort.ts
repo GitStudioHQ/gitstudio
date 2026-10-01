@@ -16,6 +16,7 @@
 // cherry-pick has its own Abort elsewhere.
 
 import type { OperationKind, OperationOutcome, OperationView } from "@gitstudio/host-bridge/conflictsProtocol";
+import * as l10n from "@vscode/l10n";
 
 export interface AbortSource {
   view(): Promise<OperationView>;
@@ -37,6 +38,6 @@ export async function abortRebaseLike(op: AbortSource): Promise<RebaseAbortResul
 /** What the doors say when there is nothing of theirs to abort. */
 export function nothingToAbortText(kind: OperationKind): string {
   return kind === "none" || kind === "stash"
-    ? "No rebase in progress."
-    : `No rebase in progress — a ${kind} is. Abort it from the Conflicts dashboard.`;
+    ? l10n.t("No rebase in progress.")
+    : l10n.t("No rebase in progress — a {0} is. Abort it from the Conflicts dashboard.", kind);
 }

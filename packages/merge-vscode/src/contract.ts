@@ -7,6 +7,8 @@
 //
 // vscode-free data + one pure checker.
 
+import * as l10n from "@vscode/l10n";
+
 import type { MergeCommandIds } from "./product";
 
 export type CommandRole = keyof MergeCommandIds;
@@ -14,17 +16,17 @@ export type CommandRole = keyof MergeCommandIds;
 /** Canonical titles (sentence-cased verbs, the user's words). */
 export const COMMAND_TITLES: Record<CommandRole, string> = {
   showConflicts: "Resolve Conflicts…",
-  resolveInMergeEditor: "Resolve in Merge Editor",
+  resolveInMergeEditor: l10n.t("Resolve in Merge Editor"),
   compare: "Compare File…",
-  openDiff: "Open in Embedded Diff",
-  openChanges: "Open Changes (vs HEAD)",
-  stageWithTicks: "Stage Changes with Ticks",
-  openDemo: "Open Sample Merge",
-  openDemoDiff: "Open Sample Diff",
+  openDiff: l10n.t("Open in Embedded Diff"),
+  openChanges: l10n.t("Open Changes (vs HEAD)"),
+  stageWithTicks: l10n.t("Stage Changes with Ticks"),
+  openDemo: l10n.t("Open Sample Merge"),
+  openDemoDiff: l10n.t("Open Sample Diff"),
   operationContinue: "Continue Operation",
-  operationSkip: "Skip This Commit",
+  operationSkip: l10n.t("Skip This Commit"),
   operationAbort: "Abort Operation",
-  restoreBuiltInMergeEditor: "Restore VS Code's Merge Editor",
+  restoreBuiltInMergeEditor: l10n.t("Restore VS Code's Merge Editor"),
 };
 
 /**

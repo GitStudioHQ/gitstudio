@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { notice } from "../ui/notify";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
+import * as l10n from "@vscode/l10n";
 import { isSamePathOrInside, relativeInside } from "../util/repoScope";
 
 /** A resolved (repo, file-relative-path) for the active editor's document. */
@@ -20,7 +21,7 @@ export function resolveActiveFile(repos: RepoManager): ActiveFile | undefined {
   const editor = vscode.window.activeTextEditor;
   const uri = editor?.document.uri;
   if (!uri || uri.scheme !== "file") {
-    void vscode.window.showInformationMessage(notice("Open a file in a Git repository first"));
+    void vscode.window.showInformationMessage(notice(l10n.t("Open a file in a Git repository first")));
     return undefined;
   }
 
@@ -36,7 +37,7 @@ export function resolveActiveFile(repos: RepoManager): ActiveFile | undefined {
     }
   }
   if (!best) {
-    void vscode.window.showInformationMessage(notice("This file is not inside an open Git repository"));
+    void vscode.window.showInformationMessage(notice(l10n.t("This file is not inside an open Git repository")));
     return undefined;
   }
 

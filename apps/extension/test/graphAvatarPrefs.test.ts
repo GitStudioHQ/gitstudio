@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import Module from "node:module";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
+import { readManifest } from "./manifest";
 
 type Resolver = { _resolveFilename: (request: unknown, ...rest: unknown[]) => string };
 const resolver = Module as unknown as Resolver;
@@ -137,7 +138,7 @@ test("changing the setting reaches an open page at once; another setting, or a p
 });
 
 test("the setting is declared as it is documented: on by default, and it says what goes where", () => {
-  const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf8")) as {
+  const pkg = readManifest() as {
     contributes: { configuration: Array<{ title: string; properties: Record<string, { type?: string; default?: unknown; markdownDescription?: string }> }> };
   };
   const general = pkg.contributes.configuration.find((c) => c.title === "General");

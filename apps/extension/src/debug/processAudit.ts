@@ -16,12 +16,13 @@ import {
   setSpawnAuditSink,
   type AuditedSpawn,
 } from "@gitstudio/git-service/spawnAudit";
+import * as l10n from "@vscode/l10n";
 
 const SETTING = "gitstudio.debug.logChildProcesses";
 
 export class ProcessAudit implements vscode.Disposable {
   private readonly channel = vscode.window.createOutputChannel(
-    "GitStudio: Process Audit",
+    l10n.t("GitStudio: Process Audit"),
   );
   private readonly disposables: vscode.Disposable[] = [];
   private installed = false;
@@ -41,7 +42,7 @@ export class ProcessAudit implements vscode.Disposable {
   show(): void {
     if (!this.enabled()) {
       this.channel.appendLine(
-        `Audit is OFF. Enable "${SETTING}" in Settings, then reproduce the problem.`,
+        l10n.t("Audit is OFF. Enable \"{0}\" in Settings, then reproduce the problem.", SETTING),
       );
     }
     this.channel.show(true);
@@ -76,7 +77,7 @@ export class ProcessAudit implements vscode.Disposable {
     }
     this.installed = true;
     this.channel.appendLine(
-      `${stamp()} audit started — every process GitStudio spawns is logged below.`,
+      l10n.t("{0} audit started — every process GitStudio spawns is logged below.", stamp()),
     );
     setSpawnAuditSink((event) => this.write(event));
   }

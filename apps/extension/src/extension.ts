@@ -1,3 +1,4 @@
+import "./l10n";
 import * as vscode from "vscode";
 import { notice } from "./ui/notify";
 import { ErrorReporter } from "./reporting/errorReporter";
@@ -88,6 +89,7 @@ import {
 } from "./ai/aiCommands";
 import { registerPrFeature } from "./pr/prFeature";
 import { promptConfirm, promptPick, registerDialogHost } from "./ui/dialogs";
+import * as l10n from "@vscode/l10n";
 
 // GitStudio extension entry point.
 //
@@ -206,9 +208,7 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
     const readyOnce = repos.onDidChange(() => {
       readyOnce.dispose();
       log(
-        `RepoManager ready — repos=${repos.getAll().length}, active=${
-          repos.getActive()?.root ?? "none"
-        }`,
+        l10n.t("RepoManager ready — repos={0}, active={1}", repos.getAll().length, repos.getActive()?.root ?? "none"),
       );
     });
     context.subscriptions.push(readyOnce);
@@ -425,15 +425,15 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
         const cfg = vscode.workspace.getConfiguration("gitstudio");
         if (cfg.get<string>("ai.provider") === "off") {
           void vscode.window.showInformationMessage(
-            "GitStudio: AI features are already disabled.",
+            l10n.t("GitStudio: AI features are already disabled."),
           );
           return;
         }
         const ok = await promptConfirm({
-          title: "Disable all GitStudio AI features?",
+          title: l10n.t("Disable all GitStudio AI features?"),
           message:
-            "Commit-message drafting, diff explanation, summaries and AI review stop being offered. Git operations are unaffected. Re-enable with GitStudio: Connect AI Provider, or by setting gitstudio.ai.provider.",
-          confirmLabel: "Disable AI",
+            l10n.t("Commit-message drafting, diff explanation, summaries and AI review stop being offered. Git operations are unaffected. Re-enable with GitStudio: Connect AI Provider, or by setting gitstudio.ai.provider."),
+          confirmLabel: l10n.t("Disable AI"),
         });
         if (!ok) {
           return;
@@ -444,7 +444,7 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
           vscode.ConfigurationTarget.Global,
         );
         void vscode.window.setStatusBarMessage(
-          "$(check) GitStudio: AI features disabled",
+          l10n.t("$(check) GitStudio: AI features disabled"),
           3000,
         );
       }),
@@ -687,19 +687,19 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
         saveStash(repos, refreshStashes),
       ),
       vscode.commands.registerCommand("gitstudio.stash.apply", async (arg?: { sha?: string }) => {
-        const sha = arg?.sha ?? (await pickStash(repos, "Apply"));
+        const sha = arg?.sha ?? (await pickStash(repos, l10n.t("Apply")));
         if (sha) await applyStash(repos, sha, refreshStashes);
       }),
       vscode.commands.registerCommand("gitstudio.stash.pop", async (arg?: { sha?: string }) => {
-        const sha = arg?.sha ?? (await pickStash(repos, "Pop"));
+        const sha = arg?.sha ?? (await pickStash(repos, l10n.t("Pop")));
         if (sha) await popStash(repos, sha, refreshStashes);
       }),
       vscode.commands.registerCommand("gitstudio.stash.drop", async (arg?: { sha?: string }) => {
-        const sha = arg?.sha ?? (await pickStash(repos, "Drop"));
+        const sha = arg?.sha ?? (await pickStash(repos, l10n.t("Drop")));
         if (sha) await dropStash(repos, sha, refreshStashes);
       }),
       vscode.commands.registerCommand("gitstudio.stash.branch", async (arg?: { sha?: string }) => {
-        const sha = arg?.sha ?? (await pickStash(repos, "Create a branch from"));
+        const sha = arg?.sha ?? (await pickStash(repos, l10n.t("Create a branch from")));
         if (sha) await branchFromStash(repos, sha, refreshStashes);
       }),
       // Scoped stashes. Not in the palette: both take an argument, and a palette
@@ -857,7 +857,7 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
       console.error("[GitStudio] activation error:", e);
       out.show(true);
       void vscode.window.showErrorMessage(
-        notice("Could not finish loading — see the GitStudio Output channel for the error"),
+        notice(l10n.t("Could not finish loading — see the GitStudio Output channel for the error")),
       );
     }
   }).catch((e) => {

@@ -7,6 +7,7 @@ import {
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { relativePath } from "./changesView";
 import { failed } from "../ui/notify";
+import * as l10n from "@vscode/l10n";
 
 // Line / hunk staging commands — the headline differentiator. These operate on
 // the active editor (a working file, or the modified side of a diff editor): the
@@ -31,14 +32,14 @@ function resolveTarget(
   const editor = vscode.window.activeTextEditor;
   if (!editor || editor.document.uri.scheme !== "file") {
     void vscode.window.showInformationMessage(
-      "GitStudio: open a file in a Git repository to stage lines.",
+      l10n.t("GitStudio: open a file in a Git repository to stage lines."),
     );
     return undefined;
   }
   const entry = repoForFile(repos, editor.document.uri.fsPath);
   if (!entry) {
     void vscode.window.showInformationMessage(
-      "GitStudio: this file is not inside an open Git repository.",
+      l10n.t("GitStudio: this file is not inside an open Git repository."),
     );
     return undefined;
   }
@@ -113,7 +114,7 @@ export async function stageHunk(
 
   if (picked.length === 0) {
     void vscode.window.setStatusBarMessage(
-      "$(info) GitStudio: no change under the cursor to stage",
+      l10n.t("$(info) GitStudio: no change under the cursor to stage"),
       2500,
     );
     return;
@@ -138,7 +139,7 @@ async function stageRangesAgainstIndex(
   );
   if (selectedHunks.length === 0) {
     void vscode.window.setStatusBarMessage(
-      "$(info) GitStudio: nothing to stage in the selection",
+      l10n.t("$(info) GitStudio: nothing to stage in the selection"),
       2500,
     );
     return;
@@ -204,7 +205,7 @@ async function unstageByPredicate(
   const hunks = computeHunks(head, index);
   if (hunks.length === 0) {
     void vscode.window.setStatusBarMessage(
-      "$(info) GitStudio: nothing staged to unstage here",
+      l10n.t("$(info) GitStudio: nothing staged to unstage here"),
       2500,
     );
     return;
@@ -215,7 +216,7 @@ async function unstageByPredicate(
   const keep = hunks.filter((h) => !shouldDrop(h, ranges, cursorLines));
   if (keep.length === hunks.length) {
     void vscode.window.setStatusBarMessage(
-      "$(info) GitStudio: no staged change selected to unstage",
+      l10n.t("$(info) GitStudio: no staged change selected to unstage"),
       2500,
     );
     return;
@@ -225,7 +226,7 @@ async function unstageByPredicate(
     target.rel,
     newIndex,
   );
-  finishStaging(result.ok, result.stderr, "Unstaged selection", refresh);
+  finishStaging(result.ok, result.stderr, l10n.t("Unstaged selection"), refresh);
 }
 
 /**
@@ -252,7 +253,7 @@ async function commitStage(
 ): Promise<void> {
   const result = await entry.ctx.staging.stageContent(rel, content);
   const label =
-    hunkCount === 1 ? "Staged 1 change" : `Staged ${hunkCount} changes`;
+    hunkCount === 1 ? l10n.t("Staged 1 change") : l10n.t("Staged {0} changes", hunkCount);
   finishStaging(result.ok, result.stderr, label, refresh);
 }
 
@@ -263,10 +264,10 @@ function finishStaging(
   refresh: StagingRefresh,
 ): void {
   if (!ok) {
-    void vscode.window.showErrorMessage(failed("Staging", stderr));
+    void vscode.window.showErrorMessage(failed(l10n.t("Staging"), stderr));
     return;
   }
-  void vscode.window.setStatusBarMessage(`$(check) ${label}`, 2500);
+  void vscode.window.setStatusBarMessage(l10n.t("$(check) {0}", label), 2500);
   refresh.refresh();
 }
 

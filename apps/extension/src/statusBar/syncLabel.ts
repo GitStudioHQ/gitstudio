@@ -1,5 +1,6 @@
 import type { RepoHead } from "@gitstudio/host-bridge/git";
 import { headBranchName } from "@gitstudio/git-service/RefProvider";
+import * as l10n from "@vscode/l10n";
 
 // What the GitStudio status item calls the branch you are on. Free of `vscode`
 // so it runs under plain tsx against a real repository (syncLabel.test.ts).
@@ -14,11 +15,10 @@ import { headBranchName } from "@gitstudio/git-service/RefProvider";
  *  marked detached. */
 export function syncBranchLabel(head: RepoHead): string {
   const name = headBranchName(head);
-  return name ?? `${head.sha.slice(0, 7)} (detached)`;
+  return name ?? l10n.t("{0} (detached)", head.sha.slice(0, 7));
 }
 
-const count = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
-
+const count = (n: number, one: string, many: string): string => l10n.t("{0} {1}", n, n === 1 ? one : many);
 /** What the status item's icons and numbers say, in words, for a screen reader. */
 export function syncAccessibleLabel(s: {
   branch: string;
@@ -37,13 +37,13 @@ export function syncAccessibleLabel(s: {
   const parts: string[] = [];
   // A detached HEAD has no branch: nothing to publish, pull or push.
   if (!s.detachedAt && !s.upstream) {
-    parts.push("not published");
+    parts.push(l10n.t("not published"));
   } else if (!s.detachedAt) {
-    if (s.behind > 0) parts.push(`${count(s.behind, "commit", "commits")} to pull`);
-    if (s.ahead > 0) parts.push(`${count(s.ahead, "commit", "commits")} to push`);
-    if (s.behind === 0 && s.ahead === 0) parts.push("nothing to pull or push");
+    if (s.behind > 0) parts.push(s.behind === 1 ? l10n.t("1 commit to pull") : l10n.t("{0} commits to pull", s.behind));
+    if (s.ahead > 0) parts.push(s.ahead === 1 ? l10n.t("1 commit to push") : l10n.t("{0} commits to push", s.ahead));
+    if (s.behind === 0 && s.ahead === 0) parts.push(l10n.t("nothing to pull or push"));
   }
-  if (s.dirty > 0) parts.push(count(s.dirty, "changed file", "changed files"));
-  const what = s.detachedAt ? `Detached HEAD at ${s.detachedAt}` : `Branch ${s.branch}`;
-  return `${what}${parts.length ? `: ${parts.join(", ")}` : ""}. Opens the branch menu.`;
+  if (s.dirty > 0) parts.push(count(s.dirty, l10n.t("changed file"), l10n.t("changed files")));
+  const what = s.detachedAt ? l10n.t("Detached HEAD at {0}", s.detachedAt) : l10n.t("Branch {0}", s.branch);
+  return l10n.t("{0}{1}. Opens the branch menu.", what, parts.length ? `: ${parts.join(", ")}` : "");
 }

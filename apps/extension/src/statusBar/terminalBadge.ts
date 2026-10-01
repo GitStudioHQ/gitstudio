@@ -1,3 +1,4 @@
+import * as l10n from "@vscode/l10n";
 /**
  * What the terminal status-bar button shows.
  *
@@ -44,11 +45,11 @@ export function terminalTooltip(
   willHide: boolean,
 ): string {
   const action = willHide
-    ? "Hide the terminal"
+    ? l10n.t("Hide the terminal")
     : names.length === 0
-      ? "Open a terminal at the repository root"
-      : "Show the terminal";
-  if (names.length === 0) return `GitStudio: ${action}`;
-  const heading = names.length === 1 ? "1 terminal" : `${names.length} terminals`;
-  return [`GitStudio: ${action}`, "", heading, ...names.map((n) => `• ${n}`)].join("\n");
+      ? l10n.t("Open a terminal at the repository root")
+      : l10n.t("Show the terminal");
+  if (names.length === 0) return l10n.t("GitStudio: {0}", action);
+  const heading = names.length === 1 ? l10n.t("1 terminal") : l10n.t("{0} terminals", names.length);
+  return [l10n.t("GitStudio: {0}", action), "", heading, ...names.map((n) => `• ${n}`)].join("\n");
 }

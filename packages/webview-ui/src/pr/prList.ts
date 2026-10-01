@@ -38,6 +38,7 @@ import { CI_STATES, PR_ACTIONS, PR_STATES, REVIEW_DECISIONS, ciWords } from "@gi
 import { NO_ONE, PR_FACETS, PR_FACET_WORDS, PR_LIST_STATES, PR_LIST_STATE_WORDS, countFor } from "@gitstudio/engine/forge/prList";
 import { patchChildren } from "../conflicts/patch";
 import { avatarSrc } from "./avatarSrc";
+import * as l10n from "@vscode/l10n";
 
 export interface PrListTimers {
   set(fn: () => void, ms: number): number;
@@ -55,7 +56,7 @@ export interface PullRequestListOptions {
 // ── Small DOM helpers ────────────────────────────────────────────────────────
 
 /** The search box's placeholders, longest first: the one that fits whole is shown. */
-const SEARCH_PLACEHOLDERS = ["Search pull requests", "Search"];
+const SEARCH_PLACEHOLDERS = [l10n.t("Search pull requests"), l10n.t("Search")];
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text?: string): HTMLElementTagNameMap[K] {
   const n = document.createElement(tag);
@@ -107,12 +108,18 @@ export function shortAge(iso: string, now: number): string {
 export function ageWords(iso: string, now: number): string {
   const a = shortAge(iso, now);
   if (!a) return "";
-  if (a === "now") return "just now";
+  if (a === "now") return l10n.t("just now");
   const m = /^(\d+)(mo|m|h|d|y)$/.exec(a);
   if (!m) return a;
   const n = Number(m[1]);
-  const unit = { m: "minute", h: "hour", d: "day", mo: "month", y: "year" }[m[2] as "m" | "h" | "d" | "mo" | "y"];
-  return `${n} ${unit}${n === 1 ? "" : "s"} ago`;
+  const unit = {
+    m: n === 1 ? l10n.t("minute") : l10n.t("minutes"),
+    h: n === 1 ? l10n.t("hour") : l10n.t("hours"),
+    d: n === 1 ? l10n.t("day") : l10n.t("days"),
+    mo: n === 1 ? l10n.t("month") : l10n.t("months"),
+    y: n === 1 ? l10n.t("year") : l10n.t("years"),
+  }[m[2] as "m" | "h" | "d" | "mo" | "y"];
+  return l10n.t("{0} {1} ago", n, unit);
 }
 
 /**
@@ -152,10 +159,10 @@ function avatar(p: PrPerson | null, size: number): HTMLElement {
 
 /** "you" for the signed-in person, "@login" for anyone else. */
 function whoWord(value: string, viewer: string | undefined): string {
-  if (value === "@me") return "you";
-  if (value === NO_ONE) return "no one";
+  if (value === "@me") return l10n.t("you");
+  if (value === NO_ONE) return l10n.t("no one");
   const login = value.replace(/^@/, "");
-  return viewer && login.toLowerCase() === viewer.toLowerCase() ? "you" : `@${login}`;
+  return viewer && login.toLowerCase() === viewer.toLowerCase() ? l10n.t("you") : `@${login}`;
 }
 
 function filterWord(facet: PrFacet, value: string, viewer: string | undefined): string {
@@ -225,7 +232,7 @@ export class PullRequestList {
     };
     this.view = el("div", "prl");
     this.view.setAttribute("role", "region");
-    this.view.setAttribute("aria-label", "Pull requests");
+    this.view.setAttribute("aria-label", l10n.t("Pull requests"));
     this.layer = el("div", "prl-layer");
     this.root.append(this.view, this.layer);
     this.view.addEventListener("click", (e) => this.onClick(e));
@@ -325,8 +332,8 @@ export class PullRequestList {
       const t = s.targets.find((x) => x.id === s.target) ?? s.targets[0];
       const b = button("prl-target", "target", "target");
       b.setAttribute("aria-haspopup", "menu");
-      b.setAttribute("aria-label", `Showing the pull requests of ${t.id}. Choose another repository`);
-      b.title = `Showing ${t.id} (${t.detail}). Choose another repository`;
+      b.setAttribute("aria-label", l10n.t("Showing the pull requests of {0}. Choose another repository", t.id));
+      b.title = l10n.t("Showing {0} ({1}). Choose another repository", t.id, t.detail);
       b.append(codicon("repo"), el("span", "prl-target-name", t.id), el("span", "prl-target-detail", t.detail), codicon("chevron-down", "prl-target-chevron"));
       head.appendChild(b);
     }
@@ -334,7 +341,7 @@ export class PullRequestList {
 
     const seg = el("div", "prl-seg");
     seg.setAttribute("role", "radiogroup");
-    seg.setAttribute("aria-label", "Which pull requests");
+    seg.setAttribute("aria-label", l10n.t("Which pull requests"));
     for (const st of PR_LIST_STATES) {
       const on = st === s.segment;
       const b = button("prl-seg-btn", `seg-${st}`, "segment");
@@ -350,10 +357,14 @@ export class PullRequestList {
         // All is the other three together: its count is said, not drawn.
         if (st !== "all") count.textContent = compactCount(n);
         const filtered = activeFacets(s.filters).length > 0 || !!s.filters.text?.trim();
-        b.title = `${n.toLocaleString("en-US")} ${word.toLowerCase()} pull request${n === 1 ? "" : "s"}${filtered ? " matching the filters" : ""}`;
+        const filters = filtered ? l10n.t(" matching the filters") : "";
+        b.title =
+          n === 1
+            ? l10n.t("{0} {1} pull request{2}", n.toLocaleString("en-US"), word.toLowerCase(), filters)
+            : l10n.t("{0} {1} pull requests{2}", n.toLocaleString("en-US"), word.toLowerCase(), filters);
         b.setAttribute("aria-label", `${word}, ${n.toLocaleString("en-US")}`);
       } else {
-        b.title = `${word} pull requests`;
+        b.title = l10n.t("{0} pull requests", word);
         b.setAttribute("aria-label", word);
       }
       count.setAttribute("aria-hidden", "true");
@@ -369,13 +380,13 @@ export class PullRequestList {
     input.type = "search";
     input.dataset.key = "search";
     input.placeholder = this.placeholder;
-    input.setAttribute("aria-label", "Search pull requests");
+    input.setAttribute("aria-label", l10n.t("Search pull requests"));
     input.spellcheck = false;
     search.appendChild(input);
     const text = this.typed ?? s.filters.text ?? "";
     const clear = button("prl-icon-btn prl-search-clear", "search-clear", "search-clear");
-    clear.title = "Clear the search";
-    clear.setAttribute("aria-label", "Clear the search");
+    clear.title = l10n.t("Clear the search");
+    clear.setAttribute("aria-label", l10n.t("Clear the search"));
     clear.hidden = text.length === 0;
     clear.appendChild(codicon("close"));
     search.appendChild(clear);
@@ -384,9 +395,9 @@ export class PullRequestList {
     const n = activeFacets(s.filters).length;
     const filter = button(`prl-filter-btn${n > 0 ? " is-active" : ""}`, "filter", "filter");
     filter.setAttribute("aria-haspopup", "menu");
-    filter.title = n > 0 ? `Filter by author, review requested, assignee or label (${n} on)` : "Filter by author, review requested, assignee or label";
-    filter.setAttribute("aria-label", n > 0 ? `Filter, ${n} on` : "Filter");
-    filter.append(codicon("filter"), el("span", "prl-filter-word", "Filter"));
+    filter.title = n > 0 ? l10n.t("Filter by author, review requested, assignee or label ({0} on)", n) : l10n.t("Filter by author, review requested, assignee or label");
+    filter.setAttribute("aria-label", n > 0 ? l10n.t("Filter, {0} on", n) : l10n.t("Filter"));
+    filter.append(codicon("filter"), el("span", "prl-filter-word", l10n.t("Filter")));
     if (n > 0) filter.appendChild(el("span", "prl-badge", String(n)));
     tools.appendChild(filter);
     head.appendChild(tools);
@@ -394,7 +405,7 @@ export class PullRequestList {
     const facets = activeFacets(s.filters);
     if (facets.length > 0) {
       const chips = el("div", "prl-chips");
-      chips.setAttribute("aria-label", "Filters on");
+      chips.setAttribute("aria-label", l10n.t("Filters on"));
       for (const k of facets) {
         const value = s.filters[k] as string;
         const chip = el("span", "prl-chip");
@@ -404,15 +415,15 @@ export class PullRequestList {
         chip.title = words;
         const x = button("prl-icon-btn prl-chip-x", `chip-x-${k}`, "remove-filter");
         x.dataset.value = k;
-        x.title = `Remove the ${PR_FACET_WORDS[k]} filter`;
-        x.setAttribute("aria-label", `Remove the ${PR_FACET_WORDS[k]} filter (${filterWord(k, value, s.viewer?.login)})`);
+        x.title = l10n.t("Remove the {0} filter", PR_FACET_WORDS[k]);
+        x.setAttribute("aria-label", l10n.t("Remove the {0} filter ({1})", PR_FACET_WORDS[k], filterWord(k, value, s.viewer?.login)));
         x.appendChild(codicon("close"));
         chip.appendChild(x);
         chips.appendChild(chip);
       }
       const all = button("prl-link", "clear-filters", "clear-filters");
-      all.textContent = "Clear filters";
-      all.title = "Remove every filter";
+      all.textContent = l10n.t("Clear filters");
+      all.title = l10n.t("Remove every filter");
       chips.appendChild(all);
       head.appendChild(chips);
     }
@@ -450,7 +461,7 @@ export class PullRequestList {
   private buildSkeleton(): HTMLElement {
     const list = el("ul", "prl-list prl-skeleton");
     list.setAttribute("aria-busy", "true");
-    list.setAttribute("aria-label", "Loading pull requests");
+    list.setAttribute("aria-label", l10n.t("Loading pull requests"));
     for (let i = 0; i < 5; i++) {
       const li = el("li", "prl-row prl-row-skeleton");
       li.dataset.key = `skeleton-${i}`;
@@ -466,25 +477,25 @@ export class PullRequestList {
   private buildEmpty(s: PrListViewState): HTMLElement {
     const filtered = activeFacets(s.filters).length > 0 || !!(s.filters.text ?? "").trim();
     const copy: Record<PrListState, { title: string; detail: string; icon: string }> = {
-      open: { title: "No open pull requests", detail: "Nothing is waiting to be reviewed or merged.", icon: PR_STATES.open.codicon },
-      merged: { title: "No merged pull requests", detail: "Merged pull requests show here once some land.", icon: PR_STATES.merged.codicon },
-      closed: { title: "No closed pull requests", detail: "Pull requests closed without merging show here.", icon: PR_STATES.closed.codicon },
-      all: { title: "No pull requests yet", detail: "Open the first one to propose a change.", icon: PR_STATES.open.codicon },
+      open: { title: l10n.t("No open pull requests"), detail: l10n.t("Nothing is waiting to be reviewed or merged."), icon: PR_STATES.open.codicon },
+      merged: { title: l10n.t("No merged pull requests"), detail: l10n.t("Merged pull requests show here once some land."), icon: PR_STATES.merged.codicon },
+      closed: { title: l10n.t("No closed pull requests"), detail: l10n.t("Pull requests closed without merging show here."), icon: PR_STATES.closed.codicon },
+      all: { title: l10n.t("No pull requests yet"), detail: l10n.t("Open the first one to propose a change."), icon: PR_STATES.open.codicon },
     };
     const c = copy[s.segment];
     const buttons: PrListButton[] = [];
     if (filtered) {
-      buttons.push({ label: "Clear filters", icon: "clear-all", action: { kind: "clearFilters" }, title: "Remove the search and every filter" });
+      buttons.push({ label: l10n.t("Clear filters"), icon: "clear-all", action: { kind: "clearFilters" }, title: l10n.t("Remove the search and every filter") });
     } else if (s.segment === "open" || s.segment === "all") {
-      buttons.push({ label: PR_ACTIONS.newPullRequest.label, icon: PR_ACTIONS.newPullRequest.icon, action: { kind: "createPr" }, title: "Open a pull request — from the branch checked out, or any other" });
+      buttons.push({ label: PR_ACTIONS.newPullRequest.label, icon: PR_ACTIONS.newPullRequest.icon, action: { kind: "createPr" }, title: l10n.t("Open a pull request — from the branch checked out, or any other") });
     }
     return this.buildMessage(
       filtered
         ? {
             icon: "search",
             tone: "info",
-            title: `No ${s.segment === "all" ? "" : `${PR_LIST_STATE_WORDS[s.segment].toLowerCase()} `}pull requests match`,
-            detail: (s.filters.text ?? "").trim() ? `Nothing matches “${(s.filters.text ?? "").trim()}” with these filters.` : "Nothing matches these filters.",
+            title: l10n.t("No {0}pull requests match", s.segment === "all" ? "" : `${PR_LIST_STATE_WORDS[s.segment].toLowerCase()} `),
+            detail: (s.filters.text ?? "").trim() ? l10n.t("Nothing matches “{0}” with these filters.", (s.filters.text ?? "").trim()) : l10n.t("Nothing matches these filters."),
             buttons,
           }
         : { icon: c.icon, tone: "info", title: c.title, detail: c.detail, buttons },
@@ -516,13 +527,13 @@ export class PullRequestList {
     if (r.checkedOut) {
       // The branch checked out here: said where the eye starts, in place of
       // the age (which its title keeps).
-      const c = el("span", "prl-pill is-current prl-corner", "Checked out");
-      c.title = `This pull request's branch is the one checked out here. Updated ${updated}`;
+      const c = el("span", "prl-pill is-current prl-corner", l10n.t("Checked out"));
+      c.title = l10n.t("This pull request's branch is the one checked out here. Updated {0}", updated);
       main.appendChild(c);
-      words.push("checked out here");
+      words.push(l10n.t("checked out here"));
     } else {
       const age = el("span", "prl-age prl-corner", shortAge(r.updatedAt, s.now));
-      age.title = `Updated ${updated}`;
+      age.title = l10n.t("Updated {0}", updated);
       main.appendChild(age);
     }
 
@@ -541,8 +552,8 @@ export class PullRequestList {
     if (r.isFork) branch.appendChild(codicon("repo-forked", "prl-branch-fork"));
     branch.append(el("span", "prl-branch-head", head), codicon("arrow-small-right", "prl-branch-arrow"), el("span", "prl-branch-base", r.baseRef));
     branch.title = r.isFork
-      ? `Merges ${r.headRef} from ${r.headRepo ?? "a fork that was deleted"} into ${r.baseRef}`
-      : `Merges ${head} into ${r.baseRef}`;
+      ? l10n.t("Merges {0} from {1} into {2}", r.headRef, r.headRepo ?? "a fork that was deleted", r.baseRef)
+      : l10n.t("Merges {0} into {1}", head, r.baseRef);
     meta.appendChild(branch);
     main.appendChild(meta);
 
@@ -551,8 +562,8 @@ export class PullRequestList {
     // row's accessible name still says it), never cut in half.
     const chips = el("span", "prl-status");
     if (r.draft && r.kind !== "closed" && r.kind !== "merged") {
-      const d = el("span", "prl-pill is-draft", "Draft");
-      d.title = "A draft: not ready for review, and GitHub won't merge it yet";
+      const d = el("span", "prl-pill is-draft", l10n.t("Draft"));
+      d.title = l10n.t("A draft: not ready for review, and GitHub won't merge it yet");
       chips.appendChild(d);
     }
     if (r.ci.state !== "none") {
@@ -567,7 +578,7 @@ export class PullRequestList {
       const d = REVIEW_DECISIONS[r.reviewDecision];
       const c = el("span", `prl-stat tone-${d.tone}`);
       c.append(codicon(d.codicon, "prl-stat-icon"), el("span", "prl-stat-word", d.word));
-      c.title = `Reviews: ${d.word.toLowerCase()}`;
+      c.title = l10n.t("Reviews: {0}", d.word.toLowerCase());
       chips.appendChild(c);
       words.push(d.word.toLowerCase());
     }
@@ -578,25 +589,25 @@ export class PullRequestList {
       chips.appendChild(c);
       words.push(c.title);
     }
-    if (r.isFork) words.push(r.headRepo ? `from the fork ${r.headRepo}` : "from a deleted fork");
+    if (r.isFork) words.push(r.headRepo ? l10n.t("from the fork {0}", r.headRepo) : l10n.t("from a deleted fork"));
     for (const l of r.labels) {
       const c = el("span", "prl-label", l.name);
       c.style.setProperty("--prl-label", `#${l.color}`);
-      c.title = `Label: ${l.name}`;
+      c.title = l10n.t("Label: {0}", l.name);
       chips.appendChild(c);
     }
-    if (r.labels.length > 0) words.push(`labels ${r.labels.map((l) => l.name).join(", ")}`);
+    if (r.labels.length > 0) words.push(l10n.t("labels {0}", r.labels.map((l) => l.name).join(", ")));
     if (chips.childNodes.length > 0) main.appendChild(chips);
 
     main.setAttribute(
       "aria-label",
       [
-        `Pull request #${r.number}: ${r.title}`,
+        l10n.t("Pull request #{0}: {1}", r.number, r.title),
         kind.word.toLowerCase(),
-        `by ${r.author?.login ?? "a deleted account"}`,
-        `${head} into ${r.baseRef}`,
+        l10n.t("by {0}", r.author?.login ?? l10n.t("a deleted account")),
+        l10n.t("{0} into {1}", head, r.baseRef),
         ...words,
-        `updated ${updated}`,
+        l10n.t("updated {0}", updated),
       ].join(", "),
     );
     li.appendChild(main);
@@ -606,21 +617,21 @@ export class PullRequestList {
     const co = button("prl-icon-btn", `checkout-${r.number}`, "checkout");
     co.dataset.number = String(r.number);
     co.tabIndex = active ? 0 : -1;
-    co.title = r.checkedOut ? `${PR_ACTIONS.checkout.label} — update it to the pull request's latest` : `${PR_ACTIONS.checkout.label} — ${PR_ACTIONS.checkout.title.charAt(0).toLowerCase()}${PR_ACTIONS.checkout.title.slice(1)}`;
-    co.setAttribute("aria-label", `Checkout pull request #${r.number}`);
+    co.title = r.checkedOut ? l10n.t("{0} — update it to the pull request's latest", PR_ACTIONS.checkout.label) : `${PR_ACTIONS.checkout.label} — ${PR_ACTIONS.checkout.title.charAt(0).toLowerCase()}${PR_ACTIONS.checkout.title.slice(1)}`;
+    co.setAttribute("aria-label", l10n.t("Checkout pull request #{0}", r.number));
     co.appendChild(codicon(PR_ACTIONS.checkout.icon));
     const gh = button("prl-icon-btn", `github-${r.number}`, "github");
     gh.dataset.number = String(r.number);
     gh.tabIndex = active ? 0 : -1;
     gh.title = PR_ACTIONS.openOnGitHub.label;
-    gh.setAttribute("aria-label", `Open pull request #${r.number} on GitHub`);
+    gh.setAttribute("aria-label", l10n.t("Open pull request #{0} on GitHub", r.number));
     gh.appendChild(codicon("link-external"));
     const more = button("prl-icon-btn", `more-${r.number}`, "more");
     more.dataset.number = String(r.number);
     more.tabIndex = active ? 0 : -1;
     more.title = PR_ACTIONS.more.label;
     more.setAttribute("aria-haspopup", "menu");
-    more.setAttribute("aria-label", `More actions for pull request #${r.number}`);
+    more.setAttribute("aria-label", l10n.t("More actions for pull request #{0}", r.number));
     more.appendChild(codicon("ellipsis"));
     actions.append(co, gh, more);
     li.appendChild(actions);
@@ -636,8 +647,8 @@ export class PullRequestList {
     if (s.hasMore) {
       const b = button("gs-btn prl-btn prl-more-btn", "load-more", "load-more");
       b.disabled = s.loadingMore;
-      b.appendChild(el("span", "", s.loadingMore ? "Loading…" : "Load more"));
-      b.title = `Show the next pull requests (${shown.toLocaleString("en-US")} of ${s.total.toLocaleString("en-US")} shown)`;
+      b.appendChild(el("span", "", s.loadingMore ? l10n.t("Loading…") : l10n.t("Load more")));
+      b.title = l10n.t("Show the next pull requests ({0} of {1} shown)", shown.toLocaleString("en-US"), s.total.toLocaleString("en-US"));
       box.appendChild(b);
     }
     return box;
@@ -897,19 +908,19 @@ export class PullRequestList {
     if (!row) return;
     const open = row.kind === "open" || row.kind === "draft";
     this.openMenu(anchor, () => ({
-      label: `Pull request #${n}`,
+      label: l10n.t("Pull request #{0}", n),
       items: [
-        { label: "Open", icon: PR_STATES[row.kind].codicon, detail: "The pull request's page", run: () => this.opts.post({ type: "open", number: n }) },
+        { label: l10n.t("Open"), icon: PR_STATES[row.kind].codicon, detail: l10n.t("The pull request's page"), run: () => this.opts.post({ type: "open", number: n }) },
         {
           label: PR_ACTIONS.checkout.label,
           icon: PR_ACTIONS.checkout.icon,
-          detail: row.checkedOut ? "Update it to the latest" : `${row.isFork && row.headOwner ? `${row.headOwner}:` : ""}${row.headRef}`,
+          detail: row.checkedOut ? l10n.t("Update it to the latest") : `${row.isFork && row.headOwner ? `${row.headOwner}:` : ""}${row.headRef}`,
           run: () => this.opts.post({ type: "checkout", number: n }),
         },
         // Only what can apply: a closed pull request takes no review, and
         // GitHub merges neither a closed one nor a draft.
-        ...(open ? [{ label: PR_ACTIONS.review.label, icon: PR_ACTIONS.review.icon, detail: "Start your review", run: () => this.opts.post({ type: "startReview", number: n }) }] : []),
-        ...(row.kind === "open" ? [{ label: PR_ACTIONS.merge.label, icon: PR_ACTIONS.merge.icon, detail: `Into ${row.baseRef}`, run: () => this.opts.post({ type: "merge", number: n }) }] : []),
+        ...(open ? [{ label: PR_ACTIONS.review.label, icon: PR_ACTIONS.review.icon, detail: l10n.t("Start your review"), run: () => this.opts.post({ type: "startReview", number: n }) }] : []),
+        ...(row.kind === "open" ? [{ label: PR_ACTIONS.merge.label, icon: PR_ACTIONS.merge.icon, detail: l10n.t("Into {0}", row.baseRef), run: () => this.opts.post({ type: "merge", number: n }) }] : []),
         { label: PR_ACTIONS.openOnGitHub.label, icon: PR_ACTIONS.openOnGitHub.icon, run: () => this.opts.post({ type: "openOnGitHub", number: n }) },
         { label: PR_ACTIONS.copyLink.label, icon: PR_ACTIONS.copyLink.icon, run: () => this.opts.post({ type: "copyLink", number: n }) },
       ],
@@ -920,7 +931,7 @@ export class PullRequestList {
     this.openMenu(anchor, () => {
       const s = this.state;
       return {
-        label: "Show the pull requests of",
+        label: l10n.t("Show the pull requests of"),
         items: (s?.targets ?? []).map((t) => ({
           label: t.id,
           icon: "repo",
@@ -941,11 +952,11 @@ export class PullRequestList {
     const top = (): MenuSpec => {
       const f = this.state?.filters ?? {};
       return {
-        label: "Filter pull requests",
+        label: l10n.t("Filter pull requests"),
         items: PR_FACETS.map((k) => ({
           label: PR_FACET_WORDS[k],
           icon: { author: "account", reviewRequested: "eye", assignee: "person", label: "tag" }[k],
-          detail: f[k] ? filterWord(k, f[k] as string, this.state?.viewer?.login) : k === "label" ? "Any" : "Anyone",
+          detail: f[k] ? filterWord(k, f[k] as string, this.state?.viewer?.login) : k === "label" ? l10n.t("Any") : l10n.t("Anyone"),
           drill: true,
           run: () => {
             query = "";
@@ -964,7 +975,7 @@ export class PullRequestList {
         this.setFacet(k, value);
       };
       const q = query.trim().toLowerCase();
-      if (!q) items.push({ label: k === "label" ? "Any label" : "Anyone", icon: "circle-slash", checked: !current, run: pick(undefined) });
+      if (!q) items.push({ label: k === "label" ? l10n.t("Any label") : l10n.t("Anyone"), icon: "circle-slash", checked: !current, run: pick(undefined) });
       if (k === "label") {
         if (!s?.facetOptions && !s?.facetOptionsLoading) this.opts.post({ type: "facetOptions" });
         for (const l of s?.facetOptions?.labels ?? []) {
@@ -975,10 +986,10 @@ export class PullRequestList {
         }
       } else {
         if (!q || "you".includes(q) || (viewer ?? "").toLowerCase().includes(q)) {
-          items.push({ label: viewer ? `You (@${viewer})` : "You", lead: avatar(s?.viewer ?? null, 16), checked: current === "@me", run: pick("@me") });
+          items.push({ label: viewer ? l10n.t("You (@{0})", viewer) : l10n.t("You"), lead: avatar(s?.viewer ?? null, 16), checked: current === "@me", run: pick("@me") });
         }
         if (k === "assignee" && (!q || "no one".includes(q))) {
-          items.push({ label: "No one", icon: "circle-slash", detail: "Not assigned", checked: current === NO_ONE, run: pick(NO_ONE) });
+          items.push({ label: l10n.t("No one"), icon: "circle-slash", detail: l10n.t("Not assigned"), checked: current === NO_ONE, run: pick(NO_ONE) });
         }
         if (!s?.facetOptions && !s?.facetOptionsLoading) this.opts.post({ type: "facetOptions" });
         for (const p of this.peopleFor(k)) {
@@ -988,15 +999,15 @@ export class PullRequestList {
         }
         const typedLogin = query.trim().replace(/^@/, "");
         if (typedLogin && /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(typedLogin) && !items.some((i) => i.label === `@${typedLogin}`)) {
-          items.push({ label: `@${typedLogin}`, icon: "account", detail: "Someone not listed", run: pick(typedLogin) });
+          items.push({ label: `@${typedLogin}`, icon: "account", detail: l10n.t("Someone not listed"), run: pick(typedLogin) });
         }
       }
       return {
         label: PR_FACET_WORDS[k],
-        back: { label: "All filters", run: () => this.swapMenu(top) },
+        back: { label: l10n.t("All filters"), run: () => this.swapMenu(top) },
         heading: PR_FACET_WORDS[k],
         filter: {
-          placeholder: k === "label" ? "Find a label" : "Find someone, or type a login",
+          placeholder: k === "label" ? l10n.t("Find a label") : l10n.t("Find someone, or type a login"),
           value: query,
           onInput: (text) => {
             query = text;
@@ -1008,7 +1019,7 @@ export class PullRequestList {
           },
         },
         items,
-        empty: s?.facetOptionsLoading ? "Loading…" : k === "label" ? "No labels match" : "No one matches",
+        empty: s?.facetOptionsLoading ? l10n.t("Loading…") : k === "label" ? l10n.t("No labels match") : l10n.t("No one matches"),
       };
     };
     this.openMenu(anchor, facet ? () => sub(facet) : top);
@@ -1066,7 +1077,7 @@ export class PullRequestList {
       back.setAttribute("role", "menuitem");
       back.dataset.label = `back:${spec.back.label}`;
       back.append(codicon("chevron-left", "prl-menu-icon"), el("span", "prl-menu-label", spec.back.label));
-      back.setAttribute("aria-label", `Back to ${spec.back.label}`);
+      back.setAttribute("aria-label", l10n.t("Back to {0}", spec.back.label));
       const run = spec.back.run;
       back.addEventListener("click", () => run());
       m.appendChild(back);
@@ -1131,7 +1142,7 @@ export class PullRequestList {
       });
       list.appendChild(b);
     }
-    if (spec.items.length === 0) list.appendChild(el("div", "prl-menu-empty", spec.empty ?? "Nothing here"));
+    if (spec.items.length === 0) list.appendChild(el("div", "prl-menu-empty", spec.empty ?? l10n.t("Nothing here")));
     m.appendChild(list);
     this.placeMenu();
     if (focusedFilter) focusedFilter.focus();

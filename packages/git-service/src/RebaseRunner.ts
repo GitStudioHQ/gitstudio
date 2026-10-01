@@ -3,6 +3,7 @@ import { auditSpawn } from "./spawnAudit";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import * as l10n from "@vscode/l10n";
 
 /**
  * Drives a `git rebase -i` NON-INTERACTIVELY from a pre-composed plan — no
@@ -92,7 +93,7 @@ export function reportableRebaseFailure(outcome: RebaseOutcome): string | undefi
   if (outcome.status !== "failed" || outcome.expected) {
     return undefined;
   }
-  return outcome.message || "Rebase failed.";
+  return outcome.message || l10n.t("Rebase failed.");
 }
 
 const SEQ_INSTALLER = `const fs=require("fs");fs.writeFileSync(process.argv[process.argv.length-1],fs.readFileSync(process.env.GS_REBASE_TODO,"utf8"));`;
@@ -377,7 +378,7 @@ export async function runRebasePlan(
     return {
       status: "failed",
       expected: true,
-      message: "A rebase is already in progress — continue or abort it before starting another.",
+      message: l10n.t("A rebase is already in progress — continue or abort it before starting another."),
     };
   }
   // Uncommitted changes to tracked files: git refuses those too ("cannot
@@ -389,7 +390,7 @@ export async function runRebasePlan(
     return {
       status: "failed",
       expected: true,
-      message: "You have uncommitted changes. Commit or stash them, then start the rebase.",
+      message: l10n.t("You have uncommitted changes. Commit or stash them, then start the rebase."),
     };
   }
   // …and unmerged paths, which the check above waves through when
@@ -496,7 +497,7 @@ export async function runRebasePlan(
       // AND deleted the queue this whole mechanism exists to preserve, so every
       // reword below the `edit` row then committed with its original message.
       if (await rebaseInProgress(root, env, opts)) {
-        return paused("edit", "Rebase paused for editing.");
+        return paused("edit", l10n.t("Rebase paused for editing."));
       }
       clearRewordQueue(rw);
       return { status: "done" };
@@ -506,7 +507,7 @@ export async function runRebasePlan(
     const live = await rebaseInProgress(root, env, opts);
     const blob = `${stdout}\n${stderr}`;
     if (live && /could not apply|CONFLICT|Merge conflict|needs merge|fix conflicts/i.test(blob)) {
-      return paused("conflict", firstLine(stderr, stdout) || "Rebase paused on a conflict.");
+      return paused("conflict", firstLine(stderr, stdout) || l10n.t("Rebase paused on a conflict."));
     }
     // No `Stopped at .*edit` branch here on purpose.
     //
@@ -519,12 +520,12 @@ export async function runRebasePlan(
     // genuinely live, and carries git's words when it does.
     // Still mid-rebase? Treat as a stop the user must resolve rather than a hard fail.
     if (live) {
-      return paused("unknown", firstLine(stderr, stdout) || "Rebase paused.");
+      return paused("unknown", firstLine(stderr, stdout) || l10n.t("Rebase paused."));
     }
     // A hard failure ends the rebase; a STOP does not, and its queue must
     // survive for the `--continue` that follows.
     clearRewordQueue(rw);
-    return { status: "failed", message: firstLine(stderr, stdout) || "Rebase failed." };
+    return { status: "failed", message: firstLine(stderr, stdout) || l10n.t("Rebase failed.") };
   } finally {
     fs.rm(dir, { recursive: true, force: true }, () => {});
   }
@@ -540,20 +541,20 @@ export async function continueRebase(root: string, opts: RebaseRunOptions = {}):
     // Exit 0 with a rebase still in flight is the next `edit` stop, not the end
     // — and clearing the queue there would drop every reword below it.
     if (await rebaseInProgress(root, env, opts)) {
-      return { status: "stopped", reason: "edit", message: "Rebase paused for editing." };
+      return { status: "stopped", reason: "edit", message: l10n.t("Rebase paused for editing.") };
     }
     clearRewordQueue(paths);
     return { status: "done" };
   }
   const blob = `${stdout}\n${stderr}`;
   if (/could not apply|CONFLICT|needs merge/i.test(blob)) {
-    return { status: "stopped", reason: "conflict", message: firstLine(stderr, stdout) || "The rebase is still stopped." };
+    return { status: "stopped", reason: "conflict", message: firstLine(stderr, stdout) || l10n.t("The rebase is still stopped.") };
   }
   if (await rebaseInProgress(root, env, opts)) {
-    return { status: "stopped", reason: "unknown", message: firstLine(stderr, stdout) || "Rebase paused." };
+    return { status: "stopped", reason: "unknown", message: firstLine(stderr, stdout) || l10n.t("Rebase paused.") };
   }
   clearRewordQueue(paths);
-  return { status: "failed", message: firstLine(stderr, stdout) || "Continue failed." };
+  return { status: "failed", message: firstLine(stderr, stdout) || l10n.t("Continue failed.") };
 }
 
 /**
@@ -566,20 +567,20 @@ export async function skipRebase(root: string, opts: RebaseRunOptions = {}): Pro
   const { code, stderr, stdout } = await spawnGit([...rebaseConfig(commentChar), "rebase", "--skip"], root, env, opts);
   if (code === 0) {
     if (await rebaseInProgress(root, env, opts)) {
-      return { status: "stopped", reason: "edit", message: "Rebase paused for editing." };
+      return { status: "stopped", reason: "edit", message: l10n.t("Rebase paused for editing.") };
     }
     clearRewordQueue(paths);
     return { status: "done" };
   }
   const blob = `${stdout}\n${stderr}`;
   if (/could not apply|CONFLICT|needs merge/i.test(blob)) {
-    return { status: "stopped", reason: "conflict", message: firstLine(stderr, stdout) || "The rebase is still stopped." };
+    return { status: "stopped", reason: "conflict", message: firstLine(stderr, stdout) || l10n.t("The rebase is still stopped.") };
   }
   if (await rebaseInProgress(root, env, opts)) {
-    return { status: "stopped", reason: "unknown", message: firstLine(stderr, stdout) || "Rebase paused." };
+    return { status: "stopped", reason: "unknown", message: firstLine(stderr, stdout) || l10n.t("Rebase paused.") };
   }
   clearRewordQueue(paths);
-  return { status: "failed", message: firstLine(stderr, stdout) || "Skip failed." };
+  return { status: "failed", message: firstLine(stderr, stdout) || l10n.t("Skip failed.") };
 }
 
 /** `git rebase --abort`. */
@@ -607,7 +608,7 @@ export async function abortRebase(
   }
   return {
     status: "failed",
-    message: firstLine(stderr, stdout) || "Couldn't abort the rebase.",
+    message: firstLine(stderr, stdout) || l10n.t("Couldn't abort the rebase."),
   };
 }
 

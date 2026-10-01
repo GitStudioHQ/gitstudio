@@ -5,6 +5,7 @@
 // the (opaque) asWebviewUri the host injected on window.__JBMERGE__.
 
 import type * as monaco from "monaco-editor";
+import * as l10n from "@vscode/l10n";
 
 declare global {
   interface Window {
@@ -19,7 +20,7 @@ export function configureMonacoWorkers(): void {
   self.MonacoEnvironment = {
     getWorker(): Worker {
       if (!workerUri) {
-        throw new Error("Monaco worker URI was not provided by the host.");
+        throw new Error(l10n.t("Monaco worker URI was not provided by the host."));
       }
       const shim = `importScripts(${JSON.stringify(workerUri)});`;
       const blob = new Blob([shim], { type: "application/javascript" });

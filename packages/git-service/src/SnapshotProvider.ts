@@ -13,6 +13,7 @@ import {
 } from "./refRestore";
 import { placeHolds, restoreStash, stashStack, type StashSlot } from "./stashRestore";
 import { stashTitle } from "./StashProvider";
+import * as l10n from "@vscode/l10n";
 
 /**
  * A record of what an operation is about to change, and — once it has run and
@@ -218,7 +219,7 @@ export type RestorePlan =
 export const CLEAN_TREE = "clean";
 
 /** A refs-only op's "fingerprint": the uncommitted state is not its to change, so it isn't read. */
-const NOT_THE_OPS = "not the op's";
+const NOT_THE_OPS = l10n.t("not the op's");
 
 /** Why git won't copy the uncommitted state (`stash create` refuses it). */
 export type NoCopy = "conflict" | "intent-to-add" | "other";
@@ -230,7 +231,7 @@ export function noCopyClause(why: NoCopy, when: "now" | "then"): string {
     case "conflict":
       return now ? "while a conflict is unresolved" : "while a conflict was unresolved";
     case "intent-to-add":
-      return now ? "while a file is only marked to be added (git add -N)" : "while a file was only marked to be added (git add -N)";
+      return now ? l10n.t("while a file is only marked to be added (git add -N)") : l10n.t("while a file was only marked to be added (git add -N)");
     default:
       return now ? "as they are" : "as they were";
   }
@@ -261,7 +262,7 @@ async function noCopyKind(proc: GitProcess, opts?: GitRunOptions): Promise<NoCop
 }
 
 /** An undo that rewrites the tree after a question was open while the op ran. */
-const ASKED_LINE = "Anything you changed while its question was open is discarded too.";
+const ASKED_LINE = l10n.t("Anything you changed while its question was open is discarded too.");
 
 /** How long after a rebase's own finish a branch it carried may be moved (the post-rewrite hook runs between). */
 const CARRY_SLACK = 300;
@@ -436,7 +437,7 @@ export class SnapshotProvider {
   async plan(snap: Snapshot, opts?: GitRunOptions): Promise<RestorePlan> {
     const s = snap.scope;
     if (!s) {
-      return refuse("It was recorded by an older version of GitStudio, which can't say exactly what it changed. Nothing was changed.");
+      return refuse(l10n.t("It was recorded by an older version of GitStudio, which can't say exactly what it changed. Nothing was changed."));
     }
     const label = snap.label;
     const now = await this.observe(opts);
@@ -461,10 +462,10 @@ export class SnapshotProvider {
       const abort: RestoreStep[] = [{ do: "abort-rebase", stash: snap.stashSha }];
       const said = [
         B.ref
-          ? `Abandon the rebase in progress: '${branchShort(B.ref)}' stays at ${shortSha(B.sha)}, as it was.`
-          : `Abandon the rebase in progress: HEAD goes back to ${shortSha(B.sha)}.`,
+          ? l10n.t("Abandon the rebase in progress: '{0}' stays at {1}, as it was.", branchShort(B.ref), shortSha(B.sha))
+          : l10n.t("Abandon the rebase in progress: HEAD goes back to {0}.", shortSha(B.sha)),
       ];
-      if (snap.stashSha) said.push("Your uncommitted changes come back as they were before it.");
+      if (snap.stashSha) said.push(l10n.t("Your uncommitted changes come back as they were before it."));
       await this.stashesItMade(snap, settled, now, abort, said, opts);
       return { kind: "restore", steps: abort, lines: said, danger: false };
     }
@@ -493,26 +494,26 @@ export class SnapshotProvider {
       if (!there) {
         if (A.ref === null && N.ref === null && N.sha !== A.sha && !(await this.reachable(N.sha, opts))) {
           return refuse(
-            `You've made commits on the detached HEAD since (it is at ${shortSha(N.sha)} now), and switching back would leave them on no branch. Create a branch for them first, then undo.`,
+            l10n.t("You've made commits on the detached HEAD since (it is at {0} now), and switching back would leave them on no branch. Create a branch for them first, then undo.", shortSha(N.sha)),
           );
         }
         if (B.ref) {
           const name = branchShort(B.ref);
           if (name.startsWith("-")) {
-            return refuse(`'${name}' can't be switched to safely — git would read its name as an option. Rename it, then undo.`);
+            return refuse(l10n.t("'{0}' can't be switched to safely — git would read its name as an option. Rename it, then undo.", name));
           }
           if (!now.branches[B.ref]) {
-            return refuse(`'${name}' is not in this repository any more, so there is nothing to switch back to.`);
+            return refuse(l10n.t("'{0}' is not in this repository any more, so there is nothing to switch back to.", name));
           }
           const elsewhere = where.get(B.ref);
           if (elsewhere && N.ref !== B.ref) {
-            return refuse(`'${name}' is checked out in another worktree, at ${elsewhere}, so this one can't switch back to it.`);
+            return refuse(l10n.t("'{0}' is checked out in another worktree, at {1}, so this one can't switch back to it.", name, elsewhere));
           }
-          lines.push(`Switch back to '${name}'.`);
+          lines.push(l10n.t("Switch back to '{0}'.", name));
         } else {
-          lines.push(`Go back to the detached HEAD at ${shortSha(B.sha)}.`);
+          lines.push(l10n.t("Go back to the detached HEAD at {0}.", shortSha(B.sha)));
         }
-        if (now.tree !== CLEAN_TREE) lines.push("Your uncommitted changes come along.");
+        if (now.tree !== CLEAN_TREE) lines.push(l10n.t("Your uncommitted changes come along."));
         steps.push({ do: "switch", ref: B.ref, sha: B.sha });
         leaving = N.ref;
       }
@@ -527,18 +528,18 @@ export class SnapshotProvider {
         // Already back where it was.
       } else {
         if (!after || !to) {
-          return refuse(`"${label}" changed ${said} in a way Undo can't put back. Nothing was changed.`);
+          return refuse(l10n.t("\"{0}\" changed {1} in a way Undo can't put back. Nothing was changed.", label, said));
         }
         if (N.ref !== A.ref) {
           return refuse(
             B.ref
-              ? `'${name}' was checked out here when "${label}" ran, and it isn't now. Check it out again, then undo.`
-              : `HEAD was detached when "${label}" ran, and it isn't now. Detach it at ${shortSha(after)} again, then undo.`,
+              ? l10n.t("'{0}' was checked out here when \"{1}\" ran, and it isn't now. Check it out again, then undo.", name, label)
+              : l10n.t("HEAD was detached when \"{0}\" ran, and it isn't now. Detach it at {1} again, then undo.", label, shortSha(after)),
           );
         }
         if (cur !== after) {
           return refuse(
-            `${said} has moved since (it is at ${cur ? shortSha(cur) : "nothing"} now), and putting it back would throw that away.`,
+            l10n.t("{0} has moved since (it is at {1} now), and putting it back would throw that away.", said, cur ? shortSha(cur) : l10n.t("nothing")),
           );
         }
         const pushedSince = publishedSince(B.ref ? ownMove!.published : settled.published, await this.published(after, opts));
@@ -546,7 +547,7 @@ export class SnapshotProvider {
           const others = moved.filter((m) => m.ref !== B.ref).length + unrestoredStashes(settled, now).length;
           if (others > 0) {
             return refuse(
-              `${said} has been pushed since, so Undo would have to revert it — and it can't put the rest of what "${label}" changed back that way. Nothing was changed.`,
+              l10n.t("{0} has been pushed since, so Undo would have to revert it — and it can't put the rest of what \"{1}\" changed back that way. Nothing was changed.", said, label),
             );
           }
           const range = (await this.isAncestor(to, after, opts)) && (await this.mergesBetween(to, after, opts)) === 0;
@@ -558,12 +559,12 @@ export class SnapshotProvider {
         if (inTheWay.length) {
           const one = inTheWay.length === 1;
           return refuse(
-            `${one ? `'${inTheWay[0]}' is` : `${inTheWay.length} files (${inTheWay.slice(0, 3).map((p) => `'${p}'`).join(", ")}${inTheWay.length > 3 ? ", …" : ""}) are`} ` +
-              `untracked here, and going back to ${shortSha(to)} would overwrite ${one ? "it" : "them"}. Move ${one ? "it" : "them"} aside, then undo.`,
+            `${one ? l10n.t("'{0}' is", inTheWay[0]) : l10n.t("{0} files ({1}{2}) are", inTheWay.length, inTheWay.slice(0, 3).map((p) => `'${p}'`).join(", "), inTheWay.length > 3 ? ", …" : "")} ` +
+              l10n.t("untracked here, and going back to {0} would overwrite {1}. Move {2} aside, then undo.", shortSha(to), one ? l10n.t("it") : l10n.t("them"), one ? l10n.t("it") : l10n.t("them")),
           );
         }
         lines.push(`${said} goes back to ${shortSha(to)}.`);
-        if (oursStop) lines.push(`The ${settled.op!.kind} in progress is abandoned.`);
+        if (oursStop) lines.push(l10n.t("The {0} in progress is abandoned.", settled.op!.kind));
         if (!snap.stashSha && s.tree !== CLEAN_TREE) {
           // Something was uncommitted before and there is no copy of it (git
           // won't copy a conflict in progress). Nothing uncommitted now may be
@@ -574,19 +575,19 @@ export class SnapshotProvider {
             // Every file is as it was before the op (a mixed reset leaves
             // them): the branch goes back and the files stay, exactly.
             steps.push({ do: "reset", to, mode: "mixed", stash: null });
-            lines.push("Your uncommitted changes are kept.");
+            lines.push(l10n.t("Your uncommitted changes are kept."));
           } else if (!(await this.overlaps(after, to, opts))) {
             steps.push({ do: "reset", to, mode: "keep", stash: null });
-            lines.push("Your uncommitted changes are kept.");
+            lines.push(l10n.t("Your uncommitted changes are kept."));
           } else {
             return refuse(
-              `Putting ${said} back would overwrite uncommitted changes, and some of them you had before "${label}" — ` +
-                `git couldn't keep a copy of those ${noCopyClause(s.uncopied ?? "other", "then")}. Commit or stash them, then undo.`,
+              l10n.t("Putting {0} back would overwrite uncommitted changes, and some of them you had before \"{1}\" — ", said, label) +
+                l10n.t("git couldn't keep a copy of those {0}. Commit or stash them, then undo.", noCopyClause(s.uncopied ?? "other", "then")),
             );
           }
           if (s.uncopied) {
             lines.push(
-              `The uncommitted changes you had before it can't come back — git couldn't keep a copy of them ${noCopyClause(s.uncopied, "then")}.`,
+              l10n.t("The uncommitted changes you had before it can't come back — git couldn't keep a copy of them {0}.", noCopyClause(s.uncopied, "then")),
             );
           }
         } else if (now.tree === settled.tree || now.tree === CLEAN_TREE) {
@@ -594,7 +595,7 @@ export class SnapshotProvider {
           // at all — then there is nothing to lose): the op's own changes to
           // the tree go, and what was uncommitted before comes back.
           steps.push({ do: "reset", to, mode: "hard", stash: snap.stashSha });
-          if (snap.stashSha) lines.push("The uncommitted changes you had then come back too.");
+          if (snap.stashSha) lines.push(l10n.t("The uncommitted changes you had then come back too."));
           if (s.asked && now.tree !== CLEAN_TREE) {
             lines.push(ASKED_LINE);
             danger = true;
@@ -603,11 +604,11 @@ export class SnapshotProvider {
           // Everything uncommitted is new since the op, and none of it is in
           // a file going back: `reset --keep` keeps it.
           steps.push({ do: "reset", to, mode: "keep", stash: null });
-          lines.push("Your uncommitted changes are kept.");
+          lines.push(l10n.t("Your uncommitted changes are kept."));
         } else {
           steps.push({ do: "reset", to, mode: "hard", stash: snap.stashSha });
-          if (snap.stashSha) lines.push("The uncommitted changes you had then come back too.");
-          lines.push("Uncommitted changes you have made since are discarded.");
+          if (snap.stashSha) lines.push(l10n.t("The uncommitted changes you had then come back too."));
+          lines.push(l10n.t("Uncommitted changes you have made since are discarded."));
           danger = true;
         }
       }
@@ -616,7 +617,7 @@ export class SnapshotProvider {
       // the merge editor's Apply, a pick or merge that stopped on a conflict).
       if (N.ref !== A.ref || N.sha !== A.sha) {
         return refuse(
-          `HEAD has moved since "${label}" (it is at ${shortSha(N.sha)} now), so the changes it made to your working tree can't be taken back safely.`,
+          l10n.t("HEAD has moved since \"{0}\" (it is at {1} now), so the changes it made to your working tree can't be taken back safely.", label, shortSha(N.sha)),
         );
       }
       if (now.tree !== s.tree || oursStop) {
@@ -624,19 +625,19 @@ export class SnapshotProvider {
           // Taking the op's changes back means putting the tree back as it
           // was — and there is no copy of that to put back.
           return refuse(
-            `When "${label}" ran, git couldn't keep a copy of your uncommitted changes ${noCopyClause(s.uncopied ?? "other", "then")}, ` +
-              `so Undo can't put them back. Nothing was changed.`,
+            l10n.t("When \"{0}\" ran, git couldn't keep a copy of your uncommitted changes {1}, ", label, noCopyClause(s.uncopied ?? "other", "then")) +
+              l10n.t("so Undo can't put them back. Nothing was changed."),
           );
         }
-        if (oursStop) lines.push(`The ${settled.op!.kind} in progress is abandoned.`);
+        if (oursStop) lines.push(l10n.t("The {0} in progress is abandoned.", settled.op!.kind));
         steps.push({ do: "tree", stash: snap.stashSha });
         lines.push(
           snap.stashSha
-            ? "Your uncommitted changes go back to how they were before it."
-            : "The changes it made to your working tree are taken back.",
+            ? l10n.t("Your uncommitted changes go back to how they were before it.")
+            : l10n.t("The changes it made to your working tree are taken back."),
         );
         if (now.tree !== settled.tree && now.tree !== CLEAN_TREE) {
-          lines.push("Uncommitted changes you have made since are discarded.");
+          lines.push(l10n.t("Uncommitted changes you have made since are discarded."));
           danger = true;
         } else if (s.asked && now.tree !== CLEAN_TREE) {
           lines.push(ASKED_LINE);
@@ -664,34 +665,34 @@ export class SnapshotProvider {
       const cur = now.branches[m.ref] ?? null;
       if (cur !== m.after) {
         if (m.after === null) {
-          return refuse(`A branch named '${name}' exists again, so Undo won't bring back the one "${label}" deleted. Nothing was changed.`);
+          return refuse(l10n.t("A branch named '{0}' exists again, so Undo won't bring back the one \"{1}\" deleted. Nothing was changed.", name, label));
         }
         if (cur === null) {
-          return refuse(`'${name}' has been deleted since "${label}", so there is nothing to put back.`);
+          return refuse(l10n.t("'{0}' has been deleted since \"{1}\", so there is nothing to put back.", name, label));
         }
-        return refuse(`'${name}' has moved since (it is at ${shortSha(cur)} now), and putting it back would throw that away.`);
+        return refuse(l10n.t("'{0}' has moved since (it is at {1} now), and putting it back would throw that away.", name, shortSha(cur)));
       }
       const here = head === m.ref && leaving !== m.ref;
       const elsewhere = head !== m.ref ? where.get(m.ref) : undefined;
       if (elsewhere) {
-        return refuse(`'${name}' is checked out in another worktree, at ${elsewhere}. Undo it there.`);
+        return refuse(l10n.t("'{0}' is checked out in another worktree, at {1}. Undo it there.", name, elsewhere));
       }
       if (m.after && m.published && publishedSince(m.published, await this.published(m.after, opts))) {
         if (!(m.before && (await this.isAncestor(m.after, m.before, opts)))) {
-          return refuse(`'${name}' has been pushed since, so putting it back would rewrite published history. Nothing was changed.`);
+          return refuse(l10n.t("'{0}' has been pushed since, so putting it back would rewrite published history. Nothing was changed.", name));
         }
       }
       if (m.before === null) {
-        if (here) return refuse(`'${name}' is checked out. Switch to another branch, then undo.`);
+        if (here) return refuse(l10n.t("'{0}' is checked out. Switch to another branch, then undo.", name));
         if (!(await this.reachable(m.after!, opts, m.ref))) {
-          return refuse(`'${name}' has the only copy of its commits, so Undo won't delete it. Nothing was changed.`);
+          return refuse(l10n.t("'{0}' has the only copy of its commits, so Undo won't delete it. Nothing was changed.", name));
         }
-        lines.push(`Delete branch '${name}', which "${label}" created.`);
+        lines.push(l10n.t("Delete branch '{0}', which \"{1}\" created.", name, label));
       } else if (m.after === null) {
         const up = trackingOf(m.config);
-        lines.push(`Bring back branch '${name}' at ${shortSha(m.before)}${up ? `, tracking '${up}'` : ""}.`);
+        lines.push(l10n.t("Bring back branch '{0}' at {1}{2}.", name, shortSha(m.before), up ? l10n.t(", tracking '{0}'", up) : ""));
       } else {
-        lines.push(`'${name}' goes back to ${shortSha(m.before)}.`);
+        lines.push(l10n.t("'{0}' goes back to {1}.", name, shortSha(m.before)));
         if (here) lines.push("It is checked out, so its files change with it; your uncommitted changes are kept.");
       }
       steps.push({ do: "ref", move: m, here });
@@ -707,7 +708,7 @@ export class SnapshotProvider {
       // Named as its row and the op's toast name it (stashTitle), and its
       // place in words: stash@{n} is a position the list renumbers.
       const words = d.message ? stashTitle(d.message).text : shortSha(d.sha);
-      lines.push(`Put the stash “${words}” back ${at > 0 ? "where it was in the stash list" : "on top of the stash list"}.`);
+      lines.push(l10n.t("Put the stash “{0}” back {1}.", words, at > 0 ? l10n.t("where it was in the stash list") : l10n.t("on top of the stash list")));
       steps.push({ do: "stash", entry: d });
     }
 
@@ -717,7 +718,7 @@ export class SnapshotProvider {
     // Something git is stopped in that this op didn't start: a checkout or a
     // hard reset would end it, and that is not this undo's to do.
     if (foreignStop && steps.some((st) => st.do === "switch" || st.do === "reset" || st.do === "tree")) {
-      return refuse(`${stopPhrase(opNow!.kind)}. Finish or abort it first, then undo.`);
+      return refuse(l10n.t("{0}. Finish or abort it first, then undo.", stopPhrase(opNow!.kind)));
     }
     return { kind: "restore", steps, lines, danger };
   }
@@ -737,12 +738,14 @@ export class SnapshotProvider {
 
   /** Run a restore plan's steps, in order. */
   async execute(snap: Snapshot, steps: readonly RestoreStep[], opts?: GitRunOptions): Promise<void> {
+    // English on purpose: git writes this into the reflog, where `git reflog`
+    // shows it to whoever reads the repository, whatever their editor says.
     const message = `GitStudio undo: ${snap.label}`;
     for (const st of steps) {
       switch (st.do) {
         case "abort-rebase": {
           const r = await this.process.run(["rebase", "--abort"], opts);
-          if (r.code !== 0) throw new Error(`Undo couldn't abandon the rebase: ${r.stderr.trim() || "git refused"}`);
+          if (r.code !== 0) throw new Error(l10n.t("Undo couldn't abandon the rebase: {0}", r.stderr.trim() || "git refused"));
           // git's own autostash (rebase.autoStash) has already put the work
           // back; only onto a clean tree does the copy go.
           if (st.stash && (await this.fingerprint(opts)) === CLEAN_TREE) await this.applyStash(st.stash, opts);
@@ -756,7 +759,7 @@ export class SnapshotProvider {
           const r = await this.process.run(args, opts);
           if (r.code !== 0) {
             throw new Error(
-              `Undo couldn't switch back to ${st.ref ? `'${branchShort(st.ref)}'` : shortSha(st.sha)}: ${r.stderr.trim() || "git refused"}`,
+              l10n.t("Undo couldn't switch back to {0}: {1}", st.ref ? `'${branchShort(st.ref)}'` : shortSha(st.sha), r.stderr.trim() || "git refused"),
             );
           }
           break;
@@ -766,8 +769,8 @@ export class SnapshotProvider {
           if (r.code !== 0) {
             throw new Error(
               st.mode === "keep"
-                ? `Undo couldn't go back to ${shortSha(st.to)} without overwriting your uncommitted changes: ${r.stderr.trim()}`
-                : `Undo failed: could not reset to ${st.to}: ${r.stderr.trim()}`,
+                ? l10n.t("Undo couldn't go back to {0} without overwriting your uncommitted changes: {1}", shortSha(st.to), r.stderr.trim())
+                : l10n.t("Undo failed: could not reset to {0}: {1}", st.to, r.stderr.trim()),
             );
           }
           if (st.stash) await this.applyStash(st.stash, opts);
@@ -775,7 +778,7 @@ export class SnapshotProvider {
         }
         case "tree": {
           const r = await this.process.run(["reset", "--hard", "HEAD"], opts);
-          if (r.code !== 0) throw new Error(`Undo couldn't put your working tree back: ${r.stderr.trim()}`);
+          if (r.code !== 0) throw new Error(l10n.t("Undo couldn't put your working tree back: {0}", r.stderr.trim()));
           if (st.stash) await this.applyStash(st.stash, opts);
           break;
         }
@@ -803,7 +806,7 @@ export class SnapshotProvider {
         case "quit-sequence": {
           const r = await this.process.run([st.kind, "--quit"], opts);
           if (r.code !== 0) {
-            throw new Error(`Undo put things back, but couldn't end the ${st.kind} in progress: ${r.stderr.trim() || "git refused"}`);
+            throw new Error(l10n.t("Undo put things back, but couldn't end the {0} in progress: {1}", st.kind, r.stderr.trim() || "git refused"));
           }
           break;
         }
@@ -812,7 +815,7 @@ export class SnapshotProvider {
           const at = (await stashStack(this.process, opts)).findIndex((x) => x.sha === st.entry.sha);
           if (at >= 0) {
             const r = await this.process.run(["stash", "drop", "-q", `stash@{${at}}`], opts);
-            if (r.code !== 0) throw new Error(`Undo put your changes back, but couldn't drop the stash “${st.entry.message}”: ${r.stderr.trim()}`);
+            if (r.code !== 0) throw new Error(l10n.t("Undo put your changes back, but couldn't drop the stash “{0}”: {1}", st.entry.message, r.stderr.trim()));
           }
           break;
         }
@@ -831,6 +834,8 @@ export class SnapshotProvider {
     if (p.mode === "range") {
       return this.process.run(["revert", "--no-edit", `${p.from}..${p.to}`], opts);
     }
+    // English on purpose: this is a commit message, stored in the repository
+    // itself and read by everyone who looks at the history.
     const msg = `Revert "${snap.label}"\n\nThis puts back the files as they were before "${snap.label}" (${shortSha(p.from)}), which had already been pushed as ${shortSha(p.to)}.\n`;
     const made = await this.process.run(["commit-tree", `${p.from}^{tree}`, "-p", p.to, "-F", "-"], { ...opts, input: msg });
     if (made.code !== 0) return made;
@@ -843,7 +848,7 @@ export class SnapshotProvider {
       return {
         code: 1,
         stdout: "",
-        stderr: `${p.branch ? `'${branchShort(p.branch)}'` : "HEAD"} moved while you were being asked (${where}), so nothing was reverted. Try Undo again.`,
+        stderr: l10n.t("{0} moved while you were being asked ({1}), so nothing was reverted. Try Undo again.", p.branch ? `'${branchShort(p.branch)}'` : l10n.t("HEAD"), where),
       };
     }
     return this.process.run(["reset", "--keep", made.stdout.trim()], opts);
@@ -936,7 +941,7 @@ export class SnapshotProvider {
     opts?: GitRunOptions,
   ): Promise<{ kind: "ok"; settled: SettledScope } | Extract<RestorePlan, { kind: "refuse" | "nothing" }>> {
     if (now.op?.kind === "rebase") {
-      return refuse(`A rebase is in progress that "${snap.label}" didn't start. Finish or abort it first, then undo.`);
+      return refuse(l10n.t("A rebase is in progress that \"{0}\" didn't start. Finish or abort it first, then undo.", snap.label));
     }
     if (!s.branches) return { kind: "ok", settled };
     const onto = s.deferred?.onto ?? settled.op?.onto;
@@ -947,14 +952,14 @@ export class SnapshotProvider {
     const name = branchShort(head);
     const since = await this.reflogSince(head, headBefore, opts);
     if (!since && headBefore !== headNow) {
-      return refuse(`GitStudio can't tell what moved '${name}' since "${snap.label}" (it keeps no reflog), so it won't guess. Nothing was changed.`);
+      return refuse(l10n.t("GitStudio can't tell what moved '{0}' since \"{1}\" (it keeps no reflog), so it won't guess. Nothing was changed.", name, snap.label));
     }
     const finish = since?.find((e) => e.time >= s.time && finishes(e.msg, head, onto));
     if (!finish) {
-      return { kind: "nothing", reason: "the rebase didn't change any branch." };
+      return { kind: "nothing", reason: l10n.t("the rebase didn't change any branch.") };
     }
     if (since![0] !== finish) {
-      return refuse(`'${name}' has moved since the rebase (it is at ${headNow ? shortSha(headNow) : "nothing"} now), and putting it back would throw that away.`);
+      return refuse(l10n.t("'{0}' has moved since the rebase (it is at {1} now), and putting it back would throw that away.", name, headNow ? shortSha(headNow) : l10n.t("nothing")));
     }
     // Published before the op can't be known from here; its commits are new.
     const moved: MovedRef[] = [{ ref: head, before: headBefore, after: headNow, published: [] }];
@@ -995,20 +1000,20 @@ export class SnapshotProvider {
   ): Promise<{ kind: "ok"; settled: SettledScope } | Extract<RestorePlan, { kind: "refuse" | "nothing" }>> {
     const since = await this.reflogSince("HEAD", snap.headSha, opts);
     if (!since) {
-      if (now.headRef === null && now.headSha === snap.headSha) return { kind: "nothing", reason: "the rebase didn't change anything." };
-      return refuse(`GitStudio can't tell what moved HEAD since "${snap.label}" (it keeps no reflog), so it won't guess. Nothing was changed.`);
+      if (now.headRef === null && now.headSha === snap.headSha) return { kind: "nothing", reason: l10n.t("the rebase didn't change anything.") };
+      return refuse(l10n.t("GitStudio can't tell what moved HEAD since \"{0}\" (it keeps no reflog), so it won't guess. Nothing was changed.", snap.label));
     }
     // Oldest first: this rebase's start is the first step after the capture.
     const after = since.filter((e) => e.time >= s.time).reverse();
     const start = after.findIndex((e) => REBASE_STEP.exec(e.msg)?.[1] === "start" && (!onto || e.sha === onto));
     if (start < 0) {
-      return { kind: "nothing", reason: "the rebase didn't change anything." };
+      return { kind: "nothing", reason: l10n.t("the rebase didn't change anything.") };
     }
     let end = start;
     while (end + 1 < after.length && REBASE_STEP.test(after[end + 1].msg)) end++;
     const last = after[end];
     if (REBASE_STEP.exec(last.msg)?.[1] === "abort") {
-      return { kind: "nothing", reason: "the rebase was abandoned, so it changed nothing." };
+      return { kind: "nothing", reason: l10n.t("the rebase was abandoned, so it changed nothing.") };
     }
     if (end !== after.length - 1 || now.headRef !== null || now.headSha !== last.sha) {
       // The HEAD section says what moved it (a commit, a checkout of a branch).
@@ -1061,7 +1066,7 @@ export class SnapshotProvider {
       const moves = await this.reflogSince(ref, b, opts);
       if (!moves || !moves.some(carried)) continue;
       if (!carried(moves[0])) {
-        return `'${branchShort(ref)}' has moved since the rebase (it is at ${a ? shortSha(a) : "nothing"} now), and putting it back would throw that away.`;
+        return l10n.t("'{0}' has moved since the rebase (it is at {1} now), and putting it back would throw that away.", branchShort(ref), a ? shortSha(a) : l10n.t("nothing"));
       }
       out.push({ ref, before: b, after: a, published: [] });
     }
@@ -1126,7 +1131,7 @@ export class SnapshotProvider {
         steps.push({ do: "drop-stash", entry: made });
         going.add(made.sha);
       } else {
-        lines.push(`The stash “${made.message}” it made is kept: it holds more than Undo puts back.`);
+        lines.push(l10n.t("The stash “{0}” it made is kept: it holds more than Undo puts back.", made.message));
       }
     }
     return going;
@@ -1388,13 +1393,13 @@ export class SnapshotProvider {
       const plain = await this.process.run(["stash", "apply", sha], opts);
       if (plain.code === 0) return;
       throw new Error(
-        `Undo restored the commit but re-applying your uncommitted changes hit a conflict: ${plain.stderr.trim()} ` +
-          `\`git stash apply ${sha}\` brings them back.`,
+        l10n.t("Undo restored the commit but re-applying your uncommitted changes hit a conflict: {0} ", plain.stderr.trim()) +
+          l10n.t("`git stash apply {0}` brings them back.", sha),
       );
     }
     throw new Error(
-      `Undo restored the commit but re-applying your uncommitted changes hit a conflict: ${indexed.stderr.trim()} ` +
-        `\`git stash apply ${sha}\` brings them back.`,
+      l10n.t("Undo restored the commit but re-applying your uncommitted changes hit a conflict: {0} ", indexed.stderr.trim()) +
+        l10n.t("`git stash apply {0}` brings them back.", sha),
     );
   }
 
@@ -1412,7 +1417,7 @@ export class SnapshotProvider {
   private async run(args: string[], opts?: GitRunOptions): Promise<string> {
     const result = await this.process.run(args, opts);
     if (result.code !== 0) {
-      throw new Error(`git ${args.join(" ")} failed: ${result.stderr.trim()}`);
+      throw new Error(l10n.t("git {0} failed: {1}", args.join(" "), result.stderr.trim()));
     }
     return result.stdout;
   }
@@ -1428,7 +1433,7 @@ interface Observed {
 }
 
 const REVERT_NOT_RESTORE =
-  "It has been pushed since, so putting it back would rewrite published history — it can only be reverted.";
+  l10n.t("It has been pushed since, so putting it back would rewrite published history — it can only be reverted.");
 
 function refuse(reason: string): { kind: "refuse"; reason: string } {
   return { kind: "refuse", reason };
@@ -1480,7 +1485,7 @@ function trackingOf(config: [string, string][] | undefined): string | undefined 
 
 /** "A merge is in progress" — the stop, in words. */
 function stopPhrase(kind: OpMark["kind"]): string {
-  return kind === "am" ? "A patch series (git am) is in progress" : `A ${kind} is in progress`;
+  return kind === "am" ? l10n.t("A patch series (git am) is in progress") : l10n.t("A {0} is in progress", kind);
 }
 
 function isDir(p: string): boolean {

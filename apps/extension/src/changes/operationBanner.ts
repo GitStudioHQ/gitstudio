@@ -16,6 +16,7 @@ import {
   opChipLabel,
   willDropText,
 } from "@gitstudio/webview-ui/conflicts/opText";
+import * as l10n from "@vscode/l10n";
 
 /** The operation the banner describes (OperationProvider.view()). */
 export type BannerView = OperationView;
@@ -81,7 +82,7 @@ export function operationBanner(
   const conflicts = detected.unmerged;
   let full = view.title || opChipLabel(view);
   if (!view.title && view.step) {
-    full += ` · ${view.step.unit} ${view.step.n} of ${view.step.m}`;
+    full += l10n.t(" · {0} {1} of {2}", view.step.unit, view.step.n, view.step.m);
   }
   // "Rebasing test onto master · commit 1 of 3: …" is two things: what is
   // happening, and where it is. One bold run of both wrapped to three lines
@@ -102,13 +103,16 @@ export function operationBanner(
   if (view.pause) {
     note = view.pause.detail;
   } else if (conflicts > 0) {
-    note = conflicts === 1 ? "1 file has conflicts to resolve." : `${conflicts} files have conflicts to resolve.`;
+    note =
+      conflicts === 1
+        ? l10n.t("1 file has conflicts to resolve.")
+        : l10n.t("{0} files have conflicts to resolve.", conflicts);
   } else if (view.willDrop) {
     note = willDropText(view);
   } else if (!view.canContinue && view.verbs.continue && continueBlockedText(view, conflicts)) {
     note = continueBlockedText(view, conflicts);
   } else if (view.canContinue && view.verbs.continue) {
-    note = "Every conflict is resolved.";
+    note = l10n.t("Every conflict is resolved.");
   }
 
   const blockedStop = !!view.verbs.continue && !view.canContinue;

@@ -12,6 +12,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { readAppManifest } from "./manifest";
 
 type Item = { command?: string; submenu?: string; when?: string; group?: string };
 interface Manifest {
@@ -21,8 +22,7 @@ interface Manifest {
     submenus: { id: string; label: string }[];
   };
 }
-const read = (app: string) =>
-  JSON.parse(readFileSync(join(__dirname, "..", "..", app, "package.json"), "utf8")) as Manifest;
+const read = (app: string) => readAppManifest<Manifest>(join(__dirname, "..", "..", app));
 const gs = read("extension");
 const ms = read("merge-studio");
 

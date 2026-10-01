@@ -194,6 +194,7 @@ export class ErrorReporter implements vscode.Disposable {
       event,
       installId: this.installId,
       extVersion: this.extVersion,
+      // English on purpose: a field of the report we send ourselves.
       engine: `VS Code ${vscode.version}`,
       product: vscode.env.appName, // "Visual Studio Code" / "Cursor" / "VSCodium"
       platform: process.platform,

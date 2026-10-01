@@ -3,7 +3,7 @@
 // checkout of the standalone merge-studio repository (PLAN §1, option B).
 //
 // gitstudio stays the single source: apps/merge-studio is the shell, and
-// packages/{engine,git-service,host-bridge,webview-ui,merge-vscode} are the
+// packages/{engine,git-service,host-bridge,webview-ui,merge-vscode,l10n} are the
 // shared code. The export
 // 1. removes what the shell replaces in the target (the old src/, webview/,
 //    test/ and test-harness/, and the previous vendor/gitstudio/), and any

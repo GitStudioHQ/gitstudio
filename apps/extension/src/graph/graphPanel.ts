@@ -61,6 +61,7 @@ import { notifyPaused } from "../git/pauseNotice";
 import type { RepoChangeEvent } from "../git/repoChange";
 import { planGraphRefresh } from "./refreshPlan";
 import { notifyCopied } from "../ui/notify";
+import * as l10n from "@vscode/l10n";
 
 
 /** Map the details-panel action ids to runCommitAction's ids. */
@@ -115,7 +116,7 @@ export class CommitGraphPanel {
     }
     const panel = vscode.window.createWebviewPanel(
       "gitstudio.commitGraph",
-      "Commit Graph",
+      l10n.t("Commit Graph"),
       { viewColumn: column, preserveFocus: true },
       {
         enableScripts: true,
@@ -749,7 +750,7 @@ export class CommitGraphPanel {
 
     if (await isRebaseInProgress(active.root)) {
       void vscode.window.showWarningMessage(
-        "GitStudio: a rebase is already in progress — finish or abort it first.",
+        l10n.t("GitStudio: a rebase is already in progress — finish or abort it first."),
       );
       return;
     }
@@ -762,7 +763,7 @@ export class CommitGraphPanel {
       order.every((sha) => chain.shas.includes(sha));
     if (!same) {
       void vscode.window.showWarningMessage(
-        "GitStudio: the history changed while you were dragging — nothing was reordered.",
+        l10n.t("GitStudio: the history changed while you were dragging — nothing was reordered."),
       );
       void this.loadInitial();
       return;
@@ -776,7 +777,7 @@ export class CommitGraphPanel {
     const status = await active.ctx.status.read();
     if (status.staged.length > 0 || status.unstaged.length > 0) {
       void vscode.window.showWarningMessage(
-        "GitStudio: commit or stash your changes before reordering — a rebase needs a clean working tree.",
+        l10n.t("GitStudio: commit or stash your changes before reordering — a rebase needs a clean working tree."),
       );
       return;
     }
@@ -805,12 +806,12 @@ export class CommitGraphPanel {
     if (!built.ok) {
       // A reorder is all picks, so no refusal here is a plan the user composed:
       // it is a request this door built wrong, and filed as one.
-      reportRebaseFailure("Reorder plan refused", {
+      reportRebaseFailure(l10n.t("Reorder plan refused"), {
         status: "failed",
         message: built.message,
         ...(built.expected ? { expected: true as const } : {}),
       });
-      void vscode.window.showErrorMessage(`GitStudio: ${built.message}`);
+      void vscode.window.showErrorMessage(l10n.t("GitStudio: {0}", built.message));
       return;
     }
 
@@ -824,21 +825,21 @@ export class CommitGraphPanel {
     // The branches it carries go back with it on Undo: the envelope's scope
     // records every local branch before the op and what it moved after
     // (issue #32's sibling: Drop and Squash carry the same way).
-    const outcome = ledger ? await ledger.runWithUndo(active, `Reorder ${order.length} commits`, run) : await run();
+    const outcome = ledger ? await ledger.runWithUndo(active, l10n.t("Reorder {0} commits", order.length), run) : await run();
 
     if (outcome.status === "done") {
-      vscode.window.setStatusBarMessage("$(check) Reordered", 3000);
+      vscode.window.setStatusBarMessage(l10n.t("$(check) Reordered"), 3000);
     } else if (outcome.status === "stopped") {
       // Reordering can genuinely conflict — two commits touching the same lines
       // in the other order. git leaves the rebase open for the user to finish.
       notifyPaused(
         outcome.reason === "conflict"
-          ? "GitStudio: reordering hit a conflict — resolve it, then continue or abort the rebase."
-          : "GitStudio: the rebase stopped and needs you — continue or abort it.",
+          ? l10n.t("GitStudio: reordering hit a conflict — resolve it, then continue or abort the rebase.")
+          : l10n.t("GitStudio: the rebase stopped and needs you — continue or abort it."),
       );
     } else {
       void vscode.window.showErrorMessage(
-        `GitStudio: reorder failed${outcome.message ? ` — ${outcome.message}` : ""}`,
+        l10n.t("GitStudio: reorder failed{0}", outcome.message ? ` — ${outcome.message}` : ""),
       );
     }
     this.scheduleRefresh();
@@ -847,11 +848,11 @@ export class CommitGraphPanel {
   /** Confirm a reorder that touches only this branch. */
   private async askReorder(count: number): Promise<boolean | undefined> {
     const picked = await promptPick({
-      title: `Reorder ${count} commit${count === 1 ? "" : "s"}?`,
-      hint: "They are rewritten, so they get new identities. Undo is available afterwards.",
+      title: count === 1 ? l10n.t("Reorder 1 commit?") : l10n.t("Reorder {0} commits?", count),
+      hint: l10n.t("They are rewritten, so they get new identities. Undo is available afterwards."),
       choices: [
-        { id: "go", label: "Reorder", icon: "git-commit" },
-        { id: "no", label: "Cancel", icon: "close" },
+        { id: "go", label: l10n.t("Reorder"), icon: "git-commit" },
+        { id: "no", label: l10n.t("Cancel"), icon: "close" },
       ],
     });
     return picked === "go" ? false : undefined;
@@ -872,22 +873,22 @@ export class CommitGraphPanel {
     const names = branches.slice(0, 3).join(", ") +
       (branches.length > 3 ? ` and ${branches.length - 3} more` : "");
     const picked = await promptPick({
-      title: `Reorder ${count} commit${count === 1 ? "" : "s"}?`,
+      title: count === 1 ? l10n.t("Reorder 1 commit?") : l10n.t("Reorder {0} commits?", count),
       hint: `${names} point into this range.`,
       choices: [
         {
           id: "carry",
-          label: "Reorder and move those branches",
+          label: l10n.t("Reorder and move those branches"),
           icon: "git-branch",
-          description: "They follow onto the rewritten commits.",
+          description: l10n.t("They follow onto the rewritten commits."),
         },
         {
           id: "only",
-          label: "Reorder this branch only",
+          label: l10n.t("Reorder this branch only"),
           icon: "git-commit",
-          description: "They keep pointing at the commits as they are now.",
+          description: l10n.t("They keep pointing at the commits as they are now."),
         },
-        { id: "no", label: "Cancel", icon: "close" },
+        { id: "no", label: l10n.t("Cancel"), icon: "close" },
       ],
     });
     if (picked === "carry") return true;
@@ -1229,10 +1230,10 @@ export class CommitGraphPanel {
         add = undefined; // the offer below still has its way out
       }
       if (root !== this.repoRoot) return;
-      const ADD = add ? `Add ${refLabel(add.fullName)} to the filter` : undefined;
-      const ALL = "Show all branches";
+      const ADD = add ? l10n.t("Add {0} to the filter", refLabel(add.fullName)) : undefined;
+      const ALL = l10n.t("Show all branches");
       const pick = await vscode.window.showInformationMessage(
-        `GitStudio: ${sha.slice(0, 7)} is hidden by the branch filter.`,
+        l10n.t("GitStudio: {0} is hidden by the branch filter.", sha.slice(0, 7)),
         ...(ADD ? [ADD] : []),
         ALL,
       );
@@ -1297,13 +1298,13 @@ export class CommitGraphPanel {
     this.records.set(UNCOMMITTED_SHA, {
       sha: UNCOMMITTED_SHA,
       parents: [this.currentHeadSha],
-      author: "Uncommitted changes",
+      author: l10n.t("Uncommitted changes"),
       authorEmail: "",
       authorDate: now,
-      committer: "Uncommitted changes",
+      committer: l10n.t("Uncommitted changes"),
       committerEmail: "",
       committerDate: now,
-      subject: "Uncommitted changes",
+      subject: l10n.t("Uncommitted changes"),
       body: "",
     });
     this.loaded.unshift({
@@ -1391,7 +1392,7 @@ export class CommitGraphPanel {
         sha: UNCOMMITTED_SHA,
         shortSha: "WIP",
         parents: [this.currentHeadSha],
-        author: "Uncommitted changes",
+        author: l10n.t("Uncommitted changes"),
         authorEmail: "",
         authorDate: now,
         committer: "",
@@ -1431,7 +1432,7 @@ export class CommitGraphPanel {
           left: status === "A" || status === "U" ? { rev: EMPTY_TREE } : { rev: "HEAD", path: oldPath || path },
           right: status === "D" ? { rev: EMPTY_TREE } : { rev: undefined },
         },
-        `${fileName} (HEAD ↔ Working Tree)`,
+        l10n.t("{0} (HEAD ↔ Working Tree)", fileName),
       );
       return;
     }
@@ -1467,7 +1468,7 @@ export class CommitGraphPanel {
     if (action === "open-remote") {
       const found = await commitWebUrlIn(active.ctx, sha);
       if ("reason" in found) {
-        void vscode.window.showInformationMessage(`GitStudio: ${found.reason}`);
+        void vscode.window.showInformationMessage(l10n.t("GitStudio: {0}", found.reason));
         return;
       }
       await vscode.env.openExternal(vscode.Uri.parse(found.url));

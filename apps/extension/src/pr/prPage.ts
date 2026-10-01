@@ -26,6 +26,7 @@ import { prPageHtml } from "./prPageHtml";
 import type { GitHubRepoContext } from "./repoContext";
 import { openCommitFileDiff } from "./reviewDiff";
 import type { ReviewController } from "./reviewMode";
+import * as l10n from "@vscode/l10n";
 
 // A pull request's page: one editor tab per pull request (owner/repo#n —
 // reopening it reveals the tab it has), titled with its repository. It mounts
@@ -90,31 +91,31 @@ interface Described {
 function describe(err: unknown): Described {
   if (err instanceof GitHubApiError) return { message: err.message, kind: err.kind, status: err.status, helpUrl: err.helpUrl };
   if (err instanceof PrListError) return { message: err.message, kind: err.kind };
-  return { message: "GitHub didn't answer.", kind: "unknown" };
+  return { message: l10n.t("GitHub didn't answer."), kind: "unknown" };
 }
 
 /** A first read that failed: why, and the one thing that can put it right. */
 export function pageFailure(err: Described, repo: string, n: number): PrListMessage {
-  const retry = { label: "Retry", icon: "refresh", action: { kind: "retry" } as PrListAction };
+  const retry = { label: l10n.t("Retry"), icon: "refresh", action: { kind: "retry" } as PrListAction };
   if (err.kind === "auth" && err.status === 401) {
     return {
       icon: "warning",
       tone: "warning",
-      title: "Your GitHub session expired",
-      detail: `Sign in again to see ${repo}#${n}.`,
-      buttons: [{ label: "Sign in again", icon: "sign-in", primary: true, action: { kind: "signIn", again: true } }],
+      title: l10n.t("Your GitHub session expired"),
+      detail: l10n.t("Sign in again to see {0}#{1}.", repo, n),
+      buttons: [{ label: l10n.t("Sign in again"), icon: "sign-in", primary: true, action: { kind: "signIn", again: true } }],
     };
   }
   if (err.kind === "auth" || err.kind === "forbidden") {
     return {
       icon: "warning",
       tone: "warning",
-      title: `GitHub refused to show ${repo}#${n}`,
+      title: l10n.t("GitHub refused to show {0}#{1}", repo, n),
       detail: err.message,
       buttons: [
         err.helpUrl
-          ? { label: "Authorize on GitHub", icon: "link-external", primary: true, action: { kind: "openUrl", url: err.helpUrl }, title: "Open GitHub's page that authorizes this sign-in for the organization" }
-          : { label: "Open on GitHub", icon: "link-external", primary: true, action: { kind: "openUrl", url: `https://github.com/${repo}/pull/${n}` } },
+          ? { label: l10n.t("Authorize on GitHub"), icon: "link-external", primary: true, action: { kind: "openUrl", url: err.helpUrl }, title: l10n.t("Open GitHub's page that authorizes this sign-in for the organization") }
+          : { label: l10n.t("Open on GitHub"), icon: "link-external", primary: true, action: { kind: "openUrl", url: `https://github.com/${repo}/pull/${n}` } },
         retry,
       ],
     };
@@ -123,14 +124,14 @@ export function pageFailure(err: Described, repo: string, n: number): PrListMess
     return {
       icon: "warning",
       tone: "warning",
-      title: `GitHub has no pull request ${repo}#${n}`,
-      detail: `${err.message} A private repository needs a sign-in with access to it.`,
-      buttons: [{ label: "Sign in again", icon: "sign-in", action: { kind: "signIn", again: true }, title: "Sign in to GitHub, with another account if need be" }, retry],
+      title: l10n.t("GitHub has no pull request {0}#{1}", repo, n),
+      detail: l10n.t("{0} A private repository needs a sign-in with access to it.", err.message),
+      buttons: [{ label: l10n.t("Sign in again"), icon: "sign-in", action: { kind: "signIn", again: true }, title: l10n.t("Sign in to GitHub, with another account if need be") }, retry],
     };
   }
-  if (err.kind === "rate-limit") return { icon: "clock", tone: "warning", title: "GitHub's rate limit was reached", detail: err.message, buttons: [retry] };
-  if (err.kind === "network") return { icon: "error", tone: "error", title: "Couldn't reach GitHub", detail: "Check your network connection.", buttons: [{ ...retry, primary: true }] };
-  return { icon: "error", tone: "error", title: `Couldn't load ${repo}#${n}`, detail: err.message, buttons: [{ ...retry, primary: true }] };
+  if (err.kind === "rate-limit") return { icon: "clock", tone: "warning", title: l10n.t("GitHub's rate limit was reached"), detail: err.message, buttons: [retry] };
+  if (err.kind === "network") return { icon: "error", tone: "error", title: l10n.t("Couldn't reach GitHub"), detail: l10n.t("Check your network connection."), buttons: [{ ...retry, primary: true }] };
+  return { icon: "error", tone: "error", title: l10n.t("Couldn't load {0}#{1}", repo, n), detail: err.message, buttons: [{ ...retry, primary: true }] };
 }
 
 /** A page's pull request, as the PR commands take it. */
@@ -375,12 +376,12 @@ export class PrPage {
           this.notice = {
             icon: "warning",
             tone: "warning",
-            title: `Couldn't refresh: ${why.message}`,
-            detail: "Showing the pull request as it was.",
+            title: l10n.t("Couldn't refresh: {0}", why.message),
+            detail: l10n.t("Showing the pull request as it was."),
             buttons:
               why.kind === "auth" && why.status === 401
-                ? [{ label: "Sign in again", icon: "sign-in", action: { kind: "signIn", again: true } }]
-                : [{ label: "Retry", icon: "refresh", action: { kind: "retry" } }],
+                ? [{ label: l10n.t("Sign in again"), icon: "sign-in", action: { kind: "signIn", again: true } }]
+                : [{ label: l10n.t("Retry"), icon: "refresh", action: { kind: "retry" } }],
           };
         } else {
           this.status = "message";
@@ -499,7 +500,7 @@ export class PrPage {
       case "copyLink": {
         const url = this.detail?.url ?? `https://github.com/${this.repoId}/pull/${this.n}`;
         await vscode.env.clipboard.writeText(url);
-        notifyCopied(`the link to pull request #${this.n}`);
+        notifyCopied(l10n.t("the link to pull request #{0}", this.n));
         return;
       }
       case "openUrl":
@@ -583,12 +584,12 @@ export class PrPage {
     this.notice = {
       icon: "warning",
       tone: "warning",
-      title: `Couldn't ${what}: ${why.message}`,
+      title: l10n.t("Couldn't {0}: {1}", what, why.message),
       ...(extra ? { detail: extra } : {}),
       buttons:
         why.kind === "auth" && why.status === 401
-          ? [{ label: "Sign in again", icon: "sign-in", action: { kind: "signIn", again: true } }]
-          : [{ label: "Open on GitHub", icon: "link-external", action: { kind: "openUrl", url: this.detail?.url ?? `https://github.com/${this.repoId}/pull/${this.n}` } }],
+          ? [{ label: l10n.t("Sign in again"), icon: "sign-in", action: { kind: "signIn", again: true } }]
+          : [{ label: l10n.t("Open on GitHub"), icon: "link-external", action: { kind: "openUrl", url: this.detail?.url ?? `https://github.com/${this.repoId}/pull/${this.n}` } }],
     };
   }
 
@@ -606,7 +607,7 @@ export class PrPage {
     if (!d || this.busy.has("checkout")) return;
     const ctx = await this.context();
     if (!ctx) {
-      void vscode.window.showWarningMessage(`This repository has no remote for ${this.repoId}, so its pull requests can't be checked out here.`);
+      void vscode.window.showWarningMessage(l10n.t("This repository has no remote for {0}, so its pull requests can't be checked out here.", this.repoId));
       return;
     }
     this.busy.add("checkout");
@@ -633,9 +634,9 @@ export class PrPage {
       this.busy.delete("merge");
       const why = describe(err);
       this.failed(
-        `merge #${this.n}`,
+        l10n.t("merge #{0}", this.n),
         err,
-        why.status === 409 ? "The branch moved on since this page read it. Refresh, look at what changed, and merge again." : "It is still open.",
+        why.status === 409 ? l10n.t("The branch moved on since this page read it. Refresh, look at what changed, and merge again.") : l10n.t("It is still open."),
       );
       this.post();
       return;
@@ -669,12 +670,12 @@ export class PrPage {
       this.notice = {
         icon: "info",
         tone: "info",
-        title: `GitHub is merging ${d.baseRef} into ${d.headRef}`,
-        detail: "The page follows as it happens.",
+        title: l10n.t("GitHub is merging {0} into {1}", d.baseRef, d.headRef),
+        detail: l10n.t("The page follows as it happens."),
         buttons: [],
       };
     } catch (err) {
-      this.failed("update the branch", err);
+      this.failed(l10n.t("update the branch"), err);
     } finally {
       this.busy.delete("updateBranch");
       this.post();
@@ -705,7 +706,7 @@ export class PrPage {
     } catch (err) {
       this.stateGen++;
       this.detail = was;
-      this.failed(`${to === "closed" ? "close" : "reopen"} #${this.n}`, err, `It is still ${was.kind === "closed" ? "closed" : "open"}.`);
+      this.failed(`${to === "closed" ? "close" : "reopen"} #${this.n}`, err, l10n.t("It is still {0}.", was.kind === "closed" ? l10n.t("closed") : l10n.t("open")));
     } finally {
       this.busy.delete(busy);
       this.post();
@@ -728,7 +729,7 @@ export class PrPage {
     } catch (err) {
       this.stateGen++;
       this.detail = was;
-      this.failed(`mark #${this.n} ready for review`, err, "It is still a draft.");
+      this.failed(l10n.t("mark #{0} ready for review", this.n), err, l10n.t("It is still a draft."));
     } finally {
       this.busy.delete("ready");
       this.post();
@@ -763,7 +764,7 @@ export class PrPage {
       const now = this.detail;
       if (now) this.detail = { ...now, timeline: now.timeline.filter((t) => t.id !== id) };
       this.restoreState = { seq: ++this.sendSeq, key: "comment", body };
-      this.failed("post your comment", err, "Your comment is back in its box.");
+      this.failed(l10n.t("post your comment"), err, l10n.t("Your comment is back in its box."));
     } finally {
       this.busy.delete("comment");
       this.post();
@@ -795,7 +796,7 @@ export class PrPage {
     } catch (err) {
       this.patchThread(t);
       this.restoreState = { seq: ++this.sendSeq, key: busy, body };
-      this.failed("post your reply", err, "Your reply is back in its box.");
+      this.failed(l10n.t("post your reply"), err, l10n.t("Your reply is back in its box."));
     } finally {
       this.busy.delete(busy);
       this.post();
@@ -815,7 +816,7 @@ export class PrPage {
     } catch (err) {
       this.resolving.delete(threadId);
       this.patchThread(t);
-      this.failed(resolved ? "resolve the conversation" : "unresolve the conversation", err);
+      this.failed(resolved ? l10n.t("resolve the conversation") : l10n.t("unresolve the conversation"), err);
     } finally {
       this.resolving.delete(threadId);
       this.busy.delete(busy);
@@ -826,7 +827,7 @@ export class PrPage {
   private async openFile(path: string, line?: number, side?: "LEFT" | "RIGHT"): Promise<void> {
     await this.loaded();
     const opened = await this.deps.review.openFile(this.key, path, { ...(line ? { line } : {}), ...(side ? { side } : {}) }).catch(() => false);
-    if (!opened) void vscode.window.showInformationMessage(`${path} isn't among #${this.n}'s changed files any more.`);
+    if (!opened) void vscode.window.showInformationMessage(l10n.t("{0} isn't among #{1}'s changed files any more.", path, this.n));
   }
 
   private async expandCommit(sha: string): Promise<void> {
@@ -863,7 +864,7 @@ export class PrPage {
     if (!this.deps.review.pendingFor(this.key)) await this.load();
     this.focus({ tab: "files" });
     const started = await this.deps.review.start(this.key);
-    if (!started) void vscode.window.showWarningMessage(`#${this.n}'s changed files couldn't be read, so its review can't start yet. Refresh and try again.`);
+    if (!started) void vscode.window.showWarningMessage(l10n.t("#{0}'s changed files couldn't be read, so its review can't start yet. Refresh and try again.", this.n));
   }
 
   private async submitReview(event: ReviewEvent, body: string): Promise<void> {
@@ -875,8 +876,8 @@ export class PrPage {
     const out = await this.deps.review.submit(this.key, event, body, { owner: this.ref.owner, repo: this.ref.repo, number: this.n, headSha: d.headSha });
     this.busy.delete("review");
     if (!out.ok) {
-      const said = /[.!?]$/.test(out.message) ? out.message : `${out.message}.`;
-      this.notice = { icon: "warning", tone: "warning", title: "Couldn't submit your review", detail: `${said} Your comments are kept.`, buttons: [] };
+      const said = /[.!?。？！]$/.test(out.message) ? out.message : `${out.message}.`;
+      this.notice = { icon: "warning", tone: "warning", title: l10n.t("Couldn't submit your review"), detail: l10n.t("{0} Your comments are kept.", said), buttons: [] };
       this.post();
       return;
     }
@@ -894,7 +895,7 @@ export class PrPage {
     this.sentState = { seq: ++this.sendSeq, key: "review" };
     this.post();
     void vscode.window.showInformationMessage(
-      `Review submitted on #${this.n}: ${event === "APPROVE" ? "approved" : event === "REQUEST_CHANGES" ? "changes requested" : "commented"}.`,
+      l10n.t("Review submitted on #{0}: {1}.", this.n, event === "APPROVE" ? l10n.t("approved") : event === "REQUEST_CHANGES" ? l10n.t("changes requested") : l10n.t("commented")),
     );
     void this.load();
   }

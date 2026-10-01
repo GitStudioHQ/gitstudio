@@ -50,6 +50,7 @@ import type {
   WireRebaseAction,
   WireRebaseRow,
 } from "@gitstudio/host-bridge/rebaseProtocol";
+import * as l10n from "@vscode/l10n";
 
 const IS_MAC = typeof navigator !== "undefined" && /mac/i.test(navigator.platform);
 
@@ -62,12 +63,12 @@ const ACTIONS: ReadonlyArray<{
   label: string;
   hint: string;
 }> = [
-  { value: "pick", label: "pick", hint: "use the commit as-is" },
-  { value: "reword", label: "reword", hint: "use commit, edit its message" },
-  { value: "edit", label: "edit", hint: "stop to amend the commit" },
-  { value: "squash", label: "squash", hint: "meld into the commit above (the older one)" },
-  { value: "fixup", label: "fixup", hint: "meld into the commit above, drop this message" },
-  { value: "drop", label: "drop", hint: "remove the commit" },
+  { value: "pick", label: l10n.t("pick"), hint: l10n.t("use the commit as-is") },
+  { value: "reword", label: l10n.t("reword"), hint: l10n.t("use commit, edit its message") },
+  { value: "edit", label: l10n.t("edit"), hint: l10n.t("stop to amend the commit") },
+  { value: "squash", label: l10n.t("squash"), hint: l10n.t("meld into the commit above (the older one)") },
+  { value: "fixup", label: l10n.t("fixup"), hint: l10n.t("meld into the commit above, drop this message") },
+  { value: "drop", label: l10n.t("drop"), hint: l10n.t("remove the commit") },
 ];
 
 interface Row extends WireRebaseRow {}
@@ -648,30 +649,30 @@ export class RebaseView extends LitElement {
     const orphan = orphans.includes(true);
     return html`
       <header>
-        <p class="eyebrow">Interactive Rebase</p>
+        <p class="eyebrow">${l10n.t("Interactive Rebase")}</p>
         <div class="title">
           ${this.headerComment
             ? this.headerComment
-            : html`Rebasing
-                <span class="mono">${total}</span> commit${total === 1
-                  ? ""
-                  : "s"}`}
+            : html`${l10n.t("Rebasing")}
+                <span class="mono">${total}</span> ${total === 1
+                  ? l10n.t("commit")
+                  : l10n.t("commits")}`}
         </div>
         <div class="hint">
-          <span>Drag rows or press</span>
-          <kbd>Alt</kbd>
+          <span>${l10n.t("Drag rows or press")}</span>
+          <kbd>${l10n.t("Alt")}</kbd>
           <span aria-hidden="true">+</span>
-          <kbd aria-label="Up arrow">${RebaseView.chevronUp}</kbd>
+          <kbd aria-label="${l10n.t("Up arrow")}">${RebaseView.chevronUp}</kbd>
           <span aria-hidden="true">/</span>
-          <kbd aria-label="Down arrow">${RebaseView.chevronDown}</kbd>
-          <span>to reorder. Topmost runs first — this is git's todo file, oldest at the top.</span>
-          <span>Shift- or ${IS_MAC ? "⌘" : "Ctrl"}-click selects several;</span>
+          <kbd aria-label="${l10n.t("Down arrow")}">${RebaseView.chevronDown}</kbd>
+          <span>${l10n.t("to reorder. Topmost runs first — this is git's todo file, oldest at the top.")}</span>
+          <span>${l10n.t("Shift- or {0}-click selects several;", IS_MAC ? "⌘" : "Ctrl")}</span>
           ${PLAN_ACTIONS.map((a) => html`<kbd class="letter" title=${a.label}>${a.key}</kbd>`)}
-          <span>set their action.</span>
+          <span>${l10n.t("set their action.")}</span>
         </div>
-        <div class="tools" role="group" aria-label="Set the action of the selected commits">
+        <div class="tools" role="group" aria-label="${l10n.t("Set the action of the selected commits")}">
           <span class="selcount" aria-live="polite">${selectionCountText(selectedCount)}</span>
-          <span class="tools-label">Set action</span>
+          <span class="tools-label">${l10n.t("Set action")}</span>
           <div class="setgroup">
             ${PLAN_ACTIONS.map(
               (a) => html`<button
@@ -694,19 +695,19 @@ export class RebaseView extends LitElement {
         class="list"
         role="grid"
         aria-multiselectable="true"
-        aria-label="Rebase commits, oldest first"
+        aria-label="${l10n.t("Rebase commits, oldest first")}"
         @click=${this.onListClick}
         @mousedown=${this.onListMousedown}
         @focusin=${this.onListFocusin}
       >
         ${total === 0
-          ? html`<div class="empty">No commits to rebase.</div>`
+          ? html`<div class="empty">${l10n.t("No commits to rebase.")}</div>`
           : this.rows.map((row, index) => this.renderRow(row, index, orphans[index]))}
       </div>
 
       <footer>
         <span class="count" aria-live="polite">
-          <span class="mono">${kept}</span> of
+          <span class="mono">${kept}</span> ${l10n.t("of")}
           <span class="mono">${total}</span> commit${total === 1 ? "" : "s"} kept${folded
             ? html` · <span class="mono">${folded}</span> folded`
             : ""}${dropped ? html` · <span class="mono">${dropped}</span> dropped` : ""}
@@ -716,14 +717,14 @@ export class RebaseView extends LitElement {
             ? html`<span class="codicon codicon-warning" aria-hidden="true"></span><span>${this.note}</span>`
             : ""}
         </span>
-        <button class="cta danger" @click=${this.abort}>Abort</button>
+        <button class="cta danger" @click=${this.abort}>${l10n.t("Abort")}</button>
         <button
           class="cta primary"
           @click=${this.start}
           ?disabled=${total === 0 || orphan}
-          title=${orphan ? "A squash or fixup has nothing above it to fold into — git can't run this plan." : ""}
+          title=${orphan ? l10n.t("A squash or fixup has nothing above it to fold into — git can't run this plan.") : ""}
         >
-          Start rebase
+          ${l10n.t("Start rebase")}
         </button>
       </footer>
     `;
@@ -761,7 +762,7 @@ export class RebaseView extends LitElement {
         aria-selected=${selected ? "true" : "false"}
         data-key=${key}
         data-action=${row.action}
-        aria-label=${`Commit ${row.shortSha}, ${row.subject}, action ${row.action}`}
+        aria-label=${l10n.t("Commit {0}, {1}, action {2}", row.shortSha, row.subject, row.action)}
         draggable="true"
         @dragstart=${(e: DragEvent) => this.onDragStart(e, index)}
         @dragover=${(e: DragEvent) => this.onDragOver(e, index)}
@@ -773,9 +774,9 @@ export class RebaseView extends LitElement {
         <span class="accent"></span>
         <select
           class="action"
-          aria-label=${`Action for ${row.shortSha}`}
+          aria-label=${l10n.t("Action for {0}", row.shortSha)}
           aria-invalid=${orphan ? "true" : "false"}
-          title=${orphan ? "Nothing above it is kept to fold into — git can't run this" : ""}
+          title=${orphan ? l10n.t("Nothing above it is kept to fold into — git can't run this") : ""}
           .value=${row.action}
           @change=${(e: Event) =>
             this.setAction(index, (e.target as HTMLSelectElement).value as WireRebaseAction)}
@@ -797,8 +798,8 @@ export class RebaseView extends LitElement {
         <span class="move">
           <button
             class="icon"
-            title=${carriesMany ? "Move the selected commits up (Alt+Up)" : "Move up (Alt+Up)"}
-            aria-label=${carriesMany ? "Move the selected commits up" : "Move up"}
+            title=${carriesMany ? l10n.t("Move the selected commits up (Alt+Up)") : l10n.t("Move up (Alt+Up)")}
+            aria-label=${carriesMany ? l10n.t("Move the selected commits up") : l10n.t("Move up")}
             ?disabled=${upBlocked}
             @click=${() => this.moveFrom(key, -1)}
           >
@@ -806,8 +807,8 @@ export class RebaseView extends LitElement {
           </button>
           <button
             class="icon"
-            title=${carriesMany ? "Move the selected commits down (Alt+Down)" : "Move down (Alt+Down)"}
-            aria-label=${carriesMany ? "Move the selected commits down" : "Move down"}
+            title=${carriesMany ? l10n.t("Move the selected commits down (Alt+Down)") : l10n.t("Move down (Alt+Down)")}
+            aria-label=${carriesMany ? l10n.t("Move the selected commits down") : l10n.t("Move down")}
             ?disabled=${downBlocked}
             @click=${() => this.moveFrom(key, 1)}
           >

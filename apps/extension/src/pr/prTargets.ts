@@ -17,6 +17,7 @@ import type { PrListTarget } from "@gitstudio/host-bridge/prProtocol";
 import type { RepoEntry } from "../git/repoManager";
 import type { GitHubRemote } from "./repoContext";
 import type { GitHubRepoContext } from "./repoContext";
+import * as l10n from "@vscode/l10n";
 
 export interface PrTarget extends PrListTarget {
   /** The git remote whose URL names it, if the clone has one. */
@@ -55,7 +56,7 @@ export async function resolvePrTargets(
       id: `${parent.owner}/${parent.repo}`,
       owner: parent.owner,
       repo: parent.repo,
-      detail: r ? `remote ${r.name} — ${first.name} was forked from it` : `${first.name} was forked from it`,
+      detail: r ? l10n.t("remote {0} — {1} was forked from it", r.name, first.name) : `${first.name} was forked from it`,
       ...(r ? { remoteName: r.name } : {}),
     });
   }
@@ -63,7 +64,7 @@ export async function resolvePrTargets(
     id: `${first.owner}/${first.repo}`,
     owner: first.owner,
     repo: first.repo,
-    detail: parent ? `remote ${first.name} — a fork of ${parent.owner}/${parent.repo}` : `remote ${first.name}`,
+    detail: parent ? l10n.t("remote {0} — a fork of {1}/{2}", first.name, parent.owner, parent.repo) : `remote ${first.name}`,
     remoteName: first.name,
   });
   for (const r of remotes.slice(1)) {

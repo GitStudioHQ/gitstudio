@@ -9,6 +9,7 @@ import { operationInProgressMessage } from "../git/pausedForUser";
 import { detectOperation } from "../git/pauseNotice";
 import { abortRebaseLike, nothingToAbortText } from "./rebaseAbort";
 import { describeRebaseBase } from "./rebaseBase";
+import * as l10n from "@vscode/l10n";
 
 // Launching & aborting interactive rebases.
 //
@@ -51,10 +52,10 @@ export async function startInteractiveRebase(
 
   if (await isDirty(active.ctx)) {
     const proceed = await promptConfirm({
-      title: "You have uncommitted changes",
+      title: l10n.t("You have uncommitted changes"),
       message:
-        "Interactive rebase works best on a clean tree — commit or stash first. GitStudio snapshots your work so Undo can recover it, but git may simply refuse to start.",
-      confirmLabel: "Continue Anyway",
+        l10n.t("Interactive rebase works best on a clean tree — commit or stash first. GitStudio snapshots your work so Undo can recover it, but git may simply refuse to start."),
+      confirmLabel: l10n.t("Continue Anyway"),
       danger: true,
     });
     if (!proceed) {
@@ -82,7 +83,7 @@ export async function startInteractiveRebase(
           .catch(() => undefined);
   await undo.runWithUndo(
     active,
-    `Interactive rebase onto ${describeRebaseBase(base)}`,
+    l10n.t("Interactive rebase onto {0}", describeRebaseBase(base)),
     async () => {
       launchRebaseTerminal(active, base);
     },
@@ -109,12 +110,12 @@ export async function abortRebase(repos: RepoManager): Promise<void> {
   }
   if (result.outcome.ok) {
     void vscode.window.setStatusBarMessage(
-      `$(discard) ${result.kind === "am" ? "Patch series abandoned" : "Rebase aborted"}`,
+      l10n.t("$(discard) {0}", result.kind === "am" ? l10n.t("Patch series abandoned") : l10n.t("Rebase aborted")),
       2500,
     );
   } else {
     void vscode.window.showErrorMessage(
-      failed(result.kind === "am" ? "Abort (git am)" : "Abort rebase", result.outcome.message ?? "git refused"),
+      failed(result.kind === "am" ? l10n.t("Abort (git am)") : l10n.t("Abort rebase"), result.outcome.message ?? l10n.t("git refused")),
     );
   }
 }
@@ -132,10 +133,10 @@ async function resolveBase(
 ): Promise<string | undefined> {
   if (!sha) {
     return promptRevision(active, {
-      title: "Interactive rebase",
-      hint: "Rebase onto which commit or branch? The base itself is excluded — everything after it becomes the todo.",
-      placeholder: "HEAD~5   main   origin/main",
-      confirmLabel: "Start Rebase",
+      title: l10n.t("Interactive rebase"),
+      hint: l10n.t("Rebase onto which commit or branch? The base itself is excluded — everything after it becomes the todo."),
+      placeholder: l10n.t("HEAD~5   main   origin/main"),
+      confirmLabel: l10n.t("Start Rebase"),
     });
   }
   // Does the commit have a parent?
@@ -154,7 +155,7 @@ async function resolveBase(
 
 function launchRebaseTerminal(active: RepoEntry, base: string): void {
   const terminal = vscode.window.createTerminal({
-    name: "GitStudio: Interactive Rebase",
+    name: l10n.t("GitStudio: Interactive Rebase"),
     cwd: active.root,
     env: {
       // `code --wait` opens the todo in this window and blocks until it's
