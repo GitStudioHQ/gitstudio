@@ -21,6 +21,8 @@ history reads the same for everyone who opens it.
 
 ## Fixed
 
+- A reword in the interactive rebase workspace keeps the commit's
+  description — it used to start from the subject line only (#75).
 - Counts read as whole sentences ("Undo 3 local commits") instead of an
   English noun dropped into a translated sentence.
 - On git 2.43, a stash git refuses without a word now says why.

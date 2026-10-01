@@ -16,6 +16,9 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - **What git stores stays in English.** Undo's reflog entries, stash messages
   and the revert commit it makes are written in English whatever language the
   editor is in, so the repository's history reads the same for everyone.
+- **A reword keeps the commit's description.** In the interactive rebase
+  workspace, Reword started from the commit's subject line only, so applying
+  it dropped the rest of the message ([#75](https://github.com/GitStudioHQ/gitstudio/issues/75)).
 
 ## [1.17.0] - 2026-09-29
 
