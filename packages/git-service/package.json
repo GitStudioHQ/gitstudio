@@ -15,6 +15,7 @@
     "@gitstudio/ai": "*",
     "@gitstudio/engine": "*",
     "@gitstudio/host-bridge": "*",
+    "@gitstudio/l10n": "*",
     "@vscode/l10n": "^0.0.18"
   }
 }

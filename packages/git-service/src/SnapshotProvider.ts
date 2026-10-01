@@ -14,6 +14,7 @@ import {
 import { placeHolds, restoreStash, stashStack, type StashSlot } from "./stashRestore";
 import { stashTitle } from "./StashProvider";
 import * as l10n from "@vscode/l10n";
+import { englishOf } from "@gitstudio/l10n/index";
 
 /**
  * A record of what an operation is about to change, and — once it has run and
@@ -319,7 +320,7 @@ export class SnapshotProvider {
     let stashSha: string | null = null;
     let uncopied: NoCopy | undefined;
     if (!refsOnly && (await this.isDirty(opts))) {
-      const created = await this.process.run(["stash", "create", label], opts);
+      const created = await this.process.run(["stash", "create", englishOf(label)], opts);
       if (created.code === 0) {
         // `stash create` prints nothing (empty) when there's nothing to stash.
         stashSha = created.stdout.trim() || null;
@@ -740,7 +741,7 @@ export class SnapshotProvider {
   async execute(snap: Snapshot, steps: readonly RestoreStep[], opts?: GitRunOptions): Promise<void> {
     // English on purpose: git writes this into the reflog, where `git reflog`
     // shows it to whoever reads the repository, whatever their editor says.
-    const message = `GitStudio undo: ${snap.label}`;
+    const message = `GitStudio undo: ${englishOf(snap.label)}`;
     for (const st of steps) {
       switch (st.do) {
         case "abort-rebase": {
@@ -836,7 +837,8 @@ export class SnapshotProvider {
     }
     // English on purpose: this is a commit message, stored in the repository
     // itself and read by everyone who looks at the history.
-    const msg = `Revert "${snap.label}"\n\nThis puts back the files as they were before "${snap.label}" (${shortSha(p.from)}), which had already been pushed as ${shortSha(p.to)}.\n`;
+    const label = englishOf(snap.label);
+    const msg = `Revert "${label}"\n\nThis puts back the files as they were before "${label}" (${shortSha(p.from)}), which had already been pushed as ${shortSha(p.to)}.\n`;
     const made = await this.process.run(["commit-tree", `${p.from}^{tree}`, "-p", p.to, "-F", "-"], { ...opts, input: msg });
     if (made.code !== 0) return made;
     // The new commit's parent is `p.to`: moving HEAD onto it from anywhere

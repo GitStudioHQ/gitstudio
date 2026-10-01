@@ -270,7 +270,7 @@ const NO_OP: ConflictsState["op"] = {
   yours: { role: "yours", stage: 2, name: "", paneTitle: "", description: "" },
   theirs: { role: "theirs", stage: 3, name: "", paneTitle: "", description: "" },
   // English sentinel: abortLabel() replaces it with a specific, localized word.
-  verbs: { abort: l10n.t("Cancel") },
+  verbs: { abort: "Cancel" },
   canContinue: false,
   canSkip: false,
   episode: "none",

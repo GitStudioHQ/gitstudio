@@ -18,6 +18,7 @@ import {
   type RefMove,
 } from "./refRestore";
 import * as l10n from "@vscode/l10n";
+import { englishOf } from "@gitstudio/l10n/index";
 
 // Drop Commit (issue #32), for both products.
 //
@@ -464,7 +465,7 @@ async function undoOnBranch(
 /** The reflog entry an undo of `what` writes on each branch it puts back. */
 function undoReflog(what: string): string {
   // English on purpose: a reflog entry, stored in the repository itself.
-  return what === "drop" ? "GitStudio undo: drop commit" : `GitStudio undo: ${what}`;
+  return what === "drop" ? "GitStudio undo: drop commit" : `GitStudio undo: ${englishOf(what)}`;
 }
 
 /** The carried branches back, each by compare-and-swap. */
