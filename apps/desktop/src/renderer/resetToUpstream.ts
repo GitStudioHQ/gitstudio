@@ -150,7 +150,7 @@ export async function resetToUpstream(deps: ResetFlowDeps): Promise<ResetOutcome
   if (!q) {
     return {
       kind: "nothing",
-      message: l10n.t("'{0}' already matches '{1}' — there is nothing to reset.", p.branch, p.upstream),
+      message: l10n.t("'{0}' already matches '{1}' — there is nothing to reset.", String(p.branch), String(p.upstream)),
     };
   }
   if (!(await deps.ask(q))) return { kind: "cancelled" };
@@ -161,16 +161,16 @@ export async function resetToUpstream(deps: ResetFlowDeps): Promise<ResetOutcome
   } catch (e) {
     return {
       kind: "failed",
-      message: e instanceof Error ? e.message : l10n.t("Couldn't reset {0}.", p.branch),
+      message: e instanceof Error ? e.message : l10n.t("Couldn't reset {0}.", String(p.branch)),
       tone: "error",
     };
   }
   if (!r?.ok) {
     return {
       kind: "failed",
-      message: r?.message || l10n.t("Couldn't reset {0}.", p.branch),
+      message: r?.message || l10n.t("Couldn't reset {0}.", String(p.branch)),
       tone: r?.expected ? "info" : "error",
     };
   }
-  return { kind: "reset", plan: p, result: r, message: l10n.t("Reset '{0}' to '{1}'.", p.branch, p.upstream) };
+  return { kind: "reset", plan: p, result: r, message: l10n.t("Reset '{0}' to '{1}'.", String(p.branch), String(p.upstream)) };
 }

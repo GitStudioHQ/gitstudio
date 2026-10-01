@@ -224,10 +224,10 @@ export async function renderCommit(
       if (b.onCurrent && others.length) {
         where.textContent =
           others.length === 1
-            ? l10n.t("on {0}, and 1 other branch", b.current)
-            : l10n.t("on {0}, and {1} other branches", b.current, others.length);
+            ? l10n.t("on {0}, and 1 other branch", String(b.current))
+            : l10n.t("on {0}, and {1} other branches", String(b.current), others.length);
       } else if (b.onCurrent) {
-        where.textContent = l10n.t("only on {0}", b.current);
+        where.textContent = l10n.t("only on {0}", String(b.current));
       } else {
         where.textContent = l10n.t("not on {0} — on {1}", b.current ?? l10n.t("this branch"), b.branches[0]);
       }

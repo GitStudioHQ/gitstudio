@@ -4088,7 +4088,7 @@ class App {
       b.aheadDefault !== undefined && b.behindDefault !== undefined && bn !== defaultBranch
         ? l10n.t("{0} ahead of and {1} behind {2}", b.aheadDefault, b.behindDefault, defaultBranch ?? l10n.t("the default branch"))
         : "",
-      b.upstream && conventionalUpstream ? l10n.t("tracking {0}", up) : "",
+      b.upstream && conventionalUpstream ? l10n.t("tracking {0}", String(up)) : "",
       b.date ? absTime(b.date) : "",
     ]
       .filter(Boolean)
@@ -4659,7 +4659,7 @@ class App {
       });
     } else {
       didUndoable(l10n.t("Renamed {0} → {1}, on {2} too.", old, to, fixed.remote), {
-        label: l10n.t("Put {0} back", b.upstream),
+        label: l10n.t("Put {0} back", String(b.upstream)),
         undo: async () => {
           // The remote half is the destructive one and the only half that can
           // refuse. Do it FIRST: the undo stack pops before running, so a
@@ -4672,7 +4672,7 @@ class App {
               name: old,
               sha: fixed.was,
             });
-            if (!put.ok) return cleanErr(put.message) || l10n.t("Couldn't put {0} back.", b.upstream);
+            if (!put.ok) return cleanErr(put.message) || l10n.t("Couldn't put {0} back.", String(b.upstream));
           }
           const u = await host.invoke("branch:rename", back);
           if (!u.ok) return cleanErr(u.message) || l10n.t("Couldn't rename {0} back.", to);
@@ -8989,7 +8989,7 @@ class App {
         // `github:myWork` ever began with "github:", and no channel at all
         // begins with "gh".
         void this.authChanged();
-        toast(l10n.t("Signed in as @{0}.", r.login), "success");
+        toast(l10n.t("Signed in as @{0}.", String(r.login)), "success");
         onConnected();
         return;
       }
@@ -9126,7 +9126,7 @@ class App {
         set(
           "arrow-down",
           l10n.t("Pull {0}", s.behind),
-          l10n.t("Pull {0} into {1} from {2}", plural(s.behind, "commit"), where, s.upstream),
+          l10n.t("Pull {0} into {1} from {2}", plural(s.behind, "commit"), where, String(s.upstream)),
           () => void this.doSync("pull"),
         );
         wrap.classList.add("has-action");
@@ -9134,12 +9134,12 @@ class App {
         set(
           "arrow-up",
           l10n.t("Push {0}", s.ahead),
-          l10n.t("Push {0} from {1} to {2}", plural(s.ahead, "commit"), where, s.upstream),
+          l10n.t("Push {0} from {1} to {2}", plural(s.ahead, "commit"), where, String(s.upstream)),
           () => void this.doSync("push"),
         );
         wrap.classList.add("has-action");
       } else {
-        set("sync", l10n.t("Fetch"), l10n.t("{0} is up to date with {1} — fetch for updates", where, s.upstream), () => void this.doSync("fetch"));
+        set("sync", l10n.t("Fetch"), l10n.t("{0} is up to date with {1} — fetch for updates", where, String(s.upstream)), () => void this.doSync("fetch"));
         wrap.classList.remove("has-action");
       }
     };
@@ -9294,11 +9294,9 @@ class App {
           const failMsg =
             action === "fetch"
               ? l10n.t("Fetch failed.")
-              : action === "pull"
-                ? l10n.t("Pull failed.")
-                : action === "publish"
-                  ? l10n.t("Publish failed.")
-                  : l10n.t("Push failed.");
+              : action === "publish"
+                ? l10n.t("Publish failed.")
+                : l10n.t("Push failed.");
           toast(r.message ?? failMsg, r.expected ? "info" : "error");
           return;
         }

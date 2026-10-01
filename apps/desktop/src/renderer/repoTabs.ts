@@ -305,7 +305,7 @@ export class RepoTabStrip {
       mark.title = m
         ? it.dirty === 1
           ? l10n.t("{0} changed file in the working tree", it.dirty)
-          : l10n.t("{0} changed files in the working tree", it.dirty)
+          : l10n.t("{0} changed files in the working tree", String(it.dirty))
         : "";
     }
     const close = tab.querySelector<HTMLButtonElement>(".repo-tab-close");

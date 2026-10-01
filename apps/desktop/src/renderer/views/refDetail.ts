@@ -85,7 +85,7 @@ export async function renderRefDetail(
     main.replaceChildren(
       errorState(
         l10n.t("That {0} is not here", kindLabel(kind)),
-        l10n.t("{0} was not found in this repository. It may have been deleted, or the list you came from is stale.", name),
+        l10n.t("{0} was not found in this repository. It may have been deleted, or the list you came from is stale.", String(name)),
         () => nav("branches", { list: true }),
       ),
     );
@@ -152,8 +152,8 @@ export async function renderRefDetail(
   // kind): the short name is "heads/release" beside a tag of that name, and
   // checking THAT out detaches.
   if (kind === "head" && ref && !ref.isCurrent) {
-    act(l10n.t("Check out"), "git-branch", l10n.t("Check out {0}", name), () =>
-      void checkout(ref.fullName, l10n.t("Checked out {0}.", name)), true);
+    act(l10n.t("Check out"), "git-branch", l10n.t("Check out {0}", String(name)), () =>
+      void checkout(ref.fullName, l10n.t("Checked out {0}.", String(name))), true);
   }
   if (kind === "remote" && ref) {
     const local = name.split("/").slice(1).join("/") || name;
@@ -161,14 +161,14 @@ export async function renderRefDetail(
       void checkout(ref.fullName, l10n.t("Checked out {0}.", local)), true);
   }
   if (kind === "tag") {
-    act(l10n.t("Push"), "cloud-upload", l10n.t("Publish {0} to the remote", name), () => void pushTag());
-    act(l10n.t("Delete…"), "trash", l10n.t("Delete {0} from this clone", name), () => void deleteTag());
+    act(l10n.t("Push"), "cloud-upload", l10n.t("Publish {0} to the remote", String(name)), () => void pushTag());
+    act(l10n.t("Delete…"), "trash", l10n.t("Delete {0} from this clone", String(name)), () => void deleteTag());
   }
   if (kind === "stash") {
     // codicon's own stash glyphs, as the extension's Stashes group wears them.
-    act(l10n.t("Apply"), "git-stash-apply", l10n.t("Apply {0}, keeping it in the list", name), () => void stashAct("apply"), true);
-    act(l10n.t("Pop"), "git-stash-pop", l10n.t("Apply {0} and remove it", name), () => void stashAct("pop"));
-    act(l10n.t("Drop…"), "trash", l10n.t("Delete {0} permanently", name), () => void stashAct("drop"));
+    act(l10n.t("Apply"), "git-stash-apply", l10n.t("Apply {0}, keeping it in the list", String(name)), () => void stashAct("apply"), true);
+    act(l10n.t("Pop"), "git-stash-pop", l10n.t("Apply {0} and remove it", String(name)), () => void stashAct("pop"));
+    act(l10n.t("Drop…"), "trash", l10n.t("Delete {0} permanently", String(name)), () => void stashAct("drop"));
   }
   if (sha) {
     act(l10n.t("View in Commits"), "git-commit", l10n.t("Reveal this commit in the Commits view"), () =>
@@ -286,12 +286,12 @@ export async function renderRefDetail(
 
   async function pushTag(): Promise<void> {
     const r = await host.invoke("tag:push", { name: tag });
-    toast(r.ok ? l10n.t("Pushed {0}.", name) : (r.message ?? l10n.t("Couldn't push the tag.")), r.ok ? "success" : "error");
+    toast(r.ok ? l10n.t("Pushed {0}.", String(name)) : (r.message ?? l10n.t("Couldn't push the tag.")), r.ok ? "success" : "error");
   }
 
   async function deleteTag(): Promise<void> {
     const ok = await confirmDialog({
-      title: l10n.t("Delete tag {0}?", name),
+      title: l10n.t("Delete tag {0}?", String(name)),
       message: l10n.t(
         "This removes the tag from this clone only. If it has already been pushed, the copy on the remote is untouched and a fetch brings it straight back.",
       ),
@@ -304,7 +304,7 @@ export async function renderRefDetail(
       toast(r.message ?? l10n.t("Couldn't delete the tag."), r.expected ? "info" : "error");
       return;
     }
-    toast(l10n.t("Deleted tag {0} locally.", name), "success");
+    toast(l10n.t("Deleted tag {0} locally.", String(name)), "success");
     nav("branches", { list: true });
   }
 
@@ -316,8 +316,8 @@ export async function renderRefDetail(
   async function stashAct(action: "apply" | "pop" | "drop"): Promise<void> {
     if (action === "drop") {
       const ok = await confirmDialog({
-        title: l10n.t("Drop {0}?", name),
-        message: l10n.t("“{0}” is deleted permanently. This cannot be undone.", stash?.message || name),
+        title: l10n.t("Drop {0}?", String(name)),
+        message: l10n.t("“{0}” is deleted permanently. This cannot be undone.", stash?.message || String(name)),
         confirmLabel: l10n.t("Drop"),
         danger: true,
       });
@@ -332,7 +332,7 @@ export async function renderRefDetail(
     }
     const still = fresh.find((x) => x.ref === name);
     if (!still || (stash?.sha && still.sha !== stash.sha)) {
-      toast(l10n.t("{0} is not the stash it was — the list changed underneath.", name), "info");
+      toast(l10n.t("{0} is not the stash it was — the list changed underneath.", String(name)), "info");
       nav("branches", { list: true });
       return;
     }
@@ -350,10 +350,10 @@ export async function renderRefDetail(
       toast(
         r.message ??
           (action === "apply"
-            ? l10n.t("Couldn't apply {0}.", name)
+            ? l10n.t("Couldn't apply {0}.", String(name))
             : action === "pop"
-              ? l10n.t("Couldn't pop {0}.", name)
-              : l10n.t("Couldn't drop {0}.", name)),
+              ? l10n.t("Couldn't pop {0}.", String(name))
+              : l10n.t("Couldn't drop {0}.", String(name))),
         r.expected ? "info" : "error",
       );
       return;
@@ -364,11 +364,11 @@ export async function renderRefDetail(
     toast(
       action === "apply" || kept
         ? kept
-          ? l10n.t("Applied {0} — it stays in the list.", name)
-          : l10n.t("Applied {0}.", name)
+          ? l10n.t("Applied {0} — it stays in the list.", String(name))
+          : l10n.t("Applied {0}.", String(name))
         : action === "pop"
-          ? l10n.t("Popped {0}.", name)
-          : l10n.t("Dropped {0}.", name),
+          ? l10n.t("Popped {0}.", String(name))
+          : l10n.t("Dropped {0}.", String(name)),
       "success",
     );
     if (action !== "apply" && !kept) nav("branches", { list: true });

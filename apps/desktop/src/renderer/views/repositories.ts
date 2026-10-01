@@ -572,7 +572,7 @@ async function trackFolder(path: string, refresh: () => Promise<void>): Promise<
   await host.invoke("repos:addFolderPath", path);
   bust("repos");
   await refresh();
-  didUndoable(l10n.t("Now watching {0}.", path.split("/").pop()), {
+  didUndoable(l10n.t("Now watching {0}.", String(path.split("/").pop())), {
     label: l10n.t("Stop watching it"),
     undo: async () => {
       await host.invoke("repos:removeFolder", path);
