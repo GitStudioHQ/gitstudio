@@ -14,6 +14,13 @@ translations other than English are machine drafts made with each language's
 own git terms; corrections from native speakers are very welcome as issues or
 pull requests.
 
+## Edit message… on a commit
+
+Right-click a commit in the graph and choose **Edit message…**: its whole
+message opens in an editor, and GitStudio rewrites it in place, replaying the
+commits after it. Branches on those commits can come along, a pushed commit
+gets a warning first, and Undo puts everything back.
+
 ## What git stores stays in English
 
 Undo's reflog entries, stash messages and the revert commit it makes are

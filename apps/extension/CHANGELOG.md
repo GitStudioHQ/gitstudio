@@ -11,6 +11,11 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   Code's display language: Simplified and Traditional Chinese, Japanese, Korean, German, French, Spanish, Italian, Portuguese (Brazil), Russian, Turkish, Polish and Czech, besides English. Simplified Chinese
   started as a community contribution (thanks, @AutumnPizazz). Translations
   other than English are machine drafts — corrections are welcome on GitHub.
+- **Edit Message… on a commit.** Right-click a commit in the graph to rewrite
+  its message: the whole message opens in an editor, the commits after it are
+  replayed, branches on them can come along, and Undo puts it back. Offered
+  where it can work — on the current branch, not a merge
+  ([#75](https://github.com/GitStudioHQ/gitstudio/issues/75)).
 
 ### Fixed
 - **What git stores stays in English.** Undo's reflog entries, stash messages

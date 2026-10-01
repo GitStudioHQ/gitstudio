@@ -13,6 +13,14 @@ Simplified Chinese started as a community contribution — thank you,
 machine drafts made with each language's own git and VS Code terms;
 corrections from native speakers are very welcome as issues or pull requests.
 
+## Edit Message… on a commit
+
+Right-click a commit in the graph and choose **Edit Message…**: its whole
+message opens in an editor, and GitStudio rewrites it in place, replaying the
+commits after it. Branches on those commits can come along, a pushed commit
+gets a warning first, and Undo puts everything back. Thanks to @glazrtom for
+the idea in #75.
+
 ## What git stores stays in English
 
 Undo's reflog entries, stash messages and the revert commit it makes are
