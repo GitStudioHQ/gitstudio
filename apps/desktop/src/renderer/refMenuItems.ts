@@ -8,6 +8,7 @@
 
 import type { CommitActionRequest } from "../shared/ipc";
 import { isRemoteHead } from "./branchRequests";
+import * as l10n from "@vscode/l10n";
 
 /** A ref decoration on a commit row, as the renderer knows it. */
 export interface RowRef {
@@ -59,13 +60,13 @@ export function refMenuItems(refs: readonly RowRef[]): RefMenuItem[] {
     const said = ref.fullName ? refDisplay(ref.fullName) : ref.name;
     if (ref.kind === "tag") {
       items.push({
-        label: `Checkout ${said}…`,
+        label: l10n.t("Checkout {0}…", said),
         ref: { name: ref.name, kind: "tag", ...full },
-        confirm: `Check out tag ${said}? You'll be on a detached HEAD, not on a branch.`,
+        confirm: l10n.t("Check out tag {0}? You'll be on a detached HEAD, not on a branch.", said),
       });
     } else {
       items.push({
-        label: `Checkout ${said}`,
+        label: l10n.t("Checkout {0}", said),
         ref: { name: ref.name, kind: ref.kind, ...full },
       });
     }

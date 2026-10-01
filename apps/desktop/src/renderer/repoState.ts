@@ -13,6 +13,7 @@
 import { el, span } from "./ui";
 import type { LocalRepoStatus } from "../shared/ipc";
 import { plural } from "./textFit";
+import * as l10n from "@vscode/l10n";
 
 /** Is there anything worth saying? */
 export function hasNews(st: LocalRepoStatus | undefined): st is LocalRepoStatus {
@@ -26,17 +27,30 @@ export function repoStateBits(st: LocalRepoStatus | undefined): HTMLElement[] {
   const out: HTMLElement[] = [];
   if (st.dirty > 0) {
     const d = span(`●${st.dirty}`, "repo-state-bit is-dirty");
-    d.title = `${st.dirty} changed ${st.dirty === 1 ? "file" : "files"} in the working tree`;
+    d.title =
+      st.dirty === 1
+        ? l10n.t("{0} changed file in the working tree", st.dirty)
+        : l10n.t("{0} changed files in the working tree", st.dirty);
     out.push(d);
   }
   if (st.ahead > 0) {
     const a = span(`↑${st.ahead}`, "repo-state-bit is-ahead");
-    a.title = `${st.ahead} ${st.ahead === 1 ? "commit" : "commits"} not pushed${st.branch ? ` on ${st.branch}` : ""}`;
+    a.title =
+      st.ahead === 1
+        ? st.branch
+          ? l10n.t("{0} commit not pushed on {1}", st.ahead, st.branch)
+          : l10n.t("{0} commit not pushed", st.ahead)
+        : st.branch
+          ? l10n.t("{0} commits not pushed on {1}", st.ahead, st.branch)
+          : l10n.t("{0} commits not pushed", st.ahead);
     out.push(a);
   }
   if (st.behind > 0) {
     const b = span(`↓${st.behind}`, "repo-state-bit is-behind");
-    b.title = `${st.behind} ${st.behind === 1 ? "commit" : "commits"} behind the remote`;
+    b.title =
+      st.behind === 1
+        ? l10n.t("{0} commit behind the remote", st.behind)
+        : l10n.t("{0} commits behind the remote", st.behind);
     out.push(b);
   }
   return out;
@@ -57,7 +71,7 @@ export function repoStateWords(st: LocalRepoStatus | undefined): string {
   if (!hasNews(st)) return "";
   const parts: string[] = [];
   if (st.dirty > 0) parts.push(plural(st.dirty, "changed file"));
-  if (st.ahead > 0) parts.push(`${plural(st.ahead, "commit")} to push`);
-  if (st.behind > 0) parts.push(`${plural(st.behind, "commit")} to pull`);
+  if (st.ahead > 0) parts.push(l10n.t("{0} to push", plural(st.ahead, "commit")));
+  if (st.behind > 0) parts.push(l10n.t("{0} to pull", plural(st.behind, "commit")));
   return parts.join(", ");
 }

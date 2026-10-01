@@ -13,6 +13,7 @@ import { el, span, glyph, openMenu, copyText } from "./ui";
 import type { MenuItem } from "./ui";
 import { toast } from "./dialogs";
 import type { EditorsView, EditorView } from "../shared/ipc";
+import * as l10n from "@vscode/l10n";
 
 /** Fired by Settings after any editor preference changes; every mounted
  *  Open-in control re-reads on the next paint. */
@@ -34,16 +35,20 @@ export async function loadEditors(): Promise<EditorsView> {
 async function open(id: string, root?: string, name?: string): Promise<void> {
   try {
     const r = await host.invoke("editors:open", { id, root });
-    if (!r.ok) toast(r.message ?? "Couldn't open the editor.", "error");
-    else if (name) toast(`Opening in ${name}…`, "info");
+    if (!r.ok) toast(r.message ?? l10n.t("Couldn't open the editor."), "error");
+    else if (name) toast(l10n.t("Opening in {0}…", name), "info");
   } catch (e) {
-    toast(e instanceof Error ? e.message : "Couldn't open the editor.", "error");
+    toast(e instanceof Error ? e.message : l10n.t("Couldn't open the editor."), "error");
   }
 }
 
 const isMac = navigator.platform.toLowerCase().includes("mac");
 const isWin = navigator.platform.toLowerCase().startsWith("win");
-export const REVEAL_LABEL = isMac ? "Reveal in Finder" : isWin ? "Show in Explorer" : "Show in file manager";
+export const REVEAL_LABEL = isMac
+  ? l10n.t("Reveal in Finder")
+  : isWin
+    ? l10n.t("Show in Explorer")
+    : l10n.t("Show in file manager");
 
 /** Is there an editor to open anything in? A control whose only possible
  *  answer is "No editors found" is not worth a place on every row. */
@@ -57,15 +62,15 @@ export function editorItems(view: EditorsView, root: string | undefined, nav?: (
   const shown = view.editors.filter((e) => e.shown);
   const items: MenuItem[] = shown.map((e) => ({
     label: e.name,
-    sub: e.isDefault ? "Your favourite" : undefined,
+    sub: e.isDefault ? l10n.t("Your favourite") : undefined,
     iconEl: editorMark(e),
     title: e.location,
     onClick: () => void open(e.id, root, e.name),
   }));
   if (shown.length === 0) {
     items.push({
-      label: "No editors found",
-      sub: "Add one in Settings ▸ Editors",
+      label: l10n.t("No editors found"),
+      sub: l10n.t("Add one in Settings ▸ Editors"),
       icon: "info",
       onClick: () => nav?.("settings"),
     });
@@ -88,14 +93,19 @@ export function openInItems(
   });
   if (root) {
     items.push({
-      label: "Copy path",
+      label: l10n.t("Copy path"),
       icon: "copy",
-      onClick: () => void copyText(root, "Copied the repository path."),
+      onClick: () => void copyText(root, l10n.t("Copied the repository path.")),
     });
   }
   if (nav) {
     items.push({ separator: true });
-    items.push({ label: "Choose editors…", icon: "gear", sub: "Which ones show here", onClick: () => nav("settings") });
+    items.push({
+      label: l10n.t("Choose editors…"),
+      icon: "gear",
+      sub: l10n.t("Which ones show here"),
+      onClick: () => nav("settings"),
+    });
   }
   return items;
 }
@@ -177,7 +187,7 @@ export function openInButton(opts: OpenInOptions = {}): HTMLElement {
   const primary = el("button", `${btn} openin-primary`) as HTMLButtonElement;
   const mark = el("span", "openin-mark");
   mark.appendChild(glyph("code"));
-  const label = span("Open in…", "openin-label");
+  const label = span(l10n.t("Open in…"), "openin-label");
   primary.append(mark, label);
   const more = el("button", `${btn} openin-more`) as HTMLButtonElement;
   more.appendChild(glyph("chevron-down"));
@@ -190,25 +200,27 @@ export function openInButton(opts: OpenInOptions = {}): HTMLElement {
     // was built: this same button lives in the top bar, where it stays mounted
     // while you browse a repository you do NOT have. "Open this repository"
     // then named the wrong one, with nothing on screen to say which.
-    const repo = (opts.root?.() ?? "").split("/").filter(Boolean).pop() ?? "this repository";
-    wrap.setAttribute("aria-label", `Open ${repo} in an editor`);
-    more.setAttribute("aria-label", `More ways to open ${repo}`);
+    const repo = (opts.root?.() ?? "").split("/").filter(Boolean).pop() ?? l10n.t("this repository");
+    wrap.setAttribute("aria-label", l10n.t("Open {0} in an editor", repo));
+    more.setAttribute("aria-label", l10n.t("More ways to open {0}", repo));
     const def = view.editors.find((e) => e.isDefault && e.shown);
     if (def) {
       // In the top bar the mark IS the label — the editor's own icon says which
       // one better than its name does, and the bar has no room for both.
       mark.replaceChildren(editorMark(def));
       label.textContent = def.name;
-      primary.title = def.location ? `Open ${repo} in ${def.name} — ${def.location}` : `Open ${repo} in ${def.name}`;
+      primary.title = def.location
+        ? l10n.t("Open {0} in {1} — {2}", repo, def.name, def.location)
+        : l10n.t("Open {0} in {1}", repo, def.name);
       // In a row the visible word is only the editor's name, and thirty rows
       // of buttons all called "VSCode" say nothing about which one is which.
-      if (opts.row) primary.setAttribute("aria-label", `Open ${repo} in ${def.name}`);
+      if (opts.row) primary.setAttribute("aria-label", l10n.t("Open {0} in {1}", repo, def.name));
       primary.classList.remove("is-menu");
     } else {
       mark.replaceChildren(glyph("code"));
-      label.textContent = "Open in…";
-      primary.title = `Open ${repo} in an editor`;
-      if (opts.row) primary.setAttribute("aria-label", `Open ${repo} in an editor`);
+      label.textContent = l10n.t("Open in…");
+      primary.title = l10n.t("Open {0} in an editor", repo);
+      if (opts.row) primary.setAttribute("aria-label", l10n.t("Open {0} in an editor", repo));
       primary.classList.add("is-menu");
     }
   };

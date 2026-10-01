@@ -18,6 +18,7 @@ import { openGhRepoInApp, openGhRepoChooseLocation } from "./ghOpen";
 import { highlightCode } from "./highlight";
 import { isEmptyRepoMessage } from "../shared/githubStates";
 import type { GhRepoEntry } from "../shared/ipc";
+import * as l10n from "@vscode/l10n";
 
 /** Open the browser fresh (root of the repo). */
 export function openRemoteRepoBrowser(fullName: string): void {
@@ -48,12 +49,12 @@ export function repoDirCard(fullName: string, path: string): PeekCard {
   return {
     icon: atRoot ? "repo" : "folder",
     title: atRoot ? fullName : path.split("/").pop()!,
-    chips: atRoot ? [peekChip("no clone needed", "accent")] : [],
-    subtitle: atRoot ? "Reading straight from GitHub" : `${fullName}/${path}`,
+    chips: atRoot ? [peekChip(l10n.t("no clone needed"), "accent")] : [],
+    subtitle: atRoot ? l10n.t("Reading straight from GitHub") : `${fullName}/${path}`,
     wide: true,
     actions: [
       {
-        label: "Open on GitHub",
+        label: l10n.t("Open on GitHub"),
         icon: "link-external",
         onClick: () =>
           window.open(
@@ -62,9 +63,9 @@ export function repoDirCard(fullName: string, path: string): PeekCard {
           ),
       },
       {
-        label: "Clone…",
+        label: l10n.t("Clone…"),
         icon: "repo-clone",
-        title: "Clone to a folder you choose",
+        title: l10n.t("Clone to a folder you choose"),
         onClick: (ctx) => {
           ctx.close();
           openCloneDialog((root) => host.invoke("repo:openPath", root), {
@@ -73,16 +74,16 @@ export function repoDirCard(fullName: string, path: string): PeekCard {
         },
       },
       {
-        label: "Choose location…",
+        label: l10n.t("Choose location…"),
         icon: "folder-opened",
-        title: `Pick the folder ${fullName} is cloned into, then open it`,
+        title: l10n.t("Pick the folder {0} is cloned into, then open it", fullName),
         onClick: () => openGhRepoChooseLocation(fullName),
       },
       {
-        label: "Open as repo",
+        label: l10n.t("Open as repo"),
         icon: "folder-library",
         primary: true,
-        title: `Open ${fullName} in GitStudio as a full repo (clones itself on first open)`,
+        title: l10n.t("Open {0} in GitStudio as a full repo (clones itself on first open)", fullName),
         onClick: () => openGhRepoInApp(fullName),
       },
     ],
@@ -95,11 +96,11 @@ export function repoDirCard(fullName: string, path: string): PeekCard {
         return;
       }
       body.replaceChildren();
-      const { root, body: lbody } = peekSection(atRoot ? "Files" : path, entries.length);
+      const { root, body: lbody } = peekSection(atRoot ? l10n.t("Files") : path, entries.length);
       for (const entry of entries) lbody.appendChild(entryRow(fullName, entry, ctx));
       if (!entries.length) {
         const none = el("div", "peek-row");
-        none.appendChild(span("This folder is empty.", "peek-row-sub"));
+        none.appendChild(span(l10n.t("This folder is empty."), "peek-row-sub"));
         lbody.appendChild(none);
       }
       body.appendChild(root);
@@ -171,7 +172,7 @@ function repoFileCard(fullName: string, path: string): PeekCard {
     wide: true,
     actions: [
       {
-        label: "Open on GitHub",
+        label: l10n.t("Open on GitHub"),
         icon: "link-external",
         onClick: () => window.open(`https://github.com/${fullName}/blob/HEAD/${path}`, "_blank"),
       },
@@ -191,8 +192,11 @@ function repoFileCard(fullName: string, path: string): PeekCard {
           glyph(f.binary ? "file-binary" : "file"),
           span(
             f.binary
-              ? `This is a binary file (${formatBytes(f.size)}) — nothing to read inline.`
-              : `This file is too large for a quick look (${formatBytes(f.size)}). Open it on GitHub or clone the repo.`,
+              ? l10n.t("This is a binary file ({0}) — nothing to read inline.", formatBytes(f.size))
+              : l10n.t(
+                  "This file is too large for a quick look ({0}). Open it on GitHub or clone the repo.",
+                  formatBytes(f.size),
+                ),
           ),
         );
         body.appendChild(notice);
@@ -233,7 +237,11 @@ function codeBlock(text: string, fileName: string): HTMLElement {
   wrap.append(gutter, code);
   if (lines.length > shown.length) {
     const more = el("div", "ghfile-more");
-    more.textContent = `Showing the first ${MAX_RENDER_LINES.toLocaleString()} of ${lines.length.toLocaleString()} lines.`;
+    more.textContent = l10n.t(
+      "Showing the first {0} of {1} lines.",
+      MAX_RENDER_LINES.toLocaleString(),
+      lines.length.toLocaleString(),
+    );
     const outer = el("div", "ghfile-outer");
     outer.append(wrap, more);
     return outer;
@@ -254,19 +262,20 @@ function browseError(fullName: string, e: unknown): HTMLElement {
   if (isEmptyRepoMessage(msg)) {
     wrap.appendChild(glyph("repo"));
     const t = el("div");
-    t.textContent = `${fullName} is empty — nothing has been pushed to it yet.`;
+    t.textContent = l10n.t("{0} is empty — nothing has been pushed to it yet.", fullName);
     wrap.appendChild(t);
     return wrap;
   }
   wrap.appendChild(glyph("warning"));
   const t = el("div");
-  t.textContent = `Couldn't read ${fullName}: ${msg || "GitHub request failed."}`;
+  t.textContent = l10n.t("Couldn't read {0}: {1}", fullName, msg || l10n.t("GitHub request failed."));
   wrap.appendChild(t);
   if (/not found|404/i.test(msg)) {
     const hint = el("div", "peek-row-sub");
     hint.style.maxWidth = "440px";
-    hint.textContent =
-      "If this repo belongs to an organization, the org may restrict OAuth-app access. An org owner can approve GitStudio under Settings → Third-party access on github.com — after that, everything here works.";
+    hint.textContent = l10n.t(
+      "If this repo belongs to an organization, the org may restrict OAuth-app access. An org owner can approve GitStudio under Settings → Third-party access on github.com — after that, everything here works.",
+    );
     wrap.appendChild(hint);
   }
   return wrap;

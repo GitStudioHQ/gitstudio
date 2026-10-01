@@ -28,6 +28,7 @@
 //     route ⌘Z can take — the key, the Edit menu, both — ends in it once.
 
 import { toast } from "./dialogs";
+import * as l10n from "@vscode/l10n";
 
 export interface Undoable {
   /** What happens if you undo, in the imperative — "Restore ~/work". */
@@ -92,7 +93,7 @@ export function dropUndoScope(session: number): void {
 export function didUndoable(message: string, action: Undoable): void {
   push(action);
   toast(message, "success", undefined, {
-    label: "Undo",
+    label: l10n.t("Undo"),
     onClick: () => void run(action),
   });
 }
@@ -108,7 +109,7 @@ export function push(action: Undoable): void {
 export async function undoLast(): Promise<boolean> {
   const action = current().pop();
   if (!action) {
-    toast("Nothing to undo.", "info");
+    toast(l10n.t("Nothing to undo."), "info");
     return false;
   }
   await run(action);
@@ -135,7 +136,7 @@ async function run(action: Undoable): Promise<void> {
   // cleared on a switch, and this is the rule behind that.
   const home = recordedIn.get(action);
   if (home !== undefined && home !== scope) {
-    toast("That undo belongs to another tab. Switch back to it to undo.", "info");
+    toast(l10n.t("That undo belongs to another tab. Switch back to it to undo."), "info");
     return;
   }
   // Whichever way it was triggered — the toast button or ⌘Z — it happens once.
@@ -153,11 +154,11 @@ async function run(action: Undoable): Promise<void> {
       return;
     }
   } catch (e) {
-    toast(e instanceof Error ? e.message : "Couldn't undo that.", "error");
+    toast(e instanceof Error ? e.message : l10n.t("Couldn't undo that."), "error");
     return;
   }
   await action.after?.();
-  toast(`Undone — ${lower(action.label)}.`, "success");
+  toast(l10n.t("Undone — {0}.", lower(action.label)), "success");
 }
 
 function lower(s: string): string {

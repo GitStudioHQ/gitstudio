@@ -15,6 +15,7 @@
 
 import { el, glyph, span } from "./ui";
 import { changeMark, tabLabel } from "./tabModel";
+import * as l10n from "@vscode/l10n";
 
 export interface TabStripItem {
   root: string;
@@ -61,10 +62,10 @@ export class RepoTabStrip {
   constructor(private readonly on: TabStripHandlers) {
     this.el = el("div", "repo-tabs");
     this.el.setAttribute("role", "navigation");
-    this.el.setAttribute("aria-label", "Open repositories");
+    this.el.setAttribute("aria-label", l10n.t("Open repositories"));
     this.scroller = el("div", "repo-tabs-scroller");
     this.scroller.setAttribute("role", "tablist");
-    this.scroller.setAttribute("aria-label", "Repositories");
+    this.scroller.setAttribute("aria-label", l10n.t("Repositories"));
     this.scroller.setAttribute("aria-orientation", "horizontal");
     // A mouse wheel scrolls the row sideways — it has no other direction.
     this.scroller.addEventListener(
@@ -81,10 +82,10 @@ export class RepoTabStrip {
 
     this.addBtn = el("button", "repo-tabs-add") as HTMLButtonElement;
     this.addBtn.type = "button";
-    this.addLabel = span("Open a repository", "repo-tabs-add-label");
+    this.addLabel = span(l10n.t("Open a repository"), "repo-tabs-add-label");
     this.addBtn.append(glyph("add"), this.addLabel);
-    this.addBtn.title = `Open a repository in a new tab  (${MOD}O)`;
-    this.addBtn.setAttribute("aria-label", "Open a repository in a new tab");
+    this.addBtn.title = l10n.t("Open a repository in a new tab  ({0}O)", MOD);
+    this.addBtn.setAttribute("aria-label", l10n.t("Open a repository in a new tab"));
     this.addBtn.addEventListener("click", () => this.on.add(this.addBtn));
 
     // When the tabs no longer fit, some are scrolled out of sight — and a tab
@@ -94,8 +95,8 @@ export class RepoTabStrip {
     this.listBtn = el("button", "repo-tabs-list") as HTMLButtonElement;
     this.listBtn.type = "button";
     this.listBtn.append(glyph("chevron-down"));
-    this.listBtn.title = "All open repositories";
-    this.listBtn.setAttribute("aria-label", "All open repositories");
+    this.listBtn.title = l10n.t("All open repositories");
+    this.listBtn.setAttribute("aria-label", l10n.t("All open repositories"));
     this.listBtn.hidden = true;
     this.listBtn.addEventListener("click", () => this.on.list?.(this.listBtn));
 
@@ -288,9 +289,9 @@ export class RepoTabStrip {
     const key = n ? `${MOD === "⌘" ? "⌃" : "Alt+"}${n}` : "";
     tab.title = [
       it.root,
-      it.gone ? "Not found: the folder was moved or deleted, or is no longer a Git repository" : "",
-      it.running ? `${cap(it.running)} is running` : "",
-      key ? `Switch to it: ${key}` : "",
+      it.gone ? l10n.t("Not found: the folder was moved or deleted, or is no longer a Git repository") : "",
+      it.running ? l10n.t("{0} is running", cap(it.running)) : "",
+      key ? l10n.t("Switch to it: {0}", key) : "",
     ]
       .filter(Boolean)
       .join("\n");
@@ -301,12 +302,16 @@ export class RepoTabStrip {
       const m = it.gone ? "" : changeMark(it.dirty);
       if (mark.textContent !== m) mark.textContent = m;
       mark.hidden = !m;
-      mark.title = m ? `${it.dirty} changed ${it.dirty === 1 ? "file" : "files"} in the working tree` : "";
+      mark.title = m
+        ? it.dirty === 1
+          ? l10n.t("{0} changed file in the working tree", it.dirty)
+          : l10n.t("{0} changed files in the working tree", it.dirty)
+        : "";
     }
     const close = tab.querySelector<HTMLButtonElement>(".repo-tab-close");
     if (close) {
-      const what = `Close ${it.name}`;
-      close.title = isActive ? `${what}  (${MOD}W)` : what;
+      const what = l10n.t("Close {0}", it.name);
+      close.title = isActive ? l10n.t("{0}  ({1}W)", what, MOD) : what;
       close.setAttribute("aria-label", what);
     }
   }

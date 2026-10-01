@@ -16,6 +16,7 @@ import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { host } from "./bridge";
+import * as l10n from "@vscode/l10n";
 
 /** Read a CSS custom property off <body>, falling back to `fallback`. */
 function token(styles: CSSStyleDeclaration, name: string, fallback: string): string {
@@ -145,7 +146,7 @@ export class TerminalPanel {
     }
     if (!session) {
       // Friendly degradation: no PTY backend (e.g. node-pty missing).
-      term.write("\x1b[31mCould not start a terminal session.\x1b[0m\r\n");
+      term.write(`\x1b[31m${l10n.t("Could not start a terminal session.")}\x1b[0m\r\n`);
       return;
     }
     this.id = session.id;
@@ -163,7 +164,7 @@ export class TerminalPanel {
         // so a dead shell looked exactly like a working one and silently ate
         // everything typed into it, with no error and no way to tell.
         this.exited = true;
-        term.write("\r\n\x1b[2m[process exited — this shell is closed]\x1b[0m\r\n");
+        term.write(`\r\n\x1b[2m[${l10n.t("process exited — this shell is closed")}]\x1b[0m\r\n`);
         // A dead terminal takes no input. Without this the caret still blinks
         // in a box that cannot receive anything.
         term.options.disableStdin = true;

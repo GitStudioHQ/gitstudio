@@ -12,6 +12,7 @@ import { host } from "./bridge";
 import { el, glyph } from "./ui";
 import { runAgentTurn, addBubble, errorBlock, connectPrompt, setBusy, scrollDown } from "./chatRender";
 import type { AiSettingsView } from "../shared/ipc";
+import * as l10n from "@vscode/l10n";
 
 export interface ChatPanelOptions {
   /** Auto-sent as the opening turn — the AI action that spawned this tab. May
@@ -49,10 +50,10 @@ export class ChatPanel {
     this.input = document.createElement("textarea");
     this.input.className = "assistant-input";
     this.input.rows = 1;
-    this.input.placeholder = "Ask a follow-up…";
+    this.input.placeholder = l10n.t("Ask a follow-up…");
     this.send = el("button", "btn btn-primary assistant-send");
     this.send.append(glyph("arrow-up"));
-    this.send.title = "Send · Enter";
+    this.send.title = l10n.t("Send · Enter");
     this.send.setAttribute("aria-keyshortcuts", "Enter");
     (this.send as HTMLButtonElement).disabled = true; // nothing to send yet
     inputRow.append(this.input, this.send);
@@ -113,7 +114,9 @@ export class ChatPanel {
     if (this.disposed) return;
     if (!this.chatId) {
       addBubble(this.transcript, "user", goal);
-      this.transcript.append(errorBlock("Couldn't start a chat — open a repository and connect a model."));
+      this.transcript.append(
+        errorBlock(l10n.t("Couldn't start a chat — open a repository and connect a model.")),
+      );
       this.running = false;
       this.syncSend();
       return;
@@ -151,7 +154,9 @@ export class ChatPanel {
     if (this.running) return;
     const send = this.send as HTMLButtonElement;
     send.disabled = this.input.disabled || !this.input.value.trim();
-    send.title = this.input.disabled ? "Connect a model to use the Assistant" : "Send · Enter";
+    send.title = this.input.disabled
+      ? l10n.t("Connect a model to use the Assistant")
+      : l10n.t("Send · Enter");
   }
 
   /** Called by the dock when this tab becomes active — land focus in the input. */

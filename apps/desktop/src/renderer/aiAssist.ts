@@ -10,6 +10,7 @@ import { el, span, glyph, cleanErr } from "./ui";
 import { toast } from "./dialogs";
 import type { AssistantTabRequest } from "./terminalDock";
 import type { AiTaskInput, AiTaskName } from "../shared/ipc";
+import * as l10n from "@vscode/l10n";
 
 let enabledCache: boolean | undefined;
 
@@ -84,7 +85,7 @@ export function registerAssistantTab(open: (req: AssistantTabRequest) => void): 
  *  no dock is mounted yet (e.g. before a repository is open). */
 export function openAssistantTab(req: AssistantTabRequest): void {
   if (tabOpener) tabOpener(req);
-  else toast("Open a repository to use the Assistant.", "info");
+  else toast(l10n.t("Open a repository to use the Assistant."), "info");
 }
 
 /**
@@ -100,7 +101,7 @@ export async function streamInto(
   const original = btn?.innerHTML;
   if (btn) {
     btn.disabled = true;
-    btn.replaceChildren(glyph("loading"), span("Writing…"));
+    btn.replaceChildren(glyph("loading"), span(l10n.t("Writing…")));
   }
   const prev = textarea.value;
   // Through an `input` event, always. Every control that watches this box —
@@ -145,7 +146,7 @@ export async function streamInto(
     // the reader's message BACK after a failure left both Commit buttons
     // disabled over it — the state the empty box had put them in.
     setComposer(prev); // restore on failure
-    toast(res.message ?? "Couldn't generate that.", "error");
+    toast(res.message ?? l10n.t("Couldn't generate that."), "error");
     return;
   }
   if (!got && res.text) {

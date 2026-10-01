@@ -15,6 +15,7 @@ import { promptInline, toast, formWithRetry } from "./dialogs";
 import { cleanErr } from "./ui";
 import type { RefInfo } from "../shared/ipc";
 import { branchStartCopy, type BranchStart } from "../shared/branchStart";
+import * as l10n from "@vscode/l10n";
 
 export { branchStartCopy };
 export type { BranchStart, BranchStartCopy } from "../shared/branchStart";
@@ -42,23 +43,23 @@ export async function createBranchFlow(
   }
   const { title, hint, seed, switchByDefault } = branchStartCopy(start);
   const sw = {
-    label: "Switch to it after creating",
+    label: l10n.t("Switch to it after creating"),
     checked: switchByDefault,
-    okLabelChecked: "Create and switch",
+    okLabelChecked: l10n.t("Create and switch"),
   };
   const taken = (v: string): string | null => {
     const local = list.find((r) => r.type === "head" && r.name === v);
     if (!local) return null;
-    return local.isCurrent ? `You are already on ${v}.` : `A branch called ${v} already exists.`;
+    return local.isCurrent ? l10n.t("You are already on {0}.", v) : l10n.t("A branch called {0} already exists.", v);
   };
 
   await formWithRetry<string>(
     async (prev, error) =>
       promptInline(
         title,
-        "feature/my-change",
+        l10n.t("feature/my-change"),
         prev ?? seed,
-        "Create branch",
+        l10n.t("Create branch"),
         false,
         {
           hint: error ?? hint,
@@ -82,14 +83,22 @@ export async function createBranchFlow(
         // way out is one untick. Read from the bridge's `inTheWay`, never from
         // git's English — a localised git never says "would be overwritten".
         if (sw.checked && r.inTheWay) {
-          return `${r.message ?? "Your uncommitted changes are in the way."} Or untick "Switch to it after creating" to make the branch and stay put.`;
+          return l10n.t(
+            '{0} Or untick "Switch to it after creating" to make the branch and stay put.',
+            r.message ?? l10n.t("Your uncommitted changes are in the way."),
+          );
         }
-        return cleanErr(r.message) || `Couldn't create branch '${name}'.`;
+        return cleanErr(r.message) || l10n.t("Couldn't create branch '{0}'.", name);
       }
       toast(
         sw.checked
-          ? `Created ${name} and switched to it.`
-          : `Created ${name} at ${start.label}. You are still on ${start.current ?? "the current branch"}.`,
+          ? l10n.t("Created {0} and switched to it.", name)
+          : l10n.t(
+              "Created {0} at {1}. You are still on {2}.",
+              name,
+              start.label,
+              start.current ?? l10n.t("the current branch"),
+            ),
         "success",
       );
       bust();

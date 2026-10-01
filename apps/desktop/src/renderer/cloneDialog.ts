@@ -28,6 +28,7 @@ import {
 } from "./ui";
 import type { GhRepoBrief } from "../shared/ipc";
 import { deriveNameFromUrl, validateTargetName } from "../shared/cloneName";
+import * as l10n from "@vscode/l10n";
 
 type Tab = "url" | "github";
 type Scheme = "https" | "ssh";
@@ -56,13 +57,13 @@ export function openCloneDialog(
 
   // ── header: title + segmented tab switch ───────────────────────────────────
   const h = el("div", "modal-title");
-  h.textContent = "Clone repository";
+  h.textContent = l10n.t("Clone repository");
 
   const tabs = el("div", "gh-seg clone-tabs");
   tabs.setAttribute("role", "tablist");
   const urlTabBtn = el("button", "gh-seg-btn");
   urlTabBtn.setAttribute("role", "tab");
-  urlTabBtn.append(glyph("link"), span("URL"));
+  urlTabBtn.append(glyph("link"), span(l10n.t("URL")));
   const ghTabBtn = el("button", "gh-seg-btn");
   ghTabBtn.setAttribute("role", "tab");
   ghTabBtn.append(glyph("github"), span("GitHub"));
@@ -75,7 +76,7 @@ export function openCloneDialog(
   urlInput.className = "modal-input clone-url-input";
   urlInput.placeholder =
     "https://github.com/owner/repo.git  or  git@github.com:owner/repo.git";
-  urlInput.setAttribute("aria-label", "Git repository URL");
+  urlInput.setAttribute("aria-label", l10n.t("Git repository URL"));
   urlInput.spellcheck = false;
   urlInput.autocapitalize = "off";
   urlInput.addEventListener("input", refreshClone);
@@ -90,7 +91,7 @@ export function openCloneDialog(
   // row inside a bordered card, and a caption above an input inside a SECOND
   // bordered card — so three consecutive fields had three left edges and three
   // ideas of where a label goes.
-  urlPanel.append(cloneField("Repository URL", urlInput, "clone-url-field"));
+  urlPanel.append(cloneField(l10n.t("Repository URL"), urlInput, "clone-url-field"));
 
   // ── GitHub panel ───────────────────────────────────────────────────────────
   const ghPanel = el("div", "clone-panel clone-gh");
@@ -99,19 +100,19 @@ export function openCloneDialog(
 
   const ghSearch = document.createElement("input");
   ghSearch.className = "modal-input clone-search";
-  ghSearch.placeholder = "Search your repositories…";
-  ghSearch.setAttribute("aria-label", "Search your GitHub repositories");
+  ghSearch.placeholder = l10n.t("Search your repositories…");
+  ghSearch.setAttribute("aria-label", l10n.t("Search your GitHub repositories"));
   ghSearch.spellcheck = false;
   ghSearch.autocapitalize = "off";
 
   const ghList = el("div", "clone-repo-list");
   ghList.setAttribute("role", "listbox");
-  ghList.setAttribute("aria-label", "Your repositories");
+  ghList.setAttribute("aria-label", l10n.t("Your repositories"));
 
   // HTTPS / SSH toggle for the chosen repo.
   const schemeSeg = el("div", "gh-seg clone-scheme");
   schemeSeg.setAttribute("role", "group");
-  schemeSeg.setAttribute("aria-label", "Clone protocol");
+  schemeSeg.setAttribute("aria-label", l10n.t("Clone protocol"));
   const httpsBtn = el("button", "gh-seg-btn");
   httpsBtn.textContent = "HTTPS";
   const sshBtn = el("button", "gh-seg-btn");
@@ -119,28 +120,28 @@ export function openCloneDialog(
   schemeSeg.append(httpsBtn, sshBtn);
   schemeSeg.hidden = true;
 
-  ghPanel.append(cloneField("Your repositories", ghSearch), ghList, schemeSeg);
+  ghPanel.append(cloneField(l10n.t("Your repositories"), ghSearch), ghList, schemeSeg);
 
   // ── footer: destination + progress + actions ───────────────────────────────
   const destValue = el("div", "clone-dest-path");
-  destValue.textContent = "No folder chosen";
+  destValue.textContent = l10n.t("No folder chosen");
   const chooseBtn = el("button", "mini-btn clone-choose");
-  chooseBtn.append(glyph("folder-opened"), span("Choose…"));
+  chooseBtn.append(glyph("folder-opened"), span(l10n.t("Choose…")));
   chooseBtn.addEventListener("click", () => void pickDir());
   const destControl = el("div", "clone-dest-control");
   destControl.append(destValue, chooseBtn);
-  const destRow = cloneField("Destination", destControl);
+  const destRow = cloneField(l10n.t("Destination"), destControl);
 
   // Folder-name override — blank means "use the name derived from the URL"
   // (shown as the placeholder, so what will happen is never a mystery).
   const nameInput = document.createElement("input");
   nameInput.className = "modal-input clone-name-input";
-  nameInput.placeholder = "Derived from the URL";
+  nameInput.placeholder = l10n.t("Derived from the URL");
   nameInput.spellcheck = false;
   nameInput.autocapitalize = "off";
-  nameInput.setAttribute("aria-label", "Folder name (optional)");
+  nameInput.setAttribute("aria-label", l10n.t("Folder name (optional)"));
   nameInput.addEventListener("input", refreshClone);
-  const nameRow = cloneField("Folder name", nameInput);
+  const nameRow = cloneField(l10n.t("Folder name"), nameInput);
   const nameError = el("div", "dest-name-error clone-name-error");
   nameError.hidden = true;
 
@@ -156,10 +157,10 @@ export function openCloneDialog(
 
   const actions = el("div", "modal-actions clone-actions");
   const cancel = el("button", "mini-btn");
-  cancel.textContent = "Cancel";
+  cancel.textContent = l10n.t("Cancel");
   cancel.addEventListener("click", () => close());
   const primary = el("button", "btn btn-primary modal-ok clone-go");
-  const primaryLabel = span("Clone");
+  const primaryLabel = span(l10n.t("Clone"));
   // A real spinner, because the button was marked `is-loading` and that class
   // has never had a rule: the only sign a clone had started was the label
   // changing to "Cloning…", on a control that had also just gone disabled and
@@ -209,7 +210,7 @@ export function openCloneDialog(
   async function loadRepos(search: string): Promise<void> {
     loadedOnce = true;
     const seq = ++searchSeq;
-    ghList.replaceChildren(loadingState("Loading your repositories…"));
+    ghList.replaceChildren(loadingState(l10n.t("Loading your repositories…")));
     // Don't call github:repos while signed out (it throws + spams the log) —
     // check the connection first and prompt the user to sign in instead.
     try {
@@ -226,12 +227,14 @@ export function openCloneDialog(
         // Cloning by URL needs no account at all, and is right here.
         ghList.replaceChildren(
           emptyState(
-            "Not signed in to GitHub",
-            "Browsing your repositories needs a GitHub account, which you can connect from Settings once a repository is open. Any repository URL works right now without one.",
+            l10n.t("Not signed in to GitHub"),
+            l10n.t(
+              "Browsing your repositories needs a GitHub account, which you can connect from Settings once a repository is open. Any repository URL works right now without one.",
+            ),
             {
               icon: "github",
               action: {
-                label: "Clone by URL",
+                label: l10n.t("Clone by URL"),
                 icon: "link",
                 onClick: () => setTab("url"),
               },
@@ -250,9 +253,8 @@ export function openCloneDialog(
       if (seq !== searchSeq) return;
       ghList.replaceChildren(
         emptyState(
-          "Couldn't load repositories",
-          cleanErr(e) ||
-            "Connect your GitHub account in Settings, then try again.",
+          l10n.t("Couldn't load repositories"),
+          cleanErr(e) || l10n.t("Connect your GitHub account in Settings, then try again."),
         ),
       );
       return;
@@ -261,10 +263,10 @@ export function openCloneDialog(
     if (!repos.length) {
       ghList.replaceChildren(
         emptyState(
-          search ? "No matching repositories" : "No repositories found",
+          search ? l10n.t("No matching repositories") : l10n.t("No repositories found"),
           search
-            ? "Try a different search term."
-            : "Sign in to GitHub in Settings to browse your repositories.",
+            ? l10n.t("Try a different search term.")
+            : l10n.t("Sign in to GitHub in Settings to browse your repositories."),
         ),
       );
       return;
@@ -279,8 +281,8 @@ export function openCloneDialog(
     const main = el("div", "clone-repo-main");
     const name = el("div", "clone-repo-name");
     name.textContent = repo.fullName;
-    if (repo.private) name.append(badge("Private"));
-    if (repo.fork) name.append(badge("Fork"));
+    if (repo.private) name.append(badge(l10n.t("Private")));
+    if (repo.fork) name.append(badge(l10n.t("Fork")));
     main.appendChild(name);
     if (repo.description) {
       const desc = el("div", "clone-repo-desc");
@@ -292,7 +294,7 @@ export function openCloneDialog(
     if (repo.stars > 0) meta.append(metaBit("★ " + repo.stars));
     if (repo.language) meta.append(metaBit(repo.language));
     const rel = relTimeISO(repo.updatedAt);
-    if (rel) meta.append(metaBit("Updated " + rel));
+    if (rel) meta.append(metaBit(l10n.t("Updated {0}", rel)));
     if (meta.childElementCount) main.appendChild(meta);
 
     row.appendChild(main);
@@ -354,7 +356,7 @@ export function openCloneDialog(
         refreshClone();
       }
     } catch (e) {
-      toast(cleanErr(e) || "Couldn't choose a folder.", "error");
+      toast(cleanErr(e) || l10n.t("Couldn't choose a folder."), "error");
     }
   }
 
@@ -364,7 +366,7 @@ export function openCloneDialog(
     // a control the user cannot see.
     nameInput.placeholder =
       (url && deriveNameFromUrl(url)) ||
-      (tab === "github" ? "Same as the repository" : "Derived from the URL");
+      (tab === "github" ? l10n.t("Same as the repository") : l10n.t("Derived from the URL"));
     const problem = validateTargetName(nameInput.value);
     nameError.textContent = problem ?? "";
     nameError.hidden = !problem;
@@ -384,7 +386,7 @@ export function openCloneDialog(
       progFill.classList.add("indeterminate");
       progFill.style.width = "100%";
     }
-    progPhase.textContent = label || "Cloning…";
+    progPhase.textContent = label || l10n.t("Cloning…");
   }
 
   function setBusy(on: boolean): void {
@@ -413,18 +415,18 @@ export function openCloneDialog(
     // in the background, which it does perfectly well — the success path opens
     // the repository and toasts either way, whether this card is on screen or
     // not.
-    cancel.textContent = on ? "Hide" : "Cancel";
+    cancel.textContent = on ? l10n.t("Hide") : l10n.t("Cancel");
     cancel.title = on
-      ? "Close this and let the clone finish — you'll be told when it's done"
+      ? l10n.t("Close this and let the clone finish — you'll be told when it's done")
       : "";
     ghList.classList.toggle("is-disabled", on);
     if (on) {
       primary.setAttribute("disabled", "true");
       primarySpin.hidden = false;
-      primaryLabel.textContent = "Cloning…";
+      primaryLabel.textContent = l10n.t("Cloning…");
     } else {
       primarySpin.hidden = true;
-      primaryLabel.textContent = "Clone";
+      primaryLabel.textContent = l10n.t("Clone");
       refreshClone();
     }
   }
@@ -436,7 +438,7 @@ export function openCloneDialog(
     const name = targetName(url);
 
     setBusy(true);
-    updateBar(undefined, "Preparing…");
+    updateBar(undefined, l10n.t("Preparing…"));
     offProgress = host.on("clone:progress", (p) =>
       updateBar(p.percent, p.phase || p.raw),
     );
@@ -447,7 +449,7 @@ export function openCloneDialog(
     } catch (e) {
       offProgress?.();
       offProgress = null;
-      toast(cleanErr(e) || "Clone failed.", "error");
+      toast(cleanErr(e) || l10n.t("Clone failed."), "error");
       progress.hidden = true;
       setBusy(false);
       return;
@@ -466,9 +468,9 @@ export function openCloneDialog(
       } catch {
         /* an open that fails says so itself */
       }
-      toast("Cloned " + (name || "repository"), "success");
+      toast(l10n.t("Cloned {0}", name || l10n.t("repository")), "success");
     } else {
-      toast(res.message || "Clone failed.", "error");
+      toast(res.message || l10n.t("Clone failed."), "error");
       progress.hidden = true;
       setBusy(false);
       // A destination collision is fixed right here: point at the name field.
@@ -485,7 +487,7 @@ export function openCloneDialog(
     return {
       card,
       focusEl: urlInput,
-      label: "Clone repository",
+      label: l10n.t("Clone repository"),
       // While a clone is in flight, dismissing (Esc/backdrop) would orphan the
       // clone and still fire onCloned() on completion — keep the modal up.
       // Always. See setBusy: the clone continues without this card, so being

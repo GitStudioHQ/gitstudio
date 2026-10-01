@@ -29,6 +29,7 @@ import type {
 } from "../shared/ipc";
 import type { ChoiceOption } from "./dialogs";
 import type { Undoable } from "./undo";
+import * as l10n from "@vscode/l10n";
 
 export interface DropCommitDeps {
   plan(req: DropPlanRequest): Promise<DropPlanWire>;
@@ -69,14 +70,14 @@ export async function dropCommitFlow(sha: string, d: DropCommitDeps): Promise<Dr
       choices: [
         {
           id: "carry",
-          label: "Drop and move those branches",
-          sub: "They follow onto the replayed commits.",
+          label: l10n.t("Drop and move those branches"),
+          sub: l10n.t("They follow onto the replayed commits."),
           icon: "git-branch",
         },
         {
           id: "only",
-          label: "Drop from this branch only",
-          sub: "They keep pointing at the commits as they are now.",
+          label: l10n.t("Drop from this branch only"),
+          sub: l10n.t("They keep pointing at the commits as they are now."),
           icon: "git-commit",
         },
       ],
@@ -87,7 +88,7 @@ export async function dropCommitFlow(sha: string, d: DropCommitDeps): Promise<Dr
     const ok = await d.confirm({
       title: question.title,
       message: question.message,
-      confirmLabel: "Drop commit",
+      confirmLabel: l10n.t("Drop commit"),
       danger: true,
     });
     if (!ok) return "cancelled";
@@ -106,11 +107,11 @@ export async function dropCommitFlow(sha: string, d: DropCommitDeps): Promise<Dr
         ...(carried?.length ? { carried } : {}),
       };
       d.undoable(text, {
-        label: `Put ${plan.shortSha} back`,
+        label: l10n.t("Put {0} back", plan.shortSha),
         undo: async () => {
           const back = await d.undo({ before, after, ...which });
           if (back.ok) return undefined;
-          const why = back.message ?? `Couldn't put ${plan.shortSha} back.`;
+          const why = back.message ?? l10n.t("Couldn't put {0} back.", plan.shortSha);
           return back.expected ? { info: why } : why;
         },
         after: () => d.refresh(),

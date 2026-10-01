@@ -16,6 +16,7 @@ import { runAgentTurn, addBubble, markdownBlock, errorBlock, connectPrompt, elTe
 import type { SectionRender } from "./views/common";
 import type { AiModelOption, AiSettingsView, ChatView } from "../shared/ipc";
 import { perTab } from "./tabState";
+import * as l10n from "@vscode/l10n";
 
 /**
  * What the Assistant remembers, for ONE tab (issue #32; tabState.ts). Every
@@ -77,7 +78,7 @@ export function seedAssistantGoal(goal: string, label?: string): boolean {
   // case, which is the identical mistake `onAiChanged` twenty lines below
   // carries a comment about. The toast below had never once been shown.
   if (live?.busy()) {
-    toast("The agent is still working — stop it first, or wait for it to finish.", "info");
+    toast(l10n.t("The agent is still working — stop it first, or wait for it to finish."), "info");
     return false;
   }
   // The IDLE branch keeps `isConnected`, deliberately. A parked view can be
@@ -95,17 +96,17 @@ export function seedAssistantGoal(goal: string, label?: string): boolean {
 }
 
 const THINK_OPTS: Array<{ id: "off" | "auto" | "extended"; label: string }> = [
-  { id: "off", label: "No thinking" },
-  { id: "auto", label: "Auto thinking" },
-  { id: "extended", label: "Extended thinking" },
+  { id: "off", label: l10n.t("No thinking") },
+  { id: "auto", label: l10n.t("Auto thinking") },
+  { id: "extended", label: l10n.t("Extended thinking") },
 ];
 const ACCESS_OPTS: Array<{ id: "read" | "write" | "destructive"; label: string }> = [
-  { id: "read", label: "Read-only" },
-  { id: "write", label: "Allow commits" },
-  { id: "destructive", label: "Allow everything" },
+  { id: "read", label: l10n.t("Read-only") },
+  { id: "write", label: l10n.t("Allow commits") },
+  { id: "destructive", label: l10n.t("Allow everything") },
 ];
-const thinkText = (id: string): string => THINK_OPTS.find((o) => o.id === id)?.label ?? "Thinking";
-const accessText = (id: string): string => ACCESS_OPTS.find((o) => o.id === id)?.label ?? "Access";
+const thinkText = (id: string): string => THINK_OPTS.find((o) => o.id === id)?.label ?? l10n.t("Thinking");
+const accessText = (id: string): string => ACCESS_OPTS.find((o) => o.id === id)?.label ?? l10n.t("Access");
 /** Trim a long model id for the chip ("anthropic/claude-sonnet-4-6" → "claude-sonnet-4-6"). */
 const shortModel = (id: string): string => id.split("/").pop() ?? id;
 
@@ -115,38 +116,38 @@ const shortModel = (id: string): string => id.split("/").pop() ?? id;
 const QUICK_ACTIONS: Array<{ icon: string; label: string; desc: string; goal: string }> = [
   {
     icon: "git-commit",
-    label: "Draft a commit",
-    desc: "A message for what's staged, for you to approve.",
+    label: l10n.t("Draft a commit"),
+    desc: l10n.t("A message for what's staged, for you to approve."),
     goal: "Draft a commit message for my staged changes and show it to me. Don't commit unless I confirm.",
   },
   {
     icon: "list-unordered",
-    label: "Summarize my changes",
-    desc: "What the working tree changes, in a few bullets.",
+    label: l10n.t("Summarize my changes"),
+    desc: l10n.t("What the working tree changes, in a few bullets."),
     goal: "Summarize my current working-tree changes in a few bullet points.",
   },
   {
     icon: "eye",
-    label: "Review my changes",
-    desc: "Bugs, risks and regrets, before they are committed.",
+    label: l10n.t("Review my changes"),
+    desc: l10n.t("Bugs, risks and regrets, before they are committed."),
     goal: "Review my uncommitted changes: point out bugs, risks and anything I would regret committing. Don't change anything.",
   },
   {
     icon: "git-compare",
-    label: "What does this branch add?",
-    desc: "This branch against the default branch, explained.",
+    label: l10n.t("What does this branch add?"),
+    desc: l10n.t("This branch against the default branch, explained."),
     goal: "Compare the current branch against the default branch and explain, concisely, what it changes.",
   },
   {
     icon: "tag",
-    label: "Draft release notes",
-    desc: "From the commits since the last tag.",
+    label: l10n.t("Draft release notes"),
+    desc: l10n.t("From the commits since the last tag."),
     goal: "Draft release notes from the commits since the last tag.",
   },
   {
     icon: "git-branch",
-    label: "Which branches can go?",
-    desc: "Merged and stale branches, and which are safe to delete.",
+    label: l10n.t("Which branches can go?"),
+    desc: l10n.t("Merged and stale branches, and which are safe to delete."),
     goal: "List the local branches that are merged or stale and say which are safe to delete. Don't delete anything.",
   },
 ];
@@ -160,7 +161,7 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   const header = el("div", "assistant-head");
   const titleWrap = el("div", "assistant-title-wrap");
   const title = el("div", "assistant-title");
-  title.append(glyph("sparkle"), span("Assistant"));
+  title.append(glyph("sparkle"), span(l10n.t("Assistant")));
   // The chat's own subject, once it has one — "Assistant" alone said nothing
   // about which of your conversations was on screen.
   const chatTitle = el("span", "assistant-chat-title");
@@ -175,13 +176,13 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   const connTag = el("span", "assistant-model");
   // New-chat + chat-history controls — sessions persist across refresh/restart.
   const newBtn = el("button", "assistant-iconbtn") as HTMLButtonElement;
-  newBtn.dataset.baseTitle = "New chat";
-  newBtn.title = "New chat";
+  newBtn.dataset.baseTitle = l10n.t("New chat");
+  newBtn.title = l10n.t("New chat");
   newBtn.append(glyph("add"));
   newBtn.addEventListener("click", () => void newChat());
   const histBtn = el("button", "assistant-iconbtn") as HTMLButtonElement;
-  histBtn.dataset.baseTitle = "Chat history";
-  histBtn.title = "Chat history";
+  histBtn.dataset.baseTitle = l10n.t("Chat history");
+  histBtn.title = l10n.t("Chat history");
   histBtn.append(glyph("history"));
   histBtn.addEventListener("click", () => void openHistory());
   /** The two chat-management controls — off while the gate is closed, since
@@ -226,8 +227,8 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   };
 
   let modelOptions: AiModelOption[] = [];
-  const modelChip = makeChip("sparkle", "Model", () => {
-    if (modelOptions.length === 0) return [{ label: "No models available", disabled: true }];
+  const modelChip = makeChip("sparkle", l10n.t("Model"), () => {
+    if (modelOptions.length === 0) return [{ label: l10n.t("No models available"), disabled: true }];
     return modelOptions.map((m) => ({
       label: m.label ?? shortModel(m.id),
       current: m.id === S.selectedModelId,
@@ -272,12 +273,12 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   // longest-lived scroller in the app: a chat you have been working in all day.
   transcript.tabIndex = 0;
   transcript.setAttribute("role", "log");
-  transcript.setAttribute("aria-label", "Conversation");
+  transcript.setAttribute("aria-label", l10n.t("Conversation"));
   // The transcript and the "Jump to latest" pill share a frame, so the pill
   // floats over the tail of the conversation instead of scrolling with it.
   const body = el("div", "assistant-body");
   const jump = el("button", "assistant-jump") as HTMLButtonElement;
-  jump.append(glyph("arrow-down"), span("Jump to latest"));
+  jump.append(glyph("arrow-down"), span(l10n.t("Jump to latest")));
   jump.hidden = true;
   jump.addEventListener("click", () => {
     scrollDown(transcript, true);
@@ -303,22 +304,22 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   const input = document.createElement("textarea");
   input.className = "assistant-input";
   input.rows = 2;
-  input.placeholder = "Ask about this repository, or tell the agent what to do…";
-  input.setAttribute("aria-label", "Message the agent");
+  input.placeholder = l10n.t("Ask about this repository, or tell the agent what to do…");
+  input.setAttribute("aria-label", l10n.t("Message the agent"));
   const send = el("button", "btn btn-primary assistant-send") as HTMLButtonElement;
   // An up arrow, not a paper plane: `codicon-send` is a thin diagonal outline
   // whose mass sits optically off-centre in a round button, and it suffers most
   // in a single-weight icon font. Up is orthogonal, centrable, and literal —
   // the transcript it feeds is directly above.
   send.append(glyph("arrow-up"));
-  send.title = "Send · Enter";
+  send.title = l10n.t("Send · Enter");
   send.setAttribute("aria-keyshortcuts", "Enter");
   inputRow.append(input, send);
   // Under the box: where the agent is working, and how to send.
   const foot = el("div", "assistant-foot");
   const context = el("span", "assistant-context");
   const hint = el("span", "assistant-hint");
-  hint.textContent = "Enter to send · Shift+Enter for a new line";
+  hint.textContent = l10n.t("Enter to send · Shift+Enter for a new line");
   foot.append(context, hint);
   composer.append(quick, inputRow, foot);
 
@@ -377,14 +378,14 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     for (const c of chips) {
       c.disabled = off;
       c.title = gated
-        ? "Connect a model to use the Assistant"
+        ? l10n.t("Connect a model to use the Assistant")
         : running
-          ? "The agent is still working"
+          ? l10n.t("The agent is still working")
           : "";
     }
     for (const b of chatBtns) {
       b.disabled = gated;
-      b.title = gated ? "Connect a model to use the Assistant" : b.dataset.baseTitle || "";
+      b.title = gated ? l10n.t("Connect a model to use the Assistant") : b.dataset.baseTitle || "";
     }
     // The model, thinking level and access are read when a turn STARTS and
     // travel with it. Changing one mid-run relabels the chip and leaves the
@@ -392,7 +393,9 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     // something the agent working below it is not doing. It stays usable (you
     // are usually setting up the next message) and says when it applies.
     for (const b of settingChips) {
-      b.title = running ? "Applies to your next message — this turn keeps what it started with" : "";
+      b.title = running
+        ? l10n.t("Applies to your next message — this turn keeps what it started with")
+        : "";
     }
   };
 
@@ -409,7 +412,7 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     // Say WHY it is off. The chips beside it already do, so gated and empty
     // used to be indistinguishable on the one primary action of the surface.
     // The gated string is verbatim the chips' string above.
-    send.title = gated ? "Connect a model to use the Assistant" : "Send · Enter";
+    send.title = gated ? l10n.t("Connect a model to use the Assistant") : l10n.t("Send · Enter");
   };
 
   /** Grow with the text, up to the height the stylesheet already budgets.
@@ -427,11 +430,13 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   const empty = el("div", "assistant-empty");
   empty.append(
     glyph("sparkle"),
-    elText("div", "assistant-empty-title", "Your repo's AI agent"),
+    elText("div", "assistant-empty-title", l10n.t("Your repo's AI agent")),
     elText(
       "div",
       "assistant-empty-sub",
-      "It reads real status, diffs and history before acting, and asks before it writes anything. Start with one of these, or describe a task.",
+      l10n.t(
+        "It reads real status, diffs and history before acting, and asks before it writes anything. Start with one of these, or describe a task.",
+      ),
     ),
   );
   // The quick actions as CARDS, each with a line of what it does — the same
@@ -502,7 +507,7 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
       if (!S.selectedModelId && modelOptions[0]) {
         S.selectedModelId = modelOptions[0].id;
       }
-      modelChip.set(S.selectedModelId ? shortModel(S.selectedModelId) : "Model");
+      modelChip.set(S.selectedModelId ? shortModel(S.selectedModelId) : l10n.t("Model"));
       // Restore the chat the user last had open in this repo (survives refresh).
       try {
         const cur = await host.invoke("ai:chatCurrent", undefined);
@@ -611,10 +616,11 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   async function leavingLiveTurn(): Promise<boolean> {
     if (!running) return false;
     const stop = await confirmDialog({
-      title: "The agent is still working",
-      message:
+      title: l10n.t("The agent is still working"),
+      message: l10n.t(
         "Leaving this chat stops the run. Anything it has already done to your repository stays done.",
-      confirmLabel: "Stop and leave",
+      ),
+      confirmLabel: l10n.t("Stop and leave"),
       danger: true,
     });
     if (!stop) return true;
@@ -646,11 +652,11 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     } catch {
       chats = [];
     }
-    const items: MenuItem[] = [{ label: "New chat", icon: "add", onClick: () => void newChat() }];
+    const items: MenuItem[] = [{ label: l10n.t("New chat"), icon: "add", onClick: () => void newChat() }];
     if (chats.length) items.push({ separator: true });
     for (const c of chats) {
       items.push({
-        label: c.title || "Untitled chat",
+        label: c.title || l10n.t("Untitled chat"),
         sub: relTimeISO(new Date(c.updatedAt).toISOString()),
         current: c.id === currentChatId,
         onClick: () => void switchChat(c.id),
@@ -658,7 +664,12 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     }
     if (currentChatId) {
       items.push({ separator: true });
-      items.push({ label: "Delete this chat", icon: "trash", danger: true, onClick: () => void deleteChat() });
+      items.push({
+        label: l10n.t("Delete this chat"),
+        icon: "trash",
+        danger: true,
+        onClick: () => void deleteChat(),
+      });
     }
     openMenu(histBtn, items);
   }
@@ -681,16 +692,18 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     if (await leavingLiveTurn()) return;
     const id = currentChatId;
     const ok = await confirmDialog({
-      title: "Delete this chat?",
-      message: "It leaves this repository's chat history. Nothing the agent did to your files is undone.",
-      confirmLabel: "Delete",
+      title: l10n.t("Delete this chat?"),
+      message: l10n.t(
+        "It leaves this repository's chat history. Nothing the agent did to your files is undone.",
+      ),
+      confirmLabel: l10n.t("Delete"),
       danger: true,
     });
     if (!ok) return;
     try {
       await host.invoke("ai:chatDelete", { id });
     } catch (e) {
-      toast(e instanceof Error ? e.message : "Couldn't delete the chat.", "error");
+      toast(e instanceof Error ? e.message : l10n.t("Couldn't delete the chat."), "error");
       return;
     }
     currentChatId = undefined;
@@ -755,7 +768,9 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     }
     if (!currentChatId) {
       addBubble(transcript, "user", display ?? goal);
-      transcript.append(errorBlock("Couldn't start a chat — open a repository and connect a model."));
+      transcript.append(
+        errorBlock(l10n.t("Couldn't start a chat — open a repository and connect a model.")),
+      );
       running = false;
       // Through the one rule. A bare `setBusy(send, false)` left Send fully lit
       // over a composer this path has just emptied, so the button invited a

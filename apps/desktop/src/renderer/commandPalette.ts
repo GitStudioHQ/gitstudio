@@ -12,6 +12,7 @@ import { el, span, glyph, closeMenu } from "./ui";
 import { createSearchScheduler } from "./searchDebounce";
 import { registerLayer, holdBackground } from "./overlays";
 import { fuzzyScore } from "../shared/fuzzy";
+import * as l10n from "@vscode/l10n";
 
 // Re-exported so existing import sites keep one place to reach for it.
 export { fuzzyScore };
@@ -85,7 +86,7 @@ export function openCommandPalette(providers: PaletteProviders): void {
   const overlay = el("div", "cmdk-overlay");
   overlay.setAttribute("role", "dialog");
   overlay.setAttribute("aria-modal", "true");
-  overlay.setAttribute("aria-label", "Command palette");
+  overlay.setAttribute("aria-label", l10n.t("Command palette"));
   // The claim, made true. Tab from the palette's single input walked 34 controls
   // sitting under its own opaque scrim — the flagship keyboard surface was the
   // easiest place in the app to get lost.
@@ -95,8 +96,8 @@ export function openCommandPalette(providers: PaletteProviders): void {
   const icon = glyph("search");
   const input = document.createElement("input");
   input.className = "cmdk-input";
-  input.placeholder = "Jump to a section, branch, PR, repo — or run an action…";
-  input.setAttribute("aria-label", "Search commands");
+  input.placeholder = l10n.t("Jump to a section, branch, PR, repo — or run an action…");
+  input.setAttribute("aria-label", l10n.t("Search commands"));
   input.setAttribute("role", "combobox");
   input.setAttribute("aria-expanded", "true");
   input.setAttribute("aria-autocomplete", "list");
@@ -276,7 +277,7 @@ export function openCommandPalette(providers: PaletteProviders): void {
     }
     if (!flat.length) {
       const none = el("div", "cmdk-empty");
-      none.textContent = q ? `Nothing matches “${q}”.` : "Nothing here yet.";
+      none.textContent = q ? l10n.t("Nothing matches “{0}”.", q) : l10n.t("Nothing here yet.");
       list.appendChild(none);
     }
     const kept = keep ? flat.findIndex((f) => f.item === keep) : -1;
