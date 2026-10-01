@@ -37,6 +37,15 @@ cp "$DIST/renderer.js.map" "$PAGE/renderer.js.map" 2>/dev/null || true
 cp "$HARNESS/checks.js" "$PAGE/checks.js"
 # The owner's requests, as executable clauses — see validate.mjs.
 cp "$HARNESS/requirements.js" "$PAGE/requirements.js"
+# GS_LANG=de (any locale the build has a bundle for): the page gets that
+# language's bundle the way the preload hands it over in the app.
+if [ -n "$GS_LANG" ]; then
+  BUNDLE="$HARNESS/../dist/l10n/bundle.l10n.$GS_LANG.json"
+  [ -f "$BUNDLE" ] || { echo "gen.sh: no bundle for GS_LANG=$GS_LANG ($BUNDLE)" >&2; exit 1; }
+  { printf 'window.__gitstudioLocale="%s";window.__gitstudioL10n=' "$GS_LANG"; cat "$BUNDLE"; printf ';\n'; } > "$PAGE/l10n.js"
+else
+  : > "$PAGE/l10n.js"
+fi
 # The launch screen is the app's own (dist/renderer/index.html, between its
 # launch:* markers), so every scene starts the way the app does — covered by
 # it — and every check runs after the real hand-off has removed it. Taken
@@ -72,6 +81,7 @@ HTML
     <script src="./checks.js"></script>
     <script src="./requirements.js"></script>
     <script src="./perf.js"></script>
+    <script src="./l10n.js"></script>
     <script src="./shim.js"></script>
     <script src="./renderer.js"></script>
   </body>

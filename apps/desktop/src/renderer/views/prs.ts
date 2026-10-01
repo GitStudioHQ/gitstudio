@@ -1965,7 +1965,15 @@ function commentCard(
   const assoc = associationBadge(extra.association);
   if (assoc) hd.appendChild(assoc);
   if (reviewState) {
-    const badge = pill(reviewState.toLowerCase().replace(/_/g, " "));
+    // GitHub's review state, in words; an unknown state reads as GitHub wrote it.
+    const verdict: Record<string, string> = {
+      APPROVED: l10n.t("approved"),
+      CHANGES_REQUESTED: l10n.t("changes requested"),
+      COMMENTED: l10n.t("commented"),
+      DISMISSED: l10n.t("dismissed"),
+      PENDING: l10n.t("pending"),
+    };
+    const badge = pill(verdict[reviewState] ?? reviewState.toLowerCase().replace(/_/g, " "));
     badge.classList.add(`gh-review-${reviewState.toLowerCase()}`);
     hd.appendChild(badge);
   }
