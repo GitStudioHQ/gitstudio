@@ -11,6 +11,7 @@
 // once, under the most actionable heading.
 
 import { GitHubClient } from "../githubClient";
+import * as l10n from "@vscode/l10n";
 import type { MyWorkItem } from "../../shared/ipc";
 
 interface RawSearchIssue {
@@ -67,7 +68,7 @@ export async function myWork(
     soft(`${scope} mentions:@me -author:@me`),
   ]);
   if (failures === 4) {
-    throw new Error("GitHub didn't answer any of the work searches.");
+    throw new Error(l10n.t("GitHub didn't answer any of the work searches."));
   }
 
   const out: MyWorkItem[] = [];

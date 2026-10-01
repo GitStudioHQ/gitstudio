@@ -25,6 +25,7 @@
 // test pins it). The fetch writes `+<remote ref>:refs/remotes/<remote>/<x>`.
 
 import { lstat } from "node:fs/promises";
+import * as l10n from "@vscode/l10n";
 import { dirname, join } from "node:path";
 import { nativePath } from "@gitstudio/git-service/folderPath";
 import type { GitContext } from "@gitstudio/git-service/index";
@@ -196,23 +197,48 @@ async function occupied(ctx: GitContext, path: string): Promise<string | undefin
   return undefined;
 }
 
-function operationName(kind: OperationKind): string {
+/**
+ * "An operation is in progress…", said as the whole sentence the blocker needs
+ * — never as a translated fragment stitched onto raw English, which rule 1
+ * forbids. One switch per caller (below) rather than a shared word fragment.
+ */
+function operationInProgressBlocksReset(kind: OperationKind, name: string): string {
   switch (kind) {
     case "merge":
-      return "A merge is";
+      return l10n.t("A merge is in progress. Finish or abort it in Changes before resetting '{0}'.", name);
     case "rebase":
     case "rebase-merge-step":
-      return "A rebase is";
+      return l10n.t("A rebase is in progress. Finish or abort it in Changes before resetting '{0}'.", name);
     case "cherry-pick":
-      return "A cherry-pick is";
+      return l10n.t("A cherry-pick is in progress. Finish or abort it in Changes before resetting '{0}'.", name);
     case "revert":
-      return "A revert is";
+      return l10n.t("A revert is in progress. Finish or abort it in Changes before resetting '{0}'.", name);
     case "am":
-      return "A patch series (git am) is";
+      return l10n.t("A patch series (git am) is in progress. Finish or abort it in Changes before resetting '{0}'.", name);
     case "stash":
-      return "A stash with conflicts is";
+      return l10n.t("A stash with conflicts is in progress. Finish or abort it in Changes before resetting '{0}'.", name);
     default:
-      return "An operation is";
+      return l10n.t("An operation is in progress. Finish or abort it in Changes before resetting '{0}'.", name);
+  }
+}
+
+function operationInProgressBlocksUndo(kind: OperationKind): string {
+  switch (kind) {
+    case "merge":
+      return l10n.t("A merge is in progress — finish or abort it first.");
+    case "rebase":
+    case "rebase-merge-step":
+      return l10n.t("A rebase is in progress — finish or abort it first.");
+    case "cherry-pick":
+      return l10n.t("A cherry-pick is in progress — finish or abort it first.");
+    case "revert":
+      return l10n.t("A revert is in progress — finish or abort it first.");
+    case "am":
+      return l10n.t("A patch series (git am) is in progress — finish or abort it first.");
+    case "stash":
+      return l10n.t("A stash with conflicts is in progress — finish or abort it first.");
+    default:
+      return l10n.t("An operation is in progress — finish or abort it first.");
   }
 }
 
@@ -221,15 +247,16 @@ function refused(message: string): { ok: false; changed: false; expected: true; 
 }
 
 function checkedOutElsewhere(name: string, where: string): string {
-  return (
-    // git spells a Windows path C:/Users/…; say it the way the system does.
-    `'${name}' is checked out in the worktree at ${nativePath(where)}. Reset it there, or switch that ` +
-    `worktree to another branch first.`
+  // git spells a Windows path C:/Users/…; say it the way the system does.
+  return l10n.t(
+    "'{0}' is checked out in the worktree at {1}. Reset it there, or switch that worktree to another branch first.",
+    name,
+    nativePath(where),
   );
 }
 
 function dashName(name: string): string {
-  return `git won't force-move a branch whose name starts with "-". Rename '${name}' first.`;
+  return l10n.t("git won't force-move a branch whose name starts with \"-\". Rename '{0}' first.", name);
 }
 
 function firstLine(s: string): string {
@@ -243,12 +270,33 @@ function firstLine(s: string): string {
 
 function overwriteMessage(files: string[], label: string): string {
   const n = files.length;
-  const shown = files.slice(0, 3).join(", ") + (n > 3 ? `, and ${n >= COLLISIONS_CAP ? "more" : `${n - 3} more`}` : "");
-  const them = n === 1 ? "it" : "them";
-  return (
-    `Resetting would overwrite ${n === 1 ? "a file" : `${n >= COLLISIONS_CAP ? `${COLLISIONS_CAP} or more` : n} files`} ` +
-    `git isn't tracking, which ${label} has too: ${shown}. Nothing could bring ${them} back, so ` +
-    `nothing was changed — move or delete ${them} first.`
+  const first3 = files.slice(0, 3).join(", ");
+  const shown =
+    n <= 3
+      ? first3
+      : n >= COLLISIONS_CAP
+        ? l10n.t("{0}, and more", first3)
+        : l10n.t("{0}, and {1} more", first3, n - 3);
+  if (n === 1) {
+    return l10n.t(
+      "Resetting would overwrite a file git isn't tracking, which {0} has too: {1}. Nothing could bring it back, so nothing was changed — move or delete it first.",
+      label,
+      shown,
+    );
+  }
+  if (n >= COLLISIONS_CAP) {
+    return l10n.t(
+      "Resetting would overwrite {0} or more files git isn't tracking, which {1} has too: {2}. Nothing could bring them back, so nothing was changed — move or delete them first.",
+      COLLISIONS_CAP,
+      label,
+      shown,
+    );
+  }
+  return l10n.t(
+    "Resetting would overwrite {0} files git isn't tracking, which {1} has too: {2}. Nothing could bring them back, so nothing was changed — move or delete them first.",
+    n,
+    label,
+    shown,
   );
 }
 
@@ -262,7 +310,7 @@ async function blockers(
   if (current) {
     const op = await ctx.operation.detect().catch(() => ({ kind: "none" as OperationKind }));
     if (op.kind !== "none") {
-      return `${operationName(op.kind)} in progress. Finish or abort it in Changes before resetting '${name}'.`;
+      return operationInProgressBlocksReset(op.kind, name);
     }
     return undefined;
   }
@@ -282,9 +330,9 @@ export async function planBranchReset(
   name: string,
 ): Promise<BranchResetPlan> {
   const facts = await branchFacts(ctx, fullName);
-  if (!facts) return refused(`'${name}' no longer exists.`);
+  if (!facts) return refused(l10n.t("'{0}' no longer exists.", name));
   if (!facts.upstreamRef.startsWith("refs/remotes/")) {
-    return refused(`'${name}' doesn't track a branch on a remote, so there is nothing to reset it to.`);
+    return refused(l10n.t("'{0}' doesn't track a branch on a remote, so there is nothing to reset it to.", name));
   }
   const label = upstreamLabel(facts.upstreamRef);
   const current = await isCurrent(ctx, fullName);
@@ -293,6 +341,9 @@ export async function planBranchReset(
 
   // Fetch THIS branch, into its own remote-tracking ref: the question is "what
   // does origin have for it now", and a forced refspec follows a force-push.
+  // `fetchError`, when set, is appended after " — " to the sentence below: it
+  // is either our own short clause (translated here) or git's own raw stderr
+  // first line, which stays in English either way (git output, never translated).
   let fetchError: string | undefined;
   if (facts.remote && !facts.remote.startsWith("-") && facts.remoteRef.startsWith("refs/")) {
     const f = await ctx.process.run([
@@ -305,18 +356,24 @@ export async function planBranchReset(
     ]);
     if (f.code !== 0) {
       if (/couldn't find remote ref/i.test(f.stderr)) {
-        return refused(`${label} no longer exists on ${facts.remote}, so there is nothing to reset '${name}' to.`);
+        return refused(
+          l10n.t("{0} no longer exists on {1}, so there is nothing to reset '{2}' to.", label, facts.remote, name),
+        );
       }
-      fetchError = firstLine(f.stderr) || `the fetch from ${facts.remote} failed`;
+      fetchError = firstLine(f.stderr) || l10n.t("the fetch from {0} failed", facts.remote);
     }
   } else {
-    fetchError = `couldn't tell which remote ${label} comes from`;
+    fetchError = l10n.t("couldn't tell which remote {0} comes from", label);
   }
 
   const [from, to] = await Promise.all([tip(ctx, fullName), tip(ctx, facts.upstreamRef)]);
-  if (!from) return refused(`'${name}' no longer exists.`);
+  if (!from) return refused(l10n.t("'{0}' no longer exists.", name));
   if (!to) {
-    return refused(`There is no ${label} here to reset '${name}' to${fetchError ? ` — ${fetchError}` : ""}.`);
+    return refused(
+      fetchError
+        ? l10n.t("There is no {0} here to reset '{1}' to — {2}.", label, name, fetchError)
+        : l10n.t("There is no {0} here to reset '{1}' to.", label, name),
+    );
   }
   const [lost, gained, subjects, dirty, overwrites] = await Promise.all([
     count(ctx, `${to}..${from}`),
@@ -349,19 +406,18 @@ export async function resetBranchToUpstream(
   req: BranchResetRequest,
 ): Promise<BranchResetResult> {
   if (!SHA.test(req.from) || !SHA.test(req.to)) {
-    return { ok: false, changed: false, message: "That value isn't a valid git reference." };
+    return { ok: false, changed: false, message: l10n.t("That value isn't a valid git reference.") };
   }
   const facts = await branchFacts(ctx, req.fullName);
-  if (!facts) return refused(`'${name}' no longer exists.`);
+  if (!facts) return refused(l10n.t("'{0}' no longer exists.", name));
   if (!facts.upstreamRef.startsWith("refs/remotes/")) {
-    return refused(`'${name}' doesn't track a branch on a remote any more — nothing was changed.`);
+    return refused(l10n.t("'{0}' doesn't track a branch on a remote any more — nothing was changed.", name));
   }
   const label = upstreamLabel(facts.upstreamRef);
   const [from, to] = await Promise.all([tip(ctx, req.fullName), tip(ctx, facts.upstreamRef)]);
   if (from !== req.from || to !== req.to) {
     return refused(
-      `'${name}' or ${label} moved after you were asked, so nothing was changed. ` +
-        `Reset again to see what it would do now.`,
+      l10n.t("'{0}' or {1} moved after you were asked, so nothing was changed. Reset again to see what it would do now.", name, label),
     );
   }
   const current = await isCurrent(ctx, req.fullName);
@@ -374,18 +430,26 @@ export async function resetBranchToUpstream(
     // The restore point. `stash create` writes objects only — no ref moves,
     // nothing on disk changes — and prints nothing when there is nothing to
     // keep. Without one there is no honest undo, so no reset either.
+    //
+    // The stash message is text WRITTEN INTO git (visible later in `git stash
+    // list`, in English there like every other stash/commit message this app
+    // writes) — never translated, per the rule that text landing in git's own
+    // history stays literal.
     const snap = await ctx.process.run(["stash", "create", `gitstudio: before resetting ${name} to ${label}`]);
     if (snap.code !== 0) {
       return {
         ok: false,
         changed: false,
-        message: `Couldn't keep a copy of your uncommitted changes, so nothing was reset: ${firstLine(snap.stderr) || "git stash create failed"}`,
+        message: l10n.t(
+          "Couldn't keep a copy of your uncommitted changes, so nothing was reset: {0}",
+          firstLine(snap.stderr) || l10n.t("git stash create failed"),
+        ),
       };
     }
     const snapshot = snap.stdout.trim();
     const r = await ctx.process.run(["reset", "--hard", "--quiet", to]);
     if (r.code !== 0) {
-      return { ok: false, changed: true, message: firstLine(r.stderr) || `Couldn't reset '${name}'.` };
+      return { ok: false, changed: true, message: firstLine(r.stderr) || l10n.t("Couldn't reset '{0}'.", name) };
     }
     return { ok: true, changed: true, was: from, current: true, ...(SHA.test(snapshot) ? { snapshot } : {}) };
   }
@@ -401,11 +465,14 @@ function branchForceRefusal(name: string, stderr: string): CommitActionResult {
   const at = /used by worktree at '([^']+)'/.exec(stderr);
   if (at) {
     return refused(
-      `'${name}' is in use in the worktree at ${nativePath(at[1])} — checked out, or being rebased there. ` +
-        `Nothing was changed.`,
+      l10n.t(
+        "'{0}' is in use in the worktree at {1} — checked out, or being rebased there. Nothing was changed.",
+        name,
+        nativePath(at[1]),
+      ),
     );
   }
-  return { ok: false, changed: false, message: firstLine(stderr) || `Couldn't move '${name}'.` };
+  return { ok: false, changed: false, message: firstLine(stderr) || l10n.t("Couldn't move '{0}'.", name) };
 }
 
 /** Put a reset back — only while nothing has happened on top of it. */
@@ -415,27 +482,31 @@ export async function undoBranchReset(
   req: BranchResetUndoRequest,
 ): Promise<CommitActionResult> {
   if (!SHA.test(req.was) || !SHA.test(req.now) || (req.snapshot !== undefined && !SHA.test(req.snapshot))) {
-    return { ok: false, changed: false, message: "That value isn't a valid git reference." };
+    return { ok: false, changed: false, message: l10n.t("That value isn't a valid git reference.") };
   }
   const now = await tip(ctx, req.fullName);
-  if (!now) return refused(`'${name}' no longer exists, so there is nothing to put back.`);
+  if (!now) return refused(l10n.t("'{0}' no longer exists, so there is nothing to put back.", name));
   if (now !== req.now) {
-    return refused(`'${name}' has moved since the reset — undoing it now would throw that away, so nothing was changed.`);
+    return refused(
+      l10n.t("'{0}' has moved since the reset — undoing it now would throw that away, so nothing was changed.", name),
+    );
   }
   if (req.current) {
     if (!(await isCurrent(ctx, req.fullName))) {
-      return refused(`You're no longer on '${name}'. Switch back to it to undo the reset.`);
+      return refused(l10n.t("You're no longer on '{0}'. Switch back to it to undo the reset.", name));
     }
     const op = await ctx.operation.detect().catch(() => ({ kind: "none" as OperationKind }));
-    if (op.kind !== "none") return refused(`${operationName(op.kind)} in progress — finish or abort it first.`);
+    if (op.kind !== "none") return refused(operationInProgressBlocksUndo(op.kind));
     if ((await dirtyCount(ctx)) > 0) {
-      return refused("You've changed files since the reset. Commit or stash them, then undo.");
+      return refused(l10n.t("You've changed files since the reset. Commit or stash them, then undo."));
     }
     // --keep, not --hard: it refuses rather than overwrite a file git is not
     // tracking, and the tree is clean, so there is nothing else for it to keep.
     const k = await ctx.process.run(["reset", "--keep", "--quiet", req.was]);
     if (k.code !== 0) {
-      return refused(`Couldn't put '${name}' back: ${firstLine(k.stderr) || "git refused"}. Nothing was changed.`);
+      return refused(
+        l10n.t("Couldn't put '{0}' back: {1}. Nothing was changed.", name, firstLine(k.stderr) || l10n.t("git refused")),
+      );
     }
     if (req.snapshot) {
       const a = await ctx.process.run(["stash", "apply", "--index", "--quiet", req.snapshot]);
@@ -443,10 +514,12 @@ export async function undoBranchReset(
         return {
           ok: false,
           changed: true,
-          message:
-            `'${name}' is back where it was, but your uncommitted changes couldn't be put back ` +
-            `(${firstLine(a.stderr) || "git stash apply failed"}). They are kept in ${req.snapshot} — ` +
-            `\`git stash apply ${req.snapshot}\` brings them back.`,
+          message: l10n.t(
+            "'{0}' is back where it was, but your uncommitted changes couldn't be put back ({1}). They are kept in {2} — `git stash apply {2}` brings them back.",
+            name,
+            firstLine(a.stderr) || l10n.t("git stash apply failed"),
+            req.snapshot,
+          ),
         };
       }
     }

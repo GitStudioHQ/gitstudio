@@ -24,6 +24,7 @@ import { readFile, writeFile, mkdir, stat, readdir, rename, rmdir, rm } from "no
 import { mkdirSync, writeFileSync } from "node:fs";
 import { DEFAULT_DARK_STYLE, parseDarkStyle, windowBackgroundFor, type DarkStyle } from "../shared/darkStyle";
 import { currentBundle } from "@gitstudio/l10n/index";
+import * as l10n from "@vscode/l10n";
 import { Language } from "./language";
 import { DockAppearance } from "./dockAppearance";
 import { redactCredentials } from "@gitstudio/host-bridge/scrub";
@@ -188,8 +189,8 @@ function notifyUpdate(version: string): void {
   try {
     if (!Notification.isSupported()) return;
     const n = new Notification({
-      title: `GitStudio ${version} is available`,
-      body: "Click to update.",
+      title: l10n.t("GitStudio {0} is available", version),
+      body: l10n.t("Click to update."),
     });
     const done = (): void => {
       if (updateNotification === n) updateNotification = undefined;
@@ -410,7 +411,7 @@ function buildMenu(): void {
       click: () => menuCommand({ command: "openPath", root: r.root }),
     }));
   if (recentSubmenu.length === 0) {
-    recentSubmenu.push({ label: "No recent repositories", enabled: false });
+    recentSubmenu.push({ label: l10n.t("No recent repositories"), enabled: false });
   }
 
   const template: MenuItemConstructorOptions[] = [
@@ -431,23 +432,23 @@ function buildMenu(): void {
         ]
       : []),
     {
-      label: "Repo",
+      label: l10n.t("Repo"),
       submenu: [
         {
-          label: "Open Repository…",
+          label: l10n.t("Open Repository…"),
           accelerator: "CmdOrCtrl+O",
           click: () => menuCommand({ command: "openRepo" }),
         },
-        { label: "Open Recent", submenu: recentSubmenu },
+        { label: l10n.t("Open Recent"), submenu: recentSubmenu },
         { type: "separator" },
         {
-          label: "Clone repository…",
+          label: l10n.t("Clone repository…"),
           accelerator: "CmdOrCtrl+Shift+O",
           click: () => menuCommand({ command: "cloneRepo" }),
         },
         { type: "separator" },
         {
-          label: "Refresh",
+          label: l10n.t("Refresh"),
           // ⌘R, the chord everyone's hands already know. It used to be ⌘⇧R to
           // dodge the `reload` role, which claims ⌘R by default — but that meant
           // the most reflexive refresh gesture there is HARD-RELOADED the
@@ -472,7 +473,7 @@ function buildMenu(): void {
           // menu's Close moves to Ctrl+Shift+W, VS Code's chord for it. Closing
           // the repository IS closing its tab, so the old ⌘⇧W item is this one.
           // The renderer asks first when an operation is still running.
-          label: "Close Tab",
+          label: l10n.t("Close Tab"),
           accelerator: "CmdOrCtrl+W",
           click: () => menuCommand({ command: "closeTab" }),
         },
@@ -485,7 +486,7 @@ function buildMenu(): void {
       ],
     },
     {
-      label: "Edit",
+      label: l10n.t("Edit"),
       submenu: [
         // NOT `role: "undo"`. That role means "undo some typing", and it owns
         // the ⌘Z accelerator app-wide — so with it here, undoing anything that
@@ -493,7 +494,7 @@ function buildMenu(): void {
         // keystroke and picks: its own stack when something is on it, the
         // text undo below it when there isn't.
         {
-          label: "Undo",
+          label: l10n.t("Undo"),
           accelerator: "CmdOrCtrl+Z",
           click: () => menuCommand({ command: "undo" }),
         },
@@ -503,7 +504,7 @@ function buildMenu(): void {
         // merge's redo while focus is in the merge editor, text redo elsewhere.
         // The accelerator is the one the role used on each platform.
         {
-          label: "Redo",
+          label: l10n.t("Redo"),
           accelerator: process.platform === "win32" ? "Ctrl+Y" : "Shift+CmdOrCtrl+Z",
           click: () => menuCommand({ command: "redo" }),
         },
@@ -518,20 +519,20 @@ function buildMenu(): void {
       // The menu named "View" could not reach a single one of the app's
       // eighteen views: it was Electron's stock template verbatim, so the only
       // things a user could "view" were the zoom level and the dev tools.
-      label: "View",
+      label: l10n.t("View"),
       submenu: [
         {
-          label: "Toggle Sidebar",
+          label: l10n.t("Toggle Sidebar"),
           accelerator: "CmdOrCtrl+B",
           click: () => menuCommand({ command: "toggleSidebar" }),
         },
         {
-          label: "Toggle Terminal",
+          label: l10n.t("Toggle Terminal"),
           accelerator: "CmdOrCtrl+`",
           click: () => menuCommand({ command: "toggleTerminal" }),
         },
         {
-          label: "Command Palette…",
+          label: l10n.t("Command Palette…"),
           accelerator: "CmdOrCtrl+K",
           click: () => menuCommand({ command: "palette" }),
         },
@@ -544,7 +545,7 @@ function buildMenu(): void {
         { type: "separator" },
         // Kept, but where they belong: developer tools, not "views".
         {
-          label: "Developer",
+          label: l10n.t("Developer"),
           // Accelerators stated, not inherited. A `role` carries its default
           // chord even nested three levels down a submenu, which is how ⌘R came
           // to restart the app and ⌘⇧R came to mean two different things.
@@ -557,7 +558,7 @@ function buildMenu(): void {
       ],
     },
     {
-      label: "Window",
+      label: l10n.t("Window"),
       submenu: [
         { role: "minimize" },
         { role: "zoom" },
@@ -575,11 +576,11 @@ function buildMenu(): void {
       role: "help",
       submenu: [
         {
-          label: "GitStudio Website",
+          label: l10n.t("GitStudio Website"),
           click: () => openExternalSafely("https://gitstudio.dev"),
         },
         {
-          label: "Report an Issue",
+          label: l10n.t("Report an Issue"),
           click: () =>
             openExternalSafely("https://github.com/GitStudioHQ/gitstudio/issues"),
         },
@@ -589,7 +590,7 @@ function buildMenu(): void {
         ...supportMenuItems(openExternalSafely),
         { type: "separator" as const },
         {
-          label: "Send Anonymous Crash Reports",
+          label: l10n.t("Send Anonymous Crash Reports"),
           type: "checkbox" as const,
           checked: ErrorReporter.current?.isEnabled() ?? true,
           click: (item) => ErrorReporter.current?.setEnabled(item.checked),
@@ -608,7 +609,7 @@ async function openRepoDialog(): Promise<RepoInfo | undefined> {
     return undefined;
   }
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: "Open Git Repository",
+    title: l10n.t("Open Git Repository"),
     properties: ["openDirectory"],
   });
   if (result.canceled || result.filePaths.length === 0) {
@@ -872,8 +873,8 @@ function registerIpc(): void {
   handle("repos:addFolder", async () => {
     if (!mainWindow) return undefined;
     const picked = await dialog.showOpenDialog(mainWindow, {
-      title: "Track a folder of repositories",
-      message: "GitStudio will list every repository inside this folder.",
+      title: l10n.t("Track a folder of repositories"),
+      message: l10n.t("GitStudio will list every repository inside this folder."),
       properties: ["openDirectory", "createDirectory"],
       defaultPath: appSettings.effectiveCloneDir(),
     });
@@ -925,12 +926,12 @@ function registerIpc(): void {
       // was shown — a condition, not a defect, so neither is crash-reported
       // (see main/expectedError.ts). A rename that THROWS still is.
       if (await exists(to))
-        return { ok: false, expected: true, message: "Something is there again — not overwriting it." };
+        return { ok: false, expected: true, message: l10n.t("Something is there again — not overwriting it.") };
       if (!(await exists(from)))
-        return { ok: false, expected: true, message: "It is no longer in the Trash." };
+        return { ok: false, expected: true, message: l10n.t("It is no longer in the Trash.") };
       await rename(from, to);
     } catch (e) {
-      return { ok: false, message: e instanceof Error ? e.message : "Couldn't put it back." };
+      return { ok: false, message: e instanceof Error ? e.message : l10n.t("Couldn't put it back.") };
     }
     localRepos.invalidate();
     return { ok: true };
@@ -949,13 +950,13 @@ function registerIpc(): void {
         return {
           ok: false,
           expected: true,
-          message: "That folder isn't empty, so GitStudio won't delete it.",
+          message: l10n.t("That folder isn't empty, so GitStudio won't delete it."),
         };
       }
       for (const junk of entries) await rm(join(dir, junk), { force: true });
       await rmdir(dir);
     } catch (e) {
-      return { ok: false, message: e instanceof Error ? e.message : "Couldn't delete that folder." };
+      return { ok: false, message: e instanceof Error ? e.message : l10n.t("Couldn't delete that folder.") };
     }
     localRepos.invalidate();
     return { ok: true };
@@ -984,7 +985,7 @@ function registerIpc(): void {
         ok: false,
         changed: false,
         expected: true,
-        message: e instanceof Error ? e.message : "Couldn't move that folder to the trash.",
+        message: e instanceof Error ? e.message : l10n.t("Couldn't move that folder to the trash."),
       };
     }
     if (repos.removeRecent(root)) void saveState();
@@ -1168,7 +1169,7 @@ function registerIpc(): void {
   handle("editors:refresh", () => editorsNow(true));
   handle("editors:open", async ({ id, root }) => {
     const target = root ?? repos.current()?.root;
-    if (!target) return { ok: false, expected: true, message: "Open a repository first." };
+    if (!target) return { ok: false, expected: true, message: l10n.t("Open a repository first.") };
     return openEditor(id, target, appSettings.editorPrefs());
   });
   handle("editors:setShown", async ({ id, shown }) => {
@@ -1197,7 +1198,7 @@ function registerIpc(): void {
   handle("settings:pickCloneDir", async () => {
     const r = await dialog.showOpenDialog({
       properties: ["openDirectory", "createDirectory"],
-      title: "Choose the default clone folder",
+      title: l10n.t("Choose the default clone folder"),
       defaultPath: appSettings.effectiveCloneDir(),
     });
     if (r.canceled || !r.filePaths[0]) return undefined;
@@ -1206,16 +1207,16 @@ function registerIpc(): void {
   handle("update:check", async () =>
     updates
       ? updates.check(true)
-      : { status: "disabled" as const, current: app.getVersion(), message: "Updater not ready." },
+      : { status: "disabled" as const, current: app.getVersion(), message: l10n.t("Updater not ready.") },
   );
   // `updates` is undefined only before boot finishes wiring it — the user has
   // pressed a button the window should not have shown yet. Not a defect worth a
   // crash report (see main/expectedError.ts).
   handle("update:download", async () =>
-    updates ? updates.download() : { ok: false, expected: true, message: "Updater not ready." },
+    updates ? updates.download() : { ok: false, expected: true, message: l10n.t("Updater not ready.") },
   );
   handle("update:install", async () =>
-    updates ? updates.install() : { ok: false, expected: true, message: "Updater not ready." },
+    updates ? updates.install() : { ok: false, expected: true, message: l10n.t("Updater not ready.") },
   );
   handle("ssh:keys", () => bridge.sshKeys());
   handle("pr:list", (req) => github.prList(req?.state ?? "open"));
@@ -1289,12 +1290,12 @@ function registerIpc(): void {
   handle("release:uploadAssets", async (req) => {
     // The file dialog lives HERE (main) — the renderer has no filesystem.
     const picked = await dialog.showOpenDialog({
-      title: "Attach assets to the release",
-      buttonLabel: "Upload",
+      title: l10n.t("Attach assets to the release"),
+      buttonLabel: l10n.t("Upload"),
       properties: ["openFile", "multiSelections"],
     });
     if (picked.canceled || picked.filePaths.length === 0) {
-      return { ok: false, changed: false, message: "No files selected.", expected: true };
+      return { ok: false, changed: false, message: l10n.t("No files selected."), expected: true };
     }
     return github.withRepo(async (c, o, r) => {
       for (const fp of picked.filePaths) {
@@ -1302,11 +1303,15 @@ function registerIpc(): void {
         const data = await readFile(fp);
         const res = await releasesApi.uploadAssetData(c, o, r, req.id, name, data, assetContentType(name));
         if (!res.ok) {
-          return { ...res, message: `${name}: ${res.message ?? "upload failed"}` };
+          return { ...res, message: l10n.t("{0}: {1}", name, res.message ?? l10n.t("upload failed")) };
         }
       }
       const n = picked.filePaths.length;
-      return { ok: true, changed: false, message: `Uploaded ${n} asset${n === 1 ? "" : "s"}.` };
+      return {
+        ok: true,
+        changed: false,
+        message: n === 1 ? l10n.t("Uploaded {0} asset.", n) : l10n.t("Uploaded {0} assets.", n),
+      };
     });
   });
   handle("release:deleteAsset", (id) => github.withRepo((c, o, r) => releasesApi.deleteAsset(c, o, r, id)));
@@ -1505,12 +1510,12 @@ async function worktreeAddDialog(req: {
   newBranch?: boolean;
 }): Promise<CommitActionResult> {
   if (!mainWindow) {
-    return { ok: false, changed: false, message: "No window." };
+    return { ok: false, changed: false, message: l10n.t("No window.") };
   }
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: `New worktree for ${req.ref}`,
+    title: l10n.t("New worktree for {0}", req.ref),
     properties: ["openDirectory", "createDirectory"],
-    buttonLabel: "Create Worktree Here",
+    buttonLabel: l10n.t("Create Worktree Here"),
   });
   if (result.canceled || result.filePaths.length === 0) {
     return { ok: false, changed: false };

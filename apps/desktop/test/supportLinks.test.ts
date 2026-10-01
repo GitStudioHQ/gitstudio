@@ -61,9 +61,9 @@ test("main.ts puts them in Help, between Report an Issue and the crash-report sw
   const src = readFileSync(join(__dirname, "..", "src", "main", "main.ts"), "utf8");
   const help = src.slice(src.indexOf('role: "help"'), src.indexOf("Menu.setApplicationMenu"));
   assert.ok(help.length > 0, "the Help menu is where it was");
-  const report = help.indexOf('label: "Report an Issue"');
+  const report = help.indexOf('label: l10n.t("Report an Issue")');
   const support = help.indexOf("...supportMenuItems(openExternalSafely)");
-  const crash = help.indexOf('label: "Send Anonymous Crash Reports"');
+  const crash = help.indexOf('label: l10n.t("Send Anonymous Crash Reports")');
   assert.ok(report >= 0 && support > report && crash > support, "Report an Issue, then support, then crash reports");
   // A separator on each side: a group of its own.
   const between = (a: number, b: number) => help.slice(a, b).match(/type: "separator"/g)?.length ?? 0;

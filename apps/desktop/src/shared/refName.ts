@@ -6,12 +6,14 @@
 // so the two products say the same thing about the same mistake. Node-free and
 // dependency-free — the same contract `cloneName.ts` keeps.
 
+import * as l10n from "@vscode/l10n";
+
 /** Why git would refuse this name, or null when it would accept it. */
 export function refNameProblem(v: string): string | null {
-  if (!v.trim()) return "Required.";
-  if (/\s/.test(v)) return "Cannot contain spaces.";
-  if (/^[-.]|[.]{2}|[~^:?*[\\]|[.]$|[/]$|@\{/.test(v)) return "Not a valid git ref name.";
-  if (v === "@") return "Not a valid git ref name.";
+  if (!v.trim()) return l10n.t("Required.");
+  if (/\s/.test(v)) return l10n.t("Cannot contain spaces.");
+  if (/^[-.]|[.]{2}|[~^:?*[\\]|[.]$|[/]$|@\{/.test(v)) return l10n.t("Not a valid git ref name.");
+  if (v === "@") return l10n.t("Not a valid git ref name.");
   return null;
 }
 

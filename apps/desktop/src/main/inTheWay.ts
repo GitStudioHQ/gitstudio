@@ -42,6 +42,7 @@ import {
   type StashRetryOutcome,
 } from "@gitstudio/git-service/changesInTheWay";
 import { STASH_GONE_MESSAGE } from "@gitstudio/git-service/StashProvider";
+import * as l10n from "@vscode/l10n";
 import type { CommitActionResult } from "../shared/ipc";
 
 /** What a door gets back: a final answer, or git's run to handle as it always has. */
@@ -53,14 +54,21 @@ export type DoorApplied =
    *  `stashKept`: a Pop that applied its stash and kept it (applyForDoor). */
   | { result: GitRunResult; stashNote?: string; stashKept?: true };
 
-/** A stash applied without its staging, because git could not stage it again. */
-export const STASH_UNSTAGED_NOTE =
-  "The stash's staged changes came back unstaged — git couldn't stage them again here. " +
-  "It stays in the list, still holding them as they were staged.";
+/** A stash applied without its staging, because git could not stage it again.
+ *  A function, not a module-level constant: l10n.t() must run AFTER boot()
+ *  configures the bundle (main/language.ts), and a constant captures its
+ *  value at import time, before that happens. */
+export function stashUnstagedNote(): string {
+  return l10n.t(
+    "The stash's staged changes came back unstaged — git couldn't stage them again here. It stays in the list, still holding them as they were staged.",
+  );
+}
 /** …and a Pop that therefore kept its stash. */
-export const STASH_KEPT_NOTE =
-  "The stash's staged changes came back unstaged — git couldn't stage them again here — so it was " +
-  "applied, not popped: it stays in the list, still holding them as they were staged.";
+export function stashKeptNote(): string {
+  return l10n.t(
+    "The stash's staged changes came back unstaged — git couldn't stage them again here — so it was applied, not popped: it stays in the list, still holding them as they were staged.",
+  );
+}
 
 export async function applyForDoor(
   ctx: GitContext,
@@ -82,7 +90,7 @@ export async function applyForDoor(
   if (!("result" in again)) return again;
   const ran = op.kind === "stash" && again.result.code === 0;
   const kept = ran && op.pop === true;
-  const notes = [applied.stashNote, again.stashNote, ran ? (kept ? STASH_KEPT_NOTE : STASH_UNSTAGED_NOTE) : undefined];
+  const notes = [applied.stashNote, again.stashNote, ran ? (kept ? stashKeptNote() : stashUnstagedNote()) : undefined];
   const said = notes.filter(Boolean).join(" ");
   return { ...again, ...(said ? { stashNote: said } : {}), ...(kept ? { stashKept: true as const } : {}) };
 }
@@ -196,14 +204,14 @@ export async function pullForDoor(
  */
 async function retryRefused(ctx: GitContext, stashFirst: unknown): Promise<CommitActionResult | undefined> {
   if (typeof stashFirst !== "string") {
-    return { ok: false, changed: false, message: "That isn't a repository to stash and retry in." };
+    return { ok: false, changed: false, message: l10n.t("That isn't a repository to stash and retry in.") };
   }
   if (!(await sameRepository(stashFirst, ctx.root))) {
     return {
       ok: false,
       changed: false,
       expected: true,
-      message: "Another repository is open now, so nothing was stashed or run.",
+      message: l10n.t("Another repository is open now, so nothing was stashed or run."),
     };
   }
   return undefined;
@@ -268,7 +276,7 @@ function stashFailedAnswer(out: StashRetryOutcome): CommitActionResult {
   return {
     ok: false,
     changed: false,
-    message: `Couldn't stash your changes, so nothing ran — ${out.stashFailed}`,
+    message: l10n.t("Couldn't stash your changes, so nothing ran — {0}", out.stashFailed ?? ""),
   };
 }
 

@@ -3,6 +3,8 @@
 // destination sheet validate live, as the user types). Type-only-adjacent —
 // imports nothing host-specific.
 
+import * as l10n from "@vscode/l10n";
+
 /** Derive a folder name from a git URL's last path segment ("repo" from
  *  "https://github.com/owner/repo.git"). Undefined when nothing usable. */
 export function deriveNameFromUrl(url: string): string | undefined {
@@ -17,8 +19,8 @@ export function deriveNameFromUrl(url: string): string | undefined {
 export function validateTargetName(name: string): string | null {
   const n = name.trim();
   if (!n) return null;
-  if (n.startsWith("-")) return "A folder name can't start with a dash.";
-  if (/[\\/]/.test(n)) return "A folder name can't contain path separators.";
-  if (n === "." || n === "..") return "That isn't a usable folder name.";
+  if (n.startsWith("-")) return l10n.t("A folder name can't start with a dash.");
+  if (/[\\/]/.test(n)) return l10n.t("A folder name can't contain path separators.");
+  if (n === "." || n === "..") return l10n.t("That isn't a usable folder name.");
   return null;
 }

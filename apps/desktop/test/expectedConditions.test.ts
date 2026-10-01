@@ -98,9 +98,9 @@ const REVIEWED: Record<string, string> = {
     "selection against the wrong side of the diff and said this about a line " +
     "plainly on screen (see the comment above it). A report here is how we would " +
     "hear that it has come back.",
-  "Found a clone at ${hitRoot}, but it couldn't be opened.":
+  "Found a clone at {0}, but it couldn't be opened.":
     "we found a repository and then failed to open it — that is a defect, not a state.",
-  "Cloned to ${result.root}, but it couldn't be opened.":
+  "Cloned to {0}, but it couldn't be opened.":
     "same: the clone succeeded, so failing to open it is ours.",
   "Nothing to save.":
     "conflict:resolve's content is the merge editor's Result text, which is always a string — " +
@@ -129,9 +129,9 @@ const PAYLOAD_REFUSALS: Record<string, string> = {
     "every ref the renderer sends is one it listed; a dash-led or empty one is a request built wrong.",
   "That isn't a usable file path.":
     "every path the renderer sends is one git listed; an empty or NUL-bearing one is a request built wrong.",
-  "Unknown task: ${task}": "ai:task names come from our own AiTaskName union.",
+  "Unknown task: {0}": "ai:task names come from our own AiTaskName union.",
   "Unknown local CLI.": "CLI presets come from our own catalog.",
-  "Unknown client: ${req.client}.": "MCP client ids come from our own client list.",
+  "Unknown client: {0}.": "MCP client ids come from our own client list.",
   "That doesn't look like an owner/repo name.":
     "ghrepo:open's full name comes from a repository GitHub listed, or from a repo page whose route " +
     "only parses owner/repo — nobody types it, so one without both halves is a request built wrong.",
@@ -309,6 +309,14 @@ function textOf(e: ts.Expression, sf: ts.SourceFile, consts: Map<string, ts.Expr
   if (ts.isTemplateExpression(x)) return x.getText(sf).slice(1, -1);
   if (ts.isBinaryExpression(x) && x.operatorToken.kind === ts.SyntaxKind.PlusToken) {
     return textOf(x.left, sf, consts, depth + 1) + textOf(x.right, sf, consts, depth + 1);
+  }
+  // i18n: `l10n.t("English text", ...)` — the message, in English, is its
+  // FIRST argument's literal text (with `{0}`, `{1}`… where a placeholder was
+  // substituted). Unwrapped here so the phrase census and the REVIEWED /
+  // PAYLOAD_REFUSALS lookups keep matching the English sentence rather than
+  // the call expression's own source text.
+  if (ts.isCallExpression(x) && x.expression.getText(sf) === "l10n.t" && x.arguments.length > 0) {
+    return textOf(x.arguments[0], sf, consts, depth + 1);
   }
   if (ts.isIdentifier(x) && depth < 5) {
     const init = consts.get(x.text);

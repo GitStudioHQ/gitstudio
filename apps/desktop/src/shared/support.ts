@@ -11,6 +11,8 @@
 // only): the menu calls it directly, the renderer with window.open, which the
 // window's open handler routes to it.
 
+import * as l10n from "@vscode/l10n";
+
 export interface SupportLink {
   id: "sponsor" | "coffee";
   /** The page. The READMEs, the extensions and .github/FUNDING.yml carry the same two. */
@@ -29,30 +31,63 @@ export interface SupportLink {
   keywords: string;
 }
 
+// Every label/blurb below is a GETTER, not a plain string property: this array
+// is a module-level constant, built once at import time — before boot()
+// configures the l10n bundle (main/language.ts) for main, or before the
+// renderer's own l10nBoot runs. A plain string here would freeze to English
+// forever; a getter defers l10n.t() to the moment something actually reads
+// `.label` etc., which is always after the bundle is ready. Property access
+// (`link.label`) is unchanged for every caller.
 export const SUPPORT_LINKS: readonly SupportLink[] = [
   {
     id: "sponsor",
     url: "https://github.com/sponsors/antonarnaudov",
     icon: "heart",
-    label: "Sponsor on GitHub",
-    blurb: "recurring support",
-    menuLabel: "Sponsor GitStudio on GitHub…",
-    paletteLabel: "Sponsor GitStudio on GitHub",
+    get label() {
+      return l10n.t("Sponsor on GitHub");
+    },
+    get blurb() {
+      return l10n.t("recurring support");
+    },
+    get menuLabel() {
+      return l10n.t("Sponsor GitStudio on GitHub…");
+    },
+    get paletteLabel() {
+      return l10n.t("Sponsor GitStudio on GitHub");
+    },
     keywords: "support sponsor donate fund github sponsors",
   },
   {
     id: "coffee",
     url: "https://checkout.revolut.com/pay/7a6070ab-99ba-4170-a125-c5911b1a5c1d",
     icon: "coffee",
-    label: "Buy me a coffee",
-    blurb: "a one-off tip",
-    menuLabel: "Buy Me a Coffee…",
-    paletteLabel: "Buy me a coffee",
+    get label() {
+      return l10n.t("Buy me a coffee");
+    },
+    get blurb() {
+      return l10n.t("a one-off tip");
+    },
+    get menuLabel() {
+      return l10n.t("Buy Me a Coffee…");
+    },
+    get paletteLabel() {
+      return l10n.t("Buy me a coffee");
+    },
     keywords: "support donate tip coffee one-off",
   },
 ];
 
-/** Settings ▸ About's one sentence. */
+/**
+ * Settings ▸ About's one sentence, and Home's foot line.
+ *
+ * NOT wrapped in l10n.t() here: both are plain exported constants read
+ * directly by the renderer (renderer.ts, views/dashboard.ts) as string values,
+ * not through a function call or a property access — unlike SUPPORT_LINKS
+ * above, turning them into a lazy getter would mean every READER changing how
+ * it reads them, and those readers are outside this file's scope. Left as
+ * English constants; the renderer-side l10n pass is the right place to either
+ * wrap these at their point of use or change this export's shape.
+ */
 export const SUPPORT_SENTENCE = "GitStudio is free and open source. If it saves you time, you can support it.";
 
 /** Home's foot line, before its two links. */

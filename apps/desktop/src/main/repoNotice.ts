@@ -1,6 +1,7 @@
 import { accessSync, constants, existsSync, lstatSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { ExpectedError } from "./expectedError";
+import * as l10n from "@vscode/l10n";
 import type { GitAvailability } from "../shared/ipc";
 
 /** An in-app notice (`app:notice`) — never a native alert. */
@@ -87,7 +88,7 @@ export function cannotOpenNotice(path: string, probe: Partial<RepoNoticeProbe> =
   const p = { ...FS_PROBE, ...probe };
   const dotGit = p.dotGitAbove(path);
   if (!dotGit) {
-    return { kind: "warn", message: `${path} is not inside a Git repository.` };
+    return { kind: "warn", message: l10n.t("{0} is not inside a Git repository.", path) };
   }
   const root = dirname(dotGit);
   // The .git itself, and — for a repository's own .git folder — the three
@@ -97,20 +98,21 @@ export function cannotOpenNotice(path: string, probe: Partial<RepoNoticeProbe> =
   if (denied) {
     return {
       kind: "warn",
-      message:
-        `${root} is a Git repository, but you don't have permission to read it. ` +
-        "Check the permissions on its .git folder, then open it again.",
+      message: l10n.t(
+        "{0} is a Git repository, but you don't have permission to read it. Check the permissions on its .git folder, then open it again.",
+        root,
+      ),
     };
   }
   if (p.ownedByOtherUser(dotGit)) {
     return {
       kind: "warn",
-      message: `${root} is a Git repository that belongs to another user account, so Git won't open it.`,
+      message: l10n.t("{0} is a Git repository that belongs to another user account, so Git won't open it.", root),
     };
   }
   return {
     kind: "warn",
-    message: `${root} is a Git repository, but Git can't read it — its .git folder may be damaged.`,
+    message: l10n.t("{0} is a Git repository, but Git can't read it — its .git folder may be damaged.", root),
   };
 }
 
@@ -119,13 +121,33 @@ export function cannotOpenNotice(path: string, probe: Partial<RepoNoticeProbe> =
  * of anything about the folder — so say that, and nothing about the folder.
  */
 export function gitMissingNotice(git: Extract<GitAvailability, { ok: false }>): RepoNotice {
-  const why =
-    git.reason === "xcode"
-      ? "Git on this Mac needs Apple's Command Line Tools. Install them (run xcode-select --install in Terminal)"
-      : git.reason === "broken"
-        ? `Git didn't run${git.detail ? ` ("${git.detail}")` : ""}. Reinstall it`
-        : "Git isn't installed. Install it";
-  return { kind: "warn", message: `GitStudio can't open repositories without Git. ${why}, then open the folder again.` };
+  if (git.reason === "xcode") {
+    return {
+      kind: "warn",
+      message: l10n.t(
+        "GitStudio can't open repositories without Git. Git on this Mac needs Apple's Command Line Tools. Install them (run xcode-select --install in Terminal), then open the folder again.",
+      ),
+    };
+  }
+  if (git.reason === "broken") {
+    return {
+      kind: "warn",
+      message: git.detail
+        ? l10n.t(
+            "GitStudio can't open repositories without Git. Git didn't run (\"{0}\"). Reinstall it, then open the folder again.",
+            git.detail,
+          )
+        : l10n.t(
+            "GitStudio can't open repositories without Git. Git didn't run. Reinstall it, then open the folder again.",
+          ),
+    };
+  }
+  return {
+    kind: "warn",
+    message: l10n.t(
+      "GitStudio can't open repositories without Git. Git isn't installed. Install it, then open the folder again.",
+    ),
+  };
 }
 
 /**
@@ -135,7 +157,7 @@ export function gitMissingNotice(git: Extract<GitAvailability, { ok: false }>): 
 export function tabsFullNotice(max: number): RepoNotice {
   return {
     kind: "info",
-    message: `GitStudio keeps up to ${max} repositories open. Close a tab to open another.`,
+    message: l10n.t("GitStudio keeps up to {0} repositories open. Close a tab to open another.", max),
   };
 }
 
@@ -147,19 +169,23 @@ export function tabsFullNotice(max: number): RepoNotice {
 export function droppedTabsNotice(roots: readonly string[]): RepoNotice {
   const names = roots.map((r) => r.split(/[\\/]/).filter(Boolean).pop() || r);
   const list =
-    names.length <= 3 ? names.join(", ") : `${names.slice(0, 3).join(", ")} and ${names.length - 3} more`;
+    names.length <= 3 ? names.join(", ") : l10n.t("{0} and {1} more", names.slice(0, 3).join(", "), names.length - 3);
   return {
     kind: "info",
     message:
       names.length === 1
-        ? `${list} was not reopened: ${roots[0]} is gone or no longer a Git repository.`
-        : `${names.length} tabs were not reopened because their folders are gone or no longer Git repositories: ${list}.`,
+        ? l10n.t("{0} was not reopened: {1} is gone or no longer a Git repository.", list, roots[0])
+        : l10n.t(
+            "{0} tabs were not reopened because their folders are gone or no longer Git repositories: {1}.",
+            names.length,
+            list,
+          ),
   };
 }
 
 /** What a git command in a tab whose folder is gone says instead (row 14). */
 export function missingFolderMessage(root: string): string {
-  return `The folder ${root} is not there any more — it was moved or deleted.`;
+  return l10n.t("The folder {0} is not there any more — it was moved or deleted.", root);
 }
 
 /** Node's error for a child it could not start: `spawn <git> ENOENT`. */

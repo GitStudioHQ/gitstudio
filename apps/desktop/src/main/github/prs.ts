@@ -19,6 +19,7 @@
 // module is self-contained.
 
 import { GitHubClient, enc } from "../githubClient";
+import * as l10n from "@vscode/l10n";
 import { mapPull, mapUser, type RawPull, type RawUser } from "./maps";
 import { PAGE_CAPS } from "../githubPaging";
 import { errorFields, unreadableEntries, type GraphqlFailure } from "../githubErrors";
@@ -288,7 +289,7 @@ export async function prMarkReady(
     );
     const id = data?.repository?.pullRequest?.id;
     if (!id) {
-      return { ok: false, changed: false, message: "Couldn't resolve the pull request to mark ready." };
+      return { ok: false, changed: false, message: l10n.t("Couldn't resolve the pull request to mark ready.") };
     }
     await client.graphql<unknown>(
       `mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){pullRequest{number}}}`,

@@ -20,6 +20,7 @@
 // electron-updater must never affect startup.
 
 import { app, shell } from "electron";
+import * as l10n from "@vscode/l10n";
 import { createWriteStream } from "node:fs";
 import { rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
@@ -207,7 +208,7 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
   const disabled: UpdateCheckResult = {
     status: "disabled",
     current,
-    message: "Updates are disabled in development builds.",
+    message: l10n.t("Updates are disabled in development builds."),
   };
   if (opts.isDev) {
     return {
@@ -254,7 +255,7 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
         signal: AbortSignal.timeout(10_000),
       });
       if (!res.ok) {
-        return { status: "error", current, message: `GitHub responded ${res.status}.` };
+        return { status: "error", current, message: l10n.t("GitHub responded {0}.", res.status) };
       }
       const releases = (await res.json()) as RawRelease[];
       // Only what this Mac can run (a release's `minimum-macos`). A macOS
@@ -269,9 +270,13 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
           return {
             status: "uptodate",
             current,
-            message:
-              `GitStudio ${newer.version} needs macOS ${newer.needs} or later, and this Mac runs macOS ${macos}. ` +
-              `You have the newest version for it (${current}).`,
+            message: l10n.t(
+              "GitStudio {0} needs macOS {1} or later, and this Mac runs macOS {2}. You have the newest version for it ({3}).",
+              newer.version,
+              newer.needs,
+              macos,
+              current,
+            ),
           };
         }
         return { status: "uptodate", current };
@@ -285,7 +290,7 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
       return {
         status: "error",
         current,
-        message: e instanceof Error ? e.message : "The update check failed.",
+        message: e instanceof Error ? e.message : l10n.t("The update check failed."),
       };
     }
   };
@@ -296,13 +301,13 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
       return { ok: true };
     }
     if (state !== "available" || !availableVersion) {
-      return { ok: false, expected: true, message: "No update is waiting to download." };
+      return { ok: false, expected: true, message: l10n.t("No update is waiting to download.") };
     }
     if (!macAsset) {
       // The release exists but has no matching mac asset (e.g. a partial
       // upload) — send the user to the release page rather than dead-ending.
       void shell.openExternal(RELEASES_PAGE);
-      return { ok: false, message: "Couldn't find a macOS download — opened the releases page." };
+      return { ok: false, message: l10n.t("Couldn't find a macOS download — opened the releases page.") };
     }
     state = "downloading";
     const dest = join(app.getPath("downloads"), macAsset.name);
@@ -313,7 +318,7 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
         signal: AbortSignal.timeout(15 * 60_000),
       });
       if (!res.ok || !res.body) {
-        throw new Error(`Download failed (${res.status}).`);
+        throw new Error(l10n.t("Download failed ({0}).", res.status));
       }
       const total = Number(res.headers.get("content-length")) || macAsset.size || 0;
       const file = createWriteStream(tmp);
@@ -340,13 +345,13 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
     } catch (e) {
       state = "available";
       void unlink(tmp).catch(() => {});
-      return { ok: false, message: e instanceof Error ? e.message : "The download failed." };
+      return { ok: false, message: e instanceof Error ? e.message : l10n.t("The download failed.") };
     }
   };
 
   const macInstall = async (): Promise<OkResult> => {
     if (state !== "ready" || !readyPath) {
-      return { ok: false, expected: true, message: "No downloaded update to open." };
+      return { ok: false, expected: true, message: l10n.t("No downloaded update to open.") };
     }
     const err = await shell.openPath(readyPath);
     if (err) {
@@ -393,7 +398,7 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
     if (state === "ready") return { status: "ready", current, version: availableVersion };
     const u = await getUpdater();
     if (!u) {
-      return { status: "disabled", current, message: "Updates aren't available in this build." };
+      return { status: "disabled", current, message: l10n.t("Updates aren't available in this build.") };
     }
     try {
       const r = await u.checkForUpdates();
@@ -409,7 +414,7 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
       return {
         status: "error",
         current,
-        message: e instanceof Error ? e.message : "The update check failed.",
+        message: e instanceof Error ? e.message : l10n.t("The update check failed."),
       };
     }
   };
@@ -420,11 +425,11 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
       return { ok: true };
     }
     if (state !== "available") {
-      return { ok: false, expected: true, message: "No update is waiting to download." };
+      return { ok: false, expected: true, message: l10n.t("No update is waiting to download.") };
     }
     const u = await getUpdater();
     if (!u) {
-      return { ok: false, expected: true, message: "Updates aren't available in this build." };
+      return { ok: false, expected: true, message: l10n.t("Updates aren't available in this build.") };
     }
     state = "downloading";
     try {
@@ -433,17 +438,17 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
       return { ok: true };
     } catch (e) {
       state = "available";
-      return { ok: false, message: e instanceof Error ? e.message : "The download failed." };
+      return { ok: false, message: e instanceof Error ? e.message : l10n.t("The download failed.") };
     }
   };
 
   const elInstall = async (): Promise<OkResult> => {
     if (state !== "ready") {
-      return { ok: false, expected: true, message: "No downloaded update to install." };
+      return { ok: false, expected: true, message: l10n.t("No downloaded update to install.") };
     }
     const u = await getUpdater();
     if (!u) {
-      return { ok: false, expected: true, message: "Updates aren't available in this build." };
+      return { ok: false, expected: true, message: l10n.t("Updates aren't available in this build.") };
     }
     // Restart straight into the new version.
     setImmediate(() => u.quitAndInstall());

@@ -1,4 +1,5 @@
 import { runRebasePlan, isRebaseInProgress } from "@gitstudio/git-service/RebaseRunner";
+import * as l10n from "@vscode/l10n";
 import type { RebaseOutcome } from "@gitstudio/git-service/RebaseRunner";
 import { buildRebasePlan } from "@gitstudio/git-service/rebasePlan";
 import { dropBlocker, dropCommit, planDropCommit, undoDrop, undoRewrite, type DropOutcome } from "@gitstudio/git-service/dropCommit";
@@ -83,7 +84,7 @@ export class RebaseBridge {
     if (!root || !ctx) {
       // Not a defect — the workspace can be asked for a plan before a repository
       // is open (see main/expectedError.ts).
-      return { ...empty, expected: true, message: "Open a repository first." };
+      return { ...empty, expected: true, message: l10n.t("Open a repository first.") };
     }
 
     const inProgress = await isRebaseInProgress(root).catch(() => false);
@@ -145,8 +146,13 @@ export class RebaseBridge {
     if (merges > 0) {
       notes.push(
         merges === 1
-          ? "A merge commit in this range isn't listed — a rebase replays the merged-in commits one by one and the merge itself disappears."
-          : `${merges} merge commits in this range aren't listed — a rebase replays the merged-in commits one by one and the merges themselves disappear.`,
+          ? l10n.t(
+              "A merge commit in this range isn't listed — a rebase replays the merged-in commits one by one and the merge itself disappears.",
+            )
+          : l10n.t(
+              "{0} merge commits in this range aren't listed — a rebase replays the merged-in commits one by one and the merges themselves disappear.",
+              merges,
+            ),
       );
     }
     // `--cherry-pick` drops commits whose patch is already on the base. That is
@@ -158,8 +164,13 @@ export class RebaseBridge {
     if (applied > 0) {
       notes.push(
         applied === 1
-          ? "One commit in this range isn't listed — its change is already on the base, so a rebase would skip it."
-          : `${applied} commits in this range aren't listed — their changes are already on the base, so a rebase would skip them.`,
+          ? l10n.t(
+              "One commit in this range isn't listed — its change is already on the base, so a rebase would skip it.",
+            )
+          : l10n.t(
+              "{0} commits in this range aren't listed — their changes are already on the base, so a rebase would skip them.",
+              applied,
+            ),
       );
     }
     if (fellBack) {
@@ -170,8 +181,10 @@ export class RebaseBridge {
       // commits than the default range, that is what every first visit said.
       notes.push(
         req.base
-          ? `“${req.base}” doesn't resolve here — showing the whole branch instead.`
-          : "No base was set and the default range doesn't reach here, so this is the whole branch, starting at the root commit.",
+          ? l10n.t("“{0}” doesn't resolve here — showing the whole branch instead.", req.base)
+          : l10n.t(
+              "No base was set and the default range doesn't reach here, so this is the whole branch, starting at the root commit.",
+            ),
       );
     }
     if (commits.length >= MAX_PLAN_COMMITS) {
@@ -185,9 +198,10 @@ export class RebaseBridge {
       // reading that the older commits are untouched, which is exactly what
       // someone weighing a large rebase needs to get right.
       notes.push(
-        `Showing the newest ${MAX_PLAN_COMMITS} commits. The older ones in this range are replayed ` +
-          `unchanged — you can't edit them here, but they are still rewritten and get new IDs. ` +
-          `Pick a nearer base to narrow the range.`,
+        l10n.t(
+          "Showing the newest {0} commits. The older ones in this range are replayed unchanged — you can't edit them here, but they are still rewritten and get new IDs. Pick a nearer base to narrow the range.",
+          MAX_PLAN_COMMITS,
+        ),
       );
     }
     return {
@@ -489,13 +503,13 @@ export class RebaseBridge {
     // user's state — see onTheWire.
     const root = this.root();
     if (!root) {
-      return { status: "failed", ok: false, expected: true, message: "Open a repository first." };
+      return { status: "failed", ok: false, expected: true, message: l10n.t("Open a repository first.") };
     }
     const rows = req.rows ?? [];
     if (!rows.length) {
       // The view only offers Start rebase over the commits it drew, so a plan
       // with no rows is a request we built wrong — reported.
-      return { status: "failed", ok: false, message: "The rebase plan had no commits in it." };
+      return { status: "failed", ok: false, message: l10n.t("The rebase plan had no commits in it.") };
     }
     // The plan describes a branch tip. If the tip has moved since — a commit
     // made in a terminal, a pull, an amend — the rows no longer cover the
@@ -515,9 +529,9 @@ export class RebaseBridge {
           status: "failed",
           ok: false,
           expected: true,
-          message:
-            "The branch has moved since this plan was built — something committed, pulled or amended " +
-            "while it was open. Reload the plan and try again.",
+          message: l10n.t(
+            "The branch has moved since this plan was built — something committed, pulled or amended while it was open. Reload the plan and try again.",
+          ),
         };
       }
     }
@@ -539,8 +553,9 @@ export class RebaseBridge {
       return {
         status: "failed",
         ok: false,
-        message:
+        message: l10n.t(
           "Couldn't read the full commit range, so the plan can't be applied safely. Pick a nearer base and try again.",
+        ),
       };
     }
     const fullRows = [...rows, ...carried];
@@ -575,7 +590,7 @@ export class RebaseBridge {
   async dropPlan(req: DropPlanRequest): Promise<DropPlanWire> {
     const ctx = this.repos.getContext();
     if (!ctx) {
-      return { ok: false, expected: true, reason: "no-repo", message: "Open a repository first." };
+      return { ok: false, expected: true, reason: "no-repo", message: l10n.t("Open a repository first.") };
     }
     const plan = await planDropCommit(ctx.process, String(req?.sha ?? ""));
     if (!plan.ok) {
@@ -602,7 +617,7 @@ export class RebaseBridge {
     const root = this.root();
     const ctx = this.repos.getContext();
     if (!root || !ctx) {
-      return { status: "failed", ok: false, expected: true, message: "Open a repository first." };
+      return { status: "failed", ok: false, expected: true, message: l10n.t("Open a repository first.") };
     }
     try {
       const out = await dropCommit(
@@ -623,7 +638,7 @@ export class RebaseBridge {
   async undoDrop(req: UndoDropRequest): Promise<CommitActionResult> {
     const ctx = this.repos.getContext();
     if (!ctx) {
-      return { ok: false, changed: false, expected: true, message: "Open a repository first." };
+      return { ok: false, changed: false, expected: true, message: l10n.t("Open a repository first.") };
     }
     const r = await undoDrop(ctx.process, {
       before: String(req?.before ?? ""),
@@ -672,7 +687,7 @@ export class RebaseBridge {
   async commitsPlan(req: CommitsPlanRequest): Promise<CommitsPlanWire> {
     const ctx = this.repos.getContext();
     if (!ctx) {
-      return { ok: false, expected: true, reason: "no-repo", message: "Open a repository first." };
+      return { ok: false, expected: true, reason: "no-repo", message: l10n.t("Open a repository first.") };
     }
     const verb = req?.verb === "squash" ? "squash" : "drop";
     const plan = await planMany(ctx.process, verb, selectedCommits(Array.isArray(req?.shas) ? req.shas : []));
@@ -701,7 +716,7 @@ export class RebaseBridge {
     const root = this.root();
     const ctx = this.repos.getContext();
     if (!root || !ctx) {
-      return { status: "failed", ok: false, expected: true, message: "Open a repository first." };
+      return { status: "failed", ok: false, expected: true, message: l10n.t("Open a repository first.") };
     }
     try {
       const verb = req?.verb === "squash" ? "squash" : "drop";
@@ -727,7 +742,7 @@ export class RebaseBridge {
   async commitsUndo(req: CommitsUndoRequest): Promise<CommitActionResult> {
     const ctx = this.repos.getContext();
     if (!ctx) {
-      return { ok: false, changed: false, expected: true, message: "Open a repository first." };
+      return { ok: false, changed: false, expected: true, message: l10n.t("Open a repository first.") };
     }
     const what = ["drop", "squash", "cherry-pick", "revert"].includes(String(req?.what)) ? String(req.what) : "change";
     const r = await undoRewrite(
@@ -772,13 +787,13 @@ function relTime(epochSeconds: number): string {
   }
   const secs = Math.max(0, Math.floor(Date.now() / 1000) - epochSeconds);
   const mins = Math.floor(secs / 60);
-  if (mins < 1) return "now";
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return l10n.t("now");
+  if (mins < 60) return l10n.t("{0}m ago", mins);
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return l10n.t("{0}h ago", hours);
   const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
+  if (days < 30) return l10n.t("{0}d ago", days);
   const months = Math.floor(days / 30);
-  if (months < 12) return `${months}mo ago`;
-  return `${Math.floor(months / 12)}y ago`;
+  if (months < 12) return l10n.t("{0}mo ago", months);
+  return l10n.t("{0}y ago", Math.floor(months / 12));
 }

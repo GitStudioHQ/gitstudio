@@ -6,6 +6,7 @@
 // plus the data calls.
 
 import { app } from "electron";
+import * as l10n from "@vscode/l10n";
 import { githubStatus } from "./githubStatus";
 import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
@@ -265,7 +266,7 @@ export class GitHubBridge {
       return {
         ok: false,
         expected: true,
-        message: "That token didn't work — make sure it has 'repo' scope.",
+        message: l10n.t("That token didn't work — make sure it has 'repo' scope."),
       };
     }
     await this.persistToken(this.token);
@@ -336,7 +337,7 @@ export class GitHubBridge {
     if (!this.login) {
       this.token = undefined;
       this.loading = undefined; // the account already stored (if any) is still the one
-      return { state: "error", message: "Signed in, but GitHub didn't return a user." };
+      return { state: "error", message: l10n.t("Signed in, but GitHub didn't return a user.") };
     }
     await this.persistToken(r.accessToken);
     this.loginConfirmed = true;
@@ -384,11 +385,11 @@ export class GitHubBridge {
     // here is expected and explicable — unlike one at launch.
     await this.ensureLoaded();
     if (!this.token) {
-      throw new ExpectedError("Not connected to GitHub.");
+      throw new ExpectedError(l10n.t("Not connected to GitHub."));
     }
     const r = await this.resolveOwnerRepo();
     if (!r) {
-      throw new ExpectedError("This repository isn't on github.com.");
+      throw new ExpectedError(l10n.t("This repository isn't on github.com."));
     }
     return fn(this.client, r.owner, r.repo);
   }
@@ -397,7 +398,7 @@ export class GitHubBridge {
   async withClient<T>(fn: (client: GitHubClient) => Promise<T>): Promise<T> {
     await this.ensureLoaded();
     if (!this.token) {
-      throw new ExpectedError("Not connected to GitHub.");
+      throw new ExpectedError(l10n.t("Not connected to GitHub."));
     }
     return fn(this.client);
   }
@@ -483,13 +484,13 @@ export class GitHubBridge {
   async prCheckout(req: number | { number: number; stashFirst?: string }): Promise<CommitActionResult> {
     const ctx = this.repos.getContext();
     if (!ctx) {
-      return { ok: false, changed: false, expected: true, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: l10n.t("No repository open.") };
     }
     // The number, or — sent again after Stash & Retry — `{ number, stashFirst }`.
     const n = typeof req === "number" ? req : req?.number;
     const stashFirst = typeof req === "number" ? undefined : req?.stashFirst;
     if (!Number.isSafeInteger(n) || (n as number) <= 0) {
-      return { ok: false, changed: false, message: "That isn't a pull request number." };
+      return { ok: false, changed: false, message: l10n.t("That isn't a pull request number.") };
     }
     try {
       // pr/<n> is checked out in another worktree: said where, before
@@ -527,7 +528,7 @@ export class GitHubBridge {
             expected: true,
             message: plan.worktree
               ? checkedOutElsewhereMessage(plan.local, plan.worktree, "checkout", !existsSync(plan.worktree))
-              : `${plan.local} is checked out in another worktree. Switch to it there.`,
+              : l10n.t("{0} is checked out in another worktree. Switch to it there.", plan.local),
           };
         case "diverged":
           // Nothing is moved over commits the PR doesn't have.
@@ -576,7 +577,7 @@ export class GitHubBridge {
   async prMerge(req: { number: number; method: MergeMethod }): Promise<CommitActionResult> {
     const r = await this.resolveOwnerRepo();
     if (!r || !this.token) {
-      return { ok: false, changed: false, message: "Not connected to GitHub.", expected: true };
+      return { ok: false, changed: false, message: l10n.t("Not connected to GitHub."), expected: true };
     }
     try {
       await this.client.mergePull(r.owner, r.repo, req.number, req.method);
@@ -616,7 +617,7 @@ export class GitHubBridge {
   }
   async prApprove(n: number): Promise<CommitActionResult> {
     const r = await this.resolveOwnerRepo();
-    if (!r || !this.token) return { ok: false, changed: false, message: "Not connected to GitHub.", expected: true };
+    if (!r || !this.token) return { ok: false, changed: false, message: l10n.t("Not connected to GitHub."), expected: true };
     try {
       await this.client.approvePull(r.owner, r.repo, n);
       return { ok: true, changed: false };

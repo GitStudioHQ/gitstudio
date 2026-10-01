@@ -1,6 +1,8 @@
 // Pure, dependency-free validation for user-supplied `git clone` URLs. Kept
 // separate from cloneBridge (which imports electron) so it can be unit-tested.
 
+import * as l10n from "@vscode/l10n";
+
 /** Protocols git is permitted to use for a clone (passed via GIT_ALLOW_PROTOCOL).
  *  This hard-blocks the `ext`/`fd` remote-helper transports, which can run
  *  arbitrary shell commands embedded in a URL (CVE-2017-1000117 class). */
@@ -19,19 +21,19 @@ export const ALLOWED_PROTOCOLS = "https:http:git:ssh:file";
  */
 export function validateCloneUrl(raw: string): string | null {
   const url = raw.trim();
-  if (!url) return "No repository URL was provided.";
+  if (!url) return l10n.t("No repository URL was provided.");
   if (url.startsWith("-")) {
-    return "That doesn't look like a valid repository URL.";
+    return l10n.t("That doesn't look like a valid repository URL.");
   }
   // `scheme::address` is git's remote-helper syntax (ext::, fd::, …) — never allow it.
   if (/^[a-z][a-z0-9+.-]*::/i.test(url)) {
-    return "That URL uses an unsupported transport.";
+    return l10n.t("That URL uses an unsupported transport.");
   }
   // Explicit `scheme://` URLs must use an allowed protocol.
   const m = /^([a-z][a-z0-9+.-]*):\/\//i.exec(url);
   if (m) {
     if (!ALLOWED_PROTOCOLS.split(":").includes(m[1].toLowerCase())) {
-      return "That URL uses an unsupported scheme.";
+      return l10n.t("That URL uses an unsupported scheme.");
     }
     return null;
   }
@@ -41,5 +43,5 @@ export function validateCloneUrl(raw: string): string | null {
   if (/^([^\s/]+@)?[^\s/:]+:.+/.test(url) || url.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(url)) {
     return null;
   }
-  return "That doesn't look like a valid repository URL.";
+  return l10n.t("That doesn't look like a valid repository URL.");
 }
