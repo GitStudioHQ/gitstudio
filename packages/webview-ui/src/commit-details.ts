@@ -1172,7 +1172,7 @@ export class CommitDetails extends LitElement {
     return html`<div class="rrow"><span class="rlabel">${l10n.t("in")}</span
       ><span class="rvals">
         <button class="linkish" @click=${this.toggleContains}
-          >${n} ${list.length === 1 ? "branch" : "branches"}</button>
+          >${list.length === 1 ? l10n.t("{0} branch", n) : l10n.t("{0} branches", n)}</button>
         ${this.containsOpen
           ? html`<span class="contains-list">${list.map(
               (b) => html`<span class="chip chip-contains" title=${b}

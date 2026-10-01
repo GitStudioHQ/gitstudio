@@ -196,7 +196,7 @@ export async function movePrBranch(
 /** "pr/7 has 2 commits that pull request #7 doesn't …" — the diverged case, in words. */
 export function divergedMessage(n: number, plan: PrHeadPlan): string {
   const k = plan.localOnly;
-  const commits = k === undefined ? "commits" : k === 1 ? "1 commit" : `${k} commits`;
+  const commits = k === undefined ? l10n.t("commits") : k === 1 ? l10n.t("1 commit") : l10n.t("{0} commits", k);
   return (
     l10n.t("{0} has {1} that pull request #{2} doesn't — made here, or from before ", plan.local, commits, n) +
     l10n.t("the PR was force-pushed.")
