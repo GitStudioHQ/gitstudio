@@ -1116,45 +1116,45 @@ class App {
     // greeted by — most of the time it is an empty list, and it says nothing
     // about the other repositories you have on the go or the review that has
     // been waiting since yesterday. Changes keeps its seat, one below.
-    { id: "dashboard", label: "Home", icon: "home" },
+    { id: "dashboard", label: l10n.t("Home"), icon: "home" },
     // Repositories rides shotgun. It is the only destination that still means
     // something with no repository open, and "which repo am I working in" is
     // the decision that precedes every other entry on this rail — filing it
     // under ACCOUNT, fifteen rows down, buried the front door's hallway.
-    { id: "repositories", label: "Repositories", icon: "repo" },
+    { id: "repositories", label: l10n.t("Repositories"), icon: "repo" },
     // Changes is a set of pending file diffs, not the SCM view's fork.
     // It leads the group of views ABOUT the open repository, and the divider
     // says so — the rail's principle is where the data lives: this machine,
     // then this repository, then this repository on GitHub, then your account.
-    { id: "changes", label: "Changes", icon: "diff-multiple", divider: true, dividerLabel: "This repository" },
-    { id: "graph", label: "Commits", icon: "git-commit" },
-    { id: "branches", label: "Branches", icon: "git-branch" },
-    { id: "compare", label: "Compare", icon: "git-compare" },
+    { id: "changes", label: l10n.t("Changes"), icon: "diff-multiple", divider: true, dividerLabel: "This repository" },
+    { id: "graph", label: l10n.t("Commits"), icon: "git-commit" },
+    { id: "branches", label: l10n.t("Branches"), icon: "git-branch" },
+    { id: "compare", label: l10n.t("Compare"), icon: "git-compare" },
     // Rebase here IS an ordered list of commits you reorder and replay — a
     // truer picture than `git-merge`, which is a different operation besides.
-    { id: "rebase", label: "Rebase", icon: "list-ordered" },
-    { id: "code", label: "Code", icon: "code" },
+    { id: "rebase", label: l10n.t("Rebase"), icon: "list-ordered" },
+    { id: "code", label: l10n.t("Code"), icon: "code" },
     // Inbox first in the GitHub group — the "what needs me" surface (Linear's
     // Inbox translated): review requests, mentions, assignments, CI failures.
     // The top-bar bell stays for a quick glance; this is the full triage page.
-    { id: "notifications", label: "Inbox", icon: "inbox", divider: true },
+    { id: "notifications", label: l10n.t("Inbox"), icon: "inbox", divider: true },
     // "What needs me?" answered in one page: review requests, assignments,
     // your own PRs, mentions — each row one click from acting on it.
-    { id: "mywork", label: "My Work", icon: "person" },
-    { id: "prs", label: "Pull Requests", icon: "git-pull-request" },
+    { id: "mywork", label: l10n.t("My Work"), icon: "person" },
+    { id: "prs", label: l10n.t("Pull Requests"), icon: "git-pull-request" },
     // `issues` (the list glyph) rather than `issue-opened`, which reads as a
     // single issue's OPEN state and clashed with per-issue status icons.
-    { id: "issues", label: "Issues", icon: "issues" },
+    { id: "issues", label: l10n.t("Issues"), icon: "issues" },
     // CI pipelines read as "runs" — a play badge, not the abstract Actions logo.
-    { id: "actions", label: "Actions", icon: "play-circle" },
-    { id: "releases", label: "Releases", icon: "tag" },
-    { id: "projects", label: "Projects", icon: "project" },
+    { id: "actions", label: l10n.t("Actions"), icon: "play-circle" },
+    { id: "releases", label: l10n.t("Releases"), icon: "tag" },
+    { id: "projects", label: l10n.t("Projects"), icon: "project" },
     // Organizations and Gists are GitHub surfaces like everything above them —
     // the old "Account" group was a distinction between kinds of GitHub data
     // that nobody shopping the rail was making, and with Search gone and
     // Repositories promoted it held two orphans under a heading.
-    { id: "orgs", label: "Organizations", icon: "organization" },
-    { id: "gists", label: "Gists", icon: "gist" },
+    { id: "orgs", label: l10n.t("Organizations"), icon: "organization" },
+    { id: "gists", label: l10n.t("Gists"), icon: "gist" },
     // Search has NO rail entry — deliberately. It is a routed surface (the
     // view keeps its `explore` id, deep links and entity pages), but the way
     // IN is the search vocabulary the app already has everywhere: the topbar
@@ -1162,11 +1162,34 @@ class App {
     // filing cabinet; a search that is one keystroke from anywhere is a tool.
   ];
 
+  /** TABS.label is compared against (dividerLabel) and kept as English keys;
+   *  this is the literal, statically-extractable translation of each. */
+  private static readonly NAV_LABELS: Record<string, string> = {
+    dashboard: l10n.t("Home"),
+    repositories: l10n.t("Repositories"),
+    changes: l10n.t("Changes"),
+    graph: l10n.t("Commits"),
+    branches: l10n.t("Branches"),
+    compare: l10n.t("Compare"),
+    rebase: l10n.t("Rebase"),
+    code: l10n.t("Code"),
+    notifications: l10n.t("Inbox"),
+    mywork: l10n.t("My Work"),
+    prs: l10n.t("Pull Requests"),
+    issues: l10n.t("Issues"),
+    actions: l10n.t("Actions"),
+    releases: l10n.t("Releases"),
+    projects: l10n.t("Projects"),
+    orgs: l10n.t("Organizations"),
+    gists: l10n.t("Gists"),
+    settings: l10n.t("Settings"),
+  };
+
   private buildNav(): HTMLElement {
     const nav = el("nav", "nav-rail" + (this.railCollapsed ? " collapsed" : ""));
     nav.setAttribute("role", "tablist");
     nav.setAttribute("aria-orientation", "vertical");
-    nav.setAttribute("aria-label", "Repository views");
+    nav.setAttribute("aria-label", l10n.t("Repository views"));
     nav.style.width = this.railCollapsed ? "" : `${this.railWidth}px`;
     this.railEl = nav;
     this.navButtons = [];
@@ -1185,7 +1208,7 @@ class App {
       if (!this.currentRepo && App.NEEDS_REPO.has(id)) {
         (btn as HTMLButtonElement).disabled = true;
         btn.classList.add("is-unavailable");
-        btn.title = `${label} — open a repository first`;
+        btn.title = l10n.t("{0} — open a repository first", label);
         btn.setAttribute("aria-label", btn.title);
       }
       btn.addEventListener("click", () => this.routeView(id));
@@ -1220,13 +1243,13 @@ class App {
         // instead. TABS is static, so this resolves here, not in the literal.
         const isRepoGroup = it.dividerLabel === "This repository";
         const label = isRepoGroup
-          ? (this.currentRepo?.name ?? "This repository")
-          : (it.dividerLabel ?? "GitHub");
+          ? (this.currentRepo?.name ?? l10n.t("This repository"))
+          : l10n.t("GitHub");
         // Collapsed to icons the label is hidden, so the group's name lives on
         // the rule itself.
         sep.title =
           isRepoGroup && this.currentRepo
-            ? `${this.currentRepo.name} — the repository open on this machine`
+            ? l10n.t("{0} — the repository open on this machine", this.currentRepo.name)
             : label;
         sep.setAttribute("role", "separator");
         sep.setAttribute("aria-label", sep.title);
@@ -1234,14 +1257,14 @@ class App {
         sep.append(span(label, "nav-divider-label"));
         nav.appendChild(sep);
       }
-      nav.appendChild(mkItem(it.id, it.label, it.icon, i < 9 ? `${mod}${i + 1}` : undefined));
+      nav.appendChild(mkItem(it.id, App.NAV_LABELS[it.id] ?? it.label, it.icon, i < 9 ? `${mod}${i + 1}` : undefined));
     });
     // Footer: just Settings, pinned to the bottom of the rail. The terminal lives
     // permanently in the bottom footer dock; the sidebar toggle lives in the top
     // bar — neither clutters the rail. A dedicated class makes it a quiet, compact
     // affordance hugging the rail's bottom edge, roughly at the footer dock's level.
     nav.appendChild(el("div", "nav-spacer"));
-    const settingsItem = mkItem("settings", "Settings", "gear", `${mod},`);
+    const settingsItem = mkItem("settings", l10n.t("Settings"), "gear", `${mod},`);
     settingsItem.classList.add("nav-foot-item");
     nav.appendChild(settingsItem);
     return nav;
@@ -1257,7 +1280,7 @@ class App {
     grip.append(el("div", "rail-resizer-grip"));
     wireResizerKeys(grip, {
       orientation: "vertical",
-      label: "Resize sidebar",
+      label: l10n.t("Resize sidebar"),
       min: 168,
       max: () => 360,
       get: () => this.railWidth,
@@ -1312,7 +1335,7 @@ class App {
   private syncRailToggle(): void {
     const t = this.railToggleEl;
     if (!t) return;
-    t.title = this.railCollapsed ? "Show sidebar" : "Hide sidebar";
+    t.title = this.railCollapsed ? l10n.t("Show sidebar") : l10n.t("Hide sidebar");
     t.setAttribute("aria-label", t.title);
     t.classList.toggle("is-collapsed", this.railCollapsed);
     t.replaceChildren(glyph(this.railCollapsed ? "layout-sidebar-left-off" : "layout-sidebar-left"));
@@ -2076,7 +2099,7 @@ class App {
     const body = el("div", "list-body");
     body.appendChild(skeletonList(8));
 
-    const header = ghHeader("Branches", undefined, () => this.refreshBranchesSoft());
+    const header = ghHeader(l10n.t("Branches"), undefined, () => this.refreshBranchesSoft());
     // The search field the rest of the app uses: 110ms debounce, a clear ✕, and
     // Escape to empty it — none of which a raw `input.list-filter` had. It also
     // searches more than the name now (upstream, tip subject, short sha, a
@@ -2090,7 +2113,7 @@ class App {
     // outside the build for exactly this reason (views/issues.ts).
     let query = this.branchQuery;
     const search = searchField({
-      placeholder: "Search refs…",
+      placeholder: l10n.t("Search refs…"),
       initial: query,
       onInput: (q) => {
         query = q;
@@ -2107,8 +2130,8 @@ class App {
     // git already has; Fetch goes to the network. Different promises, so
     // different buttons, and the titles say which is which.
     const fetchBtn = el("button", "mini-btn") as HTMLButtonElement;
-    fetchBtn.append(glyph("sync"), span("Fetch"));
-    fetchBtn.title = "Fetch from every remote — updates what ahead and behind mean here";
+    fetchBtn.append(glyph("sync"), span(l10n.t("Fetch")));
+    fetchBtn.title = l10n.t("Fetch from every remote — updates what ahead and behind mean here");
     fetchBtn.addEventListener("click", () => void this.fetchAllLive(fetchBtn));
     const ctaSlot = el("div", "gh-head-cta");
     const verbs = el("div", "gh-head-verbs");
@@ -2134,7 +2157,7 @@ class App {
       // which is a confident lie about a repo full of them.
       if (gen !== this.routeGen) return;
       body.replaceChildren(
-        errorState("Couldn't list branches", cleanErr(e) || "Git could not read this repository's refs.", () =>
+        errorState(l10n.t("Couldn't list branches"), cleanErr(e) || l10n.t("Git could not read this repository's refs."), () =>
           void this.showBranchesView(highlightRef, undefined, highlightKind),
         ),
       );
@@ -2224,7 +2247,7 @@ class App {
       // time we get here, so failing silently leaves the user staring at a
       // list they did not ask for with no idea why.
       if (!found && !inAsked) {
-        toast(`${highlightRef} is not in this repository's refs any more.`, "info");
+        toast(l10n.t("{0} is not in this repository's refs any more.", highlightRef), "info");
       }
       // A deep link must SHOW the row it names, so it clears EVERY narrowing
       // that could hide it — not just the search box. The age cut alone was
@@ -2273,27 +2296,27 @@ class App {
       return "insync";
     };
     const STANDING_LABELS: Record<string, string> = {
-      current: "Current",
-      gone: "Upstream gone",
-      merged: "Merged",
-      unpublished: "Unpublished",
-      diverged: "Diverged",
-      ahead: "Ahead",
-      behind: "Behind",
-      insync: "In sync",
+      current: l10n.t("Current"),
+      gone: l10n.t("Upstream gone"),
+      merged: l10n.t("Merged"),
+      unpublished: l10n.t("Unpublished"),
+      diverged: l10n.t("Diverged"),
+      ahead: l10n.t("Ahead"),
+      behind: l10n.t("Behind"),
+      insync: l10n.t("In sync"),
     };
 
     const render = (): void => {
       const n = counts();
       segSlot.replaceChildren(
         segmented<Kind>({
-          ariaLabel: "Which refs to show",
+          ariaLabel: l10n.t("Which refs to show"),
           value: this.branchTab,
           options: [
-            { value: "local", label: `Local (${n.local})`, icon: "git-branch" },
-            { value: "remote", label: `Remotes (${n.remote})`, icon: "cloud" },
-            { value: "tags", label: `Tags (${n.tags})`, icon: "tag" },
-            { value: "stashes", label: `Stashes (${n.stashes})`, icon: "git-stash" },
+            { value: "local", label: l10n.t("Local ({0})", n.local), icon: "git-branch" },
+            { value: "remote", label: l10n.t("Remotes ({0})", n.remote), icon: "cloud" },
+            { value: "tags", label: l10n.t("Tags ({0})", n.tags), icon: "tag" },
+            { value: "stashes", label: l10n.t("Stashes ({0})", n.stashes), icon: "git-stash" },
             // Only when there is more than one: a single worktree is just "the
             // repository", and a segment reading "Worktrees (1)" is a tab that
             // tells you nothing.
@@ -2304,7 +2327,7 @@ class App {
             // active, while the body still rendered worktrees. A tab may not
             // disappear while it is the one you are looking at.
             ...(n.worktrees > 1 || this.branchTab === "worktrees"
-              ? [{ value: "worktrees" as Kind, label: `Worktrees (${n.worktrees})`, icon: "window" }]
+              ? [{ value: "worktrees" as Kind, label: l10n.t("Worktrees ({0})", n.worktrees), icon: "window" }]
               : []),
           ],
           onChange: (v) => {
@@ -2342,7 +2365,7 @@ class App {
           ? [
               {
                 key: "standing",
-                label: "Standing",
+                label: l10n.t("Standing"),
                 icon: "git-branch",
                 options: [...new Set(locals.map(standing))].map((v) => ({
                   value: v,
@@ -2352,7 +2375,7 @@ class App {
               },
               {
                 key: "remote",
-                label: "Remote",
+                label: l10n.t("Remote"),
                 icon: "cloud",
                 options: [...new Set(locals.map((b) => b.upstream?.split("/")[0]).filter(Boolean))].map(
                   (v) => ({ value: v as string, label: v as string }),
@@ -2364,7 +2387,7 @@ class App {
             ? [
                 {
                   key: "remote",
-                  label: "Remote",
+                  label: l10n.t("Remote"),
                   icon: "cloud",
                   // By the full name (remoteRefParts): the short one is
                   // "remotes/origin/x" beside a local "origin/x" — a remote
@@ -2377,11 +2400,11 @@ class App {
                 },
                 {
                   key: "local",
-                  label: "Local copy",
+                  label: l10n.t("Local copy"),
                   icon: "git-branch",
                   options: [
-                    { value: "yes", label: "Have one" },
-                    { value: "no", label: "None" },
+                    { value: "yes", label: l10n.t("Have one") },
+                    { value: "no", label: l10n.t("None") },
                   ],
                   predicate: (item: unknown, v: string) => {
                     // Both sides by name under the namespace — a local
@@ -2396,13 +2419,13 @@ class App {
               ? [
                   {
                     key: "kind",
-                    label: "Kind",
+                    label: l10n.t("Kind"),
                     icon: "tag",
                     // Human words. "Annotated"/"Lightweight" is git's own
                     // jargon and it read as noise on the very row it labeled.
                     options: [
-                      { value: "annotated", label: "With message" },
-                      { value: "lightweight", label: "Bare pointer" },
+                      { value: "annotated", label: l10n.t("With message") },
+                      { value: "lightweight", label: l10n.t("Bare pointer") },
                     ],
                     predicate: (item: unknown, v: string) =>
                       ((item as RefInfo).objectType === "tag" ? "annotated" : "lightweight") === v,
@@ -2462,10 +2485,14 @@ class App {
         .filter((b) => hit(b.name, b.upstream, b.subject))
         .filter((b) => bar.passes(b))
         .filter((b) => !b.current && branchName(b) !== defaultBranch && (b.merged || b.gone));
-      sweep.replaceChildren(glyph("trash"), span(`Delete ${finished.length} finished…`));
+      sweep.replaceChildren(glyph("trash"), span(l10n.t("Delete {0} finished…", finished.length)));
       sweep.title = q
-        ? `Of the branches matching “${q}”: those already in ${defaultBranch ?? "the default branch"}, or whose upstream is gone`
-        : `Branches whose work is already in ${defaultBranch ?? "the default branch"}, or whose upstream is gone`;
+        ? l10n.t(
+            "Of the branches matching “{0}”: those already in {1}, or whose upstream is gone",
+            q,
+            defaultBranch ?? l10n.t("the default branch"),
+          )
+        : l10n.t("Branches whose work is already in {0}, or whose upstream is gone", defaultBranch ?? l10n.t("the default branch"));
       sweep.hidden = this.branchTab !== "local" || finished.length === 0;
       sweep.onclick = () => void this.sweepFinishedBranches(finished, defaultBranch);
 
@@ -2479,12 +2506,12 @@ class App {
         const stale = inScope.filter((b) => !b.current && isStale(b.date)).length;
         facetSlot.appendChild(
           segmented<"active" | "stale" | "all">({
-            ariaLabel: "How recently these branches moved",
+            ariaLabel: l10n.t("How recently these branches moved"),
             value: this.branchAge,
             options: [
-              { value: "active", label: `Active (${inScope.length - stale})` },
-              { value: "stale", label: `Stale (${stale})` },
-              { value: "all", label: `All (${inScope.length})` },
+              { value: "active", label: l10n.t("Active ({0})", inScope.length - stale) },
+              { value: "stale", label: l10n.t("Stale ({0})", stale) },
+              { value: "all", label: l10n.t("All ({0})", inScope.length) },
             ],
             onChange: (v) => {
               this.branchAge = v;
@@ -2672,7 +2699,7 @@ class App {
         // `branchesEmpty` can only speak when the list is EMPTY, so with stale
         // rows showing this was the one path with no way to say anything.
         stashFailed = true;
-        if (stashes.length) toast("Couldn't re-read the stashes — showing the last list git gave.", "info");
+        if (stashes.length) toast(l10n.t("Couldn't re-read the stashes — showing the last list git gave."), "info");
       }
       // Worktrees too. This re-read everything EXCEPT them, so the list was
       // fetched exactly once when the view was first built — and every soft
@@ -2693,7 +2720,7 @@ class App {
         // KEEP the rows we have. Replacing them with [] on a failed refresh
         // deleted a list git never said was gone.
         worktreeFailed = true;
-        if (worktrees.length) toast("Couldn't re-read the worktrees — showing the last list git gave.", "info");
+        if (worktrees.length) toast(l10n.t("Couldn't re-read the worktrees — showing the last list git gave."), "info");
       }
       if (live !== this.routeGen) return;
       remotes = this.refs.filter((r) => r.type === "remote" && !isRemoteHead(r));
@@ -2889,10 +2916,10 @@ class App {
   private remoteActionItems(r: RefInfo): MenuItem[] {
     const { branch: short } = remoteRefParts(r);
     return [
-      { label: `Compare with ${short}`, icon: "git-compare", onClick: () => this.compareWithRef(r.name) },
-      { label: "View in Commits", icon: "git-commit", onClick: () => this.routeView("graph", false, { sha: r.sha }) },
+      { label: l10n.t("Compare with {0}", short), icon: "git-compare", onClick: () => this.compareWithRef(r.name) },
+      { label: l10n.t("View in Commits"), icon: "git-commit", onClick: () => this.routeView("graph", false, { sha: r.sha }) },
       { separator: true },
-      { label: "Copy name", icon: "copy", onClick: () => void copyText(r.name, `Copied “${r.name}”.`) },
+      { label: l10n.t("Copy name"), icon: "copy", onClick: () => void copyText(r.name, l10n.t("Copied “{0}”.", r.name)) },
     ];
   }
 
@@ -2900,13 +2927,13 @@ class App {
    *  submenu for it (#32). */
   private tagActionItems(r: RefInfo): MenuItem[] {
     return [
-      { label: "View in Commits", icon: "git-commit", onClick: () => this.routeView("graph", false, { sha: r.sha }) },
-      { label: `Compare with ${r.name}`, icon: "git-compare", onClick: () => this.compareWithRef(r.name) },
+      { label: l10n.t("View in Commits"), icon: "git-commit", onClick: () => this.routeView("graph", false, { sha: r.sha }) },
+      { label: l10n.t("Compare with {0}", r.name), icon: "git-compare", onClick: () => this.compareWithRef(r.name) },
       { separator: true },
-      { label: "Copy name", icon: "copy", onClick: () => void copyText(r.name, `Copied “${r.name}”.`) },
+      { label: l10n.t("Copy name"), icon: "copy", onClick: () => void copyText(r.name, l10n.t("Copied “{0}”.", r.name)) },
       { separator: true },
       {
-        label: "Delete tag…",
+        label: l10n.t("Delete tag…"),
         icon: "trash",
         danger: true,
         onClick: () => void this.deleteTagLive(tagName(r)),
@@ -2932,10 +2959,10 @@ class App {
 
     const actions: HTMLElement[] = [];
     const primary = el("button", "row-btn") as HTMLButtonElement;
-    primary.textContent = mine ? "Checkout" : "Check out here";
+    primary.textContent = mine ? l10n.t("Checkout") : l10n.t("Check out here");
     primary.title = mine
-      ? `Check out your local ${short}`
-      : `Create ${short} from ${said} and check it out`;
+      ? l10n.t("Check out your local {0}", short)
+      : l10n.t("Create {0} from {1} and check it out", short, said);
     primary.setAttribute("aria-label", primary.title);
     // By the REMOTE's full name either way: the planner switches to a local
     // branch of that name when one exists (planRemoteCheckout) and creates it
@@ -2944,7 +2971,7 @@ class App {
     primary.addEventListener("click", () => void this.checkoutRef(r.fullName, primary));
     actions.push(primary);
     const more = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
-    more.setAttribute("aria-label", `More actions for ${said}`);
+    more.setAttribute("aria-label", l10n.t("More actions for {0}", said));
     more.setAttribute("aria-haspopup", "menu");
     more.appendChild(glyph("ellipsis"));
     const menu = (): void => openMenu(more, this.remoteActionItems(r));
@@ -2957,7 +2984,7 @@ class App {
       meta: [
         (() => {
           const c = el("span", "br-state-col");
-          if (!mine) c.appendChild(span("no local copy", "ab-pill unpublished"));
+          if (!mine) c.appendChild(span(l10n.t("no local copy"), "ab-pill unpublished"));
           return c;
         })(),
         span(r.subject ?? "", "br-subject br-subject-col"),
@@ -2969,7 +2996,7 @@ class App {
           p.dataset.branch = r.name;
           if (r.who) {
             const a = avatar(r.who.name, gravatarUrl(r.who.email, 36), 18);
-            a.title = `Last commit by ${r.who.name}`;
+            a.title = l10n.t("Last commit by {0}", r.who.name);
             p.appendChild(a);
           }
           return p;
@@ -2981,7 +3008,7 @@ class App {
       timeTitle: r.date ? absTime(r.date) : undefined,
       actions,
       onOpen: () => this.routeView("refdetail", false, { ref: r.name, id: "remote" }),
-      ariaLabel: `${short} on ${remote}${mine ? "" : ", no local copy"}${r.date ? `, updated ${relTime(r.date)}` : ""}`,
+      ariaLabel: l10n.t("{0} on {1}{2}{3}", short, remote, mine ? "" : l10n.t(", no local copy"), r.date ? l10n.t(", updated {0}", relTime(r.date)) : ""),
     });
     row.classList.add("ref-row");
     row.dataset.ref = r.name;
@@ -3008,15 +3035,15 @@ class App {
     const said = tagName(r);
     const actions: HTMLElement[] = [];
     const push = el("button", "row-btn") as HTMLButtonElement;
-    push.textContent = "Push";
-    push.setAttribute("aria-label", `Push tag ${said} to the remote`);
-    push.title = `Publish ${said} to the remote`;
+    push.textContent = l10n.t("Push");
+    push.setAttribute("aria-label", l10n.t("Push tag {0} to the remote", said));
+    push.title = l10n.t("Publish {0} to the remote", said);
     // The name under refs/tags/: beside a branch of the same name the short
     // name is "tags/v1", and refs/tags/tags/v1 is no tag at all.
     push.addEventListener("click", () => void this.pushTagLive(tagName(r), push));
     actions.push(push);
     const more = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
-    more.setAttribute("aria-label", `More actions for ${said}`);
+    more.setAttribute("aria-label", l10n.t("More actions for {0}", said));
     more.setAttribute("aria-haspopup", "menu");
     more.appendChild(glyph("ellipsis"));
     const menu = (): void => openMenu(more, this.tagActionItems(r));
@@ -3039,8 +3066,8 @@ class App {
           if (r.who) {
             const a = avatar(r.who.name, gravatarUrl(r.who.email, 36), 18);
             a.title = r.who.tagger
-              ? `Tagged by ${r.who.name} — this tag carries its own message and date`
-              : `Points at ${r.who.name}'s commit — the tag itself records nothing`;
+              ? l10n.t("Tagged by {0} — this tag carries its own message and date", r.who.name)
+              : l10n.t("Points at {0}'s commit — the tag itself records nothing", r.who.name);
             p.appendChild(a);
           }
           return p;
@@ -3051,7 +3078,13 @@ class App {
       timeTitle: r.date ? absTime(r.date) : undefined,
       actions,
       onOpen: () => this.routeView("refdetail", false, { ref: r.name, id: "tag" }),
-      ariaLabel: `${said}, ${annotated ? "tag with its own message" : "tag"}${r.who ? `, by ${r.who.name}` : ""}${r.date ? `, ${relTime(r.date)}` : ""}`,
+      ariaLabel: l10n.t(
+        "{0}, {1}{2}{3}",
+        said,
+        annotated ? l10n.t("tag with its own message") : l10n.t("tag"),
+        r.who ? l10n.t(", by {0}", r.who.name) : "",
+        r.date ? l10n.t(", {0}", relTime(r.date)) : "",
+      ),
     });
     row.classList.add("ref-row");
     row.dataset.ref = r.name;
@@ -3074,21 +3107,21 @@ class App {
   private stashRow(st: StashInfo): HTMLElement {
     const actions: HTMLElement[] = [];
     const apply = el("button", "row-btn") as HTMLButtonElement;
-    apply.textContent = "Apply";
-    apply.setAttribute("aria-label", `Apply ${st.ref}`);
-    apply.title = `Apply ${st.ref} and keep it in the stash list`;
+    apply.textContent = l10n.t("Apply");
+    apply.setAttribute("aria-label", l10n.t("Apply {0}", st.ref));
+    apply.title = l10n.t("Apply {0} and keep it in the stash list", st.ref);
     apply.addEventListener("click", () => void this.stashActLive("apply", st, apply));
     actions.push(apply);
     const more = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
-    more.setAttribute("aria-label", `More actions for ${st.ref}`);
+    more.setAttribute("aria-label", l10n.t("More actions for {0}", st.ref));
     more.setAttribute("aria-haspopup", "menu");
     more.appendChild(glyph("ellipsis"));
     const menu = (): void =>
       openMenu(more, [
-        { label: "Pop — apply and remove", icon: "git-stash-pop", onClick: () => void this.stashActLive("pop", st, more) },
+        { label: l10n.t("Pop — apply and remove"), icon: "git-stash-pop", onClick: () => void this.stashActLive("pop", st, more) },
         { separator: true },
         {
-          label: "Drop this stash…",
+          label: l10n.t("Drop this stash…"),
           icon: "trash",
           danger: true,
           onClick: () => void this.stashActLive("drop", st, more),
@@ -3105,7 +3138,7 @@ class App {
       timeTitle: st.time ? absTime(st.time) : undefined,
       actions,
       onOpen: () => this.routeView("refdetail", false, { ref: st.ref, id: "stash" }),
-      ariaLabel: `${st.message || st.ref}, ${st.ref}${st.time ? `, ${relTime(st.time)}` : ""}`,
+      ariaLabel: l10n.t("{0}, {1}{2}", st.message || st.ref, st.ref, st.time ? l10n.t(", {0}", relTime(st.time)) : ""),
     });
     row.classList.add("ref-row", "stash-row");
     row.dataset.ref = st.ref;
@@ -3129,10 +3162,10 @@ class App {
     await this.refreshInPlace(btn, async () => {
       const r = await host.invoke("tag:push", { name });
       if (!r.ok) {
-        toast(r.message ?? `Couldn't push ${name}.`, r.expected ? "info" : "error");
+        toast(r.message ?? l10n.t("Couldn't push {0}.", name), r.expected ? "info" : "error");
         return;
       }
-      toast(`Pushed ${name}.`, "success");
+      toast(l10n.t("Pushed {0}.", name), "success");
     });
   }
 
@@ -3140,33 +3173,33 @@ class App {
    *  "delete" on a tag that has been published is only half true. */
   private async deleteTagLive(name: string): Promise<void> {
     const ok = await confirmDialog({
-      title: `Delete tag ${name}?`,
-      message:
-        `This removes the tag from this clone only. If it has already been pushed, ` +
-        `the copy on the remote is untouched and a fetch brings it straight back.`,
-      confirmLabel: "Delete locally",
+      title: l10n.t("Delete tag {0}?", name),
+      message: l10n.t(
+        "This removes the tag from this clone only. If it has already been pushed, the copy on the remote is untouched and a fetch brings it straight back.",
+      ),
+      confirmLabel: l10n.t("Delete locally"),
       danger: true,
     });
     if (!ok) return;
     const r = await host.invoke("tag:delete", name);
     if (!r.ok) {
-      toast(r.message ?? `Couldn't delete ${name}.`, r.expected ? "info" : "error");
+      toast(r.message ?? l10n.t("Couldn't delete {0}.", name), r.expected ? "info" : "error");
       return;
     }
     if (r.was) {
       const sha = r.was;
-      didUndoable(`Deleted tag ${name} locally.`, {
-        label: `Put ${name} back`,
+      didUndoable(l10n.t("Deleted tag {0} locally.", name), {
+        label: l10n.t("Put {0} back", name),
         undo: async () => {
           const back = await host.invoke("tag:restore", { name, sha });
-          if (!back.ok) return back.message ?? `Couldn't put ${name} back.`;
+          if (!back.ok) return back.message ?? l10n.t("Couldn't put {0} back.", name);
           bust("branches");
           return undefined;
         },
         after: () => this.refreshBranchesSoft(),
       });
     } else {
-      toast(`Deleted tag ${name} locally.`, "success");
+      toast(l10n.t("Deleted tag {0} locally.", name), "success");
     }
     await this.refreshBranchesSoft();
   }
@@ -3187,12 +3220,12 @@ class App {
   ): Promise<void> {
     if (action === "drop") {
       const ok = await confirmDialog({
-        title: `Drop ${st.ref}?`,
+        title: l10n.t("Drop {0}?", st.ref),
         // Not "permanently": the commit behind a stash outlives the ref, and
         // the app can put it back. The dialog stays — this removes something
         // you meant to keep — but it must not describe a loss that is not one.
-        message: `“${st.message || st.ref}” is removed from the stash list. You can undo this straight afterwards.`,
-        confirmLabel: "Drop",
+        message: l10n.t("“{0}” is removed from the stash list. You can undo this straight afterwards.", st.message || st.ref),
+        confirmLabel: l10n.t("Drop"),
         danger: true,
       });
       if (!ok) return;
@@ -3202,13 +3235,13 @@ class App {
       try {
         fresh = await host.invoke("stash:list", undefined);
       } catch {
-        toast("Couldn't re-read the stash list — nothing was changed.", "error");
+        toast(l10n.t("Couldn't re-read the stash list — nothing was changed."), "error");
         return;
       }
       const still = fresh.find((x) => x.ref === st.ref);
       if (!still || (st.sha && still.sha && still.sha !== st.sha)) {
         toast(
-          `${st.ref} is not the stash it was — the list changed underneath. Refreshed instead.`,
+          l10n.t("{0} is not the stash it was — the list changed underneath. Refreshed instead.", st.ref),
           "info",
         );
         await this.refreshBranchesSoft();
@@ -3227,7 +3260,15 @@ class App {
       // Retry or Cancel — bridge.ts), and the user cancelled: nothing ran.
       if (r.cancelled) return;
       if (!r.ok) {
-        toast(r.message ?? `Couldn't ${action} ${st.ref}.`, r.expected ? "info" : "error");
+        toast(
+          r.message ??
+            (action === "apply"
+              ? l10n.t("Couldn't apply {0}.", st.ref)
+              : action === "pop"
+                ? l10n.t("Couldn't pop {0}.", st.ref)
+                : l10n.t("Couldn't drop {0}.", st.ref)),
+          r.expected ? "info" : "error",
+        );
         return;
       }
       // A drop removes a ref; the commit behind it is untouched, so this is
@@ -3237,11 +3278,11 @@ class App {
       // different and much less safe operation than it looks.
       if (action === "drop" && st.sha) {
         const sha = st.sha;
-        didUndoable(`Dropped ${st.ref}.`, {
-          label: "Put the stash back",
+        didUndoable(l10n.t("Dropped {0}.", st.ref), {
+          label: l10n.t("Put the stash back"),
           undo: async () => {
             const back = await host.invoke("stash:restore", { sha, message: st.message });
-            if (!back.ok) return back.message ?? "Couldn't put the stash back.";
+            if (!back.ok) return back.message ?? l10n.t("Couldn't put the stash back.");
             bust("branches");
             return undefined;
           },
@@ -3252,12 +3293,12 @@ class App {
         // (main's stashNote, said by bridge.ts, says why) — not "Popped".
         toast(
           action === "apply"
-            ? `Applied ${st.ref}.`
+            ? l10n.t("Applied {0}.", st.ref)
             : action === "pop"
               ? r.stashKept
-                ? `Applied ${st.ref} — it stays in the list.`
-                : `Popped ${st.ref}.`
-              : `Dropped ${st.ref}.`,
+                ? l10n.t("Applied {0} — it stays in the list.", st.ref)
+                : l10n.t("Popped {0}.", st.ref)
+              : l10n.t("Dropped {0}.", st.ref),
           "success",
         );
       }
@@ -3291,17 +3332,15 @@ class App {
     finished = finished.filter((b) => !b.current && branchName(b) !== defaultBranch);
     if (!finished.length) return;
     const names = finished.map((b) => branchName(b));
-    const ok = await confirmDialog({
-      title: `Delete ${finished.length} finished ${finished.length === 1 ? "branch" : "branches"}?`,
-      message:
-        `${names.join("\n")}\n\n` +
-        `“Finished” means every commit is already in ${defaultBranch ?? "the default branch"}, ` +
-        `or the upstream it tracked no longer exists. A squash-merged branch does NOT look ` +
-        `merged to git, and a branch merged somewhere other than ${defaultBranch ?? "the default branch"} ` +
-        `will not be listed here. Only the local copies are deleted.`,
-      confirmLabel: `Delete ${finished.length}`,
-      danger: true,
-    });
+    const dbName = defaultBranch ?? l10n.t("the default branch");
+    const title = finished.length === 1 ? l10n.t("Delete 1 finished branch?") : l10n.t("Delete {0} finished branches?", finished.length);
+    const message = l10n.t(
+      "{0}\n\n“Finished” means every commit is already in {1}, or the upstream it tracked no longer exists. A squash-merged branch does NOT look merged to git, and a branch merged somewhere other than {1} will not be listed here. Only the local copies are deleted.",
+      names.join("\n"),
+      dbName,
+    );
+    const confirmLabel = finished.length === 1 ? l10n.t("Delete 1") : l10n.t("Delete {0}", finished.length);
+    const ok = await confirmDialog({ title, message, confirmLabel, danger: true });
     if (!ok) return;
 
     const done: string[] = [];
@@ -3312,7 +3351,13 @@ class App {
         r = await host.invoke("branch:delete", { fullName: b.fullName, force: false });
       } catch (e) {
         toast(
-          `Deleted ${done.length} of ${finished.length}, then ${branchName(b)} failed: ${cleanErr(e) || "git error"}.`,
+          l10n.t(
+            "Deleted {0} of {1}, then {2} failed: {3}.",
+            done.length,
+            finished.length,
+            branchName(b),
+            cleanErr(e) || l10n.t("git error"),
+          ),
           "error",
         );
         break;
@@ -3320,8 +3365,8 @@ class App {
       if (!r?.ok) {
         toast(
           done.length
-            ? `Deleted ${done.join(", ")}. Stopped at ${branchName(b)}: ${r?.message ?? "git refused."}`
-            : `${branchName(b)} was not deleted: ${r?.message ?? "git refused."}`,
+            ? l10n.t("Deleted {0}. Stopped at {1}: {2}", done.join(", "), branchName(b), r?.message ?? l10n.t("git refused."))
+            : l10n.t("{0} was not deleted: {1}", branchName(b), r?.message ?? l10n.t("git refused.")),
           r?.expected ? "info" : "error",
         );
         break;
@@ -3330,13 +3375,14 @@ class App {
       if (r.was) restorable.push({ name: branchName(b), was: r.was, upstream: r.upstream });
     }
     if (done.length === finished.length) {
-      const msg = `Deleted ${done.length} finished ${done.length === 1 ? "branch" : "branches"}.`;
+      const msg =
+        done.length === 1 ? l10n.t("Deleted 1 finished branch.") : l10n.t("Deleted {0} finished branches.", done.length);
       // All of them, in one go — a sweep is the action most likely to take
       // something you wanted, and undoing it one branch at a time would be a
       // worse offer than the sweep was.
       if (restorable.length === done.length) {
         didUndoable(msg, {
-          label: `Restore ${done.length === 1 ? done[0] : `${done.length} branches`}`,
+          label: done.length === 1 ? l10n.t("Restore {0}", done[0]) : l10n.t("Restore {0} branches", done.length),
           undo: async () => {
             const failed: string[] = [];
             for (const b of restorable) {
@@ -3350,7 +3396,7 @@ class App {
               if (!back.ok) failed.push(b.name);
             }
             bust("branches");
-            return failed.length ? `Couldn't restore ${failed.join(", ")}.` : undefined;
+            return failed.length ? l10n.t("Couldn't restore {0}.", failed.join(", ")) : undefined;
           },
           after: () => this.refreshBranchesSoft(),
         });
@@ -3377,10 +3423,10 @@ class App {
    */
   private branchSortBtn(rerender: () => void): HTMLElement | undefined {
     const LABELS: Record<string, string> = {
-      recent: "Recently committed",
-      name: "Name",
-      ahead: "Most ahead",
-      stale: "Stalest first",
+      recent: l10n.t("Recently committed"),
+      name: l10n.t("Name"),
+      ahead: l10n.t("Most ahead"),
+      stale: l10n.t("Stalest first"),
     };
     // Stashes are a STACK — stash@{0} is the newest and the numbering is the
     // order — and worktrees are a handful of paths. Neither has an order to
@@ -3392,7 +3438,7 @@ class App {
     const shown = keys.includes(this.branchSort) ? this.branchSort : "recent";
     const b = el("button", "mini-btn branches-sort") as HTMLButtonElement;
     b.append(glyph("list-ordered"), span(LABELS[shown]));
-    b.title = "How this list is ordered";
+    b.title = l10n.t("How this list is ordered");
     b.setAttribute("aria-haspopup", "menu");
     b.addEventListener("click", () =>
       openMenu(
@@ -3463,33 +3509,33 @@ class App {
     // repository's entry.
     if (!w.current && !w.missing && !w.unlinked && !w.bare) {
       const open = el("button", "row-btn") as HTMLButtonElement;
-      open.textContent = "Open";
-      open.setAttribute("aria-label", `Open the worktree at ${shown}`);
+      open.textContent = l10n.t("Open");
+      open.setAttribute("aria-label", l10n.t("Open the worktree at {0}", shown));
       // An open, like any other (issue #32): the worktree gets a tab of its
       // own, or the one it already has is brought to the front.
-      open.title = `Open the worktree at ${shown} in its own tab`;
+      open.title = l10n.t("Open the worktree at {0} in its own tab", shown);
       open.addEventListener("click", () => void this.openWorktreeLive(w, open));
       actions.push(open);
     }
     const more = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
-    more.setAttribute("aria-label", `More actions for ${shown}`);
+    more.setAttribute("aria-label", l10n.t("More actions for {0}", shown));
     more.setAttribute("aria-haspopup", "menu");
     more.appendChild(glyph("ellipsis"));
     const menu = (): void =>
       openMenu(more, [
-        { label: "Copy path", icon: "copy", onClick: () => void copyText(shown, "Copied the path.") },
+        { label: l10n.t("Copy path"), icon: "copy", onClick: () => void copyText(shown, l10n.t("Copied the path.")) },
         { separator: true },
         {
           // Its folder gone, or not a worktree any more, removing it only
           // forgets git's record of it.
-          label: w.missing || w.unlinked ? "Forget this worktree…" : "Remove this worktree…",
+          label: w.missing || w.unlinked ? l10n.t("Forget this worktree…") : l10n.t("Remove this worktree…"),
           icon: "trash",
           danger: true,
           disabled: w.current || w.main,
           title: w.current
-            ? "This is the worktree you are in"
+            ? l10n.t("This is the worktree you are in")
             : w.main
-              ? "The main worktree holds the repository itself — git never removes it"
+              ? l10n.t("The main worktree holds the repository itself — git never removes it")
               : undefined,
           onClick: () => void this.removeWorktreeLive(w),
         },
@@ -3506,41 +3552,41 @@ class App {
     // its mark where main still refused the remove.
     const inTab = !!w.openInTab;
     if (w.current) {
-      const p = span("this tab", "ab-pill current");
-      p.title = "The worktree this tab has open";
+      const p = span(l10n.t("this tab"), "ab-pill current");
+      p.title = l10n.t("The worktree this tab has open");
       pills.push(p);
     } else if (inTab) {
-      const p = span("open in a tab", "ab-pill default");
-      p.title = "Another tab of this window has it open — close that tab to remove it";
+      const p = span(l10n.t("open in a tab"), "ab-pill default");
+      p.title = l10n.t("Another tab of this window has it open — close that tab to remove it");
       pills.push(p);
     }
     // Named, as the extension names it: it holds the repository itself, and
     // was told apart only by "this tab" — when this tab had it open.
     if (w.main && !w.bare) {
-      const p = span("main worktree", "ab-pill default");
-      p.title = "The main worktree holds the repository itself — git never removes it";
+      const p = span(l10n.t("main worktree"), "ab-pill default");
+      p.title = l10n.t("The main worktree holds the repository itself — git never removes it");
       pills.push(p);
     }
     if (w.locked) {
-      const p = span("locked", "ab-pill unpublished");
-      p.title = w.lockReason ? `Locked: ${w.lockReason}` : "Locked, with no reason given";
+      const p = span(l10n.t("locked"), "ab-pill unpublished");
+      p.title = w.lockReason ? l10n.t("Locked: {0}", w.lockReason) : l10n.t("Locked, with no reason given");
       pills.push(p);
     }
     // Not only `prunable`: git never calls a LOCKED worktree prunable, even
     // with its folder gone.
     if (w.missing || (w.prunable && !w.unlinked)) {
-      const p = span("folder missing", "ab-pill gone");
-      p.title = "Its folder is gone — Forget it from the ⋯ menu";
+      const p = span(l10n.t("folder missing"), "ab-pill gone");
+      p.title = l10n.t("Its folder is gone — Forget it from the ⋯ menu");
       pills.push(p);
     } else if (w.unlinked) {
-      const p = span("not a worktree", "ab-pill gone");
-      p.title = "Its folder is there, but it isn't a worktree any more (its .git is gone) — Forget it from the ⋯ menu; the folder stays";
+      const p = span(l10n.t("not a worktree"), "ab-pill gone");
+      p.title = l10n.t("Its folder is there, but it isn't a worktree any more (its .git is gone) — Forget it from the ⋯ menu; the folder stays");
       pills.push(p);
     }
 
     const row = secRow({
       lead: glyph("window"),
-      title: w.branch ?? (w.bare ? "(bare)" : w.head.slice(0, 7)),
+      title: w.branch ?? (w.bare ? l10n.t("(bare)") : w.head.slice(0, 7)),
       meta: [
         // Same table the other four tabs keep: state pills in their own
         // column, the path where the subject column lives, the sha aligned.
@@ -3563,7 +3609,13 @@ class App {
         w.branch
           ? this.routeView("refdetail", false, { ref: w.branch, id: "head" })
           : this.routeView("commit", false, { sha: w.head }),
-      ariaLabel: `${w.branch ?? w.head.slice(0, 7)} at ${shown}${w.current ? ", this tab" : inTab ? ", open in another tab" : ""}${w.main && !w.bare ? ", main worktree" : ""}`,
+      ariaLabel: l10n.t(
+        "{0} at {1}{2}{3}",
+        w.branch ?? w.head.slice(0, 7),
+        shown,
+        w.current ? l10n.t(", this tab") : inTab ? l10n.t(", open in another tab") : "",
+        w.main && !w.bare ? l10n.t(", main worktree") : "",
+      ),
     });
     row.classList.add("ref-row", "worktree-row");
     row.dataset.ref = w.path;
@@ -3584,10 +3636,10 @@ class App {
       // Main has said why nothing opened (every tab is taken): once is enough.
       if (repo && "said" in repo) return;
       if (!repo) {
-        toast(`Couldn't open ${w.shownPath ?? w.path}.`, "error");
+        toast(l10n.t("Couldn't open {0}.", w.shownPath ?? w.path), "error");
         return;
       }
-      toast(`Opened ${w.branch ?? w.shownPath ?? w.path}.`, "success");
+      toast(l10n.t("Opened {0}.", w.branch ?? w.shownPath ?? w.path), "success");
     });
   }
 
@@ -3607,7 +3659,7 @@ class App {
    * refusal ("use --force to delete it") in a red toast, filed as a crash.
    */
   private async removeWorktreeLive(w: WorktreeInfo, again?: WorktreeRemovalInfo): Promise<void> {
-    const label = w.branch ?? (w.bare ? "(bare)" : `${w.head.slice(0, 7)} (detached)`);
+    const label = w.branch ?? (w.bare ? l10n.t("(bare)") : l10n.t("{0} (detached)", w.head.slice(0, 7)));
     const plan = again ?? (await host.invoke("worktree:removal", { path: w.path }));
     if (plan.kind === "notListed" || plan.kind === "main" || plan.kind === "current" || plan.kind === "openInTab") {
       toast(worktreeRemovalRefusal(plan.kind, label, "tab"), "info");
@@ -3646,11 +3698,11 @@ class App {
         await this.removeWorktreeLive(w, r.changedSince);
         return;
       }
-      toast(r.message ?? "Couldn't remove the worktree.", r.expected ? "info" : "error");
+      toast(r.message ?? l10n.t("Couldn't remove the worktree."), r.expected ? "info" : "error");
       await this.refreshBranchesSoft();
       return;
     }
-    toast(plan.kind === "present" ? `Removed worktree ${label}.` : `Forgot worktree ${label}.`, "success");
+    toast(plan.kind === "present" ? l10n.t("Removed worktree {0}.", label) : l10n.t("Forgot worktree {0}.", label), "success");
     await this.refreshBranchesSoft();
   }
 
@@ -3678,12 +3730,12 @@ class App {
       // list after exactly the action that should have removed it.
       const r = await host.invoke("sync:fetch", { prune: this.pruneOnFetchPref });
       if (!r.ok) {
-        toast(r.message ?? "Fetch failed.", r.expected ? "info" : "error");
+        toast(r.message ?? l10n.t("Fetch failed."), r.expected ? "info" : "error");
         return;
       }
       bust("branches");
       await this.refreshBranchesSoft();
-      toast("Fetched from every remote.", "success");
+      toast(l10n.t("Fetched from every remote."), "success");
     });
   }
 
@@ -3692,12 +3744,12 @@ class App {
     await this.refreshInPlace(btn, async () => {
       const r = await host.invoke("branch:push", { fullName: b.fullName });
       if (!r.ok) {
-        toast(r.message ?? `Couldn't publish ${branchName(b)}.`, r.expected ? "info" : "error");
+        toast(r.message ?? l10n.t("Couldn't publish {0}.", branchName(b)), r.expected ? "info" : "error");
         return;
       }
       bust("branches");
       await this.refreshBranchesSoft();
-      toast(`Published ${branchName(b)}.`, "success");
+      toast(l10n.t("Published {0}.", branchName(b)), "success");
     });
   }
 
@@ -3712,27 +3764,27 @@ class App {
       return b;
     };
     if (tab === "local") {
-      return mk("New branch", "add", "Create a branch from the current HEAD", () => void this.newBranch());
+      return mk(l10n.t("New branch"), "add", l10n.t("Create a branch from the current HEAD"), () => void this.newBranch());
     }
     if (tab === "tags") {
-      return mk("New tag", "tag", "Tag the current HEAD", () => void this.newTagHere());
+      return mk(l10n.t("New tag"), "tag", l10n.t("Tag the current HEAD"), () => void this.newTagHere());
     }
     if (tab === "stashes") {
       // The one screen that LISTS stashes could not make one.
-      return mk("Stash changes", "git-stash", "Stash the working tree", () => void this.stashHere());
+      return mk(l10n.t("Stash changes"), "git-stash", l10n.t("Stash the working tree"), () => void this.stashHere());
     }
     return el("span", "gh-head-cta-blank");
   }
 
   /** Tag the current HEAD, from the Tags segment's own CTA. */
   private async newTagHere(): Promise<void> {
-    const name = await promptInline("Tag name", "v1.0.0");
+    const name = await promptInline(l10n.t("Tag name"), "v1.0.0");
     if (!name?.trim()) return;
     const msg = await promptInline(
-      `Message for ${name.trim()}`,
-      "Optional — a message makes the tag carry its own note",
+      l10n.t("Message for {0}", name.trim()),
+      l10n.t("Optional — a message makes the tag carry its own note"),
       "",
-      "Create tag",
+      l10n.t("Create tag"),
       true,
     );
     if (msg === null) return;
@@ -3741,24 +3793,24 @@ class App {
       message: msg.trim() || undefined,
     });
     if (!r.ok) {
-      toast(r.message ?? "Couldn't create the tag.", r.expected ? "info" : "error");
+      toast(r.message ?? l10n.t("Couldn't create the tag."), r.expected ? "info" : "error");
       return;
     }
-    toast(`Created tag ${name.trim()}.`, "success");
+    toast(l10n.t("Created tag {0}.", name.trim()), "success");
     await this.refreshBranchesSoft();
   }
 
   /** Stash the working tree. The one screen that LISTS stashes could not make
    *  one — the verb lived only in the Changes view. */
   private async stashHere(): Promise<void> {
-    const msg = await promptInline("Stash message", "What is this work?", "", "Stash", true);
+    const msg = await promptInline(l10n.t("Stash message"), l10n.t("What is this work?"), "", l10n.t("Stash"), true);
     if (msg === null) return;
     const r = await host.invoke("stash:save", { message: msg.trim() || undefined });
     if (!r.ok) {
-      toast(r.message ?? "Couldn't stash.", r.expected ? "info" : "error");
+      toast(r.message ?? l10n.t("Couldn't stash."), r.expected ? "info" : "error");
       return;
     }
-    toast("Stashed your working changes.", "success");
+    toast(l10n.t("Stashed your working changes."), "success");
     await this.refreshBranchesSoft();
   }
 
@@ -3778,13 +3830,13 @@ class App {
     // "local" / "remote" / "tags", and printing it produced "Nothing in local
     // matches …" and "No tag here matches …".
     const NOUN: Record<string, { one: string; many: string }> = {
-      local: { one: "branch", many: "branches" },
-      remote: { one: "remote branch", many: "remote branches" },
-      tags: { one: "tag", many: "tags" },
-      stashes: { one: "stash", many: "stashes" },
-      worktrees: { one: "worktree", many: "worktrees" },
+      local: { one: l10n.t("branch"), many: l10n.t("branches") },
+      remote: { one: l10n.t("remote branch"), many: l10n.t("remote branches") },
+      tags: { one: l10n.t("tag"), many: l10n.t("tags") },
+      stashes: { one: l10n.t("stash"), many: l10n.t("stashes") },
+      worktrees: { one: l10n.t("worktree"), many: l10n.t("worktrees") },
     };
-    const noun = NOUN[tab] ?? { one: "ref", many: "refs" };
+    const noun = NOUN[tab] ?? { one: l10n.t("ref"), many: l10n.t("refs") };
 
     // A NARROWING emptied it, not the repository. Both narrowings are named
     // when both are active: the search branch used to return first, so a search
@@ -3793,32 +3845,28 @@ class App {
     if (query || filtered) {
       const why =
         query && filtered
-          ? `No ${noun.many} match “${query}” and the filters in effect.`
+          ? l10n.t("No {0} match “{1}” and the filters in effect.", noun.many, query)
           : query
-            ? `No ${noun.many} match “${query}”.`
-            : `No ${noun.many} match the filters in effect.`;
-      return emptyState("No matches", why, {
+            ? l10n.t("No {0} match “{1}”.", noun.many, query)
+            : l10n.t("No {0} match the filters in effect.", noun.many);
+      return emptyState(l10n.t("No matches"), why, {
         icon: filtered ? "filter" : "search",
         anchor: "inline",
         // Offered whenever there is a filter to clear — a search you can see in
         // the box you typed it into needs no button, but a facet or an age cut
         // three controls away does.
-        ...(filtered && onClear ? { action: { label: "Clear filters", onClick: onClear } } : {}),
+        ...(filtered && onClear ? { action: { label: l10n.t("Clear filters"), onClick: onClear } } : {}),
       });
     }
     if (tab === "worktrees" && worktreeFailed) {
-      return errorState(
-        "Couldn't read the worktrees",
-        "Git did not answer. Whether this repository has others is unknown, not settled.",
+      return errorState(l10n.t("Couldn't read the worktrees"), l10n.t("Git did not answer. Whether this repository has others is unknown, not settled."),
         () => void this.refreshBranchesSoft(),
       );
     }
     if (tab === "stashes" && stashFailed) {
       // A failed read is not an empty list — the old view swallowed the error
       // and rendered "no stashes" over a repo that has some.
-      return errorState(
-        "Couldn't read the stashes",
-        "Git did not answer. The stash list is unknown, not empty.",
+      return errorState(l10n.t("Couldn't read the stashes"), l10n.t("Git did not answer. The stash list is unknown, not empty."),
         () => void this.refreshBranchesSoft(),
       );
     }
@@ -3829,16 +3877,16 @@ class App {
     // entry here. Destructuring undefined threw, and the whole Branches view
     // rendered blank with a console error nobody sees.
     const copy: Record<string, [string, string]> = {
-      local: ["No branches yet", "Every repository has at least one — this read found none."],
-      remote: ["No remote branches", "Nothing has been fetched yet. Fetch brings them in."],
-      tags: ["No tags", "Tag a commit to mark a release or a milestone."],
-      stashes: ["No stashes", "Stashing puts your working changes aside without committing them."],
+      local: [l10n.t("No branches yet"), l10n.t("Every repository has at least one — this read found none.")],
+      remote: [l10n.t("No remote branches"), l10n.t("Nothing has been fetched yet. Fetch brings them in.")],
+      tags: [l10n.t("No tags"), l10n.t("Tag a commit to mark a release or a milestone.")],
+      stashes: [l10n.t("No stashes"), l10n.t("Stashing puts your working changes aside without committing them.")],
       worktrees: [
-        "No other worktrees",
-        "A worktree checks out a second branch into its own directory, so you can work on two at once.",
+        l10n.t("No other worktrees"),
+        l10n.t("A worktree checks out a second branch into its own directory, so you can work on two at once."),
       ],
     };
-    const [title, desc] = copy[tab] ?? ["Nothing here", "This list is empty."];
+    const [title, desc] = copy[tab] ?? [l10n.t("Nothing here"), l10n.t("This list is empty.")];
     return emptyState(title, desc, { icon: tab === "stashes" ? "git-stash" : "git-branch" });
   }
 
@@ -3864,29 +3912,27 @@ class App {
       p.title = title;
       return p;
     };
-    if (b.current) pills.push(pill("current", "current", "This is the checked-out branch"));
-    else if (bn === defaultBranch) pills.push(pill("default", "default", "The repository's default branch"));
+    if (b.current) pills.push(pill(l10n.t("current"), "current", l10n.t("This is the checked-out branch")));
+    else if (bn === defaultBranch) pills.push(pill(l10n.t("default"), "default", l10n.t("The repository's default branch")));
     if (b.gone) {
       // Without this the row reads "0 ahead, 0 behind" — the same shape as
       // perfectly in sync — about a remote that no longer exists, which is what
       // every merged pull request leaves behind.
       pills.push(
-        pill(
-          "upstream gone",
+        pill(l10n.t("upstream gone"),
           "gone",
-          `${up ?? "Its upstream"} no longer exists — this branch is probably finished with.`,
+          l10n.t("{0} no longer exists — this branch is probably finished with.", up ?? l10n.t("Its upstream")),
         ),
       );
     } else if (b.merged && !b.current && bn !== defaultBranch) {
       pills.push(
-        pill(
+        pill(l10n.t("merged"),
           "merged",
-          "merged",
-          `Every commit here is already in ${defaultBranch ?? "the default branch"} — safe to delete.`,
+          l10n.t("Every commit here is already in {0} — safe to delete.", defaultBranch ?? l10n.t("the default branch")),
         ),
       );
     } else if (!b.upstream) {
-      pills.push(pill("unpublished", "unpublished", "This branch has never been pushed"));
+      pills.push(pill(l10n.t("unpublished"), "unpublished", l10n.t("This branch has never been pushed")));
     }
 
     const chips: HTMLElement[] = [];
@@ -3980,7 +4026,7 @@ class App {
     const actions: HTMLElement[] = [];
     if (b.behind) {
       const pull = el("button", "row-btn") as HTMLButtonElement;
-      pull.textContent = "Pull";
+      pull.textContent = l10n.t("Pull");
       pull.setAttribute("aria-label", `Pull ${bn}`);
       pull.title = b.current
         ? `Pull ${plural(b.behind, "commit")} from ${up ?? "upstream"}`
@@ -3989,21 +4035,21 @@ class App {
       actions.push(pull);
     } else if (!b.upstream) {
       const pub = el("button", "row-btn") as HTMLButtonElement;
-      pub.textContent = "Publish";
+      pub.textContent = l10n.t("Publish");
       pub.setAttribute("aria-label", `Publish ${bn}`);
       pub.title = `Push ${bn} and set its upstream`;
       pub.addEventListener("click", () => void this.publishBranchLive(b, pub));
       actions.push(pub);
     } else if (!b.current) {
       const co = el("button", "row-btn") as HTMLButtonElement;
-      co.textContent = "Checkout";
-      co.setAttribute("aria-label", `Check out ${bn}`);
-      co.title = `Check out ${bn}`;
+      co.textContent = l10n.t("Checkout");
+      co.setAttribute("aria-label", l10n.t("Check out {0}", bn));
+      co.title = l10n.t("Check out {0}", bn);
       co.addEventListener("click", () => void this.checkoutRef(b.fullName, co));
       actions.push(co);
     }
     const moreBtn = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
-    moreBtn.setAttribute("aria-label", `More actions for ${bn}`);
+    moreBtn.setAttribute("aria-label", l10n.t("More actions for {0}", bn));
     moreBtn.setAttribute("aria-haspopup", "menu");
     moreBtn.appendChild(glyph("ellipsis"));
     moreBtn.addEventListener("click", () => this.openBranchActions(b, moreBtn));
@@ -4021,14 +4067,14 @@ class App {
       // What the row says out loud, rather than "Inspect branch main".
       ariaLabel: [
         bn,
-        b.current ? "current branch" : "",
-        b.gone ? "upstream gone" : b.merged ? "merged" : "",
+        b.current ? l10n.t("current branch") : "",
+        b.gone ? l10n.t("upstream gone") : b.merged ? l10n.t("merged") : "",
         // The divergence as a FACT, not as the verbs the row's own buttons
         // carry — "3 to push, 5 to pull" beside a Pull button makes a screen
         // reader recite the actions back before it reaches them.
-        b.ahead ? `${b.ahead} ahead` : "",
-        b.behind ? `${b.behind} behind` : "",
-        b.date ? `updated ${relTime(b.date)}` : "",
+        b.ahead ? l10n.t("{0} ahead", b.ahead) : "",
+        b.behind ? l10n.t("{0} behind", b.behind) : "",
+        b.date ? l10n.t("updated {0}", relTime(b.date)) : "",
       ]
         .filter(Boolean)
         .join(", "),
@@ -4040,9 +4086,9 @@ class App {
       b.subject,
       // The divergence the bar used to draw, said in words.
       b.aheadDefault !== undefined && b.behindDefault !== undefined && bn !== defaultBranch
-        ? `${b.aheadDefault} ahead of and ${b.behindDefault} behind ${defaultBranch ?? "the default branch"}`
+        ? l10n.t("{0} ahead of and {1} behind {2}", b.aheadDefault, b.behindDefault, defaultBranch ?? l10n.t("the default branch"))
         : "",
-      b.upstream && conventionalUpstream ? `tracking ${up}` : "",
+      b.upstream && conventionalUpstream ? l10n.t("tracking {0}", up) : "",
       b.date ? absTime(b.date) : "",
     ]
       .filter(Boolean)
@@ -4095,16 +4141,16 @@ class App {
         // tone, not as a failure.
         if (r.cancelled) {
           // nothing to say
-        } else if (!r.ok) toast(cleanErr(r.message) || `Couldn't ${label}.`, r.expected ? "info" : "error");
-        else toast(`${label} ✓`, "success");
+        } else if (!r.ok) toast(cleanErr(r.message) || l10n.t("Couldn't {0}.", label), r.expected ? "info" : "error");
+        else toast(l10n.t("{0} ✓", label), "success");
       } catch (e) {
-        toast(cleanErr(e) || `Couldn't ${label}.`, "error");
+        toast(cleanErr(e) || l10n.t("Couldn't {0}.", label), "error");
       }
       await refresh();
     };
     const items: MenuItem[] = [];
     const checkout: MenuItem = {
-      label: `Checkout ${bn}`,
+      label: l10n.t("Checkout {0}", bn),
       icon: "check",
       onClick: () => void this.checkoutRef(b.fullName),
     };
@@ -4113,8 +4159,8 @@ class App {
     // spins while the remotes refresh, and every row's ↓/↑ counts update live
     // behind it — so "what's unpulled where?" is one click, not a round trip.
     items.push({
-      label: "Fetch",
-      sub: "update remote tracking",
+      label: l10n.t("Fetch"),
+      sub: l10n.t("update remote tracking"),
       icon: "sync",
       keepOpen: true,
       onClick: (itemEl) => void this.fetchLiveInMenu(itemEl, b),
@@ -4123,16 +4169,16 @@ class App {
     // only the top-bar widget could, and only for the checked-out branch, so an
     // ahead or unpublished branch was unpushable from the list showing it.
     items.push({
-      label: b.upstream ? "Push" : "Publish branch",
+      label: b.upstream ? l10n.t("Push") : l10n.t("Publish branch"),
       sub: b.upstream
         ? b.ahead
-          ? `${plural(b.ahead, "commit")} to ${b.upstream}`
-          : `to ${b.upstream}`
-        : "create it on the remote and track it",
+          ? l10n.t("{0} to {1}", plural(b.ahead, "commit"), b.upstream)
+          : l10n.t("to {0}", b.upstream)
+        : l10n.t("create it on the remote and track it"),
       icon: b.upstream ? "arrow-up" : "cloud-upload",
       onClick: () =>
         void run(
-          b.upstream ? `push ${bn}` : `publish ${bn}`,
+          b.upstream ? l10n.t("push {0}", bn) : l10n.t("publish {0}", bn),
           host.invoke("branch:push", { fullName: b.fullName }),
         ),
     });
@@ -4143,14 +4189,14 @@ class App {
     // branch gets a real pull instead, shown only when it's actually behind.
     if (b.upstream && !b.current) {
       items.push({
-        label: b.behind ? `Pull ${b.behind} into ${bn}` : `Pull latest into ${bn}`,
-        sub: "fast-forward — no checkout",
+        label: b.behind ? l10n.t("Pull {0} into {1}", b.behind, bn) : l10n.t("Pull latest into {0}", bn),
+        sub: l10n.t("fast-forward — no checkout"),
         icon: "arrow-down",
         onClick: () => void this.pullBranchLive(b),
       });
     } else if (b.current && b.behind && b.upstream) {
       items.push({
-        label: `Pull ${b.behind} commit${b.behind === 1 ? "" : "s"}`,
+        label: b.behind === 1 ? l10n.t("Pull {0} commit", b.behind) : l10n.t("Pull {0} commits", b.behind),
         sub: b.upstream,
         icon: "arrow-down",
         onClick: () => void this.pullBranchLive(b),
@@ -4159,14 +4205,14 @@ class App {
     if (!b.current || b.behind) items.push({ separator: true });
     if (!b.current) {
       items.push({
-        label: `Merge ${bn} into current`,
+        label: l10n.t("Merge {0} into current", bn),
         icon: "git-merge",
         // in-the-way-reviewed: run() above says nothing on `cancelled`.
         // By FULL name, and recorded as "Merge branch '<bn>'" (BranchOps).
-        onClick: () => void run(`merge ${bn}`, host.invoke("branch:merge", { fullName: b.fullName })),
+        onClick: () => void run(l10n.t("merge {0}", bn), host.invoke("branch:merge", { fullName: b.fullName })),
       });
       items.push({
-        label: `Rebase current onto ${bn}…`,
+        label: l10n.t("Rebase current onto {0}…", bn),
         icon: "git-pull-request",
         // ASKED FIRST. Every other item in this menu is additive or reversible;
         // this one rewrites the current branch's history, and it sat one
@@ -4174,34 +4220,36 @@ class App {
         // the rewrite. The ellipsis now tells the truth about what follows.
         onClick: () =>
           void (async () => {
-            const current = this.currentBranchName() ?? "the current branch";
+            const current = this.currentBranchName() ?? l10n.t("the current branch");
             const ok = await confirmDialog({
-              title: `Rebase ${current} onto ${bn}?`,
-              message:
-                `Every commit on ${current} that is not on ${bn} is rewritten with a new ` +
-                `identity. If you have already pushed ${current}, the next push needs a force.`,
-              confirmLabel: "Rebase",
+              title: l10n.t("Rebase {0} onto {1}?", current, bn),
+              message: l10n.t(
+                "Every commit on {0} that is not on {1} is rewritten with a new identity. If you have already pushed {0}, the next push needs a force.",
+                current,
+                bn,
+              ),
+              confirmLabel: l10n.t("Rebase"),
               danger: true,
             });
             if (!ok) return;
             // in-the-way-reviewed: run() above says nothing on `cancelled`.
-            await run(`rebase onto ${bn}`, host.invoke("branch:rebase", { fullName: b.fullName }));
+            await run(l10n.t("rebase onto {0}", bn), host.invoke("branch:rebase", { fullName: b.fullName }));
           })(),
       });
       items.push({ separator: true });
     }
     items.push({
-      label: "Copy branch name",
+      label: l10n.t("Copy branch name"),
       icon: "copy",
-      onClick: () => void copyText(bn, `Copied “${bn}”.`),
+      onClick: () => void copyText(bn, l10n.t("Copied “{0}”.", bn)),
     });
     items.push({
-      label: "Rename…",
+      label: l10n.t("Rename…"),
       icon: "edit",
       onClick: () => void this.renameBranchFlow(b),
     });
     items.push({
-      label: `New branch from ${bn}…`,
+      label: l10n.t("New branch from {0}…", bn),
       icon: "add",
       onClick: () =>
         void createBranchFlow(
@@ -4218,22 +4266,22 @@ class App {
         ),
     });
     items.push({
-      label: "Set upstream…",
+      label: l10n.t("Set upstream…"),
       icon: "cloud",
       onClick: () => {
         void (async (): Promise<void> => {
-          const up = await promptInline("Set upstream", "origin/" + bn, b.upstream ?? "", "Set upstream");
+          const up = await promptInline(l10n.t("Set upstream"), "origin/" + bn, b.upstream ?? "", l10n.t("Set upstream"));
           if (up && up.trim())
-            await run("set upstream", host.invoke("branch:setUpstream", { fullName: b.fullName, upstream: up.trim() }));
+            await run(l10n.t("set upstream"), host.invoke("branch:setUpstream", { fullName: b.fullName, upstream: up.trim() }));
         })();
       },
     });
     items.push({
-      label: "Create tag here…",
+      label: l10n.t("Create tag here…"),
       icon: "tag",
       onClick: () => {
         void (async (): Promise<void> => {
-          const name = await promptInline("Tag name", "v1.0.0");
+          const name = await promptInline(l10n.t("Tag name"), "v1.0.0");
           if (!name || !name.trim()) return;
           // `allowEmpty` so Cancel is distinguishable from a deliberate blank.
           // Without it both answered `null`, the flow could not tell them
@@ -4241,14 +4289,14 @@ class App {
           // anyway — a Cancel that performs the action, on an object nothing in
           // the app can delete afterwards.
           const msg = await promptInline(
-            "Tag message (optional — it rides with the tag)",
+            l10n.t("Tag message (optional — it rides with the tag)"),
             "Release 1.0.0",
             "",
-            "Create tag",
+            l10n.t("Create tag"),
             true,
           );
           if (msg === null) return;
-          await run("create tag", host.invoke("tag:create", { name: name.trim(), ref: b.fullName, message: msg.trim() || undefined }));
+          await run(l10n.t("create tag"), host.invoke("tag:create", { name: name.trim(), ref: b.fullName, message: msg.trim() || undefined }));
         })();
       },
     });
@@ -4261,22 +4309,24 @@ class App {
       const upName = `${remote}/${rname}`;
       items.push({ separator: true });
       items.push({
-        label: `Delete remote branch (${upName})`,
+        label: l10n.t("Delete remote branch ({0})", upName),
         icon: "trash",
         onClick: () => {
           void (async (): Promise<void> => {
             const ok = await confirmDialog({
-              title: "Delete remote branch",
-              message:
-                `Delete ${upName} from ${remote}? This affects everyone. You can push it ` +
-                `back straight afterwards, as long as nobody has re-made it.`,
-              confirmLabel: "Delete remote branch",
+              title: l10n.t("Delete remote branch"),
+              message: l10n.t(
+                "Delete {0} from {1}? This affects everyone. You can push it back straight afterwards, as long as nobody has re-made it.",
+                upName,
+                remote,
+              ),
+              confirmLabel: l10n.t("Delete remote branch"),
               danger: true,
             });
             if (!ok) return;
             const gone = await host.invoke("branch:deleteRemote", { remote, name: rname });
             if (!gone.ok) {
-              toast(gone.message ?? `Couldn't delete ${upName}.`, gone.expected ? "info" : "error");
+              toast(gone.message ?? l10n.t("Couldn't delete {0}.", upName), gone.expected ? "info" : "error");
               return;
             }
             bust("branches");
@@ -4285,18 +4335,18 @@ class App {
             // it reports whatever the remote says rather than claiming success.
             if (gone.was) {
               const sha = gone.was;
-              didUndoable(`Deleted ${upName} from ${remote}.`, {
-                label: `Push ${rname} back to ${remote}`,
+              didUndoable(l10n.t("Deleted {0} from {1}.", upName, remote), {
+                label: l10n.t("Push {0} back to {1}", rname, remote),
                 undo: async () => {
                   const back = await host.invoke("branch:restoreRemote", { remote, name: rname, sha });
-                  if (!back.ok) return back.message ?? `Couldn't push ${rname} back.`;
+                  if (!back.ok) return back.message ?? l10n.t("Couldn't push {0} back.", rname);
                   bust("branches");
                   return undefined;
                 },
                 after: () => this.refreshBranchesSoft(),
               });
             } else {
-              toast(`Deleted ${upName} from ${remote}.`, "success");
+              toast(l10n.t("Deleted {0} from {1}.", upName, remote), "success");
             }
           })();
         },
@@ -4313,7 +4363,7 @@ class App {
         label: resetItemLabel(upName),
         icon: "discard",
         danger: true,
-        title: `Drop what is only on ${bn} and make it match ${upName} — you'll see what goes first`,
+        title: l10n.t("Drop what is only on {0} and make it match {1} — you'll see what goes first", bn, upName),
         keepOpen: true,
         onClick: (itemEl) => void this.resetToUpstreamFlow(b, itemEl, anchor),
       });
@@ -4324,10 +4374,10 @@ class App {
     // not, so the peek was a dead end for the one decision it prepares you for.
     if (!b.current) {
       tail.push({
-        label: `Delete ${bn}`,
+        label: l10n.t("Delete {0}", bn),
         icon: "trash",
         danger: true,
-        title: `Delete the local branch ${bn}`,
+        title: l10n.t("Delete the local branch {0}", bn),
         onClick: () => void this.deleteBranch(b),
       });
     }
@@ -4405,7 +4455,7 @@ class App {
     const was = result.was;
     const now = plan.to;
     didUndoable(out.message, {
-      label: `Put ${bn} back`,
+      label: l10n.t("Put {0} back", bn),
       undo: async () => {
         const back = await host.invoke("branch:resetUndo", {
           root,
@@ -4419,7 +4469,7 @@ class App {
           // Half of it may have happened (the branch is back, the changes
           // could not be re-applied) — then the screen still has to show it.
           if (back.changed) await refresh();
-          const why = back.message ?? `Couldn't put ${bn} back.`;
+          const why = back.message ?? l10n.t("Couldn't put {0} back.", bn);
           return back.expected ? { info: why } : why;
         }
         return undefined;
@@ -4438,7 +4488,7 @@ class App {
     try {
       const r = await host.invoke("sync:fetch", { prune: this.pruneOnFetchPref });
       if (!r.ok) {
-        toast(r.message || "Fetch failed.", "error");
+        toast(r.message || l10n.t("Fetch failed."), "error");
         return;
       }
       bust();
@@ -4454,14 +4504,14 @@ class App {
           ?.parentElement?.querySelector(".dropdown-label");
         if (fresh && pullLabel) {
           pullLabel.textContent = fresh.current
-            ? `Pull ${fresh.behind} commit${fresh.behind === 1 ? "" : "s"}`
+            ? (fresh.behind === 1 ? l10n.t("Pull {0} commit", fresh.behind) : l10n.t("Pull {0} commits", fresh.behind))
             : fresh.behind
-              ? `Pull ${fresh.behind} into ${branchName(fresh)}`
-              : `Pull latest into ${branchName(fresh)}`;
+              ? l10n.t("Pull {0} into {1}", fresh.behind, branchName(fresh))
+              : l10n.t("Pull latest into {0}", branchName(fresh));
         }
       }
     } catch (e) {
-      toast(cleanErr(e) || "Fetch failed.", "error");
+      toast(cleanErr(e) || l10n.t("Fetch failed."), "error");
     } finally {
       itemEl?.classList.remove("is-busy-item");
       g?.classList.remove("spin");
@@ -4480,7 +4530,7 @@ class App {
       btn.classList.add("busy");
       g?.classList.remove("codicon-arrow-down");
       g?.classList.add("codicon-sync", "spin");
-      if (lbl) lbl.textContent = "Pulling…";
+      if (lbl) lbl.textContent = l10n.t("Pulling…");
     }
     const bn = branchName(b);
     try {
@@ -4496,18 +4546,18 @@ class App {
             cancelled: false,
             mode: undefined,
           };
-      const v = pullVerdict(out, `Couldn't pull ${bn}.`);
+      const v = pullVerdict(out, l10n.t("Couldn't pull {0}.", bn));
       if (v.kind !== "pulled") {
         await this.settleUnpulled(v);
         return;
       }
-      toast(b.current ? v.message : `Fast-forwarded ${bn}.`, "success");
+      toast(b.current ? v.message : l10n.t("Fast-forwarded {0}.", bn), "success");
       bust();
       await this.updateSync();
       if (b.current) await this.refreshAll();
       await this.refreshBranchesSoft();
     } catch (e) {
-      toast(cleanErr(e) || `Couldn't pull ${bn}.`, "error");
+      toast(cleanErr(e) || l10n.t("Couldn't pull {0}.", bn), "error");
     } finally {
       // On success the live reload rebuilt the row (and this button); only a
       // still-connected button — the failure path — needs restoring.
@@ -4516,7 +4566,7 @@ class App {
         btn.classList.remove("busy");
         g?.classList.remove("codicon-sync", "spin");
         g?.classList.add("codicon-arrow-down");
-        if (lbl) lbl.textContent = `Pull ${b.behind}`;
+        if (lbl) lbl.textContent = l10n.t("Pull {0}", b.behind);
       }
     }
   }
@@ -4562,19 +4612,19 @@ class App {
     // git's short "heads/release" (beside a tag "release") is none of those:
     // `git branch -m heads/release …` finds no such branch.
     const old = branchName(b);
-    const to = await promptInline(`Rename ${old}`, "new-name", old, "Rename", false, {
-      hint: "Only the local name changes — the commits, and the branch on the remote, stay where they are.",
+    const to = await promptInline(l10n.t("Rename {0}", old), "new-name", old, l10n.t("Rename"), false, {
+      hint: l10n.t("Only the local name changes — the commits, and the branch on the remote, stay where they are."),
       validate: "refName",
       extra: (v) =>
         v !== old && this.refs.some((r) => r.fullName === `refs/heads/${v}`)
-          ? `A branch called ${v} already exists.`
+          ? l10n.t("A branch called {0} already exists.", v)
           : null,
     });
     if (!to || to === old) return;
 
     const r = await host.invoke("branch:rename", { fullName: b.fullName, to });
     if (!r.ok) {
-      toast(cleanErr(r.message) || `Couldn't rename ${old}.`, r.expected ? "info" : "error");
+      toast(cleanErr(r.message) || l10n.t("Couldn't rename {0}.", old), r.expected ? "info" : "error");
       return; // nothing changed — don't refresh as if it had
     }
 
@@ -4582,25 +4632,25 @@ class App {
     const back = { fullName: `refs/heads/${to}`, to: old };
     const after = (): Promise<void> => this.refreshAfterBranchChange();
     if (!fixed) {
-      didUndoable(`Renamed ${old} → ${to}.`, {
-        label: `Rename ${to} back to ${old}`,
+      didUndoable(l10n.t("Renamed {0} → {1}.", old, to), {
+        label: l10n.t("Rename {0} back to {1}", to, old),
         undo: async () => {
           const u = await host.invoke("branch:rename", back);
-          if (!u.ok) return cleanErr(u.message) || `Couldn't rename ${to} back.`;
+          if (!u.ok) return cleanErr(u.message) || l10n.t("Couldn't rename {0} back.", to);
           bust();
           return undefined;
         },
         after,
       });
     } else if (fixed.done === "publish") {
-      didUndoable(`Renamed ${old} → ${to}, and published it to ${fixed.remote}.`, {
+      didUndoable(l10n.t("Renamed {0} → {1}, and published it to {2}.", old, to, fixed.remote), {
         // `${fixed.remote}/${to}` is deliberately left standing: creating a
         // remote branch is not destructive, and deleting one other people may
         // already have fetched is not an undo.
-        label: `Rename ${to} back to ${old}`,
+        label: l10n.t("Rename {0} back to {1}", to, old),
         undo: async () => {
           const u = await host.invoke("branch:rename", back);
-          if (!u.ok) return cleanErr(u.message) || `Couldn't rename ${to} back.`;
+          if (!u.ok) return cleanErr(u.message) || l10n.t("Couldn't rename {0} back.", to);
           if (b.upstream) await host.invoke("branch:setUpstream", { fullName: b.fullName, upstream: b.upstream });
           bust();
           return undefined;
@@ -4608,8 +4658,8 @@ class App {
         after,
       });
     } else {
-      didUndoable(`Renamed ${old} → ${to}, on ${fixed.remote} too.`, {
-        label: `Put ${b.upstream} back`,
+      didUndoable(l10n.t("Renamed {0} → {1}, on {2} too.", old, to, fixed.remote), {
+        label: l10n.t("Put {0} back", b.upstream),
         undo: async () => {
           // The remote half is the destructive one and the only half that can
           // refuse. Do it FIRST: the undo stack pops before running, so a
@@ -4622,10 +4672,10 @@ class App {
               name: old,
               sha: fixed.was,
             });
-            if (!put.ok) return cleanErr(put.message) || `Couldn't put ${b.upstream} back.`;
+            if (!put.ok) return cleanErr(put.message) || l10n.t("Couldn't put {0} back.", b.upstream);
           }
           const u = await host.invoke("branch:rename", back);
-          if (!u.ok) return cleanErr(u.message) || `Couldn't rename ${to} back.`;
+          if (!u.ok) return cleanErr(u.message) || l10n.t("Couldn't rename {0} back.", to);
           // The rename took `${to}`'s tracking with it — the rename made the
           // branch track `${fixed.remote}/${to}` — so renaming back left it
           // tracking the new name. Point it at its own remote branch again,
@@ -4681,28 +4731,28 @@ class App {
     const ways = [
       {
         id: "rename",
-        label: `Rename on ${remote}`,
-        sub: `Push ${local}, track it, and delete ${upstream}.`,
+        label: l10n.t("Rename on {0}", remote),
+        sub: l10n.t("Push {0}, track it, and delete {1}.", local, upstream),
         icon: "cloud-upload",
       },
       {
         id: "publish",
-        label: `Publish ${local}, keep ${onRemote}`,
-        sub: `Push ${local} and track it, but leave ${upstream} where it is.`,
+        label: l10n.t("Publish {0}, keep {1}", local, onRemote),
+        sub: l10n.t("Push {0} and track it, but leave {1} where it is.", local, upstream),
         icon: "repo-forked",
       },
       {
         id: "keep",
-        label: `Keep tracking ${upstream}`,
-        sub: "Git's default. The new name stays local-only.",
+        label: l10n.t("Keep tracking {0}", upstream),
+        sub: l10n.t("Git's default. The new name stays local-only."),
         icon: "link",
       },
     ];
     // The gate for the destructive half below: a modal the user must choose in,
     // which absorbs a second click exactly as a confirm dialog does.
     const choice = await promptChoice({
-      title: `Rename ${onRemote} on ${remote} too?`,
-      hint: `${local} still tracks ${upstream} — renaming it here doesn't rename it on the remote.`,
+      title: l10n.t("Rename {0} on {1} too?", onRemote, remote),
+      hint: l10n.t("{0} still tracks {1} — renaming it here doesn't rename it on the remote.", local, upstream),
       choices: ways,
       cancelId: "keep",
       holdWhile: this.whileThisRepo(), // asked right after a ref moved — see promptChoice
@@ -4712,7 +4762,10 @@ class App {
     const pushed = await host.invoke("branch:publish", { name: local, remote });
     if (!pushed.ok) {
       const why = pushed.message ? ` — ${cleanErr(pushed.message)}` : "";
-      toast(`Renamed to ${local}, but publishing it to ${remote} failed${why}. It still tracks ${upstream}.`, pushed.expected ? "info" : "error");
+      toast(
+        l10n.t("Renamed to {0}, but publishing it to {1} failed{2}. It still tracks {3}.", local, remote, why, upstream),
+        pushed.expected ? "info" : "error",
+      );
       return null; // the rename stands, and stays undoable
     }
     if (choice === "publish") return { done: "publish", remote };
@@ -4721,7 +4774,12 @@ class App {
     const gone = await host.invoke("branch:deleteRemote", { remote, name: onRemote });
     if (!gone.ok) {
       toast(
-        `${local} is published and tracked, but ${upstream} couldn't be deleted${gone.message ? ` — ${cleanErr(gone.message)}` : ""}.`,
+        l10n.t(
+          "{0} is published and tracked, but {1} couldn't be deleted{2}.",
+          local,
+          upstream,
+          gone.message ? ` — ${cleanErr(gone.message)}` : "",
+        ),
         gone.expected ? "info" : "error",
       );
       return { done: "publish", remote }; // the half that worked is the half we can undo
@@ -4749,13 +4807,14 @@ class App {
     // force-delete prompt below is a different question (it only fires for an
     // unmerged branch) and is not a substitute for this one.
     const ok = await confirmDialog({
-      title: "Delete branch",
+      title: l10n.t("Delete branch"),
       // Still worth asking — this removes a ref you meant to keep — but the
       // second sentence now says what actually happens next.
-      message:
-        `Delete '${name}'? Commits that are only on this branch stop being reachable by name. ` +
-        `You can undo this straight afterwards.`,
-      confirmLabel: "Delete branch",
+      message: l10n.t(
+        "Delete '{0}'? Commits that are only on this branch stop being reachable by name. You can undo this straight afterwards.",
+        name,
+      ),
+      confirmLabel: l10n.t("Delete branch"),
       danger: true,
     });
     if (!ok) {
@@ -4764,9 +4823,9 @@ class App {
     let r = await host.invoke("branch:delete", { fullName: b.fullName });
     if (!r.ok && r.message && /not fully merged/i.test(r.message)) {
       const force = await confirmDialog({
-        title: "Force-delete branch?",
-        message: `'${name}' isn't fully merged. Force-deleting may discard unmerged commits.`,
-        confirmLabel: "Force delete",
+        title: l10n.t("Force-delete branch?"),
+        message: l10n.t("'{0}' isn't fully merged. Force-deleting may discard unmerged commits.", name),
+        confirmLabel: l10n.t("Force delete"),
         danger: true,
       });
       if (!force) return;
@@ -4775,7 +4834,7 @@ class App {
     if (!r.ok) {
       // `expected`: the person's state (another worktree has it checked out),
       // said in words — not a failure.
-      toast(r.message || `Couldn't delete branch '${name}'.`, r.expected ? "info" : "error");
+      toast(r.message || l10n.t("Couldn't delete branch '{0}'.", name), r.expected ? "info" : "error");
       return; // branch still exists — don't refresh as if it were gone
     }
     // A branch is a name and a commit, so putting one back is genuinely
@@ -4785,8 +4844,8 @@ class App {
     const restore = r.was;
     const upstream = r.upstream;
     if (restore) {
-      didUndoable(`Deleted ${name}.`, {
-        label: `Restore ${name}`,
+      didUndoable(l10n.t("Deleted {0}.", name), {
+        label: l10n.t("Restore {0}", name),
         undo: async () => {
           // in-the-way-reviewed: a restore never switches, so it changes no
           // file and is never refused over uncommitted work.
@@ -4795,7 +4854,7 @@ class App {
             startPoint: restore,
             upstream,
           });
-          if (!back.ok) return back.message ?? `Couldn't restore ${name}.`;
+          if (!back.ok) return back.message ?? l10n.t("Couldn't restore {0}.", name);
           bust();
           return undefined;
         },
@@ -4805,7 +4864,7 @@ class App {
         },
       });
     } else {
-      toast(`Deleted ${name}.`, "success");
+      toast(l10n.t("Deleted {0}.", name), "success");
     }
     // The peek this was very likely launched from is ABOUT the branch that no
     // longer exists. Leaving it open left a card offering Checkout, Merge,
@@ -4845,7 +4904,7 @@ class App {
     if (b) {
       b.disabled = true;
       b.classList.add("is-busy");
-      b.textContent = "Checking out…";
+      b.textContent = l10n.t("Checking out…");
     }
     const restore = (): void => {
       if (!b || !b.isConnected) return;
@@ -4858,7 +4917,7 @@ class App {
       result = await host.invoke("commit:action", refCheckoutRequest(fullName));
     } catch (e) {
       restore();
-      toast(cleanErr(e) || "Couldn't check out.", "error");
+      toast(cleanErr(e) || l10n.t("Couldn't check out."), "error");
       return;
     }
     restore();
@@ -4877,10 +4936,10 @@ class App {
     if (!result?.ok) {
       // A branch named like an option: say why, and offer the rename.
       if (explainRefusedCheckout(result, () => this.refreshAfterBranchChange())) return;
-      toast(result?.message || "Couldn't check out.", result?.expected ? "info" : "error");
+      toast(result?.message || l10n.t("Couldn't check out."), result?.expected ? "info" : "error");
       return;
     }
-    toast(`Checked out ${ref}.`, "success");
+    toast(l10n.t("Checked out {0}.", ref), "success");
     bust(); // checkout moves HEAD: refs/branches/status/graph/tree all change
     await this.refreshRefs();
     if (this.currentView === "branches") {
@@ -4939,7 +4998,7 @@ class App {
     };
     // With no second ref in the repo the picker says so rather than naming a
     // ref that would compare against itself.
-    setLabel(baseBtn, this.compareBase ?? "Choose a base…");
+    setLabel(baseBtn, this.compareBase ?? l10n.t("Choose a base…"));
     setLabel(headBtn, this.compareHead);
     baseBtn.addEventListener("click", () =>
       this.pickRef(baseBtn, (r) => {
@@ -4956,16 +5015,16 @@ class App {
       }),
     );
     const baseLbl = el("span", "compare-lbl");
-    baseLbl.textContent = "base";
+    baseLbl.textContent = l10n.t("base");
     const headLbl = el("span", "compare-lbl");
-    headLbl.textContent = "compare";
+    headLbl.textContent = l10n.t("compare");
     // Was a bare `topbar-icon` glyph with no border or fill, wedged between two
     // bordered ref pickers — it read as a decorative separator, like the tiny
     // BASE/COMPARE labels around it. And `git-compare` is the view's own icon,
     // not "swap"; the two-way arrow says what the button does.
     const swap = el("button", "mini-btn gh-icon-btn cmp-swap");
-    swap.title = "Swap base and compare";
-    swap.setAttribute("aria-label", "Swap base and compare");
+    swap.title = l10n.t("Swap base and compare");
+    swap.setAttribute("aria-label", l10n.t("Swap base and compare"));
     swap.appendChild(glyph("arrow-swap"));
     swap.addEventListener("click", () => {
       // Both sides, or neither. With only one local branch there is no base to
@@ -4982,7 +5041,7 @@ class App {
     const syncSwap = (): void => {
       const ok = !!this.compareBase && !!this.compareHead;
       (swap as HTMLButtonElement).disabled = !ok;
-      swap.title = ok ? "Swap base and compare" : "Pick a base first";
+      swap.title = ok ? l10n.t("Swap base and compare") : l10n.t("Pick a base first");
       swap.setAttribute("aria-label", swap.title);
     };
     const modeWrap = el("div", "cmp-mode");
@@ -4991,13 +5050,13 @@ class App {
      *  THAT commit adds: its short sha, so the words stay right after a swap. */
     const syncModeLabel = (): void => {
       const head = this.compareHead;
-      dot3.textContent = head && this.compareCommits.has(head) ? `What ${sideLabel(head)} adds` : "What this branch adds";
+      dot3.textContent = head && this.compareCommits.has(head) ? l10n.t("What {0} adds", sideLabel(head)) : l10n.t("What this branch adds");
     };
     syncModeLabel();
-    dot3.title = "Three-dot (base...compare): changes introduced since the common ancestor — GitHub's default";
+    dot3.title = l10n.t("Three-dot (base...compare): changes introduced since the common ancestor — GitHub's default");
     const dot2 = el("button", "cmp-mode-btn");
-    dot2.textContent = "Everything different";
-    dot2.title = "Two-dot (base..compare): every difference between the two branch tips";
+    dot2.textContent = l10n.t("Everything different");
+    dot2.title = l10n.t("Two-dot (base..compare): every difference between the two branch tips");
     const syncMode = (): void => {
       dot3.classList.toggle("active", this.compareMode === "three-dot");
       dot2.classList.toggle("active", this.compareMode === "two-dot");
@@ -5020,11 +5079,11 @@ class App {
     const nav = (v: string): void => this.routeView(v);
     aiWrap.append(
       aiChip(
-        "Explain",
+        l10n.t("Explain"),
         () => {
           const b = this.compareBase, h = this.compareHead;
           openAssistantTab({
-            title: `Explain ${sideLabel(b)}…${sideLabel(h)}`,
+            title: l10n.t("Explain {0}…{1}", sideLabel(b), sideLabel(h)),
             goal: `Explain what changes between \`${b}\` and \`${h}\`. Run \`git diff ${b}..${h}\` to see the changes, then give a clear, structured summary of what changed and why it matters.`,
             nav,
           });
@@ -5032,11 +5091,11 @@ class App {
         "comment",
       ),
       aiChip(
-        "Review",
+        l10n.t("Review"),
         () => {
           const b = this.compareBase, h = this.compareHead;
           openAssistantTab({
-            title: `Review ${sideLabel(b)}…${sideLabel(h)}`,
+            title: l10n.t("Review {0}…{1}", sideLabel(b), sideLabel(h)),
             goal: `Review the changes between \`${b}\` and \`${h}\` for correctness bugs, security issues and risky changes. Run \`git diff ${b}..${h}\` to see them. Be specific and cite files.`,
             nav,
           });
@@ -5052,23 +5111,23 @@ class App {
     const viewBar = el("div", "cmp-viewbar");
     const seg = el("div", "cmp-seg");
     const commitsTab = el("button", "cmp-seg-btn");
-    commitsTab.append(glyph("git-commit"), span("Commits"));
+    commitsTab.append(glyph("git-commit"), span(l10n.t("Commits")));
     const commitsCount = el("span", "cmp-seg-count");
     commitsTab.appendChild(commitsCount);
     const filesTab = el("button", "cmp-seg-btn");
-    filesTab.append(glyph("file"), span("Changed files"));
+    filesTab.append(glyph("file"), span(l10n.t("Changed files")));
     const filesCount = el("span", "cmp-seg-count");
     filesTab.appendChild(filesCount);
     seg.append(commitsTab, filesTab);
-    markSegment(seg, "Comparison view", ".cmp-seg-btn");
+    markSegment(seg, l10n.t("Comparison view"), ".cmp-seg-btn");
     const summary = el("div", "cmp-summary");
     // The one action GitHub makes PRIMARY on a comparison was missing entirely:
     // you could line up base…head, read every commit and file — and then had
     // to rebuild the same comparison on github.com to open the PR. The button
     // carries this exact base/head into the create form.
     const prBtn = el("button", "mini-btn cmp-pr-btn") as HTMLButtonElement;
-    prBtn.append(glyph("git-pull-request"), span("Create pull request"));
-    prBtn.title = "Open a pull request from this comparison";
+    prBtn.append(glyph("git-pull-request"), span(l10n.t("Create pull request")));
+    prBtn.title = l10n.t("Open a pull request from this comparison");
     prBtn.hidden = true;
     /** Whether GitHub could take a pull request at all — the swr answer, kept.
      *
@@ -5147,7 +5206,7 @@ class App {
           ? { base: this.compareBase, head: this.compareHead, mode: this.compareMode }
           : undefined;
       if (!cmpKey || peek("compare:refs", cmpKey) === undefined) {
-        body.replaceChildren(loadingState(`Comparing ${sideLabel(this.compareBase)} … ${sideLabel(this.compareHead)}`));
+        body.replaceChildren(loadingState(l10n.t("Comparing {0} … {1}", sideLabel(this.compareBase), sideLabel(this.compareHead))));
       }
       // The previous comparison's answer is no longer an answer to anything.
       // `last` was only reassigned on the success path, so the early return
@@ -5179,10 +5238,10 @@ class App {
         syncPrBtn();
         body.replaceChildren(
           emptyState(
-            "Pick two refs to compare",
+            l10n.t("Pick two refs to compare"),
             this.compareBase
-              ? `Base and compare are both ${sideLabel(this.compareHead)}. Choose a different ref on either side.`
-              : "This repository has only one branch. Compare needs a second ref — create or fetch one first.",
+              ? l10n.t("Base and compare are both {0}. Choose a different ref on either side.", sideLabel(this.compareHead))
+              : l10n.t("This repository has only one branch. Compare needs a second ref — create or fetch one first."),
             { icon: "git-compare" },
           ),
         );
@@ -5203,8 +5262,8 @@ class App {
         filesCount.textContent = "";
         body.replaceChildren(
           errorState(
-            "Couldn't compare these refs",
-            `Make sure ${sideLabel(this.compareBase)} and ${sideLabel(this.compareHead)} both exist.`,
+            l10n.t("Couldn't compare these refs"),
+            l10n.t("Make sure {0} and {1} both exist.", sideLabel(this.compareBase), sideLabel(this.compareHead)),
             () => void runCompare(),
           ),
         );
@@ -5274,7 +5333,7 @@ class App {
     };
     if (!res || !res.commits.length) {
       body.appendChild(
-        emptyState("No commits", "These refs share the same history in this direction.", {
+        emptyState(l10n.t("No commits"), l10n.t("These refs share the same history in this direction."), {
           icon: "git-commit",
         }),
       );
@@ -5297,7 +5356,7 @@ class App {
         })),
         {
           onOpen: (sha) => this.routeView("commit", false, { sha }),
-          onCopy: (sha) => void copyText(sha, "Copied the full SHA."),
+          onCopy: (sha) => void copyText(sha, l10n.t("Copied the full SHA.")),
         },
       ),
     );
@@ -5310,7 +5369,7 @@ class App {
     body.replaceChildren();
     if (!res || !res.files.length) {
       body.appendChild(
-        emptyState("No file changes", "Nothing differs between these refs in this direction.", {
+        emptyState(l10n.t("No file changes"), l10n.t("Nothing differs between these refs in this direction."), {
           icon: "git-compare",
         }),
       );
@@ -5324,8 +5383,8 @@ class App {
     const ltitle = el("span", "cmp-filelist-title");
     ltitle.textContent = `${res.files.length} file${res.files.length === 1 ? "" : "s"}`;
     const collapseBtn = el("button", "cmp-collapse");
-    collapseBtn.title = "Hide file list";
-    collapseBtn.setAttribute("aria-label", "Hide file list");
+    collapseBtn.title = l10n.t("Hide file list");
+    collapseBtn.setAttribute("aria-label", l10n.t("Hide file list"));
     collapseBtn.setAttribute("aria-expanded", "true");
     collapseBtn.appendChild(glyph("chevron-left"));
     lhead.append(ltitle, collapseBtn);
@@ -5337,8 +5396,8 @@ class App {
 
     const right = el("div", "cmp-diffpane");
     const restore = el("button", "cmp-restore");
-    restore.title = "Show file list";
-    restore.setAttribute("aria-label", "Show file list");
+    restore.title = l10n.t("Show file list");
+    restore.setAttribute("aria-label", l10n.t("Show file list"));
     restore.appendChild(glyph("chevron-right"));
 
     split.append(left, divider, right, restore);
@@ -5360,7 +5419,7 @@ class App {
     // one.
     const diff = new DiffPanel(right);
     this.activeMonacoView = diff;
-    diff.showEmpty("Select a changed file to view its diff.");
+    diff.showEmpty(l10n.t("Select a changed file to view its diff."));
 
     let activeRow: HTMLElement | undefined;
     const open = (path: string, row: HTMLElement, oldPath?: string): void => {
@@ -5419,7 +5478,7 @@ class App {
   private wireCompareResizer(divider: HTMLElement, left: HTMLElement, diff: DiffPanel): void {
     wireResizerKeys(divider, {
       orientation: "vertical",
-      label: "Resize file list",
+      label: l10n.t("Resize file list"),
       min: 180,
       max: () => 580,
       get: () => this.compareFileListW,
@@ -5485,8 +5544,11 @@ class App {
     // answer into a reassuring one as "working tree clean" over uncommitted
     // work, on a smaller surface.
     diff.showEmpty(
-      `${path} is listed as changed between these refs, so this is a failure to read it — not two sides that match.`,
-      { title: "Couldn't load this file's diff", kind: "error" },
+      l10n.t(
+        "{0} is listed as changed between these refs, so this is a failure to read it — not two sides that match.",
+        path,
+      ),
+      { title: l10n.t("Couldn't load this file's diff"), kind: "error" },
     );
   }
 
@@ -5503,7 +5565,7 @@ class App {
     add("Branches", this.refs.filter((r) => r.type === "head"), "git-branch");
     add("Remotes", this.refs.filter((r) => r.type === "remote" && !isRemoteHead(r)), "cloud");
     add("Tags", this.refs.filter((r) => r.type === "tag"), "tag");
-    if (items.length === 0) items.push({ label: "No refs", disabled: true });
+    if (items.length === 0) items.push({ label: l10n.t("No refs"), disabled: true });
     openMenu(anchor, items);
   }
 
@@ -5513,7 +5575,7 @@ class App {
     const wrap = el("div", "settings-view");
     const head = el("div", "settings-head");
     const h = el("div", "settings-title");
-    h.textContent = "Settings";
+    h.textContent = l10n.t("Settings");
     head.appendChild(h);
     const scroll = el("div", "settings-scroll");
     scroll.append(
@@ -5536,14 +5598,14 @@ class App {
   }
 
   private settingsAppearanceCard(): HTMLElement {
-    const { card, body } = settingsCard("Appearance", "gear");
+    const { card, body } = settingsCard(l10n.t("Appearance"), "gear");
     const sub = el("div", "settings-sub");
-    sub.textContent = "Choose how GitStudio looks. “System” follows your OS.";
+    sub.textContent = l10n.t("Choose how GitStudio looks. “System” follows your OS.");
     const seg = el("div", "settings-seg");
     const modes: Array<{ id: ThemeMode; label: string; icon: string }> = [
-      { id: "system", label: "System", icon: "device-desktop" },
-      { id: "light", label: "Light", icon: "color-mode" },
-      { id: "dark", label: "Dark", icon: "color-mode" },
+      { id: "system", label: l10n.t("System"), icon: "device-desktop" },
+      { id: "light", label: l10n.t("Light"), icon: "color-mode" },
+      { id: "dark", label: l10n.t("Dark"), icon: "color-mode" },
     ];
     const btns: HTMLElement[] = [];
     for (const m of modes) {
@@ -5563,16 +5625,15 @@ class App {
     // Dark style: the two dark looks, each shown as what it IS — its Dock
     // tile beside a swatch of its window — and applying to both at once.
     const styleLabel = el("div", "settings-field-label");
-    styleLabel.textContent = "Dark style";
+    styleLabel.textContent = l10n.t("Dark style");
     const styleSub = el("div", "settings-sub");
-    styleSub.textContent =
-      "The dark window and the Dock icon, together. Graphite matches the icon macOS shows while " +
-      "GitStudio is closed. With Neon the Dock icon turns neon while GitStudio runs; macOS still " +
-      "shows the Graphite icon while it is closed.";
+    styleSub.textContent = l10n.t(
+      "The dark window and the Dock icon, together. Graphite matches the icon macOS shows while GitStudio is closed. With Neon the Dock icon turns neon while GitStudio runs; macOS still shows the Graphite icon while it is closed.",
+    );
     const styleRow = el("div", "settings-style-row");
     const styleInfo: Record<DarkStyle, { name: string; blurb: string }> = {
-      graphite: { name: "Graphite", blurb: "Soft grey, the icon macOS shows" },
-      neon: { name: "Neon", blurb: "Near-black, more violet" },
+      graphite: { name: "Graphite", blurb: l10n.t("Soft grey, the icon macOS shows") },
+      neon: { name: "Neon", blurb: l10n.t("Near-black, more violet") },
     };
     const styleBtns: HTMLElement[] = [];
     for (const id of DARK_STYLES) {
@@ -5608,9 +5669,9 @@ class App {
     // App icon: sits right next to the theme control, same card. "Auto" matches
     // the theme; the others pin the dock mark regardless of the in-app theme.
     const logoLabel = el("div", "settings-field-label");
-    logoLabel.textContent = "App icon";
+    logoLabel.textContent = l10n.t("App icon");
     const logoSub = el("div", "settings-sub");
-    logoSub.textContent = "Match the theme automatically, or pin the dock icon light or dark.";
+    logoSub.textContent = l10n.t("Match the theme automatically, or pin the dock icon light or dark.");
     const logoRow = el("div", "settings-logo-row");
     const logoSeg = el("div", "settings-seg");
     // A small live preview of the mark that will actually be shown on the dock.
@@ -5622,9 +5683,9 @@ class App {
       preview.title = preview.alt;
     };
     const logoModes: Array<{ id: LogoMode; label: string }> = [
-      { id: "auto", label: "Auto" },
-      { id: "light", label: "Light" },
-      { id: "dark", label: "Dark" },
+      { id: "auto", label: l10n.t("Auto") },
+      { id: "light", label: l10n.t("Light") },
+      { id: "dark", label: l10n.t("Dark") },
     ];
     const logoBtns: HTMLElement[] = [];
     for (const m of logoModes) {
@@ -5648,15 +5709,14 @@ class App {
     const picBox = document.createElement("input");
     picBox.type = "checkbox";
     picBox.checked = this.gravatarPref;
-    picBox.setAttribute("aria-label", "Load author pictures from Gravatar");
+    picBox.setAttribute("aria-label", l10n.t("Load author pictures from Gravatar"));
     const picText = el("div", "settings-check-text");
     const picTitle = el("div", "settings-check-title");
-    picTitle.textContent = "Load author pictures from Gravatar";
+    picTitle.textContent = l10n.t("Load author pictures from Gravatar");
     const picSub = el("div", "settings-sub");
-    picSub.textContent =
-      "Sends an MD5 hash of each commit author's email address to gravatar.com (a GitHub noreply " +
-      "address is looked up on GitHub instead). Off, authors show as coloured initials and nothing " +
-      "is sent. Pictures on pull requests and issues come from GitHub and still show.";
+    picSub.textContent = l10n.t(
+      "Sends an MD5 hash of each commit author's email address to gravatar.com (a GitHub noreply address is looked up on GitHub instead). Off, authors show as coloured initials and nothing is sent. Pictures on pull requests and issues come from GitHub and still show.",
+    );
     picText.append(picTitle, picSub);
     picRow.append(picBox, picText);
     picBox.addEventListener("change", () => this.setGravatarPref(picBox.checked));
@@ -5756,16 +5816,16 @@ class App {
    *  stale remote-tracking branches silently pile up otherwise, and pruning
    *  only ever drops refs the remote itself already deleted. */
   private settingsGitCard(): HTMLElement {
-    const { card, body } = settingsCard("Fetch", "sync");
+    const { card, body } = settingsCard(l10n.t("Fetch"), "sync");
     const label = el("div", "settings-field-label");
-    label.textContent = "Prune deleted remote branches";
+    label.textContent = l10n.t("Prune deleted remote branches");
     const sub = el("div", "settings-sub");
     sub.textContent =
-      "When fetching, drop remote-tracking branches that were deleted on the remote so the branch list never goes stale. Local branches are never touched.";
+      l10n.t("When fetching, drop remote-tracking branches that were deleted on the remote so the branch list never goes stale. Local branches are never touched.");
     const seg = el("div", "settings-seg");
     const modes: Array<{ prune: boolean; label: string }> = [
-      { prune: true, label: "Prune on fetch" },
-      { prune: false, label: "Keep stale branches" },
+      { prune: true, label: l10n.t("Prune on fetch") },
+      { prune: false, label: l10n.t("Keep stale branches") },
     ];
     const btns: HTMLElement[] = [];
     for (const m of modes) {
@@ -5788,22 +5848,22 @@ class App {
   }
 
   private settingsRepositoriesCard(): HTMLElement {
-    const { card, body } = settingsCard("Repositories", "repo");
+    const { card, body } = settingsCard(l10n.t("Repositories"), "repo");
     const sub = el("div", "settings-sub");
-    sub.textContent = "Where one-click opens and clones from GitHub land on disk.";
+    sub.textContent = l10n.t("Where one-click opens and clones from GitHub land on disk.");
 
     const row = el("div", "settings-clonedir-row");
     const rowText = el("div", "settings-clonedir-text");
     const rowLabel = el("div", "settings-field-label");
-    rowLabel.textContent = "Default clone folder";
+    rowLabel.textContent = l10n.t("Default clone folder");
     const rowValue = el("div", "settings-clonedir-path");
-    rowValue.textContent = "Loading…";
+    rowValue.textContent = l10n.t("Loading…");
     rowText.append(rowLabel, rowValue);
     const rowBtns = el("div", "settings-clonedir-btns");
     const changeBtn = el("button", "mini-btn");
-    changeBtn.append(glyph("folder-opened"), span("Change…"));
+    changeBtn.append(glyph("folder-opened"), span(l10n.t("Change…")));
     const resetBtn = el("button", "mini-btn");
-    resetBtn.textContent = "Reset";
+    resetBtn.textContent = l10n.t("Reset");
     resetBtn.hidden = true;
     rowBtns.append(changeBtn, resetBtn);
     row.append(rowText, rowBtns);
@@ -5811,14 +5871,14 @@ class App {
     const askRow = el("label", "settings-check settings-ask-row");
     const askBox = document.createElement("input");
     askBox.type = "checkbox";
-    askBox.setAttribute("aria-label", "Ask where to put each clone");
+    askBox.setAttribute("aria-label", l10n.t("Ask where to put each clone"));
     const askText = el("div", "settings-check-text");
     // A checkbox's own text, not a group heading — micro-caps would shout a
     // whole sentence at you.
     const askTitle = el("div", "settings-check-title");
-    askTitle.textContent = "Ask where to put each clone";
+    askTitle.textContent = l10n.t("Ask where to put each clone");
     const askSub = el("div", "settings-sub");
-    askSub.textContent = "Every one-click open shows the destination sheet first.";
+    askSub.textContent = l10n.t("Every one-click open shows the destination sheet first.");
     askText.append(askTitle, askSub);
     askRow.append(askBox, askText);
 
@@ -5834,8 +5894,8 @@ class App {
     const cloneDirChanged = (v: AppSettingsView, before: string | null): void => {
       apply(v);
       bust("repos");
-      didUndoable(`New clones will land in ${v.cloneDirDisplay}.`, {
-        label: "Put the clone folder back",
+      didUndoable(l10n.t("New clones will land in {0}.", v.cloneDirDisplay), {
+        label: l10n.t("Put the clone folder back"),
         undo: async () => {
           const back = await host.invoke("settings:update", { cloneDir: before });
           apply(back);
@@ -5854,7 +5914,7 @@ class App {
           const v = await host.invoke("settings:pickCloneDir", undefined);
           if (v) cloneDirChanged(v, before);
         } catch (e) {
-          toast(cleanErr(e) || "Couldn't choose a folder.", "error");
+          toast(cleanErr(e) || l10n.t("Couldn't choose a folder."), "error");
         }
       })();
     });
@@ -5864,7 +5924,7 @@ class App {
           const before = await cloneDirNow();
           cloneDirChanged(await host.invoke("settings:update", { cloneDir: null }), before);
         } catch (e) {
-          toast(cleanErr(e) || "Couldn't reset the folder.", "error");
+          toast(cleanErr(e) || l10n.t("Couldn't reset the folder."), "error");
         }
       })();
     });
@@ -5874,14 +5934,14 @@ class App {
         .then(apply)
         .catch((e) => {
           askBox.checked = !askBox.checked;
-          toast(cleanErr(e) || "Couldn't save the setting.", "error");
+          toast(cleanErr(e) || l10n.t("Couldn't save the setting."), "error");
         });
     });
     void host
       .invoke("settings:get", undefined)
       .then(apply)
       .catch(() => {
-        rowValue.textContent = "Unavailable";
+        rowValue.textContent = l10n.t("Unavailable");
       });
 
     // The list of every clone on this machine used to live here, 480px down a
@@ -5897,12 +5957,12 @@ class App {
     const manageRow = el("div", "settings-clonedir-row");
     const manageText = el("div", "settings-clonedir-text");
     const manageLabel = el("div", "settings-field-label");
-    manageLabel.textContent = "On this machine";
+    manageLabel.textContent = l10n.t("On this machine");
     const manageSub = el("div", "settings-sub");
-    manageSub.textContent = "Open, reveal or remove any clone GitStudio knows about.";
+    manageSub.textContent = l10n.t("Open, reveal or remove any clone GitStudio knows about.");
     manageText.append(manageLabel, manageSub);
     const manageBtn = el("button", "mini-btn") as HTMLButtonElement;
-    manageBtn.append(glyph("repo"), span("Open repositories"));
+    manageBtn.append(glyph("repo"), span(l10n.t("Open repositories")));
     manageBtn.addEventListener("click", () => this.routeView("repositories"));
     manageRow.append(manageText, manageBtn);
 
@@ -5941,7 +6001,7 @@ class App {
   private reviveAccountCard?: () => void;
 
   private settingsAccountCard(): HTMLElement {
-    const { card, body } = settingsCard("GitHub Account", "github");
+    const { card, body } = settingsCard(l10n.t("GitHub Account"), "github");
     body.appendChild(loadingState());
     this.reviveAccountCard = undefined;
     // AWAITABLE. `showSettingsView` returns as soon as the card's shell is in
@@ -5970,7 +6030,7 @@ class App {
             : el("span", "settings-account-mark");
           if (!login) face.append(glyph("github"));
           who.replaceChildren(face, name);
-          name.textContent = login ?? "Signed in to GitHub";
+          name.textContent = login ?? l10n.t("Signed in to GitHub");
         };
         paint(status.login);
         if (!status.login) {
@@ -5997,10 +6057,10 @@ class App {
           };
         }
         const sub = el("div", "settings-sub");
-        sub.textContent = "Signed in via OAuth Device Flow · access: repos, actions, org, gists, notifications.";
+        sub.textContent = l10n.t("Signed in via OAuth Device Flow · access: repos, actions, org, gists, notifications.");
         const actions = el("div", "settings-actions");
         const switchBtn = el("button", "mini-btn");
-        switchBtn.append(glyph("sign-in"), span("Switch account"));
+        switchBtn.append(glyph("sign-in"), span(l10n.t("Switch account")));
         // Switching means signing in as SOMEONE ELSE. This ran the sign-out
         // code and stopped there — not even the toast — so the button labelled
         // "Switch account" was a quieter Sign out that left you on a
@@ -6015,28 +6075,24 @@ class App {
           // …and for the card INSIDE it, which paints on its own promise.
           await this.accountCardReady;
           const fresh = (this.screenEl ?? document).querySelector<HTMLElement>(".settings-view");
-          const btn = fresh
-            ? [...fresh.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-                /sign in with github/i.test(b.textContent ?? ""),
-              )
-            : undefined;
+          const btn = fresh?.querySelector<HTMLButtonElement>(".gh-signin-btn");
           btn?.click();
         });
         const signOut = el("button", "mini-btn danger");
-        signOut.append(span("Sign out"));
+        signOut.append(span(l10n.t("Sign out")));
         signOut.addEventListener("click", async () => {
           await host.invoke("github:disconnect", undefined);
           await this.authChanged();
-          toast("Signed out of GitHub.", "info");
+          toast(l10n.t("Signed out of GitHub."), "info");
           void this.showSettingsView();
         });
         actions.append(switchBtn, signOut);
         body.append(who, sub, actions);
       } else {
         const sub = el("div", "settings-sub");
-        sub.textContent = "Not connected. Sign in to review pull requests and issues and control GitHub Actions.";
-        const signIn = el("button", "btn btn-primary");
-        signIn.append(glyph("github"), span("Sign in with GitHub"));
+        sub.textContent = l10n.t("Not connected. Sign in to review pull requests and issues and control GitHub Actions.");
+        const signIn = el("button", "btn btn-primary gh-signin-btn");
+        signIn.append(glyph("github"), span(l10n.t("Sign in with GitHub")));
         const flow = el("div", "gh-flow");
         signIn.addEventListener("click", () =>
           void this.startDeviceFlow(card, flow, signIn, () => void this.showSettingsView()),
@@ -6050,7 +6106,7 @@ class App {
   }
 
   private settingsIdentityCard(): HTMLElement {
-    const { card, body } = settingsCard("Git Identity", "git-commit");
+    const { card, body } = settingsCard(l10n.t("Git Identity"), "git-commit");
     body.appendChild(loadingState());
     void (async () => {
       let id;
@@ -6063,16 +6119,16 @@ class App {
       }
       body.replaceChildren();
       const sub = el("div", "settings-sub");
-      sub.textContent = "The author name and email stamped on your commits (git config --global).";
+      sub.textContent = l10n.t("The author name and email stamped on your commits (git config --global).");
       if (failed) {
         const warn = el("div", "settings-sub settings-warn");
-        warn.textContent = "Couldn't read your current git identity — you can still set it below.";
+        warn.textContent = l10n.t("Couldn't read your current git identity — you can still set it below.");
         body.appendChild(warn);
       }
-      const nameF = settingsField("Name", id.name, "Your Name");
-      const emailF = settingsField("Email", id.email, "you@example.com");
+      const nameF = settingsField(l10n.t("Name"), id.name, l10n.t("Your Name"));
+      const emailF = settingsField(l10n.t("Email"), id.email, "you@example.com");
       const save = el("button", "mini-btn settings-save");
-      save.append(glyph("check"), span("Save identity"));
+      save.append(glyph("check"), span(l10n.t("Save identity")));
       save.addEventListener("click", async () => {
         (save as HTMLButtonElement).disabled = true;
         try {
@@ -6080,10 +6136,10 @@ class App {
             name: nameF.input.value.trim(),
             email: emailF.input.value.trim(),
           });
-          if (r.ok) toast("Git identity updated.", "success");
-          else toast(r.message ?? "Couldn't update identity.", "error");
+          if (r.ok) toast(l10n.t("Git identity updated."), "success");
+          else toast(r.message ?? l10n.t("Couldn't update identity."), "error");
         } catch (e) {
-          toast(cleanErr(e) || "Couldn't update identity.", "error");
+          toast(cleanErr(e) || l10n.t("Couldn't update identity."), "error");
         } finally {
           (save as HTMLButtonElement).disabled = false;
         }
@@ -6094,7 +6150,7 @@ class App {
   }
 
   private settingsSshCard(): HTMLElement {
-    const { card, body } = settingsCard("SSH Keys", "key");
+    const { card, body } = settingsCard(l10n.t("SSH Keys"), "key");
     body.appendChild(loadingState());
     void (async () => {
       let keys: SshKey[] = [];
@@ -6111,16 +6167,16 @@ class App {
       // very next line, "No SSH keys found in ~/.ssh" — contradicting itself.
       // Describe the card, and let the body report what was actually found.
       sub.textContent = keys.length
-        ? `Public keys in ~/.ssh on this machine.`
-        : "GitStudio looks for public keys in ~/.ssh on this machine.";
+        ? l10n.t("Public keys in ~/.ssh on this machine.")
+        : l10n.t("GitStudio looks for public keys in ~/.ssh on this machine.");
       body.appendChild(sub);
       if (failed) {
         const none = el("div", "settings-empty");
-        none.textContent = "Couldn't read ~/.ssh on this machine.";
+        none.textContent = l10n.t("Couldn't read ~/.ssh on this machine.");
         body.appendChild(none);
       } else if (!keys.length) {
         const none = el("div", "settings-empty");
-        none.textContent = "No SSH keys found in ~/.ssh.";
+        none.textContent = l10n.t("No SSH keys found in ~/.ssh.");
         body.appendChild(none);
       } else {
         const list = el("div", "settings-keys");
@@ -6135,17 +6191,17 @@ class App {
           meta.append(top, bottom);
           row.appendChild(meta);
           const copyBtn = el("button", "icon-btn");
-          copyBtn.title = "Copy public key path";
-          copyBtn.setAttribute("aria-label", "Copy public key path");
+          copyBtn.title = l10n.t("Copy public key path");
+          copyBtn.setAttribute("aria-label", l10n.t("Copy public key path"));
           copyBtn.appendChild(glyph("copy"));
-          copyBtn.addEventListener("click", () => void copyText(`~/.ssh/${k.file}`, "Path copied."));
+          copyBtn.addEventListener("click", () => void copyText(`~/.ssh/${k.file}`, l10n.t("Path copied.")));
           row.appendChild(copyBtn);
           list.appendChild(row);
         }
         body.appendChild(list);
       }
       const manage = el("button", "mini-btn") as HTMLButtonElement;
-      manage.append(glyph("link-external"), span("Manage SSH keys on GitHub"));
+      manage.append(glyph("link-external"), span(l10n.t("Manage SSH keys on GitHub")));
       manage.addEventListener("click", () => window.open("https://github.com/settings/keys", "_blank"));
       body.appendChild(manage);
     })();
@@ -6153,15 +6209,15 @@ class App {
   }
 
   private settingsAboutCard(): HTMLElement {
-    const { card, body } = settingsCard("About", "info");
+    const { card, body } = settingsCard(l10n.t("About"), "info");
     const sub = el("div", "settings-sub");
-    sub.textContent = "GitStudio — an open-source, JetBrains-grade Git client.";
+    sub.textContent = l10n.t("GitStudio — an open-source, JetBrains-grade Git client.");
     const versionRow = el("div", "settings-sub");
     versionRow.textContent = "…";
     void host
       .invoke("app:info", undefined)
       .then((i) => {
-        versionRow.textContent = `Version ${i.version}`;
+        versionRow.textContent = l10n.t("Version {0}", i.version);
       })
       .catch(() => {
         versionRow.textContent = "";
@@ -6172,31 +6228,31 @@ class App {
     // download-progress label while a pull is running.
     const updRow = el("div", "settings-update-row");
     const checkBtn = el("button", "mini-btn") as HTMLButtonElement;
-    checkBtn.append(glyph("sync"), span("Check for updates"));
+    checkBtn.append(glyph("sync"), span(l10n.t("Check for updates")));
     const status = el("span", "settings-sub settings-update-status");
     this.updateProgressEl = status;
     updRow.append(checkBtn, status);
     checkBtn.addEventListener("click", async () => {
       checkBtn.disabled = true;
-      status.textContent = "Checking…";
+      status.textContent = l10n.t("Checking…");
       try {
         const r = await host.invoke("update:check", undefined);
         if (r.status === "uptodate") {
           // A newer release this Mac's macOS cannot run is said, not hidden.
-          status.textContent = r.message ?? `You're on the latest version (${r.current}).`;
+          status.textContent = r.message ?? l10n.t("You're on the latest version ({0}).", r.current);
         } else if (r.status === "available" && r.version) {
-          status.textContent = `GitStudio ${r.version} is available.`;
+          status.textContent = l10n.t("GitStudio {0} is available.", r.version);
           void this.promptUpdateAvailable({ version: r.version, current: r.current }, true);
         } else if (r.status === "downloading") {
-          status.textContent = "An update is downloading…";
+          status.textContent = l10n.t("An update is downloading…");
         } else if (r.status === "ready" && r.version) {
-          status.textContent = `GitStudio ${r.version} is ready to install.`;
+          status.textContent = l10n.t("GitStudio {0} is ready to install.", r.version);
           void host.invoke("update:download", undefined); // re-announces update:ready
         } else {
-          status.textContent = r.message || "Couldn't check for updates.";
+          status.textContent = r.message || l10n.t("Couldn't check for updates.");
         }
       } catch (e) {
-        status.textContent = cleanErr(e) || "Couldn't check for updates.";
+        status.textContent = cleanErr(e) || l10n.t("Couldn't check for updates.");
       } finally {
         checkBtn.disabled = false;
       }
@@ -6206,7 +6262,7 @@ class App {
     // text link made two peers look like a control and a footnote. Leaving the
     // app is a mini-btn with an external glyph everywhere else in the product.
     const repo = el("button", "mini-btn") as HTMLButtonElement;
-    repo.append(glyph("link-external"), span("View the project on GitHub"));
+    repo.append(glyph("link-external"), span(l10n.t("View the project on GitHub")));
     repo.addEventListener("click", () =>
       window.open("https://github.com/GitStudioHQ/gitstudio", "_blank"),
     );
@@ -6217,12 +6273,12 @@ class App {
     // action language (shared/support.ts; Home's foot line and ⌘K offer the
     // same two). Nothing here, or anywhere, opens by itself.
     const supportLabel = el("div", "settings-field-label");
-    supportLabel.textContent = "Support GitStudio";
+    supportLabel.textContent = l10n.t("Support GitStudio");
     const supportSub = el("div", "settings-sub");
     supportSub.textContent = SUPPORT_SENTENCE;
     const supportRow = el("div", "settings-actions settings-support");
     supportRow.setAttribute("role", "group");
-    supportRow.setAttribute("aria-label", "Support GitStudio");
+    supportRow.setAttribute("aria-label", l10n.t("Support GitStudio"));
     for (const link of SUPPORT_LINKS) {
       const b = el("button", "mini-btn") as HTMLButtonElement;
       b.dataset.support = link.id;
@@ -6282,12 +6338,12 @@ class App {
     const filterInput = document.createElement("input");
     filterInput.className = "code-filter";
     filterInput.type = "text";
-    filterInput.placeholder = "Filter files…  (/)";
-    filterInput.setAttribute("aria-label", "Filter files in this folder");
+    filterInput.placeholder = l10n.t("Filter files…  (/)");
+    filterInput.setAttribute("aria-label", l10n.t("Filter files in this folder"));
     filterInput.spellcheck = false;
     const refreshBtn = el("button", "topbar-icon");
-    refreshBtn.title = "Refresh";
-    refreshBtn.setAttribute("aria-label", "Refresh");
+    refreshBtn.title = l10n.t("Refresh");
+    refreshBtn.setAttribute("aria-label", l10n.t("Refresh"));
     refreshBtn.appendChild(glyph("refresh"));
     refreshBtn.addEventListener("click", () =>
       // BUST first. The listing is read through `gget("repo:tree", …)`, so a
@@ -6315,7 +6371,7 @@ class App {
     const card = el("div", "code-filecard");
     const latest = el("div", "code-latest-slot");
     const colhead = el("div", "code-listing-head");
-    colhead.append(span("Name", "code-col code-col-name"), span("Size", "code-col code-col-size"));
+    colhead.append(span(l10n.t("Name"), "code-col code-col-name"), span(l10n.t("Size"), "code-col code-col-size"));
     const listing = el("div", "code-listing");
     card.append(latest, colhead, listing);
     const readme = el("div", "code-readme");
@@ -6349,7 +6405,7 @@ class App {
       if (gen !== this.routeGen) return;
       colhead.hidden = true;
       listing.replaceChildren(
-        errorState("Couldn't read this folder", cleanErr(e) || "git ls-tree failed.", () =>
+        errorState(l10n.t("Couldn't read this folder"), cleanErr(e) || l10n.t("git ls-tree failed."), () =>
           void this.showCodeView(),
         ),
       );
@@ -6373,11 +6429,11 @@ class App {
     const fileCount = sorted.length - dirCount;
     const summaryText =
       [
-        dirCount ? `${dirCount} folder${dirCount === 1 ? "" : "s"}` : "",
-        fileCount ? `${fileCount} file${fileCount === 1 ? "" : "s"}` : "",
+        dirCount ? (dirCount === 1 ? l10n.t("1 folder") : l10n.t("{0} folders", dirCount)) : "",
+        fileCount ? (fileCount === 1 ? l10n.t("1 file") : l10n.t("{0} files", fileCount)) : "",
       ]
         .filter(Boolean)
-        .join(" · ") || "empty";
+        .join(" · ") || l10n.t("empty");
     countChip.hidden = sorted.length === 0;
     countChip.replaceChildren(glyph("list-unordered"), span(summaryText));
 
@@ -6399,11 +6455,11 @@ class App {
       listing.appendChild(
         this.codePath
           ? emptyState(
-              "This folder is empty",
-              `${this.codePath} has no tracked files at HEAD.`,
+              l10n.t("This folder is empty"),
+              l10n.t("{0} has no tracked files at HEAD.", this.codePath),
               { icon: "folder" },
             )
-          : emptyState("Empty repository", "No tracked files at HEAD yet."),
+          : emptyState(l10n.t("Empty repository"), l10n.t("No tracked files at HEAD yet.")),
       );
     }
 
@@ -6590,26 +6646,26 @@ class App {
 
     const meta = el("div", "code-latest-meta");
     const who = el("span", "code-latest-author");
-    who.textContent = hc.author || "Unknown";
+    who.textContent = hc.author || l10n.t("Unknown");
     const subj = el("span", "code-latest-subject");
-    subj.textContent = hc.subject || "(no commit message)";
+    subj.textContent = hc.subject || l10n.t("(no commit message)");
     meta.append(who, subj);
 
     // The sha OPENS the commit. It only copied before, which made the one
     // identifier on this bar a dead end: the commit it names is a click away in
     // Commits, and reading it was the thing people actually wanted.
     const sha = el("button", "code-latest-sha");
-    sha.title = `Open ${hc.shortSha} in Commits`;
-    sha.setAttribute("aria-label", `Open commit ${hc.shortSha}`);
+    sha.title = l10n.t("Open {0} in Commits", hc.shortSha);
+    sha.setAttribute("aria-label", l10n.t("Open commit {0}", hc.shortSha));
     sha.append(glyph("git-commit"), span(hc.shortSha));
     sha.addEventListener("click", () => this.routeView("graph", false, { sha: hc.sha }));
 
     // …and copying keeps its own affordance rather than being the only one.
     const copy = el("button", "code-latest-copy");
-    copy.title = "Copy full SHA";
-    copy.setAttribute("aria-label", "Copy full SHA");
+    copy.title = l10n.t("Copy full SHA");
+    copy.setAttribute("aria-label", l10n.t("Copy full SHA"));
     copy.append(glyph("copy"));
-    copy.addEventListener("click", () => void copyText(hc.sha, "Commit SHA copied"));
+    copy.addEventListener("click", () => void copyText(hc.sha, l10n.t("Commit SHA copied")));
 
     const when = el("span", "code-latest-when");
     if (hc.date) {
@@ -6620,11 +6676,17 @@ class App {
     // The history, from the page that shows the files it produced. The number
     // is there only when the read asked for it; the door is there regardless.
     const count = el("button", "code-latest-count");
-    count.title = "Show this repository's commits";
+    count.title = l10n.t("Show this repository's commits");
     const total = hc.total;
     count.append(
       glyph("history"),
-      span(total === undefined ? "Commits" : `${total.toLocaleString()} commit${total === 1 ? "" : "s"}`),
+      span(
+        total === undefined
+          ? l10n.t("Commits")
+          : total === 1
+            ? l10n.t("1 commit")
+            : l10n.t("{0} commits", total.toLocaleString()),
+      ),
     );
     count.addEventListener("click", () => this.routeView("graph"));
 
@@ -6643,7 +6705,7 @@ class App {
   private async openCodeFile(path: string): Promise<void> {
     const wrap = el("div", "code-view code-file-view");
     const back = el("button", "mini-btn");
-    back.append(glyph("arrow-left"), span("Back"));
+    back.append(glyph("arrow-left"), span(l10n.t("Back")));
     // Through routeView, like every other hop in this view — a bare
     // `showCodeView()` repainted the listing without telling the navigation
     // history anything, so the top-bar Back chevron (and ⌘[) still pointed at
@@ -6672,13 +6734,13 @@ class App {
     });
 
     const copyBtn = el("button", "topbar-icon");
-    copyBtn.title = "Copy this file's path";
+    copyBtn.title = l10n.t("Copy this file's path");
     copyBtn.setAttribute("aria-label", copyBtn.title);
     copyBtn.appendChild(glyph("copy"));
-    copyBtn.addEventListener("click", () => void copyText(path, "Path copied."));
+    copyBtn.addEventListener("click", () => void copyText(path, l10n.t("Path copied.")));
 
     const reloadBtn = el("button", "topbar-icon");
-    reloadBtn.title = "Reload this file";
+    reloadBtn.title = l10n.t("Reload this file");
     reloadBtn.setAttribute("aria-label", reloadBtn.title);
     reloadBtn.appendChild(glyph("refresh"));
     reloadBtn.addEventListener("click", () =>
@@ -6714,11 +6776,11 @@ class App {
       return;
     }
     if (!file) {
-      viewer.showMessage("Couldn't read this file.");
+      viewer.showMessage(l10n.t("Couldn't read this file."));
     } else if (file.binary) {
-      viewer.showMessage("Binary file — not shown.");
+      viewer.showMessage(l10n.t("Binary file — not shown."));
     } else if (file.truncated) {
-      viewer.showMessage("File is too large to preview.");
+      viewer.showMessage(l10n.t("File is too large to preview."));
     } else {
       viewer.show(path, file.text);
     }
@@ -6751,7 +6813,7 @@ class App {
     const msgWrap = el("div", "dc-message-wrap");
     const textarea = document.createElement("textarea");
     textarea.className = "dc-message";
-    textarea.placeholder = "Message (what & why)…";
+    textarea.placeholder = l10n.t("Message (what & why)…");
     textarea.rows = 2;
     // Every stage / unstage / discard re-runs showChangesView(), which rebuilds
     // this whole subtree. Without a surviving draft, typing a commit message and
@@ -6813,7 +6875,7 @@ class App {
     msgWrap.append(textarea);
     // ✨ Write the message from the staged diff — sits up in the branch header row
     // (right-aligned), not inside the textarea. Shown only when a model is connected.
-    const writeBtn = aiChip("Write message", () =>
+    const writeBtn = aiChip(l10n.t("Write message"), () =>
       void streamInto("commitMessage", {}, textarea, writeBtn as HTMLButtonElement),
     );
     writeBtn.classList.add("dc-ai-write");
@@ -6822,11 +6884,11 @@ class App {
     // ✨ Review the working changes — lives in the toolbar (it acts on the diff,
     // not the message). Built here so aiEnabled() can toggle both at once.
     const reviewBtn = el("button", "mini-btn dc-review");
-    reviewBtn.append(glyph("sparkle"), span("Review with AI"));
+    reviewBtn.append(glyph("sparkle"), span(l10n.t("Review with AI")));
     reviewBtn.hidden = true;
     reviewBtn.addEventListener("click", () =>
       openAssistantTab({
-        title: "Review changes",
+        title: l10n.t("Review changes"),
         goal: "Review my current working-tree changes for correctness bugs, security issues and risky changes. Run `git diff` (and check staged changes) to see them. Be specific and cite files.",
         nav: (v) => this.routeView(v),
       }),
@@ -6849,13 +6911,13 @@ class App {
     const amendToggle = el("button", "dc-toggle") as HTMLButtonElement;
     amendToggle.setAttribute("role", "switch");
     amendToggle.setAttribute("aria-checked", "false");
-    amendToggle.append(glyph("git-commit"), span("Amend last commit"));
+    amendToggle.append(glyph("git-commit"), span(l10n.t("Amend last commit")));
     const signoffToggle = el("button", "dc-toggle") as HTMLButtonElement;
     signoffToggle.setAttribute("role", "switch");
     signoffToggle.setAttribute("aria-checked", "false");
-    signoffToggle.append(glyph("verified"), span("Sign off"));
+    signoffToggle.append(glyph("verified"), span(l10n.t("Sign off")));
     const coAuthorBtn = el("button", "dc-toggle") as HTMLButtonElement;
-    coAuthorBtn.append(glyph("person-add"), span("Add co-author"));
+    coAuthorBtn.append(glyph("person-add"), span(l10n.t("Add co-author")));
     const coAuthorChips = el("div", "dc-coauthors");
     const renderChips = (): void => {
       this.composerDraft.coAuthors = [...coAuthors];
@@ -6864,7 +6926,7 @@ class App {
         const chip = el("span", "dc-coauthor-chip");
         chip.append(span(ca));
         const x = el("button", "dc-chip-x") as HTMLButtonElement;
-        x.setAttribute("aria-label", `Remove co-author ${ca}`);
+        x.setAttribute("aria-label", l10n.t("Remove co-author {0}", ca));
         x.appendChild(glyph("close"));
         x.addEventListener("click", () => {
           coAuthors.splice(i, 1);
@@ -6913,7 +6975,7 @@ class App {
       signoffToggle.setAttribute("aria-checked", signoff ? "true" : "false");
     });
     coAuthorBtn.addEventListener("click", async () => {
-      const v = await promptInline("Add co-author", "Name <email@example.com>", "", "Add");
+      const v = await promptInline(l10n.t("Add co-author"), "Name <email@example.com>", "", l10n.t("Add"));
       if (v && v.trim()) {
         coAuthors.push(v.trim());
         renderChips();
@@ -6933,7 +6995,7 @@ class App {
 
     const commitRow = el("div", "dc-commit-row");
     const commitBtn = el("button", "btn btn-primary dc-commit");
-    const commitLabel = span(curBranch ? `Commit to ${curBranch}` : "Commit", "dc-commit-label");
+    const commitLabel = span(curBranch ? l10n.t("Commit to {0}", curBranch) : l10n.t("Commit"), "dc-commit-label");
     commitBtn.append(glyph("git-commit"), commitLabel);
     /**
      * The primary button's label, from the one state that decides it.
@@ -6955,12 +7017,12 @@ class App {
       const head = this.headInfo;
       const branch = head && !head.detached ? head.branch : undefined;
       const name = branch ?? curBranch;
-      commitLabel.textContent = amend ? "Amend commit" : name ? `Commit to ${name}` : "Commit";
+      commitLabel.textContent = amend ? l10n.t("Amend commit") : name ? l10n.t("Commit to {0}", name) : l10n.t("Commit");
     };
     this.syncCommitLabel = syncCommitLabel;
     commitBtn.addEventListener("click", () => void this.doDesktopCommit(textarea, commitBtn, false, getOpts()));
     const pushBtn = el("button", "btn dc-commit dc-push");
-    pushBtn.append(glyph("arrow-up"), span("Commit & Push"));
+    pushBtn.append(glyph("arrow-up"), span(l10n.t("Commit & Push")));
     pushBtn.addEventListener("click", () => void this.doDesktopCommit(textarea, pushBtn, true, getOpts()));
     commitRow.append(commitBtn, pushBtn);
     // A commit needs a message, so the buttons must LOOK unavailable until
@@ -6977,10 +7039,10 @@ class App {
       for (const b of [commitBtn, pushBtn]) {
         b.toggleAttribute("disabled", !ready);
         b.title = !written
-          ? "Write a commit message first"
+          ? l10n.t("Write a commit message first")
           : somethingToCommit
             ? ""
-            : "Nothing to commit — the working tree is clean";
+            : l10n.t("Nothing to commit — the working tree is clean");
       }
     };
     this.syncCommitEnabled = syncCommitEnabled;
@@ -6993,7 +7055,7 @@ class App {
 
     const toolbar = el("div", "dc-toolbar");
     const tTitle = el("span", "dc-toolbar-title");
-    tTitle.textContent = "Changes";
+    tTitle.textContent = l10n.t("Changes");
     const tSpacer = el("div", "topbar-spacer");
     // Switch how this view presents staging (issue #16): the staged/unstaged
     // split, or one list with a tick per file. A preference, not a migration —
@@ -7003,11 +7065,11 @@ class App {
       const checks = this.stagingModel() === "checkboxes";
       modelBtn.replaceChildren(
         glyph(checks ? "list-selection" : "list-flat"),
-        span(checks ? "Checkboxes" : "Staged / Unstaged"),
+        span(checks ? l10n.t("Checkboxes") : l10n.t("Staged / Unstaged")),
       );
       modelBtn.title = checks
-        ? "Showing one list with a tick per file — click for the staged/unstaged split"
-        : "Showing the staged/unstaged split — click for one list with checkboxes";
+        ? l10n.t("Showing one list with a tick per file — click for the staged/unstaged split")
+        : l10n.t("Showing the staged/unstaged split — click for one list with checkboxes");
     };
     syncModelBtn();
     modelBtn.addEventListener("click", () => {
@@ -7018,12 +7080,12 @@ class App {
     });
 
     const stageAllBtn = el("button", "mini-btn");
-    stageAllBtn.append(glyph("check-all"), span("Stage all"));
+    stageAllBtn.append(glyph("check-all"), span(l10n.t("Stage all")));
     stageAllBtn.addEventListener("click", () => void this.changesAction("stageAll", undefined));
     // Create a PR from the branch you're working on — closes the local→remote→PR
     // loop right where you commit. Shown only when the repo is on GitHub.
     const createPrBtn = el("button", "mini-btn dc-createpr");
-    createPrBtn.append(glyph("git-pull-request"), span("Create pull request"));
+    createPrBtn.append(glyph("git-pull-request"), span(l10n.t("Create pull request")));
     createPrBtn.hidden = true;
     createPrBtn.addEventListener("click", () => {
       // LIVE, for the same reason syncCommitLabel above reads it live: the
@@ -7052,14 +7114,14 @@ class App {
     // slide ~160px sideways the instant you clicked a file — the control you
     // were aiming at moved out from under the cursor.
     stageLinesBtn.disabled = true;
-    const stageLinesLabel = span("Stage lines");
+    const stageLinesLabel = span(l10n.t("Stage lines"));
     stageLinesBtn.append(glyph("list-selection"), stageLinesLabel);
-    stageLinesBtn.title = "Stage (or unstage) the lines selected in the diff";
+    stageLinesBtn.title = l10n.t("Stage (or unstage) the lines selected in the diff");
     stageLinesBtn.addEventListener("click", async () => {
       if (!openFile) return;
       const lines = diffPanel.getSelectedLines();
       if (!lines || !lines.length) {
-        toast("Select lines in the diff first.", "info");
+        toast(l10n.t("Select lines in the diff first."), "info");
         return;
       }
       try {
@@ -7068,17 +7130,17 @@ class App {
           lines,
           reverse: openFile.staged,
         });
-        if (!r.ok) toast(r.message || "Couldn't apply the selected lines.", "error");
-        else toast(openFile.staged ? "Unstaged selected lines." : "Staged selected lines.", "success");
+        if (!r.ok) toast(r.message || l10n.t("Couldn't apply the selected lines."), "error");
+        else toast(openFile.staged ? l10n.t("Unstaged selected lines.") : l10n.t("Staged selected lines."), "success");
       } catch (e) {
-        toast(cleanErr(e) || "Couldn't apply the selected lines.", "error");
+        toast(cleanErr(e) || l10n.t("Couldn't apply the selected lines."), "error");
       }
       void this.repaintChanges();
     });
     const wsBtn = el("button", "topbar-icon dc-ws") as HTMLButtonElement;
     wsBtn.disabled = true;
-    wsBtn.title = "Ignore leading and trailing whitespace";
-    wsBtn.setAttribute("aria-label", "Ignore leading and trailing whitespace");
+    wsBtn.title = l10n.t("Ignore leading and trailing whitespace");
+    wsBtn.setAttribute("aria-label", l10n.t("Ignore leading and trailing whitespace"));
     wsBtn.appendChild(glyph("whitespace"));
     wsBtn.setAttribute("aria-pressed", "false");
     // A toggle you cannot read is a toggle you cannot trust: this one was an
@@ -7088,8 +7150,8 @@ class App {
       wsBtn.classList.toggle("is-on", whitespaceIgnored);
       wsBtn.setAttribute("aria-pressed", String(whitespaceIgnored));
       wsBtn.title = whitespaceIgnored
-        ? "Leading and trailing whitespace is ignored — click to show it"
-        : "Ignore leading and trailing whitespace";
+        ? l10n.t("Leading and trailing whitespace is ignored — click to show it")
+        : l10n.t("Ignore leading and trailing whitespace");
       wsBtn.setAttribute("aria-label", wsBtn.title);
     };
     syncWs();
@@ -7099,8 +7161,8 @@ class App {
       diffPanel.setRenderOptions({ whitespace: whitespaceIgnored ? "trailing" : "none" });
     });
     const refreshBtn = el("button", "topbar-icon");
-    refreshBtn.title = "Refresh";
-    refreshBtn.setAttribute("aria-label", "Refresh");
+    refreshBtn.title = l10n.t("Refresh");
+    refreshBtn.setAttribute("aria-label", l10n.t("Refresh"));
     refreshBtn.appendChild(glyph("refresh"));
     refreshBtn.addEventListener("click", () => void this.refreshInPlace(refreshBtn, () => this.showChangesView()));
     // A stash button that follows the selection and relabels itself, matching the
@@ -7111,7 +7173,7 @@ class App {
     // is codicon's stash one — every stash control here and in the extension
     // wears it (it was an archive box, which says "archive", not "stash").
     const stashBtn = el("button", "mini-btn") as HTMLButtonElement;
-    stashBtn.append(glyph("git-stash"), span("Stash"));
+    stashBtn.append(glyph("git-stash"), span(l10n.t("Stash")));
     // What the button will actually do, captured when its label is written.
     //
     // The label used to be computed from `selectionPaths()` at toolbar-build
@@ -7127,10 +7189,10 @@ class App {
       const n = stashScope.length;
       const label =
         n === 0
-          ? "Stash all changes\u2026"
+          ? l10n.t("Stash all changes\u2026")
           : n === 1
-            ? "Stash 1 selected file\u2026"
-            : `Stash ${n} selected files\u2026`;
+            ? l10n.t("Stash 1 selected file\u2026")
+            : l10n.t("Stash {0} selected files\u2026", n);
       stashBtn.title = label;
       stashBtn.setAttribute("aria-label", label);
       stashBtn.classList.toggle("is-on", n > 0);
@@ -7162,12 +7224,12 @@ class App {
     const selBar = el("div", "dc-selbar");
     selBar.hidden = true;
     const selCount = el("span", "dc-selbar-count");
-    const selStash = textBtn("Stash", "Stash the selected files", () => {
+    const selStash = textBtn(l10n.t("Stash"), l10n.t("Stash the selected files"), () => {
       const paths = this.selectionPaths();
       if (paths.length === 0) return;
       void this.stashPaths(paths).then(() => this.clearSelection(lists, selBar));
     });
-    const selClear = textBtn("Clear", "Clear the selection", () =>
+    const selClear = textBtn(l10n.t("Clear"), l10n.t("Clear the selection"), () =>
       this.clearSelection(lists, selBar),
     );
     const selActions = el("div", "dc-selbar-actions");
@@ -7177,7 +7239,7 @@ class App {
     // The stash drop target, revealed only mid-drag.
     const dropZone = el("div", "dc-stash-drop");
     dropZone.hidden = true;
-    dropZone.append(glyph("git-stash"), span("Drop to stash", "dc-drop-label"));
+    dropZone.append(glyph("git-stash"), span(l10n.t("Drop to stash"), "dc-drop-label"));
     // dragover must be cancelled or the browser refuses the drop entirely and
     // the whole gesture silently does nothing.
     dropZone.addEventListener("dragover", (ev) => {
@@ -7219,7 +7281,7 @@ class App {
     };
     wireResizerKeys(divider, {
       orientation: "vertical",
-      label: "Resize file list",
+      label: l10n.t("Resize file list"),
       min: 220,
       max: () => 640,
       get: () => this.changesListW,
@@ -7280,7 +7342,7 @@ class App {
       this.changesDash = undefined;
       diffPanel = new DiffPanel(surface);
       this.changesPanel = { root: this.currentRepo?.root ?? "", surface, panel: diffPanel };
-      diffPanel.showEmpty("Select a file to view its diff.");
+      diffPanel.showEmpty(l10n.t("Select a file to view its diff."));
     }
     this.activeMonacoView = diffPanel;
 
@@ -7314,7 +7376,7 @@ class App {
           if (this.staleTreeWarned) return;
           this.staleTreeWarned = true;
           toast(
-            cleanErr(e) || "Couldn't re-read the working tree — showing the last known state.",
+            cleanErr(e) || l10n.t("Couldn't re-read the working tree — showing the last known state."),
             "error",
           );
         });
@@ -7324,7 +7386,7 @@ class App {
       } catch (e) {
         // A failed status load must not leave the skeleton spinning forever.
         lists.replaceChildren(
-          errorState("Couldn't read the working tree", cleanErr(e) || "Git status failed.", () =>
+          errorState(l10n.t("Couldn't read the working tree"), cleanErr(e) || l10n.t("Git status failed."), () =>
             void this.showChangesView(),
           ),
         );
@@ -7350,13 +7412,13 @@ class App {
       const unstagedPaths = new Set(unstaged.map((f) => f.path));
       const partial = [...stagedPaths].filter((p) => unstagedPaths.has(p)).length;
       const fully = stagedPaths.size - partial;
-      sumBits.push(fully ? `${fully} staged` : "nothing staged");
-      if (partial) sumBits.push(`${partial} partly staged`);
+      sumBits.push(fully ? l10n.t("{0} staged", fully) : l10n.t("nothing staged"));
+      if (partial) sumBits.push(l10n.t("{0} partly staged", partial));
       const todo = paths.size - fully - partial;
-      if (todo) sumBits.push(`${todo} to stage`);
+      if (todo) sumBits.push(l10n.t("{0} to stage", todo));
     } else {
-      sumBits.push(staged.length ? `${staged.length} staged` : "nothing staged");
-      if (unstaged.length) sumBits.push(`${unstaged.length} to stage`);
+      sumBits.push(staged.length ? l10n.t("{0} staged", staged.length) : l10n.t("nothing staged"));
+      if (unstaged.length) sumBits.push(l10n.t("{0} to stage", unstaged.length));
     }
     branchSummary.textContent = `· ${sumBits.join(" · ")}`;
 
@@ -7421,7 +7483,7 @@ class App {
           // before this repaint has nothing left to show.
           if (diffPanel.hostElement("dc-conflicts")) {
             this.changesDash = undefined;
-            diffPanel.showEmpty("Select a file to view its diff.");
+            diffPanel.showEmpty(l10n.t("Select a file to view its diff."));
           }
           return;
         }
@@ -7441,7 +7503,7 @@ class App {
       row.classList.add("active");
       openFile = { path: f.path, staged: !!f.staged };
       this.changesOpenKey = rowKey(f.staged ? "staged" : "unstaged", f.path);
-      stageLinesLabel.textContent = f.staged ? "Unstage lines" : "Stage lines";
+      stageLinesLabel.textContent = f.staged ? l10n.t("Unstage lines") : l10n.t("Stage lines");
       // Held CLOSED until the diff actually arrives and turns out to have a
       // line editor in it. These used to be opened by the click that selected
       // the row, before the diff had even been asked for — so over a binary, a
@@ -7460,7 +7522,7 @@ class App {
         const live = diffPanel.hasLineEditor();
         stageLinesBtn.disabled = !live;
         wsBtn.disabled = !live;
-        const why = "This file has no line-by-line diff to work with.";
+        const why = l10n.t("This file has no line-by-line diff to work with.");
         stageLinesBtn.title = live ? "" : why;
         // `syncWs` OWNS this title — it depends on whether whitespace is
         // currently ignored, not only on whether there is a diff to ignore it
@@ -7500,14 +7562,14 @@ class App {
       const actions = el("div", "row-actions");
       if (kind === "staged") {
         actions.appendChild(
-          textBtn("Unstage", "Unstage this file", () => void this.changesAction("unstage", f.path), false, f.path),
+          textBtn(l10n.t("Unstage"), l10n.t("Unstage this file"), () => void this.changesAction("unstage", f.path), false, f.path),
         );
       } else {
         actions.appendChild(
-          textBtn("Stage", "Stage this file", () => void this.changesAction("stage", f.path), false, f.path),
+          textBtn(l10n.t("Stage"), l10n.t("Stage this file"), () => void this.changesAction("stage", f.path), false, f.path),
         );
         actions.appendChild(
-          textBtn("Discard", "Discard changes to this file", () => {
+          textBtn(l10n.t("Discard"), l10n.t("Discard changes to this file"), () => {
             void confirmDialog(this.discardConfirm([f.path])).then((ok) => {
               if (ok) void this.changesAction("discard", f.path);
             });
@@ -7578,7 +7640,7 @@ class App {
     this.rowOrder = [];
     if (files.length === 0) {
       lists.appendChild(
-        emptyState("Working tree clean", "No changes to commit.", { icon: "check-all" }),
+        emptyState(l10n.t("Working tree clean"), l10n.t("No changes to commit."), { icon: "check-all" }),
       );
       // Reconcile before leaving, exactly as the populated path does. Returning
       // early left `selectedRows` holding keys for files that no longer exist,
@@ -7611,13 +7673,13 @@ class App {
 
       // Selecting a "section" here means the CHECKED rows or the UNCHECKED ones:
       // this model deliberately has no Staged/Unstaged split to click on.
-      const head = this.checklistHeader(`Changes (${all.length})`, all, lists, selBar);
+      const head = this.checklistHeader(l10n.t("Changes ({0})", all.length), all, lists, selBar);
       const master = document.createElement("input");
       master.type = "checkbox";
       master.className = "dc-ck dc-ck-master";
       master.checked = staged.length > 0 && unstaged.length === 0;
       master.indeterminate = staged.length > 0 && unstaged.length > 0;
-      master.title = master.checked ? "Uncheck all" : "Check all";
+      master.title = master.checked ? l10n.t("Uncheck all") : l10n.t("Check all");
       master.addEventListener("click", (ev) => {
         ev.stopPropagation();
         // From a partial selection, one click means "include everything" — not a
@@ -7644,11 +7706,11 @@ class App {
         // rebuild a tick took focus from the FIRST checkbox with that state,
         // and ticking the fourth file moved the keyboard to the first.
         const stateWord = partial
-          ? "Partly included — some changes to this file are staged"
+          ? l10n.t("Partly included — some changes to this file are staged")
           : isStaged
-            ? "Included in the commit"
-            : "Not included";
-        ck.title = `${stateWord} — ${f.path}`;
+            ? l10n.t("Included in the commit")
+            : l10n.t("Not included");
+        ck.title = l10n.t("{0} — {1}", stateWord, f.path);
         ck.setAttribute("aria-label", ck.title);
         ck.addEventListener("click", (ev) => {
           // The row opens the diff; the tick must not.
@@ -7670,7 +7732,7 @@ class App {
           const open = this.expandedHunks.has(f.path);
           const tw = el("button", "dc-hunk-twisty" + (open ? " open" : ""));
           tw.append(glyph("chevron-right"));
-          tw.title = open ? "Hide individual changes" : "Show individual changes";
+          tw.title = open ? l10n.t("Hide individual changes") : l10n.t("Show individual changes");
           tw.addEventListener("click", (ev) => {
             ev.stopPropagation();
             if (this.expandedHunks.has(f.path)) {
@@ -7693,7 +7755,7 @@ class App {
 
         if (expandable && this.expandedHunks.has(f.path)) {
           const holder = el("div", "dc-hunks");
-          holder.append(span("Reading changes…", "dc-hunk-empty"));
+          holder.append(span(l10n.t("Reading changes…"), "dc-hunk-empty"));
           lists.appendChild(holder);
           // Asked fresh every time: the file may have changed on disk since the
           // list was built, and these indexes are positional.
@@ -7707,7 +7769,7 @@ class App {
     } else {
       if (staged.length) {
         lists.appendChild(
-          this.sectionHeader(`Staged (${staged.length})`, "staged", staged, lists, selBar),
+          this.sectionHeader(l10n.t("Staged ({0})", staged.length), "staged", staged, lists, selBar),
         );
         staged.forEach((f) => lists.appendChild(fileRow(f, "staged")));
       }
@@ -7716,7 +7778,7 @@ class App {
           // "Changes" already names the view and the pane; this group is the
           // UNSTAGED half, and calling it "Changes" beside "Staged" made the two
           // read as unrelated rather than as a pair.
-          this.sectionHeader(`Unstaged (${unstaged.length})`, "unstaged", unstaged, lists, selBar),
+          this.sectionHeader(l10n.t("Unstaged ({0})", unstaged.length), "unstaged", unstaged, lists, selBar),
         );
         unstaged.forEach((f) => lists.appendChild(fileRow(f, "unstaged")));
       }
@@ -7765,7 +7827,7 @@ class App {
     // file to reopen, that is stale — unless it is the conflicts dashboard,
     // which the operation check below keeps or retires.
     if (kept && this.changesOpenKey === undefined && !diffPanel.hostElement("dc-conflicts")) {
-      diffPanel.showEmpty("Select a file to view its diff.");
+      diffPanel.showEmpty(l10n.t("Select a file to view its diff."));
     }
     if (this.changesScroll > 0) lists.scrollTop = this.changesScroll;
   }
@@ -7786,7 +7848,7 @@ class App {
     }
     holder.replaceChildren();
     if (hunks.length === 0) {
-      holder.append(span("No separate changes to pick from.", "dc-hunk-empty"));
+      holder.append(span(l10n.t("No separate changes to pick from."), "dc-hunk-empty"));
       return;
     }
     for (const h of hunks) {
@@ -7795,13 +7857,13 @@ class App {
       ck.type = "checkbox";
       ck.className = "dc-ck";
       ck.checked = false; // by construction these are the UNSTAGED changes
-      ck.title = "Include this change in the commit";
+      ck.title = l10n.t("Include this change in the commit");
       ck.addEventListener("click", (ev) => {
         ev.stopPropagation();
         void (async () => {
           const r = await host.invoke("hunks:stage", { path, index: h.index });
           if (!r.ok) {
-            toast(r.message || "Couldn't stage that change.", r.expected ? "info" : "error");
+            toast(r.message || l10n.t("Couldn't stage that change."), r.expected ? "info" : "error");
           }
           void this.repaintChanges();
         })();
@@ -7836,8 +7898,8 @@ class App {
       // answer into a reassuring one that "working tree clean" over
       // uncommitted work would be.
       diffPanel.showEmpty(
-        `${path} is listed as changed, so this is a failure to read it — not a file that matches HEAD.`,
-        { title: "Couldn't read this file", kind: "error" },
+        l10n.t("{0} is listed as changed, so this is a failure to read it — not a file that matches HEAD.", path),
+        { title: l10n.t("Couldn't read this file"), kind: "error" },
       );
       return;
     }
@@ -7850,8 +7912,8 @@ class App {
         model = await host.invoke("conflict:model", path);
       } catch (e) {
         if (gen !== this.diffGen) return;
-        diffPanel.showEmpty(`Couldn't read the conflict in ${path}: ${cleanErr(e)}`, {
-          title: "Couldn't read this conflict",
+        diffPanel.showEmpty(l10n.t("Couldn't read the conflict in {0}: {1}", path, cleanErr(e)), {
+          title: l10n.t("Couldn't read this conflict"),
           kind: "error",
         });
         return;
@@ -7872,7 +7934,7 @@ class App {
           onExit: () => {
             this.returnKeyboardToDashboard(path);
             if (this.changesShowConflicts) this.changesShowConflicts();
-            else diffPanel.showEmpty("Select a file to view its diff.");
+            else diffPanel.showEmpty(l10n.t("Select a file to view its diff."));
           },
           onOperationChanged: (outcome) => {
             this.changesOpenKey = undefined;
@@ -7966,8 +8028,8 @@ class App {
     const title = span("", "dc-opstrip-title");
     const count = span("", "dc-opstrip-count");
     const back = el("button", "mini-btn dc-opstrip-back") as HTMLButtonElement;
-    back.append(glyph("git-merge"), span("Show conflicts"));
-    back.title = "Back to the conflicted files, and the way to continue or abort";
+    back.append(glyph("git-merge"), span(l10n.t("Show conflicts")));
+    back.title = l10n.t("Back to the conflicted files, and the way to continue or abort");
     strip.append(glyph("warning"), chip, title, count, back);
     wrap.insertBefore(strip, wrap.firstChild);
 
@@ -7984,9 +8046,9 @@ class App {
       title.textContent = t.title;
       title.title = t.title;
       count.textContent = t.pending
-        ? `${t.pending} file${t.pending === 1 ? "" : "s"} still conflicted`
+        ? (t.pending === 1 ? l10n.t("1 file still conflicted") : l10n.t("{0} files still conflicted", t.pending))
         : s.op.canContinue && s.op.verbs.continue
-          ? `Ready: ${s.op.verbs.continue}`
+          ? l10n.t("Ready: {0}", s.op.verbs.continue)
           : "";
       strip.hidden = false;
     };
@@ -8139,39 +8201,48 @@ class App {
       const alsoReverted = reverted.filter((p) => !conflictedPaths.has(p));
       const parts: string[] = [
         stuck.length === 1
-          ? `${stuck[0]} is still conflicted: discarding puts its conflict back exactly as git left ` +
-            `it, and whatever you have resolved in it is lost. The file itself stays.`
-          : `${stuck.length} of these files are still conflicted: their conflicts come back as git ` +
-            `left them, and the resolution work in them is lost. The files themselves stay.`,
+          ? l10n.t(
+              "{0} is still conflicted: discarding puts its conflict back exactly as git left it, and whatever you have resolved in it is lost. The file itself stays.",
+              stuck[0],
+            )
+          : l10n.t(
+              "{0} of these files are still conflicted: their conflicts come back as git left them, and the resolution work in them is lost. The files themselves stay.",
+              stuck.length,
+            ),
       ];
       if (alsoGone.length) {
         parts.push(
           alsoGone.length === 1
-            ? `${alsoGone[0]} isn't tracked by git, so discarding it DELETES the file from disk. ` +
-              `Git has no copy of it — there is nothing to restore it from.`
-            : `${alsoGone.length} of them aren't tracked by git, so discarding them DELETES those ` +
-              `files from disk. Git has no copy of them — there is nothing to restore them from.`,
+            ? l10n.t(
+                "{0} isn't tracked by git, so discarding it DELETES the file from disk. Git has no copy of it — there is nothing to restore it from.",
+                alsoGone[0],
+              )
+            : l10n.t(
+                "{0} of them aren't tracked by git, so discarding them DELETES those files from disk. Git has no copy of them — there is nothing to restore them from.",
+                alsoGone.length,
+              ),
         );
       }
       if (alsoReverted.length) {
         parts.push(
-          `The other ${alsoReverted.length === 1 ? "file has its" : `${alsoReverted.length} have their`} ` +
-            `changes reverted.`,
+          alsoReverted.length === 1
+            ? l10n.t("The other file has its changes reverted.")
+            : l10n.t("The other {0} have their changes reverted.", alsoReverted.length),
         );
       }
-      if (!onlyStuck) parts.push("None of it can be undone.");
+      if (!onlyStuck) parts.push(l10n.t("None of it can be undone."));
       return {
         title: alsoGone.length
-          ? "Discard changes and delete files?"
+          ? l10n.t("Discard changes and delete files?")
           : stuck.length === 1
-            ? "Start this conflict again?"
-            : "Start these conflicts again?",
+            ? l10n.t("Start this conflict again?")
+            : l10n.t("Start these conflicts again?"),
         message: parts.join(" "),
         confirmLabel: alsoGone.length
-          ? "Discard and delete"
+          ? l10n.t("Discard and delete")
           : stuck.length === 1
-            ? "Restore the conflict"
-            : "Restore the conflicts",
+            ? l10n.t("Restore the conflict")
+            : l10n.t("Restore the conflicts"),
         danger: true,
       };
     }
@@ -8181,33 +8252,39 @@ class App {
       // before the discard and offers Undo. Still a confirm — this throws away
       // work — but the dialog must not go on claiming otherwise.
       return {
-        title: "Discard changes?",
+        title: l10n.t("Discard changes?"),
         message: one
-          ? `Discard your changes to ${paths[0]}? You can undo this straight afterwards.`
-          : `Discard your changes to ${paths.length} files? You can undo this straight afterwards.`,
-        confirmLabel: "Discard",
+          ? l10n.t("Discard your changes to {0}? You can undo this straight afterwards.", paths[0])
+          : l10n.t("Discard your changes to {0} files? You can undo this straight afterwards.", paths.length),
+        confirmLabel: l10n.t("Discard"),
         danger: true,
       };
     }
     if (reverted.length === 0) {
       return {
-        title: one ? "Delete this file?" : `Delete ${gone.length} files?`,
+        title: one ? l10n.t("Delete this file?") : l10n.t("Delete {0} files?", gone.length),
         message: one
-          ? `${gone[0]} isn't tracked by git, so discarding it DELETES the file from disk. ` +
-            `Git has no copy of it — there is nothing to restore it from.`
-          : `${gone.length} of these files aren't tracked by git, so discarding them DELETES ` +
-            `them from disk. Git has no copy of them — there is nothing to restore them from.`,
-        confirmLabel: one ? "Delete file" : `Delete ${gone.length} files`,
+          ? l10n.t(
+              "{0} isn't tracked by git, so discarding it DELETES the file from disk. Git has no copy of it — there is nothing to restore it from.",
+              gone[0],
+            )
+          : l10n.t(
+              "{0} of these files aren't tracked by git, so discarding them DELETES them from disk. Git has no copy of them — there is nothing to restore them from.",
+              gone.length,
+            ),
+        confirmLabel: one ? l10n.t("Delete file") : l10n.t("Delete {0} files", gone.length),
         danger: true,
       };
     }
     return {
-      title: "Discard changes and delete files?",
-      message:
-        `${gone.length} of these ${paths.length} files aren't tracked by git and will be ` +
-        `DELETED from disk with no way to restore them. The other ${reverted.length} will have ` +
-        `their changes reverted, and that part can be undone.`,
-      confirmLabel: "Discard and delete",
+      title: l10n.t("Discard changes and delete files?"),
+      message: l10n.t(
+        "{0} of these {1} files aren't tracked by git and will be DELETED from disk with no way to restore them. The other {2} will have their changes reverted, and that part can be undone.",
+        gone.length,
+        paths.length,
+        reverted.length,
+      ),
+      confirmLabel: l10n.t("Discard and delete"),
       danger: true,
     };
   }
@@ -8231,7 +8308,7 @@ class App {
     const n = this.selectionPaths().length;
     selBar.hidden = n === 0;
     const count = selBar.querySelector(".dc-selbar-count");
-    if (count) count.textContent = n === 1 ? "1 file selected" : `${n} files selected`;
+    if (count) count.textContent = n === 1 ? l10n.t("1 file selected") : l10n.t("{0} files selected", n);
     this.syncStashButton?.();
   }
 
@@ -8279,7 +8356,7 @@ class App {
   private showStashDrop(zone: HTMLElement, count: number): void {
     const label = zone.querySelector(".dc-drop-label");
     if (label) {
-      label.textContent = count === 1 ? "Drop to stash 1 file" : `Drop to stash ${count} files`;
+      label.textContent = count === 1 ? l10n.t("Drop to stash 1 file") : l10n.t("Drop to stash {0} files", count);
     }
     zone.hidden = false;
   }
@@ -8320,7 +8397,7 @@ class App {
     selBar: HTMLElement,
   ): HTMLElement {
     const head = groupLabel(text);
-    head.title = `${text} — Ctrl/Cmd-click to select every file in this section`;
+    head.title = l10n.t("{0} — Ctrl/Cmd-click to select every file in this section", text);
     head.addEventListener("click", (ev) => {
       if (!(ev.ctrlKey || ev.metaKey)) return;
       ev.preventDefault();
@@ -8350,9 +8427,10 @@ class App {
     selBar: HTMLElement,
   ): HTMLElement {
     const head = groupLabel(text);
-    head.title =
-      `${text} — Ctrl/Cmd-click to select every file, ` +
-      "right-click to select just the checked or unchecked ones";
+    head.title = l10n.t(
+      "{0} — Ctrl/Cmd-click to select every file, right-click to select just the checked or unchecked ones",
+      text,
+    );
 
     const keysFor = (which: "all" | "checked" | "unchecked"): string[] =>
       all
@@ -8378,17 +8456,17 @@ class App {
       const checked = keysFor("checked");
       const unchecked = keysFor("unchecked");
       const items: MenuItem[] = [
-        { label: `Select all (${all.length})`, icon: "check-all", onClick: () => selectKeys(keysFor("all")) },
+        { label: l10n.t("Select all ({0})", all.length), icon: "check-all", onClick: () => selectKeys(keysFor("all")) },
       ];
       if (checked.length > 0) {
-        items.push({ label: `Select checked (${checked.length})`, icon: "check", onClick: () => selectKeys(checked) });
+        items.push({ label: l10n.t("Select checked ({0})", checked.length), icon: "check", onClick: () => selectKeys(checked) });
       }
       if (unchecked.length > 0) {
-        items.push({ label: `Select unchecked (${unchecked.length})`, icon: "circle-outline", onClick: () => selectKeys(unchecked) });
+        items.push({ label: l10n.t("Select unchecked ({0})", unchecked.length), icon: "circle-outline", onClick: () => selectKeys(unchecked) });
       }
       items.push({ separator: true });
       items.push({
-        label: "Stash all changes", icon: "git-stash",
+        label: l10n.t("Stash all changes"), icon: "git-stash",
         onClick: () => void this.stashPaths([]).then(() => this.clearSelection(lists, selBar)),
       });
       openMenu(head, items);
@@ -8407,28 +8485,28 @@ class App {
     const items: MenuItem[] = [];
     if (kind === "staged") {
       items.push({
-        label: "Unstage", icon: "remove",
+        label: l10n.t("Unstage"), icon: "remove",
         onClick: () => void this.changesAction("unstage", f.path),
       });
     } else {
       items.push({
-        label: "Stage", icon: "add",
+        label: l10n.t("Stage"), icon: "add",
         onClick: () => void this.changesAction("stage", f.path),
       });
     }
     items.push({ separator: true });
     items.push({
-      label: "Stash this file", icon: "git-stash",
+      label: l10n.t("Stash this file"), icon: "git-stash",
       onClick: () => void this.stashPaths([f.path]).then(() => this.clearSelection(lists, selBar)),
     });
     items.push({
-      label: "Stash all changes", icon: "git-stash",
+      label: l10n.t("Stash all changes"), icon: "git-stash",
       onClick: () => void this.stashPaths([]).then(() => this.clearSelection(lists, selBar)),
     });
     if (kind !== "staged") {
       items.push({ separator: true });
       items.push({
-        label: "Discard changes", icon: "discard",
+        label: l10n.t("Discard changes"), icon: "discard",
         onClick: () => {
           void confirmDialog(this.discardConfirm([f.path])).then((ok) => {
             if (ok) void this.changesAction("discard", f.path);
@@ -8445,26 +8523,26 @@ class App {
     const paths = this.selectionPaths();
     // Sentence case, like every other menu in the app — this one read
     // "Stash 3 Files" beside a "Stash all changes" twin three lines above it.
-    const noun = (n: number) => (n === 1 ? "1 file" : `${n} files`);
+    const noun = (n: number) => (n === 1 ? l10n.t("1 file") : l10n.t("{0} files", n));
     const stageable = entries.filter((e) => e.kind !== "staged");
     const unstageable = entries.filter((e) => e.kind === "staged");
 
     const items: MenuItem[] = [
       {
-        label: `Stash ${noun(paths.length)}`, icon: "git-stash",
+        label: l10n.t("Stash {0}", noun(paths.length)), icon: "git-stash",
         onClick: () => void this.stashPaths(paths).then(() => this.clearSelection(lists, selBar)),
       },
       { separator: true },
     ];
     if (stageable.length > 0) {
       items.push({
-        label: `Stage ${noun(stageable.length)}`, icon: "add",
+        label: l10n.t("Stage {0}", noun(stageable.length)), icon: "add",
         onClick: () => void this.bulkAction("stage", stageable.map((e) => e.path), lists, selBar),
       });
     }
     if (unstageable.length > 0) {
       items.push({
-        label: `Unstage ${noun(unstageable.length)}`, icon: "remove",
+        label: l10n.t("Unstage {0}", noun(unstageable.length)), icon: "remove",
         onClick: () => void this.bulkAction("unstage", unstageable.map((e) => e.path), lists, selBar),
       });
     }
@@ -8472,7 +8550,7 @@ class App {
     if (discardable.length > 0) {
       items.push({ separator: true });
       items.push({
-        label: `Discard ${noun(discardable.length)}`, icon: "discard",
+        label: l10n.t("Discard {0}", noun(discardable.length)), icon: "discard",
         onClick: () => {
           void confirmDialog(this.discardConfirm(discardable)).then((ok) => {
             if (ok) void this.bulkAction("discard", discardable, lists, selBar);
@@ -8502,7 +8580,7 @@ class App {
       if (!r.ok) failed++;
     }
     if (failed > 0) {
-      toast(failed === paths.length ? "Nothing could be applied." : `${failed} of ${paths.length} failed.`, "error");
+      toast(failed === paths.length ? l10n.t("Nothing could be applied.") : l10n.t("{0} of {1} failed.", failed, paths.length), "error");
     }
     this.clearSelection(lists, selBar);
     void this.repaintChanges();
@@ -8543,25 +8621,28 @@ class App {
   private offerDiscardUndo(restore: { sha: string; paths: string[] } | undefined): void {
     if (!restore) return;
     const n = restore.paths.length;
-    didUndoable(n === 1 ? `Discarded changes to ${restore.paths[0]}.` : `Discarded changes to ${n} files.`, {
-      label: n === 1 ? "Bring the changes back" : `Bring ${n} files' changes back`,
-      undo: async () => {
-        const r = await host.invoke("discard:undo", restore);
-        if (r.ok) return undefined;
-        const why = r.message ?? "Couldn't bring them back.";
-        // Edited again since the discard: refused, and said as the user's
-        // state (an info toast) rather than as an error.
-        return r.expected ? { info: why } : why;
+    didUndoable(
+      n === 1 ? l10n.t("Discarded changes to {0}.", restore.paths[0]) : l10n.t("Discarded changes to {0} files.", n),
+      {
+        label: n === 1 ? l10n.t("Bring the changes back") : l10n.t("Bring {0} files' changes back", n),
+        undo: async () => {
+          const r = await host.invoke("discard:undo", restore);
+          if (r.ok) return undefined;
+          const why = r.message ?? l10n.t("Couldn't bring them back.");
+          // Edited again since the discard: refused, and said as the user's
+          // state (an info toast) rather than as an error.
+          return r.expected ? { info: why } : why;
+        },
+        after: () => this.repaintChanges(),
       },
-      after: () => this.repaintChanges(),
-    });
+    );
   }
 
   /** Stash the given paths, then refresh. Empty means the whole tree. */
   private async stashPaths(paths: string[]): Promise<void> {
     const r = await host.invoke("stash:save", { paths, message: undefined });
     if (!r.ok) {
-      toast(r.message ?? "Could not stash.", r.expected ? "info" : "error");
+      toast(r.message ?? l10n.t("Could not stash."), r.expected ? "info" : "error");
       return;
     }
     // An empty `paths` means "the whole working tree", which is how the Stash
@@ -8569,10 +8650,10 @@ class App {
     // which says the opposite of what just happened.
     toast(
       paths.length === 0
-        ? "Stashed all changes."
+        ? l10n.t("Stashed all changes.")
         : paths.length === 1
-          ? "Stashed 1 file."
-          : `Stashed ${paths.length} files.`,
+          ? l10n.t("Stashed 1 file.")
+          : l10n.t("Stashed {0} files.", paths.length),
     );
     void this.repaintChanges();
   }
@@ -8616,15 +8697,15 @@ class App {
             : await host.invoke(channel, path ?? "");
       if (!r.ok) {
         const verb =
-          channel === "stageAll" ? "stage all changes"
-          : channel === "unstageAll" ? "unstage all changes"
+          channel === "stageAll" ? l10n.t("stage all changes")
+          : channel === "unstageAll" ? l10n.t("unstage all changes")
           : `${channel} ${path ?? ""}`.trim();
-        toast(r.message || `Couldn't ${verb}.`, "error");
+        toast(r.message || l10n.t("Couldn't {0}.", verb), "error");
       } else if (restore) {
         this.offerDiscardUndo(restore);
       }
     } catch (e) {
-      toast(cleanErr(e) || "The operation failed.", "error");
+      toast(cleanErr(e) || l10n.t("The operation failed."), "error");
     }
     void this.repaintChanges();
   }
@@ -8675,11 +8756,11 @@ class App {
         if (stagedNow.length === 0 && unstagedNow.length > 0) {
           const n = unstagedNow.length;
           const yes = await confirmDialog({
-            title: `Commit all ${n} changed file${n === 1 ? "" : "s"}?`,
-            message:
-              "Nothing is staged, so everything currently changed will be included — new files too. " +
-              "Stage individually first if you only want some of it.",
-            confirmLabel: `Commit all ${n}`,
+            title: n === 1 ? l10n.t("Commit all 1 changed file?") : l10n.t("Commit all {0} changed files?", n),
+            message: l10n.t(
+              "Nothing is staged, so everything currently changed will be included — new files too. Stage individually first if you only want some of it.",
+            ),
+            confirmLabel: n === 1 ? l10n.t("Commit all 1") : l10n.t("Commit all {0}", n),
           });
           if (!yes) {
             for (const b of pair) b.disabled = false;
@@ -8690,7 +8771,7 @@ class App {
           // and bypasses the index, so what landed would not match the list.
           const staged = await host.invoke("stageAll", undefined);
           if (!staged.ok) {
-            toast(staged.message || "Couldn't stage the changes.", "error");
+            toast(staged.message || l10n.t("Couldn't stage the changes."), "error");
             for (const b of pair) b.disabled = false;
             btn.classList.remove("is-busy");
             return;
@@ -8703,7 +8784,7 @@ class App {
         // a clean tree — so it reads as information, not as a red failure. It is
         // the same flag the crash reporter reads, which keeps the two decisions
         // ("do we report this?" / "does this look like an error?") from drifting.
-        toast(r.message || "Commit failed.", r.expected ? "info" : "error");
+        toast(r.message || l10n.t("Commit failed."), r.expected ? "info" : "error");
         // Repaint either way: reaching "nothing is staged" means the list on
         // screen disagreed with the repo, and leaving those rows up would
         // contradict the message we just showed.
@@ -8723,12 +8804,11 @@ class App {
         // colleague's commits are still safe.
         if (!p.ok && /non-fast-forward|fetch first|behind its remote/i.test(p.message ?? "")) {
           const forced = await confirmDialog({
-            title: "Force push?",
-            message:
-              "The remote still has the version of this commit you rewrote, so a "
-              + "normal push was refused. Force pushing replaces only commits you "
-              + "rewrote — if anyone else's are there, it is refused.",
-            confirmLabel: "Force push",
+            title: l10n.t("Force push?"),
+            message: l10n.t(
+              "The remote still has the version of this commit you rewrote, so a normal push was refused. Force pushing replaces only commits you rewrote — if anyone else's are there, it is refused.",
+            ),
+            confirmLabel: l10n.t("Force push"),
             danger: true,
           });
           if (forced) {
@@ -8746,18 +8826,18 @@ class App {
         // for a refusal that was the app doing its job.
         if (!p.ok && p.expected) {
           toast(
-            `Committed, not pushed. ${p.message ?? ""}`.trim(),
+            l10n.t("Committed, not pushed. {0}", p.message ?? "").trim(),
             "info",
             undefined,
-            p.pullFirst ? { label: "Pull", onClick: () => void this.doSync("pull") } : undefined,
+            p.pullFirst ? { label: l10n.t("Pull"), onClick: () => void this.doSync("pull") } : undefined,
           );
         } else if (!p.ok) {
-          toast(`Committed, but push failed: ${p.message ?? "unknown error"}`, "error");
+          toast(l10n.t("Committed, but push failed: {0}", p.message ?? l10n.t("unknown error")), "error");
         } else {
-          toast("Committed and pushed.", "success");
+          toast(l10n.t("Committed and pushed."), "success");
         }
       } else {
-        toast("Changes committed.", "success");
+        toast(l10n.t("Changes committed."), "success");
       }
       textarea.value = "";
       // The draft has been spent — do not carry it into the next commit.
@@ -8768,7 +8848,7 @@ class App {
       await this.updateSync();
       if (this.currentView === "changes") void this.showChangesView();
     } catch (e) {
-      toast(cleanErr(e) || "Commit failed.", "error");
+      toast(cleanErr(e) || l10n.t("Commit failed."), "error");
     } finally {
       for (const b of pair) b.disabled = false;
             btn.classList.remove("is-busy");
@@ -8783,7 +8863,7 @@ class App {
     onConnected: () => void,
   ): Promise<void> {
     (signIn as HTMLButtonElement).disabled = true;
-    flow.replaceChildren(loadingState("Starting sign-in…"));
+    flow.replaceChildren(loadingState(l10n.t("Starting sign-in…")));
     let dc;
     try {
       dc = await host.invoke("github:deviceStart", undefined);
@@ -8792,7 +8872,7 @@ class App {
     }
     if (!dc.ok || !dc.deviceCode || !dc.userCode) {
       flow.replaceChildren(
-        errorState("Couldn't start sign-in", dc.message ?? "Try again in a moment.", () =>
+        errorState(l10n.t("Couldn't start sign-in"), dc.message ?? l10n.t("Try again in a moment."), () =>
           void this.startDeviceFlow(wrap, flow, signIn, onConnected),
         ),
       );
@@ -8803,15 +8883,15 @@ class App {
     const openUrl = dc.verificationUriComplete ?? dc.verificationUri ?? "https://github.com/login/device";
     const card = el("div", "gh-device");
     const step = el("div", "gh-device-step");
-    step.append(span("Enter this code at "), (() => { const b = el("b"); b.textContent = "github.com/login/device"; return b; })());
+    step.append(span(l10n.t("Enter this code at ")), (() => { const b = el("b"); b.textContent = "github.com/login/device"; return b; })());
     const codeRow = el("div", "gh-device-code-row");
     const code = el("div", "gh-device-code");
     code.textContent = dc.userCode;
     const copyBtn = el("button", "icon-btn gh-device-copy");
-    copyBtn.title = "Copy code";
-    copyBtn.setAttribute("aria-label", "Copy code");
+    copyBtn.title = l10n.t("Copy code");
+    copyBtn.setAttribute("aria-label", l10n.t("Copy code"));
     copyBtn.appendChild(glyph("copy"));
-    copyBtn.addEventListener("click", () => void copyText(dc.userCode!, "Code copied."));
+    copyBtn.addEventListener("click", () => void copyText(dc.userCode!, l10n.t("Code copied.")));
     codeRow.append(code, copyBtn);
     // ONE explicit action, nothing automatic. Auto-copying + auto-opening the
     // browser yanked users to GitHub before they'd even read the screen — most
@@ -8820,15 +8900,15 @@ class App {
     // clipboard write always lands) and opens GitHub. The code stays on screen
     // the whole time for retyping if the clipboard is lost.
     const openBtn = el("button", "btn btn-primary gh-device-open");
-    openBtn.append(glyph("link-external"), span("Copy code & open GitHub"));
+    openBtn.append(glyph("link-external"), span(l10n.t("Copy code & open GitHub")));
     openBtn.addEventListener("click", () => {
-      void copyText(dc.userCode!, "Code copied — paste it on GitHub.");
+      void copyText(dc.userCode!, l10n.t("Code copied — paste it on GitHub."));
       window.open(openUrl, "_blank");
     });
     const status = el("div", "gh-device-status");
     status.setAttribute("role", "status");
     status.setAttribute("aria-live", "polite");
-    status.append(el("div", "spinner"), span("Waiting for you to authorize…"));
+    status.append(el("div", "spinner"), span(l10n.t("Waiting for you to authorize…")));
     card.append(step, codeRow, openBtn, status);
     flow.replaceChildren(card);
 
@@ -8869,7 +8949,7 @@ class App {
       // The settings DOM was detached (view switch) — polling must stop, but
       // the card may be RESTORED from the keep-alive cache later. Leave an
       // actionable message instead of an eternal spinner.
-      fail("Sign-in was interrupted — click “Sign in with GitHub” to try again.");
+      fail(l10n.t("Sign-in was interrupted — click “Sign in with GitHub” to try again."));
     };
     const tick = async (): Promise<void> => {
       if (done) return;
@@ -8878,7 +8958,7 @@ class App {
         return;
       }
       if (Date.now() > deadline) {
-        fail("The code expired. Click “Sign in with GitHub” to try again.");
+        fail(l10n.t("The code expired. Click “Sign in with GitHub” to try again."));
         return;
       }
       if (inFlight) return; // a focus-poll raced the timer — one at a time
@@ -8909,12 +8989,12 @@ class App {
         // `github:myWork` ever began with "github:", and no channel at all
         // begins with "gh".
         void this.authChanged();
-        toast(`Signed in as @${r.login}.`, "success");
+        toast(l10n.t("Signed in as @{0}.", r.login), "success");
         onConnected();
         return;
       }
       if (r.state === "denied" || r.state === "expired" || r.state === "error") {
-        fail(r.message ?? "Sign-in failed. Try again.");
+        fail(r.message ?? l10n.t("Sign-in failed. Try again."));
         return;
       }
       if (r.state === "slow_down") intervalSec += 5;
@@ -9004,7 +9084,7 @@ class App {
    *  advertises a finished feature as unbuilt. */
   private showPlaceholderView(id: string): void {
     this.viewHost.replaceChildren(
-      errorState("View unavailable", `“${id}” isn’t a known view.`, () => this.routeView("changes", true)),
+      errorState(l10n.t("View unavailable"), l10n.t("“{0}” isn’t a known view.", id), () => this.routeView("changes", true)),
     );
   }
 
@@ -9014,8 +9094,8 @@ class App {
     const wrap = el("div", "topbar-sync");
     const main = el("button", "sync-main");
     const caret = el("button", "sync-caret");
-    caret.title = "Sync options";
-    caret.setAttribute("aria-label", "Sync options");
+    caret.title = l10n.t("Sync options");
+    caret.setAttribute("aria-label", l10n.t("Sync options"));
     caret.appendChild(glyph("chevron-down"));
     caret.addEventListener("click", () => this.openSyncMenu(caret));
     wrap.append(main, caret);
@@ -9038,18 +9118,28 @@ class App {
       // not the repository filling the screen. "Push 2 commits to origin/main"
       // named neither, so the one live write control in the chrome was silently
       // aimed at a repository nothing else on screen mentioned. Name it.
-      const where = this.currentRepo?.name ?? "this repository";
+      const where = this.currentRepo?.name ?? l10n.t("this repository");
       if (s.noUpstream) {
-        set("cloud", "Publish", `Publish this branch of ${where} to its remote`, () => void this.doSync("publish"));
+        set("cloud", l10n.t("Publish"), l10n.t("Publish this branch of {0} to its remote", where), () => void this.doSync("publish"));
         wrap.classList.add("has-action");
       } else if (s.behind > 0) {
-        set("arrow-down", `Pull ${s.behind}`, `Pull ${plural(s.behind, "commit")} into ${where} from ${s.upstream}`, () => void this.doSync("pull"));
+        set(
+          "arrow-down",
+          l10n.t("Pull {0}", s.behind),
+          l10n.t("Pull {0} into {1} from {2}", plural(s.behind, "commit"), where, s.upstream),
+          () => void this.doSync("pull"),
+        );
         wrap.classList.add("has-action");
       } else if (s.ahead > 0) {
-        set("arrow-up", `Push ${s.ahead}`, `Push ${plural(s.ahead, "commit")} from ${where} to ${s.upstream}`, () => void this.doSync("push"));
+        set(
+          "arrow-up",
+          l10n.t("Push {0}", s.ahead),
+          l10n.t("Push {0} from {1} to {2}", plural(s.ahead, "commit"), where, s.upstream),
+          () => void this.doSync("push"),
+        );
         wrap.classList.add("has-action");
       } else {
-        set("sync", "Fetch", `${where} is up to date with ${s.upstream} — fetch for updates`, () => void this.doSync("fetch"));
+        set("sync", l10n.t("Fetch"), l10n.t("{0} is up to date with {1} — fetch for updates", where, s.upstream), () => void this.doSync("fetch"));
         wrap.classList.remove("has-action");
       }
     };
@@ -9171,12 +9261,12 @@ class App {
     if (main) {
       const verbing =
         action === "fetch"
-          ? "Fetching…"
+          ? l10n.t("Fetching…")
           : action === "pull"
-            ? "Pulling…"
+            ? l10n.t("Pulling…")
             : action === "publish"
-              ? "Publishing…"
-              : "Pushing…";
+              ? l10n.t("Publishing…")
+              : l10n.t("Pushing…");
       main.replaceChildren(glyph("sync"), span(verbing));
       main.querySelector(".glyph")?.classList.add("spin");
       main.disabled = true;
@@ -9187,7 +9277,7 @@ class App {
       // its answer is settled by the same verdict the Branches ↓ pill uses.
       if (action === "pull") {
         const out = await this.pullAsking();
-        const v = pullVerdict(out, "Pull failed.");
+        const v = pullVerdict(out, l10n.t("Pull failed."));
         if (v.kind !== "pulled") {
           await this.settleUnpulled(v);
           return;
@@ -9201,12 +9291,24 @@ class App {
               ? await host.invoke("sync:push", undefined)
               : await host.invoke("sync:push", { setUpstream: true });
         if (!r.ok) {
-          toast(r.message ?? `${action} failed.`, r.expected ? "info" : "error");
+          const failMsg =
+            action === "fetch"
+              ? l10n.t("Fetch failed.")
+              : action === "pull"
+                ? l10n.t("Pull failed.")
+                : action === "publish"
+                  ? l10n.t("Publish failed.")
+                  : l10n.t("Push failed.");
+          toast(r.message ?? failMsg, r.expected ? "info" : "error");
           return;
         }
-        const verb =
-          action === "fetch" ? "Fetched" : action === "publish" ? "Published branch" : "Pushed";
-        toast(`${verb} successfully.`, "success");
+        const successMsg =
+          action === "fetch"
+            ? l10n.t("Fetched successfully.")
+            : action === "publish"
+              ? l10n.t("Published branch successfully.")
+              : l10n.t("Pushed successfully.");
+        toast(successMsg, "success");
       }
       bust(); // a fetch/pull/push changes sync/refs/branches/graph
       await this.updateSync();
@@ -9216,7 +9318,15 @@ class App {
       // correctly and was then immediately replaced by the PR list.
       await this.refreshAll();
     } catch (e) {
-      toast(cleanErr(e) || `${action} failed.`, "error");
+      const failMsg =
+        action === "fetch"
+          ? l10n.t("Fetch failed.")
+          : action === "pull"
+            ? l10n.t("Pull failed.")
+            : action === "publish"
+              ? l10n.t("Publish failed.")
+              : l10n.t("Push failed.");
+      toast(cleanErr(e) || failMsg, "error");
     } finally {
       this.syncing = false;
       (this.screenEl ?? document).querySelector(".topbar-sync")?.classList.remove("busy");
@@ -9229,13 +9339,13 @@ class App {
   private openSyncMenu(anchor: HTMLElement): void {
     const s = this.syncStatus;
     const items: MenuItem[] = [
-      { label: "Fetch", icon: "sync", onClick: () => void this.doSync("fetch") },
+      { label: l10n.t("Fetch"), icon: "sync", onClick: () => void this.doSync("fetch") },
     ];
     if (s?.noUpstream) {
-      items.push({ label: "Publish branch", icon: "cloud", onClick: () => void this.doSync("publish") });
+      items.push({ label: l10n.t("Publish branch"), icon: "cloud", onClick: () => void this.doSync("publish") });
     } else {
-      items.push({ label: "Pull", icon: "arrow-down", onClick: () => void this.doSync("pull") });
-      items.push({ label: "Push", icon: "arrow-up", onClick: () => void this.doSync("push") });
+      items.push({ label: l10n.t("Pull"), icon: "arrow-down", onClick: () => void this.doSync("pull") });
+      items.push({ label: l10n.t("Push"), icon: "arrow-up", onClick: () => void this.doSync("push") });
     }
     openMenu(anchor, items);
   }
@@ -9255,18 +9365,18 @@ class App {
         const here = this.currentRepo?.name ?? "";
         const views: PaletteItem[] = App.TABS.map((t) => ({
           icon: t.icon,
-          label: t.label,
+          label: App.NAV_LABELS[t.id] ?? t.label,
           keywords: t.id,
           run: () => go(t.id),
         }));
-        views.push({ icon: "gear", label: "Settings", run: () => go("settings") });
+        views.push({ icon: "gear", label: l10n.t("Settings"), run: () => go("settings") });
         // The Assistant is a routed, keep-alive view like any other, but it
         // lives only behind a sparkle icon in the top bar — absent from the
         // rail, from ⌘1-8, and (until now) from here. Typing "assistant" into
         // the palette found a GitHub search instead of the app's own view.
         views.push({
           icon: "sparkle",
-          label: "Assistant",
+          label: l10n.t("Assistant"),
           keywords: "ai chat assistant help",
           run: () => go("assistant"),
         });
@@ -9278,7 +9388,7 @@ class App {
               icon: "git-branch",
               label: r.name,
               // Only the fact you can't see: which one you're on.
-              hint: r.isCurrent ? "current" : "",
+              hint: r.isCurrent ? l10n.t("current") : "",
               keywords: `branch ${r.name}`,
               run: () => go("branches", { ref: r.name }),
             })),
@@ -9293,40 +9403,40 @@ class App {
         ];
 
         const actions: PaletteItem[] = [
-          { icon: "add", label: "New branch…", hint: here, run: () => void this.newBranch() },
+          { icon: "add", label: l10n.t("New branch…"), hint: here, run: () => void this.newBranch() },
           {
             icon: "git-pull-request",
-            label: "New pull request…",
+            label: l10n.t("New pull request…"),
             run: () => void openCreatePr(() => this.routeView("prs", true)),
           },
-          { icon: "issues", label: "New issue…", run: () => void openNewIssue(go) },
-          { icon: "sync", label: "Fetch", hint: here, run: () => void this.doSync("fetch") },
-          { icon: "arrow-down", label: "Pull", hint: here, run: () => void this.doSync("pull") },
-          { icon: "arrow-up", label: "Push", hint: here, run: () => void this.doSync("push") },
+          { icon: "issues", label: l10n.t("New issue…"), run: () => void openNewIssue(go) },
+          { icon: "sync", label: l10n.t("Fetch"), hint: here, run: () => void this.doSync("fetch") },
+          { icon: "arrow-down", label: l10n.t("Pull"), hint: here, run: () => void this.doSync("pull") },
+          { icon: "arrow-up", label: l10n.t("Push"), hint: here, run: () => void this.doSync("push") },
           {
             icon: "repo-clone",
-            label: "Clone repository…",
+            label: l10n.t("Clone repository…"),
             run: () => openCloneDialog((root) => this.openPath(root)),
           },
-          { icon: "folder-opened", label: "Open repository…", run: () => void this.openRepo() },
+          { icon: "folder-opened", label: l10n.t("Open repository…"), run: () => void this.openRepo() },
           // Search left the rail (it is a tool, not a destination) — this row
           // is how "search" typed into ⌘K still lands on the full page.
           {
             icon: "telescope",
-            label: "Search GitHub & this machine",
+            label: l10n.t("Search GitHub & this machine"),
             keywords: "explore find repositories code people",
             run: () => this.routeView("explore"),
           },
-          { icon: "terminal", label: "Toggle terminal", keywords: "dock shell", run: () => this.toggleTerminal() },
-          { icon: "color-mode", label: "Theme: System", keywords: "theme auto", run: () => this.setThemeMode("system") },
-          { icon: "color-mode", label: "Theme: Light", keywords: "theme", run: () => this.setThemeMode("light") },
-          { icon: "color-mode", label: "Theme: Dark", keywords: "theme", run: () => this.setThemeMode("dark") },
+          { icon: "terminal", label: l10n.t("Toggle terminal"), keywords: "dock shell", run: () => this.toggleTerminal() },
+          { icon: "color-mode", label: l10n.t("Theme: System"), keywords: "theme auto", run: () => this.setThemeMode("system") },
+          { icon: "color-mode", label: l10n.t("Theme: Light"), keywords: "theme", run: () => this.setThemeMode("light") },
+          { icon: "color-mode", label: l10n.t("Theme: Dark"), keywords: "theme", run: () => this.setThemeMode("dark") },
           {
             icon: "cloud-download",
-            label: "Check for updates",
+            label: l10n.t("Check for updates"),
             run: () => {
               void host.invoke("update:check", undefined).then((r) => {
-                if (r.status === "uptodate") toast(r.message ?? `You're on the latest version (${r.current}).`, r.message ? "info" : "success");
+                if (r.status === "uptodate") toast(r.message ?? l10n.t("You're on the latest version ({0}).", r.current), r.message ? "info" : "success");
                 else if (r.status === "available" && r.version)
                   void this.promptUpdateAvailable({ version: r.version, current: r.current }, true);
                 else if (r.message) toast(r.message, "info");
@@ -9347,9 +9457,9 @@ class App {
         ];
 
         return [
-          { title: "Go to", items: views },
-          { title: `Branches & tags in ${here || "this repository"}`, items: refs },
-          { title: "Actions", items: actions },
+          { title: l10n.t("Go to"), items: views },
+          { title: l10n.t("Branches & tags in {0}", here || l10n.t("this repository")), items: refs },
+          { title: l10n.t("Actions"), items: actions },
         ];
       },
       remote: () => {
@@ -9373,7 +9483,7 @@ class App {
             );
             return others.length
               ? {
-                  title: "Repositories",
+                  title: l10n.t("Repositories"),
                   items: others.map((r) => ({
                     icon: "repo",
                     label: r.name,
@@ -9393,7 +9503,7 @@ class App {
           const prs = await host.invoke("pr:list", undefined).catch(() => []);
           return prs.length
             ? {
-                title: "Pull requests",
+                title: l10n.t("Pull requests"),
                 items: prs.slice(0, 30).map((pr) => ({
                   icon: "git-pull-request",
                   label: pr.title,
@@ -9409,7 +9519,7 @@ class App {
           const issues = await host.invoke("issue:list", { state: "open" }).catch(() => []);
           return issues.length
             ? {
-                title: "Issues",
+                title: l10n.t("Issues"),
                 items: issues.slice(0, 30).map((it) => ({
                   icon: "issues",
                   label: it.title,
@@ -9432,12 +9542,12 @@ class App {
       // called from the palette (10/min is too small to spend on typing).
       search: (query: string) => [
         Promise.resolve<PaletteGroup>({
-          title: "Search GitHub",
+          title: l10n.t("Search GitHub"),
           pinned: true,
           items: [
             {
               icon: "telescope",
-              label: `Search GitHub for “${query}”`,
+              label: l10n.t("Search GitHub for “{0}”", query),
               hint: "",
               run: () => go("explore", { id: searchTargetId("repos", query) }),
             },
@@ -9446,7 +9556,7 @@ class App {
             // worlds or it is only most of a search.
             {
               icon: "vm",
-              label: `Search local repositories for “${query}”`,
+              label: l10n.t("Search local repositories for “{0}”", query),
               hint: "",
               run: () => go("explore", { id: `q/local/${query}` }),
             },
@@ -9460,7 +9570,7 @@ class App {
           .then((page): PaletteGroup | undefined =>
             page.items.length
               ? {
-                  title: "Repositories on GitHub",
+                  title: l10n.t("Repositories on GitHub"),
                   pinned: true,
                   items: page.items.slice(0, 3).map((r) => ({
                     icon: "repo",
@@ -9476,12 +9586,12 @@ class App {
           .then((page): PaletteGroup | undefined =>
             page.items.length
               ? {
-                  title: "People on GitHub",
+                  title: l10n.t("People on GitHub"),
                   pinned: true,
                   items: page.items.slice(0, 3).map((u) => ({
                     icon: "person",
                     label: u.login,
-                    hint: u.type === "Organization" ? "org" : "person",
+                    hint: u.type === "Organization" ? l10n.t("org") : l10n.t("person"),
                     run: () =>
                       go("explore", {
                         id: `${u.type === "Organization" ? "org" : "user"}/${u.login}`,
@@ -9511,8 +9621,8 @@ class App {
     // ⌘W, and a logo that quietly closed a tab, with a push perhaps still
     // running in it, would be the most surprising click in the app.
     const home = el("button", "topbar-home");
-    home.title = "Home";
-    home.setAttribute("aria-label", "Home");
+    home.title = l10n.t("Home");
+    home.setAttribute("aria-label", l10n.t("Home"));
     home.appendChild(brandMark());
     home.addEventListener("click", () => this.routeView("dashboard"));
 
@@ -9521,14 +9631,14 @@ class App {
     // real app instead of a set of disconnected tabs.
     const mod = navigator.platform.toLowerCase().includes("mac") ? "⌘" : "Ctrl+";
     const backBtn = el("button", "topbar-icon topbar-nav") as HTMLButtonElement;
-    backBtn.title = `Back  (${mod}[)`;
-    backBtn.setAttribute("aria-label", "Back");
+    backBtn.title = l10n.t("Back  ({0}[)", mod);
+    backBtn.setAttribute("aria-label", l10n.t("Back"));
     backBtn.appendChild(glyph("arrow-left"));
     backBtn.addEventListener("click", () => this.navBack());
     this.navBackBtn = backBtn;
     const fwdBtn = el("button", "topbar-icon topbar-nav") as HTMLButtonElement;
-    fwdBtn.title = `Forward  (${mod}])`;
-    fwdBtn.setAttribute("aria-label", "Forward");
+    fwdBtn.title = l10n.t("Forward  ({0}])", mod);
+    fwdBtn.setAttribute("aria-label", l10n.t("Forward"));
     fwdBtn.appendChild(glyph("arrow-right"));
     fwdBtn.addEventListener("click", () => this.navForward());
     this.navFwdBtn = fwdBtn;
@@ -9566,7 +9676,7 @@ class App {
     // It was a clause before the old repository chip; the chip is the tab row
     // now (#32), so the clause carries the name itself, in words.
     const working = el("span", "topbar-working");
-    working.append(span("working in", "topbar-working-lead"), span(info?.name ?? "", "topbar-working-name"));
+    working.append(span(l10n.t("working in"), "topbar-working-lead"), span(info?.name ?? "", "topbar-working-name"));
     working.hidden = true;
     left.append(home, sidebarToggle, backBtn, fwdBtn, where, working);
     let primedStatus = false;
@@ -9579,7 +9689,7 @@ class App {
         if (nameEl) nameEl.textContent = route.fullName;
         // True whether or not a clone exists. "Do I have it?" is answered on
         // the page's own rail, not up here.
-        where.title = `Reading ${route.fullName} on github.com`;
+        where.title = l10n.t("Reading {0} on github.com", route.fullName);
         where.setAttribute("aria-label", where.title);
       }
       // The clause only earns its words when the two names differ. Unknown is
@@ -9594,7 +9704,7 @@ class App {
           .catch(() => {});
       }
       working.hidden = !route || !info || openName === route.fullName.toLowerCase();
-      working.title = info ? `The controls on this bar act on ${info.root}` : "";
+      working.title = info ? l10n.t("The controls on this bar act on {0}", info.root) : "";
       // `hidden` is an ATTRIBUTE, and wireTopbarFit's MutationObserver
       // deliberately does not watch attributes — so ask for the re-measure.
       this.fitTopbar?.();
@@ -9620,11 +9730,11 @@ class App {
     const cmdk = el("button", "topbar-cmdk");
     // The palette now searches GitHub itself, so the affordance says so —
     // "Jump to…" undersold a box that reaches every repo on github.com.
-    cmdk.title = "Jump anywhere, or search GitHub  (⌘K)";
-    cmdk.setAttribute("aria-label", "Open the command palette");
+    cmdk.title = l10n.t("Jump anywhere, or search GitHub  (⌘K)");
+    cmdk.setAttribute("aria-label", l10n.t("Open the command palette"));
     cmdk.append(
       glyph("search"),
-      span("Search anything…", "topbar-cmdk-label"),
+      span(l10n.t("Search anything…"), "topbar-cmdk-label"),
       span("⌘K", "topbar-cmdk-kbd"),
     );
     cmdk.addEventListener("click", () => this.openPalette());
@@ -9639,7 +9749,7 @@ class App {
    *  view. Opens the full Assistant (its chats persist + stay warm). */
   private buildAssistantLauncher(): HTMLElement {
     const b = el("button", "topbar-icon topbar-assistant");
-    b.append(glyph("sparkle"), span("Assistant", "topbar-assistant-label"));
+    b.append(glyph("sparkle"), span(l10n.t("Assistant"), "topbar-assistant-label"));
     // The Assistant is a full view like any other, but its only entry point is
     // this button — and the button looked identical whether you were in the
     // Assistant or not, so the one surface with no rail item and no tab was
@@ -9648,8 +9758,8 @@ class App {
       const here = this.currentView === "assistant";
       b.classList.toggle("is-current", here);
       b.setAttribute("aria-current", here ? "page" : "false");
-      b.title = here ? "You are in the Assistant" : "Assistant";
-      b.setAttribute("aria-label", here ? "Assistant (current view)" : "Open the AI Assistant");
+      b.title = here ? l10n.t("You are in the Assistant") : l10n.t("Assistant");
+      b.setAttribute("aria-label", here ? l10n.t("Assistant (current view)") : l10n.t("Open the AI Assistant"));
     };
     sync();
     this.syncAssistantChip = sync;
@@ -9666,8 +9776,8 @@ class App {
    *  the old sidebar "Notifications" section — the bell IS the center now. */
   private buildNotifBell(): HTMLElement {
     const bell = el("button", "topbar-icon topbar-bell");
-    bell.title = "Notifications";
-    bell.setAttribute("aria-label", "Notifications");
+    bell.title = l10n.t("Notifications");
+    bell.setAttribute("aria-label", l10n.t("Notifications"));
     bell.appendChild(glyph("bell"));
     const badge = el("span", "topbar-bell-badge");
     badge.hidden = true;
@@ -9698,7 +9808,7 @@ class App {
   private syncComposerBranch(): void {
     const head = this.headInfo;
     if (!head) return;
-    const name = head.detached ? "detached HEAD" : (head.branch ?? "HEAD");
+    const name = head.detached ? l10n.t("detached HEAD") : (head.branch ?? "HEAD");
     // This tab's composer — never whichever tab's is on screen (#32).
     const nameEl = (this.screenEl ?? document).querySelector<HTMLElement>(".dc-branch-name");
     if (nameEl) nameEl.textContent = name;
@@ -9724,11 +9834,11 @@ class App {
       badge.textContent = count > 99 ? "99+" : String(count);
       badge.hidden = false;
       bell?.classList.add("has-unread");
-      bell?.setAttribute("title", `Notifications · ${count} unread`);
+      bell?.setAttribute("title", l10n.t("Notifications · {0} unread", count));
     } else {
       badge.hidden = true;
       bell?.classList.remove("has-unread");
-      bell?.setAttribute("title", "Notifications");
+      bell?.setAttribute("title", l10n.t("Notifications"));
     }
   }
 
@@ -9783,7 +9893,7 @@ class App {
         chip.classList.add("is-connected");
         if (status.login) {
           window.clearTimeout(nameRetry);
-          chip.title = `Signed in to GitHub as ${status.login}`;
+          chip.title = l10n.t("Signed in to GitHub as {0}", status.login);
           chip.replaceChildren(
             avatar(status.login, `https://github.com/${status.login}.png`, 22),
             span(status.login, "topbar-acct-name"),
@@ -9792,16 +9902,16 @@ class App {
           // Signed in, name not known yet. Say so honestly rather than
           // guessing, and ask again shortly — the first real request fills it
           // in, and this stops only when it does.
-          chip.title = "Signed in to GitHub";
-          chip.replaceChildren(glyph("github"), span("Signed in", "topbar-acct-name"));
+          chip.title = l10n.t("Signed in to GitHub");
+          chip.replaceChildren(glyph("github"), span(l10n.t("Signed in"), "topbar-acct-name"));
           window.clearTimeout(nameRetry);
           nameRetry = window.setTimeout(() => void sync(), 2000);
         }
       } else {
         window.clearTimeout(nameRetry);
         chip.classList.remove("is-connected");
-        chip.title = "Sign in to GitHub";
-        chip.replaceChildren(glyph("github"), span("Sign in", "topbar-acct-name"));
+        chip.title = l10n.t("Sign in to GitHub");
+        chip.replaceChildren(glyph("github"), span(l10n.t("Sign in"), "topbar-acct-name"));
       }
     };
     this.syncAccountChip = sync;
@@ -9931,7 +10041,7 @@ class App {
     void this.promptUpdateReady(r);
   }
   onUpdateProgress(percent: number): void {
-    if (this.updateProgressEl) this.updateProgressEl.textContent = `Downloading… ${percent}%`;
+    if (this.updateProgressEl) this.updateProgressEl.textContent = l10n.t("Downloading… {0}%", percent);
   }
 
   // ── App updates (confirm → pull → apply) ────────────────────────────────────
@@ -9958,11 +10068,14 @@ class App {
     App.updateAsking.add(u.version);
     const mac = navigator.platform.toLowerCase().includes("mac");
     const ok = await confirmDialog({
-      title: `GitStudio ${u.version} is available`,
+      title: l10n.t("GitStudio {0} is available", u.version),
       message: mac
-        ? `You're on ${u.current}. Download the update now? The installer lands in your Downloads folder — one drag to Applications finishes it.`
-        : `You're on ${u.current}. Download the update now? You'll confirm again before it restarts.`,
-      confirmLabel: "Download update",
+        ? l10n.t(
+            "You're on {0}. Download the update now? The installer lands in your Downloads folder — one drag to Applications finishes it.",
+            u.current,
+          )
+        : l10n.t("You're on {0}. Download the update now? You'll confirm again before it restarts.", u.current),
+      confirmLabel: l10n.t("Download update"),
       // The window's question, not the view's: a refresh re-routing below it,
       // or a tab switch, answered it "Cancel" for you — and the version was
       // already marked asked, so it never came back that session.
@@ -9971,10 +10084,10 @@ class App {
     if (!ok) return;
     const r = await host.invoke("update:download", undefined);
     if (!r.ok) {
-      toast(r.message || "Couldn't download the update.", "error");
+      toast(r.message || l10n.t("Couldn't download the update."), "error");
       return;
     }
-    toast(`Downloading GitStudio ${u.version}…`, "info");
+    toast(l10n.t("Downloading GitStudio {0}…", u.version), "info");
   }
 
   private async promptUpdateReady(r: {
@@ -9984,27 +10097,26 @@ class App {
     if (this.updateProgressEl) this.updateProgressEl.textContent = "";
     if (r.kind === "restart") {
       const ok = await confirmDialog({
-        title: `GitStudio ${r.version} is ready`,
-        message: "Restart now to finish updating? If not, it's applied the next time you quit.",
-        confirmLabel: "Restart now",
+        title: l10n.t("GitStudio {0} is ready", r.version),
+        message: l10n.t("Restart now to finish updating? If not, it's applied the next time you quit."),
+        confirmLabel: l10n.t("Restart now"),
         holdWhile: () => true,
       });
       if (!ok) {
-        toast("The update will be applied when you quit GitStudio.", "info");
+        toast(l10n.t("The update will be applied when you quit GitStudio."), "info");
         return;
       }
     } else {
       const ok = await confirmDialog({
-        title: `GitStudio ${r.version} downloaded`,
-        message:
-          "The installer is in your Downloads folder. Open it now? Drag GitStudio to Applications to finish.",
-        confirmLabel: "Open installer",
+        title: l10n.t("GitStudio {0} downloaded", r.version),
+        message: l10n.t("The installer is in your Downloads folder. Open it now? Drag GitStudio to Applications to finish."),
+        confirmLabel: l10n.t("Open installer"),
         holdWhile: () => true,
       });
       if (!ok) return;
     }
     const res = await host.invoke("update:install", undefined);
-    if (!res.ok) toast(res.message || "Couldn't apply the update.", "error");
+    if (!res.ok) toast(res.message || l10n.t("Couldn't apply the update."), "error");
   }
 
   // ── Repo lifecycle (tab changes are the shell's, driven by repo:tabs) ───────
@@ -10302,7 +10414,7 @@ class App {
     const actions: ToastAction[] = [];
     if (add) {
       actions.push({
-        label: `Add ${refLabel(add.fullName)} to the filter`,
+        label: l10n.t("Add {0} to the filter", refLabel(add.fullName)),
         onClick: () =>
           void graph
             .setRefFilter(withRef(storedFilterOf(graph.refFilter, graph.refPreset), add.fullName))
@@ -10310,10 +10422,10 @@ class App {
       });
     }
     actions.push({
-      label: "Show all branches",
+      label: l10n.t("Show all branches"),
       onClick: () => void graph.setRefFilter(null).then(() => this.revealWhenReady(sha)),
     });
-    toast(`${short} is hidden by the branch filter — its details are below.`, "info", undefined, actions);
+    toast(l10n.t("{0} is hidden by the branch filter — its details are below.", short), "info", undefined, actions);
   }
 
   /** Scroll to + select a commit once the freshly-mounted graph has rows. The
@@ -10375,14 +10487,14 @@ class App {
     // "remotes/origin/x" beside a local branch "origin/x". Each still checks
     // out by its full name.
     if (locals.length) {
-      items.push({ separator: true, label: "Branches" });
+      items.push({ separator: true, label: l10n.t("Branches") });
       for (const b of locals) {
         items.push({
           label: branchName(b),
           icon: "git-branch",
           current: b.isCurrent,
-          sub: b.isCurrent ? "current" : undefined,
-          title: b.isCurrent ? `Already on ${branchName(b)}` : `Check out ${branchName(b)}`,
+          sub: b.isCurrent ? l10n.t("current") : undefined,
+          title: b.isCurrent ? l10n.t("Already on {0}", branchName(b)) : l10n.t("Check out {0}", branchName(b)),
           onClick: () => {
             if (b.isCurrent) {
               this.revealInGraph(b.sha);
@@ -10393,13 +10505,13 @@ class App {
           // Its actions (#32) — Right or Enter from the keyboard, the arrow
           // at the row's end from the pointer: the Branches list's own menu
           // for it, Checkout first.
-          submenuLabel: `Actions for ${branchName(b)}`,
+          submenuLabel: l10n.t("Actions for {0}", branchName(b)),
           submenu: () => this.switcherBranchActions(b, anchor),
         });
       }
     }
     if (remotes.length) {
-      items.push({ separator: true, label: "Remotes" });
+      items.push({ separator: true, label: l10n.t("Remotes") });
       // No cap. This menu used to slice to 16 with NO indication, and its
       // type-to-filter only hides rows that were already built — so anything
       // past the 16th was unreachable by any means, including search.
@@ -10409,10 +10521,10 @@ class App {
           icon: "cloud",
           title: `Check out ${refDisplay(b.fullName)} as a local branch`,
           onClick: () => void this.checkoutRef(b.fullName),
-          submenuLabel: `Actions for ${refDisplay(b.fullName)}`,
+          submenuLabel: l10n.t("Actions for {0}", refDisplay(b.fullName)),
           submenu: () => [
             {
-              label: "Check out as a local branch",
+              label: l10n.t("Check out as a local branch"),
               icon: "check",
               onClick: () => void this.checkoutRef(b.fullName),
             },
@@ -10423,7 +10535,7 @@ class App {
       }
     }
     if (tags.length) {
-      items.push({ separator: true, label: "Tags" });
+      items.push({ separator: true, label: l10n.t("Tags") });
       // for-each-ref returns refname (byte) order, which puts v1.10 BELOW v1.9
       // and meant the old 16-item cap kept the oldest tags. Numeric-aware
       // descending, matching the extension's branch dialog.
@@ -10434,24 +10546,24 @@ class App {
         items.push({
           label: tagName(t),
           icon: "tag",
-          title: `Show ${tagName(t)} in Commits`,
+          title: l10n.t("Show {0} in Commits", tagName(t)),
           onClick: () => this.revealInGraph(t.sha),
-          submenuLabel: `Actions for ${tagName(t)}`,
+          submenuLabel: l10n.t("Actions for {0}", tagName(t)),
           submenu: () => this.tagActionItems(t),
         });
       }
     }
     if (items.length === 0) {
-      items.push({ label: "No branches yet", disabled: true });
+      items.push({ label: l10n.t("No branches yet"), disabled: true });
     } else {
       items.push({ separator: true });
       items.push({
-        label: "New branch…",
+        label: l10n.t("New branch…"),
         icon: "add",
         onClick: () => void this.newBranch(),
       });
       items.push({
-        label: "Manage branches…",
+        label: l10n.t("Manage branches…"),
         icon: "git-branch",
         onClick: () => this.routeView("branches"),
       });
@@ -10480,8 +10592,8 @@ class App {
     if (b) return this.branchActionItems(b, anchor, { checkoutFirst: true });
     const name = branchName(ref);
     return ref.isCurrent
-      ? [{ label: `Show ${name} in Commits`, icon: "git-commit", onClick: () => this.revealInGraph(ref.sha) }]
-      : [{ label: `Checkout ${name}`, icon: "check", onClick: () => void this.checkoutRef(ref.fullName) }];
+      ? [{ label: l10n.t("Show {0} in Commits", name), icon: "git-commit", onClick: () => this.revealInGraph(ref.sha) }]
+      : [{ label: l10n.t("Checkout {0}", name), icon: "check", onClick: () => void this.checkoutRef(ref.fullName) }];
   }
 
   // ── Refs / HEAD (drives the branch switcher) ────────────────────────────────
@@ -10540,21 +10652,21 @@ class App {
     // and a failure card were written into a `display: none` column: clicking a
     // commit after closing the panel looked like nothing happened at all.
     this.setGraphDetailsVisible(true);
-    this.detailsEl?.replaceChildren(loadingState(`Loading ${sha.slice(0, 7)}…`));
+    this.detailsEl?.replaceChildren(loadingState(l10n.t("Loading {0}…", sha.slice(0, 7))));
     let details;
     try {
       details = await host.invoke("commit:details", sha);
     } catch (e) {
       if (this.selectedSha !== sha) return;
       this.detailsEl?.replaceChildren(
-        errorState("Couldn't load this commit", cleanErr(e) || "The commit details request failed."),
+        errorState(l10n.t("Couldn't load this commit"), cleanErr(e) || l10n.t("The commit details request failed.")),
       );
       return;
     }
     if (this.selectedSha !== sha) return;
     if (!details) {
       this.detailsEl?.replaceChildren(
-        errorState("Couldn't load this commit", `Git returned nothing for ${sha.slice(0, 7)}.`),
+        errorState(l10n.t("Couldn't load this commit"), l10n.t("Git returned nothing for {0}.", sha.slice(0, 7))),
       );
       return;
     }
@@ -10756,7 +10868,7 @@ class App {
     split.append(el("div", "cmp-vsplit-grip"));
     wireResizerKeys(split, {
       orientation: "vertical",
-      label: "Resize the commit details column",
+      label: l10n.t("Resize the commit details column"),
       min: MIN,
       max: maxFor,
       get: () => applied,
@@ -10799,7 +10911,7 @@ class App {
       // all. It only ever meant one thing — this commit, on github.com.
       const repo = peek("github:status", undefined)?.repo;
       if (!repo) {
-        toast("This repository has no GitHub remote the app can open.", "info");
+        toast(l10n.t("This repository has no GitHub remote the app can open."), "info");
         return;
       }
       window.open(`https://github.com/${repo.owner}/${repo.repo}/commit/${sha}`, "_blank", "noopener");
@@ -10894,8 +11006,8 @@ class App {
       // in this list precisely because it differs. Changes, Compare and the
       // commit page each got this treatment; this one was missed.
       panel.showEmpty(
-        `${file.path} is listed as changed, so this is a failure to read it — not a file with nothing in it.`,
-        { title: "Couldn't read this file", kind: "error" },
+        l10n.t("{0} is listed as changed, so this is a failure to read it — not a file with nothing in it.", file.path),
+        { title: l10n.t("Couldn't read this file"), kind: "error" },
       );
       return;
     }
@@ -10907,7 +11019,7 @@ class App {
         // back to, so resolving or exiting just repaints what is around it.
         panel.showConflict(model, {
           onResolved: () => void this.refreshAll(),
-          onExit: () => panel.showEmpty("Select a file to view its diff."),
+          onExit: () => panel.showEmpty(l10n.t("Select a file to view its diff.")),
           onOperationChanged: (outcome) => void this.afterOperationVerb(outcome),
         });
         return;
@@ -10921,10 +11033,10 @@ class App {
     const wrap = el("div", "details details-empty");
     wrap.appendChild(
       this.currentRepo
-        ? emptyState("Commit details", "Select a commit to inspect its message, author, and changed files.", {
+        ? emptyState(l10n.t("Commit details"), l10n.t("Select a commit to inspect its message, author, and changed files."), {
             icon: "git-commit",
           })
-        : emptyState("No repository open", "Open a repository to start exploring its history.", {
+        : emptyState(l10n.t("No repository open"), l10n.t("Open a repository to start exploring its history."), {
             icon: "repo",
           }),
     );
@@ -11043,7 +11155,7 @@ class App {
         undo: (req) => host.invoke("commits:undo", req),
         confirm: (opts) => confirmDialog(opts),
         choose: (opts) => promptChoice(opts),
-        message: (opts) => promptMessage({ ...opts, label: "Commit message", holdWhile: whileSameRepo() }),
+        message: (opts) => promptMessage({ ...opts, label: l10n.t("Commit message"), holdWhile: whileSameRepo() }),
         toast: (message, kind) => toast(message, kind),
         undoable: (message, act) => didUndoable(message, act),
         refresh: async () => {
@@ -11060,7 +11172,7 @@ class App {
         },
       });
     } catch (e) {
-      toast(cleanErr(e) || "That didn't work.", "error");
+      toast(cleanErr(e) || l10n.t("That didn't work."), "error");
     }
   }
 
@@ -11082,13 +11194,13 @@ class App {
         landOnConflicts: () => this.landOnConflicts(),
       });
     } catch (e) {
-      toast(cleanErr(e) || "Couldn't drop the commit.", "error");
+      toast(cleanErr(e) || l10n.t("Couldn't drop the commit."), "error");
     }
   }
 
   private async runAction(req: Parameters<CommitContextMenu["resolve"]>[0]): Promise<void> {
     if (req.action === "copy-sha") {
-      await copyText(req.sha, "Commit SHA copied.");
+      await copyText(req.sha, l10n.t("Commit SHA copied."));
       return;
     }
     try {
@@ -11103,29 +11215,39 @@ class App {
           bust();
           await this.refreshAll();
         })) return;
+        const failVerbs: Record<string, string> = {
+          checkout: l10n.t("check out"),
+          branch: l10n.t("create a branch"),
+          tag: l10n.t("create a tag"),
+          "cherry-pick": l10n.t("cherry-pick"),
+          revert: l10n.t("revert"),
+          "reset-soft": l10n.t("reset (soft)"),
+          "reset-mixed": l10n.t("reset (mixed)"),
+          "reset-hard": l10n.t("reset (hard)"),
+        };
         toast(
-          result.message ?? `Couldn't ${req.action.replace(/-/g, " ")}.`,
+          result.message ?? l10n.t("Couldn't {0}.", failVerbs[req.action] ?? req.action.replace(/-/g, " ")),
           result.expected ? "info" : "error",
         );
         return;
       }
       const verbs: Record<string, string> = {
-        checkout: "Checked out commit",
-        branch: "Branch created",
-        tag: "Tag created",
-        "cherry-pick": "Cherry-picked",
-        revert: "Revert commit created",
-        "reset-soft": "Reset (soft) to commit",
-        "reset-mixed": "Reset (mixed) to commit",
-        "reset-hard": "Reset (hard) to commit",
+        checkout: l10n.t("Checked out commit"),
+        branch: l10n.t("Branch created"),
+        tag: l10n.t("Tag created"),
+        "cherry-pick": l10n.t("Cherry-picked"),
+        revert: l10n.t("Revert commit created"),
+        "reset-soft": l10n.t("Reset (soft) to commit"),
+        "reset-mixed": l10n.t("Reset (mixed) to commit"),
+        "reset-hard": l10n.t("Reset (hard) to commit"),
       };
-      toast(`${verbs[req.action] ?? "Done"}.`, "success");
+      toast(l10n.t("{0}.", verbs[req.action] ?? l10n.t("Done")), "success");
       if (result.changed) {
         bust();
         await this.refreshAll();
       }
     } catch (e) {
-      toast(cleanErr(e) || "The action failed.", "error");
+      toast(cleanErr(e) || l10n.t("The action failed."), "error");
     }
   }
 
@@ -11219,12 +11341,12 @@ class TabShell {
     window.addEventListener("unhandledrejection", (e) => {
       const msg = cleanErr(e.reason);
       if (isBenignError(msg)) return;
-      toast(msg || "Something went wrong.", "error");
+      toast(msg || l10n.t("Something went wrong."), "error");
     });
     window.addEventListener("error", (e) => {
       const msg = e.error ? cleanErr(e.error) : e.message || "";
       if (isBenignError(msg, e.filename)) return;
-      if (e.error || e.message) toast(msg || "Something went wrong.", "error");
+      if (e.error || e.message) toast(msg || l10n.t("Something went wrong."), "error");
     });
     // The theme is the window's: applied once here, and on an OS flip.
     const prefs = loadPrefs();
@@ -11269,7 +11391,7 @@ class TabShell {
     try {
       st = await shellHost.invoke("repo:tabs", undefined);
     } catch (e) {
-      toast(cleanErr(e) || "Couldn't open the repository.", "error");
+      toast(cleanErr(e) || l10n.t("Couldn't open the repository."), "error");
     }
     // The tabs the last session left open: main answers this read only once
     // its launch restore is done (RepoStore.settledState), so every tab in it
@@ -11437,15 +11559,15 @@ class TabShell {
     const name = this.state.tabs.find((t) => t.root === root)?.name ?? root;
     const screen = el("div", "tab-gone");
     screen.setAttribute("role", "region");
-    screen.setAttribute("aria-label", `${name}: folder not found`);
+    screen.setAttribute("aria-label", l10n.t("{0}: folder not found", name));
     screen.appendChild(
       emptyState(
-        `${name}'s folder is not there`,
-        `${root} was moved or deleted. Put it back and this tab carries on where you left it — or close the tab.`,
+        l10n.t("{0}'s folder is not there", name),
+        l10n.t("{0} was moved or deleted. Put it back and this tab carries on where you left it — or close the tab.", root),
         {
           icon: "warning",
-          action: { label: "Look again", icon: "refresh", onClick: () => void this.lookAgain(root) },
-          secondary: { label: "Close Tab", onClick: () => void this.requestClose(root) },
+          action: { label: l10n.t("Look again"), icon: "refresh", onClick: () => void this.lookAgain(root) },
+          secondary: { label: l10n.t("Close Tab"), onClick: () => void this.requestClose(root) },
         },
       ),
     );
@@ -11456,7 +11578,7 @@ class TabShell {
   /** "Look again": ask the disk now, rather than at the row's next look. */
   private async lookAgain(root: string): Promise<void> {
     await this.refreshMarks();
-    if (this.activeRoot() === root && this.gone.has(root)) toast(`${root} is still not there.`, "info");
+    if (this.activeRoot() === root && this.gone.has(root)) toast(l10n.t("{0} is still not there.", root), "info");
   }
 
   /** The App in front, when its own screen is up — not the gone screen. */
@@ -11566,11 +11688,13 @@ class TabShell {
     const running = this.apps.get(root)?.runningOperation();
     if (running) {
       const ok = await confirmDialog({
-        title: `Close ${tab.name}?`,
-        message:
-          `${running.charAt(0).toUpperCase()}${running.slice(1)} is still running in ${tab.name}. ` +
-          "Git will finish it, but this tab will not be here to say how it ended.",
-        confirmLabel: "Close tab",
+        title: l10n.t("Close {0}?", tab.name),
+        message: l10n.t(
+          "{0} is still running in {1}. Git will finish it, but this tab will not be here to say how it ended.",
+          `${running.charAt(0).toUpperCase()}${running.slice(1)}`,
+          tab.name,
+        ),
+        confirmLabel: l10n.t("Close tab"),
       });
       if (!ok) return;
     }
@@ -11747,15 +11871,15 @@ class TabShell {
     const mod = this.isMac ? "⌘" : "Ctrl+";
     const items: MenuItem[] = [
       {
-        label: "Open repository…",
+        label: l10n.t("Open repository…"),
         icon: "folder-opened",
-        title: `Open a folder as a new tab  (${mod}O)`,
+        title: l10n.t("Open a folder as a new tab  ({0}O)", mod),
         onClick: () => void this.openRepo(),
       },
       {
-        label: "Clone repository…",
+        label: l10n.t("Clone repository…"),
         icon: "cloud-download",
-        title: `Clone into a new tab  (${this.isMac ? "⌘⇧O" : "Ctrl+Shift+O"})`,
+        title: l10n.t("Clone into a new tab  ({0})", this.isMac ? "⌘⇧O" : "Ctrl+Shift+O"),
         onClick: () => openCloneDialog((root) => this.openPath(root)),
       },
     ];
@@ -11763,13 +11887,13 @@ class TabShell {
     // are one row above, and "opening" one only switches to it.
     const others = recent.filter((r) => !open.has(r.root)).slice(0, 8);
     if (others.length) {
-      items.push({ separator: true, label: "Recent" });
+      items.push({ separator: true, label: l10n.t("Recent") });
       for (const r of others) {
         items.push({
           label: r.name,
           sub: middleTruncate(r.root, 40),
           icon: "folder",
-          title: `Open ${r.root} in a new tab`,
+          title: l10n.t("Open {0} in a new tab", r.root),
           onClick: () => void this.openPath(r.root),
         });
       }
@@ -11777,9 +11901,9 @@ class TabShell {
     items.push({ separator: true });
     items.push({
       // The DESTINATION, not a modal listing the same clones a third time.
-      label: "All repositories",
+      label: l10n.t("All repositories"),
       icon: "repo",
-      title: "Every repository on this machine and on GitHub",
+      title: l10n.t("Every repository on this machine and on GitHub"),
       onClick: () => this.live()?.route("repositories"),
     });
     openMenu(anchor, items);
@@ -11795,7 +11919,9 @@ class TabShell {
         sub: middleTruncate(t.root, 40),
         icon: "repo",
         current: t.root === front,
-        title: dirty ? `${t.root}\n${dirty} changed ${dirty === 1 ? "file" : "files"}` : t.root,
+        title: dirty
+          ? `${t.root}\n${dirty === 1 ? l10n.t("1 changed file") : l10n.t("{0} changed files", dirty)}`
+          : t.root,
         onClick: () => this.requestActivate(t.root),
       };
     });
@@ -11812,24 +11938,24 @@ class TabShell {
       for (const r of roots) await this.requestClose(r);
     };
     const items: MenuItem[] = [
-      { label: "Close", title: "Close this tab", onClick: () => void this.requestClose(root) },
+      { label: l10n.t("Close"), title: l10n.t("Close this tab"), onClick: () => void this.requestClose(root) },
       {
-        label: "Close Other Tabs",
+        label: l10n.t("Close Other Tabs"),
         disabled: !others.length,
-        title: "Close every tab but this one",
+        title: l10n.t("Close every tab but this one"),
         onClick: () => void closeAll(others),
       },
       {
-        label: "Close Tabs to the Right",
+        label: l10n.t("Close Tabs to the Right"),
         disabled: !right.length,
-        title: "Close the tabs after this one",
+        title: l10n.t("Close the tabs after this one"),
         onClick: () => void closeAll(right),
       },
       { separator: true },
       {
-        label: "Copy Path",
+        label: l10n.t("Copy Path"),
         title: root,
-        onClick: () => void copyText(root).then(() => toast("Copied the repository's path.", "success")),
+        onClick: () => void copyText(root).then(() => toast(l10n.t("Copied the repository's path."), "success")),
       },
       {
         // No icons in this menu: VS Code's tab menu has none, and half a menu
@@ -11852,33 +11978,33 @@ function openShortcutsHelp(): void {
   const mod = mac ? "⌘" : "Ctrl+";
   const groups: Array<{ title: string; rows: Array<[string, string]> }> = [
     {
-      title: "Everywhere",
+      title: l10n.t("Everywhere"),
       rows: [
-        [`${mod}K`, "Jump anywhere — sections, branches, PRs, actions"],
-        [`${mod}1–8`, "Switch between the first eight sections"],
-        [`${mod}[  ${mod}]`, "Back / forward through your navigation"],
+        [`${mod}K`, l10n.t("Jump anywhere — sections, branches, PRs, actions")],
+        [`${mod}1–8`, l10n.t("Switch between the first eight sections")],
+        [`${mod}[  ${mod}]`, l10n.t("Back / forward through your navigation")],
         // Repositories are tabs (#32), and their keys work everywhere. The
         // number keys are VS Code's "open editor at index" chord, because
         // ⌘1–8 above already means the rail. Here rather than in a group of
         // their own: a seventh group sat alone on a row of the sheet (the
         // rebase keys' check holds it to rows of two or more).
-        ["Ctrl+Tab  Ctrl+Shift+Tab", "Next / previous repository tab"],
-        [mac ? "⌃1–8  ⌃9" : "Alt+1–8  Alt+9", "Go to a tab by position / the last tab"],
+        ["Ctrl+Tab  Ctrl+Shift+Tab", l10n.t("Next / previous repository tab")],
+        [mac ? "⌃1–8  ⌃9" : "Alt+1–8  Alt+9", l10n.t("Go to a tab by position / the last tab")],
         // One row for the pair: with a row each, this group ran the sheet
         // off the top of a 1280×800 window.
-        [`${mod}O  ${mod}W`, "Open a repository in a new tab / close the one in front"],
-        [`${mod}\``, "Toggle the terminal dock"],
-        [`${mod},`, "Settings"],
-        ["?", "This cheat sheet"],
+        [`${mod}O  ${mod}W`, l10n.t("Open a repository in a new tab / close the one in front")],
+        [`${mod}\``, l10n.t("Toggle the terminal dock")],
+        [`${mod},`, l10n.t("Settings")],
+        ["?", l10n.t("This cheat sheet")],
       ],
     },
     {
-      title: "Lists",
+      title: l10n.t("Lists"),
       rows: [
-        ["↑ ↓  or  j k", "Move between rows"],
-        ["Enter", "Open the focused row"],
-        ["Home / End", "Jump to the first / last row"],
-        ["e", "Inbox: mark the focused thread read"],
+        ["↑ ↓  or  j k", l10n.t("Move between rows")],
+        ["Enter", l10n.t("Open the focused row")],
+        ["Home / End", l10n.t("Jump to the first / last row")],
+        ["e", l10n.t("Inbox: mark the focused thread read")],
       ],
     },
     {
@@ -11886,58 +12012,58 @@ function openShortcutsHelp(): void {
       // of them CONTRADICTED what the sheet said ⌘Enter does — pressing the
       // documented "submit" on a branch row checks it out. A sheet that is
       // wrong about a key is worse than a sheet that omits it.
-      title: "Branches",
+      title: l10n.t("Branches"),
       rows: [
-        ["/", "Filter the list"],
-        [`${mod}Enter`, "Run the focused row's main action — checkout, pull, publish"],
-        ["Shift+F", "Fetch from every remote"],
+        ["/", l10n.t("Filter the list")],
+        [`${mod}Enter`, l10n.t("Run the focused row's main action — checkout, pull, publish")],
+        ["Shift+F", l10n.t("Fetch from every remote")],
         // #32: the top bar's switcher — IntelliJ's branch popup, and the
         // extension's branch menu.
-        ["→  or  Enter", "Switcher: a branch's actions"],
-        ["←  or  Esc", "Switcher: back to the branch"],
+        ["→  or  Enter", l10n.t("Switcher: a branch's actions")],
+        ["←  or  Esc", l10n.t("Switcher: back to the branch")],
         // The first ACTION, which is Checkout for every branch but the one
         // you're on — whose actions start with Fetch. It said "check out the
         // first match", and with no filter typed the first match IS yours.
-        ["Enter  Enter", "Switcher: a branch's first action — Checkout, unless it's yours"],
+        ["Enter  Enter", l10n.t("Switcher: a branch's first action — Checkout, unless it's yours")],
       ],
     },
     {
-      title: "Detail pages",
+      title: l10n.t("Detail pages"),
       rows: [
-        ["Esc  or  ←", "Back to the list"],
-        [`${mod}Enter`, "Submit the open form"],
-        ["/", "Commit page: filter the changed files"],
+        ["Esc  or  ←", l10n.t("Back to the list")],
+        [`${mod}Enter`, l10n.t("Submit the open form")],
+        ["/", l10n.t("Commit page: filter the changed files")],
       ],
     },
     {
       // The log grew a page of its own and a keyboard to go with it, and a
       // shortcut nothing advertises is a shortcut nobody has.
-      title: "Reading a log",
+      title: l10n.t("Reading a log"),
       rows: [
-        ["↑ ↓  PgUp PgDn", "Move through the output"],
-        ["Home / End", "Start / newest line"],
-        ["n", "Jump to the next failure"],
-        ["j / k", "Next / previous job in this run"],
-        ["Enter  Shift+Enter", "Step through search matches"],
+        ["↑ ↓  PgUp PgDn", l10n.t("Move through the output")],
+        ["Home / End", l10n.t("Start / newest line")],
+        ["n", l10n.t("Jump to the next failure")],
+        ["j / k", l10n.t("Next / previous job in this run")],
+        ["Enter  Shift+Enter", l10n.t("Step through search matches")],
       ],
     },
     {
       // #32: several commits at once. The letters are git's own todo letters,
       // the same ones the Rebase view's toolbar names in its tooltips.
-      title: "Interactive rebase",
+      title: l10n.t("Interactive rebase"),
       rows: [
-        ["Shift+↑ ↓", "Select several (or Shift-click)"],
-        [`${mod}A`, "Select every commit"],
-        ["P R S F E D", "Set Pick, Reword, Squash, Fixup, Edit or Drop"],
-        ["Alt+↑ ↓", "Move the selected commits"],
-        ["Esc", "Back to one commit"],
+        ["Shift+↑ ↓", l10n.t("Select several (or Shift-click)")],
+        [`${mod}A`, l10n.t("Select every commit")],
+        ["P R S F E D", l10n.t("Set Pick, Reword, Squash, Fixup, Edit or Drop")],
+        ["Alt+↑ ↓", l10n.t("Move the selected commits")],
+        ["Esc", l10n.t("Back to one commit")],
       ],
     },
   ];
   openModal((close) => {
     const card = el("div", "modal-card shortcuts-card");
     const h = el("div", "modal-title");
-    h.textContent = "Keyboard shortcuts";
+    h.textContent = l10n.t("Keyboard shortcuts");
     card.appendChild(h);
     const cols = el("div", "shortcuts-cols");
     for (const g of groups) {
@@ -11959,11 +12085,11 @@ function openShortcutsHelp(): void {
     card.appendChild(cols);
     const actions = el("div", "modal-actions");
     const ok = el("button", "btn btn-primary modal-ok");
-    ok.appendChild(span("Done"));
+    ok.appendChild(span(l10n.t("Done")));
     ok.addEventListener("click", close);
     actions.appendChild(ok);
     card.appendChild(actions);
-    return { card, focusEl: ok, label: "Keyboard shortcuts", onClose: () => {} };
+    return { card, focusEl: ok, label: l10n.t("Keyboard shortcuts"), onClose: () => {} };
   });
 }
 
