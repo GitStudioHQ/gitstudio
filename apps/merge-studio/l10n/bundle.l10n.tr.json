@@ -1637,6 +1637,8 @@
  "{0} are deleted with its folder, and nothing can bring them back.": "{0}, klasörüyle birlikte silinir ve hiçbir şey onları geri getiremez.",
  "{0} are still conflicted. Resolve {1} before {2}.": "{0} hâlâ çakışmalı. {2} önce {1}'i çözün.",
  "{0} as the rebase has rewritten it so far": "{0}, yeniden temellendirmenin şimdiye kadar yeniden yazdığı haliyle",
+ "{0} branch": "{0} dal",
+ "{0} branches": "{0} dal",
  "{0} brings them back.": "{0} onları geri getirir.",
  "{0} can't go into itself: pick another base.": "{0} kendi içine giremez: başka bir taban seçin.",
  "{0} cancelled — the repository is back where it was before.": "{0} iptal edildi — depo öncesindeki haline geri döndü.",
