@@ -40,7 +40,9 @@ export type BlockedDoor =
   | "drop"
   /** Drop N Commits and Squash N Commits (issue #32) — rebases too. */
   | "drop-many"
-  | "squash";
+  | "squash"
+  /** Edit Message on one commit (issue #75) — a rebase too. */
+  | "reword";
 
 /** What git is stopped in, and what is left unmerged. */
 export interface Stopped {
@@ -121,6 +123,7 @@ const BEFORE: Record<BlockedDoor, string> = {
   drop: l10n.t("dropping a commit"),
   "drop-many": l10n.t("dropping commits"),
   squash: l10n.t("squashing commits"),
+  reword: l10n.t("editing a commit message"),
 };
 
 /** The operation, as the subject of a sentence. */

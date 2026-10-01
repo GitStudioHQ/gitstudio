@@ -43,14 +43,14 @@ const vscodeStub = {
 
 /** What each dialog was asked, and how the next one answers. */
 interface Asked {
-  kind: "confirm" | "pick";
+  kind: "confirm" | "pick" | "input";
   title: string;
   text: string;
   choices?: { id: string; label: string; danger?: boolean }[];
   danger?: boolean;
 }
 const asked: Asked[] = [];
-let answer: { confirm: boolean; pick?: string } = { confirm: true };
+let answer: { confirm: boolean; pick?: string; input?: string } = { confirm: true };
 const dialogsStub = {
   promptConfirm: async (spec: { title: string; message: string; danger?: boolean }) => {
     asked.push({ kind: "confirm", title: spec.title, text: spec.message, danger: spec.danger });
@@ -60,7 +60,10 @@ const dialogsStub = {
     asked.push({ kind: "pick", title: spec.title, text: spec.hint ?? "", choices: spec.choices });
     return answer.pick;
   },
-  promptInput: async () => undefined,
+  promptInput: async (spec: { title: string; hint?: string; value?: string }) => {
+    asked.push({ kind: "input", title: spec.title, text: `${spec.hint ?? ""}\n---\n${spec.value ?? ""}` });
+    return answer.input;
+  },
   // The Undo envelope counts the questions put while an op runs.
   questionsAsked: () => asked.length,
 };
@@ -136,7 +139,7 @@ function mkRepo(): Repo {
   };
 }
 
-function reset(a: { confirm: boolean; pick?: string } = { confirm: true }): void {
+function reset(a: { confirm: boolean; pick?: string; input?: string } = { confirm: true }): void {
   said.length = 0;
   asked.length = 0;
   answer = a;
@@ -147,7 +150,7 @@ const dropItem = (items: { id: string }[]) => items.find((i) => i.id === "drop")
 
 // ── What the menu offers ─────────────────────────────────────────────────────
 
-test("Drop Commit… is offered for the tip, a middle commit and the oldest, between Revert and Reset", async () => {
+test("Drop Commit… is offered for the tip, a middle commit and the oldest, after Edit Message… and before Reset", async () => {
   const r = mkRepo();
   try {
     const root = r.commit("root"); const mid = r.commit("mid"); const tip = r.commit("tip");
@@ -159,8 +162,13 @@ test("Drop Commit… is offered for the tip, a middle commit and the oldest, bet
       assert.equal(item.danger, true, "danger-styled like Reset");
       assert.equal(item.icon, "trash");
       const at = ids(items).indexOf("drop");
-      assert.equal(ids(items)[at - 1], "revert");
+      // Edit Message… (issue #75) sits between Revert and Drop: the same commits can take it.
+      assert.equal(ids(items)[at - 1], "reword");
+      assert.equal(ids(items)[at - 2], "revert");
       assert.equal(ids(items)[at + 1], "reset");
+      const edit = items.find((i) => i.id === "reword");
+      assert.equal(edit?.label, "Edit Message…");
+      assert.equal(edit?.danger, undefined, "a reword keeps every change — not danger-styled");
     }
   } finally {
     r.dispose();
@@ -199,7 +207,7 @@ test("Drop Commit… is NOT offered for a merge, a commit below a merge, another
 
 test("the item's icon exists in the webview's codicon subset (a missing one renders a blank gap)", () => {
   const css = readFileSync(join(__dirname, "../../../packages/webview-ui/src/styles/codicons.ts"), "utf8");
-  for (const item of commitMenuItems({ drop: true })) {
+  for (const item of commitMenuItems({ drop: true, reword: true })) {
     if (item.icon) assert.match(css, new RegExp(`\\.codicon-${item.icon}::before`), `codicon-${item.icon}`);
   }
 });
@@ -490,3 +498,49 @@ test("a drop refused before it ran records no undo", async () => {
     r.dispose();
   }
 });
+
+// ── Edit Message… (issue #75) ────────────────────────────────────────────────
+
+test("Edit Message… opens the whole message, writes the new one, and Undo puts the old one back", async () => {
+  const r = mkRepo();
+  try {
+    r.commit("base");
+    r.git("commit", "-q", "--allow-empty", "-m", "Old subject", "-m", "Old description.");
+    const b = r.git("rev-parse", "HEAD");
+    r.commit("C");
+    const before = r.git("rev-parse", "HEAD");
+    const { ledger, undo } = ledgerFor(r);
+    reset({ confirm: true, input: "New subject\n\nNew description." });
+    const changed = await runCommitAction("reword", r.ctx, { sha: b, subject: "Old subject" }, undo);
+    assert.equal(changed, true);
+    assert.equal(asked[0].kind, "input");
+    assert.equal(asked[0].title, "Edit commit message");
+    assert.match(asked[0].text, /One later commit will be replayed on top/);
+    assert.ok(asked[0].text.endsWith("---\nOld subject\n\nOld description."), "pre-filled with the whole message");
+    assert.deepEqual(r.subjects(), ["C", "New subject", "base"]);
+    assert.equal(r.git("log", "-1", "--format=%B", "HEAD~1"), "New subject\n\nNew description.");
+    assert.ok(said.some((s) => s.kind === "status" && s.text.includes("Commit message changed.")), JSON.stringify(said));
+
+    reset({ confirm: true });
+    await ledger.undoLast();
+    assert.equal(r.git("rev-parse", "HEAD"), before, "Undo put the branch back");
+  } finally {
+    r.dispose();
+  }
+});
+
+test("Edit Message… left unchanged, or cancelled, changes nothing", async () => {
+  const r = mkRepo();
+  try {
+    r.commit("base");
+    const a = r.commit("A");
+    reset({ confirm: true, input: "A" });
+    assert.equal(await runCommitAction("reword", r.ctx, { sha: a, subject: "A" }), false);
+    reset({ confirm: true });
+    assert.equal(await runCommitAction("reword", r.ctx, { sha: a, subject: "A" }), false);
+    assert.equal(r.git("rev-parse", "HEAD"), a);
+  } finally {
+    r.dispose();
+  }
+});
+

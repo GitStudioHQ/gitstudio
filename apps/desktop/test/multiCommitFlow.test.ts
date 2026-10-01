@@ -7,7 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { manyMenuRows } from "../src/renderer/contextMenu";
+import { commitMenuRows, manyMenuRows } from "../src/renderer/contextMenu";
 import { runManyAction, type ManyDeps } from "../src/renderer/multiCommit";
 import type { CommitActionResult, CommitsPlanWire, DropOutcomeWire } from "../src/shared/ipc";
 import type { Undoable } from "../src/renderer/undo";
@@ -38,7 +38,7 @@ const B = "b".repeat(40);
 const HEAD = "f".repeat(40);
 const NEW = "e".repeat(40);
 
-function okPlan(verb: "drop" | "squash", over: Partial<Extract<CommitsPlanWire, { ok: true }>> = {}): CommitsPlanWire {
+function okPlan(verb: "drop" | "squash" | "reword", over: Partial<Extract<CommitsPlanWire, { ok: true }>> = {}): CommitsPlanWire {
   return {
     ok: true,
     verb,
@@ -53,6 +53,7 @@ function okPlan(verb: "drop" | "squash", over: Partial<Extract<CommitsPlanWire, 
     published: false,
     carryable: [],
     ...(verb === "squash" ? { message: "first\n\nsecond" } : {}),
+    ...(verb === "reword" ? { shas: [B], commits: [{ shortSha: B.slice(0, 7), subject: "second" }], message: "second\n\nIts description." } : {}),
     ...over,
   };
 }
@@ -302,3 +303,34 @@ test("compare these two: older as the base; copy SHAs: every one, a line each", 
   await runManyAction("copy-shas", [B, A], d);
   assert.deepEqual(log.copied, [`${B}\n${A}`]);
 });
+
+// ── Edit message… (issue #75) ────────────────────────────────────────────────
+
+test("Edit message…: the editor opens with the whole message, the edited one is what runs, Undo", async () => {
+  const { d, log } = deps();
+  assert.equal(await runManyAction("reword", [B], d), "done");
+  assert.deepEqual(log.events, ["plan:reword:preflight", "message", "rewrite", "undoable", "refresh"]);
+  assert.equal(log.messages[0].title, "Edit commit message");
+  assert.equal(log.messages[0].value, "second\n\nIts description.");
+  assert.match(log.messages[0].hint, /gets the message below\. One later commit will be replayed/);
+  assert.deepEqual(log.rewrites[0], { verb: "reword", shas: [B], head: HEAD, carry: false, message: "edited: second\n\nIts description." });
+  assert.equal(log.undoables[0].message, "Commit message changed.");
+  await log.undoables[0].action.undo();
+  assert.deepEqual(log.undos[0], { before: HEAD, after: NEW, what: "reword" });
+});
+
+test("Edit message…: dismissed, emptied or unchanged rewrites nothing", async () => {
+  for (const message of [null, "   ", "second\n\nIts description."]) {
+    const { d, log } = deps({ message });
+    assert.equal(await runManyAction("reword", [B], d), "cancelled");
+    assert.ok(!log.events.includes("rewrite"));
+  }
+});
+
+test("the menu offers Edit message… beside Revert only when it can work", () => {
+  const actions = (o: { drop?: boolean; reword?: boolean }) => commitMenuRows([], o).map((r) => r.action);
+  assert.ok(!actions({}).includes("reword"));
+  const both = actions({ drop: true, reword: true });
+  assert.deepEqual(both.slice(both.indexOf("revert"), both.indexOf("revert") + 3), ["revert", "reword", "drop"]);
+});
+

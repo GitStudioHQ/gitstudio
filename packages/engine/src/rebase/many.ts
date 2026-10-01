@@ -119,7 +119,8 @@ export function squashTarget(
 }
 
 /** Why several commits cannot be dropped or squashed, in words. */
-export function manyRefusalMessage(reason: ManyRefusal, verb: "drop" | "squash"): string {
+export function manyRefusalMessage(reason: ManyRefusal, verb: "drop" | "squash" | "reword"): string {
+  if (verb === "reword") return rewordRefusalMessage(reason);
   switch (reason) {
     case "not-on-branch":
       return l10n.t("Not all of those commits are on the current branch, so they can't be {0} from it.", verb === "drop" ? l10n.t("dropped") : l10n.t("squashed"));
@@ -130,11 +131,27 @@ export function manyRefusalMessage(reason: ManyRefusal, verb: "drop" | "squash")
     case "only-commit":
       return l10n.t("Those are all the commits on the branch — dropping them would leave nothing.");
     case "too-far":
-      return l10n.t("Those commits are too far down the branch to {0} from here. Start an interactive rebase instead.", verb);
+      return verb === "drop"
+        ? l10n.t("Those commits are too far down the branch to drop from here. Start an interactive rebase instead.")
+        : l10n.t("Those commits are too far down the branch to squash from here. Start an interactive rebase instead.");
     case "not-contiguous":
       return l10n.t("Only commits next to each other on the branch can be squashed — there are other commits between the ones you selected.");
     case "too-few":
       return l10n.t("Select at least two commits to squash them.");
+  }
+}
+
+/** Why one commit's message cannot be edited from here, in words. */
+function rewordRefusalMessage(reason: ManyRefusal): string {
+  switch (reason) {
+    case "merge":
+      return l10n.t("That's a merge commit — editing its message would flatten the history it joined. Use an interactive rebase that keeps merges instead.");
+    case "past-merge":
+      return l10n.t("There's a merge between that commit and the tip of the branch — replaying the commits after it would flatten the merge.");
+    case "too-far":
+      return l10n.t("That commit is too far down the branch to edit from here. Start an interactive rebase instead.");
+    default:
+      return l10n.t("That commit isn't on the current branch, so its message can't be edited from here.");
   }
 }
 
@@ -201,7 +218,7 @@ export function dropManyQuestion(s: ManySummary): { title: string; message: stri
   ];
   const carry = carrySentence(s.carryable ?? []);
   if (carry) parts.push(carry);
-  if (s.published) parts.push(l10n.t("{0} The next push will need to be a force push.", publishedWarning("Dropping", n)));
+  if (s.published) parts.push(l10n.t("{0} The next push will need to be a force push.", publishedWarning(l10n.t("Dropping"), n)));
   parts.push(l10n.t("Undo is available afterwards."));
   return { title: l10n.t("Drop {0} commits?", n), message: parts.join(" ") };
 }
@@ -212,7 +229,7 @@ function squashRest(s: ManySummary): string[] {
   const parts = [replayedSentence(s.replayed)];
   const carry = carrySentence(s.carryable ?? []);
   if (carry) parts.push(carry);
-  if (s.published) parts.push(l10n.t("{0} The next push will need to be a force push.", publishedWarning("Squashing", s.commits.length)));
+  if (s.published) parts.push(l10n.t("{0} The next push will need to be a force push.", publishedWarning(l10n.t("Squashing"), s.commits.length)));
   parts.push(l10n.t("Undo is available afterwards."));
   return parts;
 }
@@ -244,6 +261,35 @@ export function squashCarryQuestion(s: ManySummary): { title: string; message: s
   const n = s.commits.length;
   const parts = [l10n.t("{0} will become one commit.", squashWhat(s)), ...squashRest(s)];
   return { title: l10n.t("Squash {0} commits — move the branches too?", n), message: parts.join(" ") };
+}
+
+/**
+ * Edit Message's question — the words above the message editor: which commit,
+ * on which branch, what is replayed, and the pushed-history warning.
+ */
+export function rewordQuestion(s: ManySummary): { title: string; message: string } {
+  const c = s.commits[0];
+  const parts = [
+    l10n.t("{0} on {1} gets the message below.", c ? named(c) : "", s.branch ?? l10n.t("the detached HEAD")),
+    replayedSentence(s.replayed),
+  ];
+  const carry = carrySentence(s.carryable ?? []);
+  if (carry) parts.push(carry);
+  if (s.published) parts.push(l10n.t("Already pushed. Editing its message would rewrite history other people have. The next push will need to be a force push."));
+  parts.push(l10n.t("Undo is available afterwards."));
+  return { title: l10n.t("Edit commit message"), message: parts.join(" ") };
+}
+
+/** How editing one commit's message ended, in words — the same in both products. */
+export function rewordOutcomeMessage(outcome: ManyOutcomeLike): string {
+  if (outcome.status === "done") return l10n.t("Commit message changed.");
+  if (outcome.status === "stopped") {
+    return outcome.reason === "conflict"
+      ? l10n.t("Editing the message hit a conflict while replaying a later commit. Resolve it and continue the rebase — or abort to put the branch back as it was.")
+      : l10n.t("Editing the message stopped and needs you — continue the rebase, or abort it to put the branch back as it was.");
+  }
+  if (!outcome.message) return l10n.t("Couldn't change the commit message.");
+  return outcome.expected ? outcome.message : l10n.t("Couldn't change the commit message: {0}", outcome.message);
 }
 
 /** A commit's whole message, as git stores it. */

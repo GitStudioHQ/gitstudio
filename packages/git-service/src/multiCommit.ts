@@ -2,6 +2,7 @@ import type { GitProcess } from "./GitProcess";
 import type { ChainCommit } from "@gitstudio/engine/rebase/chain";
 import {
   dropManyTarget,
+  manyTarget,
   manyRefusalMessage,
   squashMessage,
   squashTarget,
@@ -39,7 +40,7 @@ const HEX = /^[0-9a-fA-F]{4,64}$/;
 /** A rewrite of several commits that can run. */
 export interface ManyPlan extends ManySummary {
   ok: true;
-  verb: "drop" | "squash";
+  verb: ManyVerb;
   /** The selected commits, full shas, newest first along the branch. */
   shas: string[];
   /** HEAD when planned — the run refuses if it has moved since. */
@@ -50,7 +51,8 @@ export interface ManyPlan extends ManySummary {
   rows: RebasePlanRow[];
   /** Other local branches on a rewritten commit — the carry question. */
   carryable: string[];
-  /** Squash: the pre-filled message — every message in full, oldest first. */
+  /** Squash: the pre-filled message — every message in full, oldest first.
+   *  Reword: the commit's own message, subject and description. */
   message?: string;
 }
 
@@ -75,9 +77,13 @@ export interface ManyRequest {
   message?: string;
 }
 
+/** Drop and squash several commits; reword one (Edit Message…, issue #75). */
+export type ManyVerb = "drop" | "squash" | "reword";
+
 /** The dirty-tree refusals, in the runner's own words for the same state. */
 export const DROP_MANY_DIRTY_MESSAGE = l10n.t("You have uncommitted changes. Commit or stash them, then drop the commits.");
 export const SQUASH_DIRTY_MESSAGE = l10n.t("You have uncommitted changes. Commit or stash them, then squash the commits.");
+export const REWORD_DIRTY_MESSAGE = l10n.t("You have uncommitted changes. Commit or stash them, then edit the message.");
 
 /** A confirmation that went stale. */
 export const MANY_MOVED_MESSAGE =
@@ -85,8 +91,10 @@ export const MANY_MOVED_MESSAGE =
 
 /** Squash was confirmed with no message. */
 export const SQUASH_EMPTY_MESSAGE = l10n.t("The squashed commit needs a message.");
+/** Edit Message was confirmed with no message. */
+export const REWORD_EMPTY_MESSAGE = l10n.t("The commit needs a message.");
 
-function refused(reason: ManyRefusal, verb: "drop" | "squash"): ManyRefused {
+function refused(reason: ManyRefusal, verb: ManyVerb): ManyRefused {
   return { ok: false, reason, message: manyRefusalMessage(reason, verb) };
 }
 
@@ -143,13 +151,14 @@ async function walkFirstParent(proc: GitProcess, head: string, maxReplay: number
  */
 export async function planMany(
   proc: GitProcess,
-  verb: "drop" | "squash",
+  verb: ManyVerb,
   shas: readonly string[],
   opts: { signal?: AbortSignal; maxReplay?: number } = {},
 ): Promise<ManyPlanResult> {
   const { signal } = opts;
   const maxReplay = opts.maxReplay ?? DROP_MAX_REPLAY;
   if (verb === "squash" && new Set(shas).size < 2) return refused("too-few", verb);
+  if (verb === "reword" && new Set(shas).size !== 1) return refused("not-on-branch", verb);
   const [full, head] = await Promise.all([resolveAll(proc, shas, signal), revParse(proc, "HEAD", signal)]);
   if (!full || !head) return refused("not-on-branch", verb);
   if (verb === "squash" && full.length < 2) return refused("too-few", verb);
@@ -159,7 +168,9 @@ export async function planMany(
   const target: ManyTarget =
     verb === "drop"
       ? dropManyTarget(walked.commits, full, { capped: walked.capped })
-      : squashTarget(walked.commits, full, { capped: walked.capped });
+      : verb === "squash"
+        ? squashTarget(walked.commits, full, { capped: walked.capped })
+        : manyTarget(walked.commits, full, { capped: walked.capped });
   if (!target.ok) return refused(target.reason, verb);
 
   const selected = target.rows.filter((r) => r.selected).map((r) => r.sha);
@@ -180,7 +191,7 @@ export async function planMany(
   // squash — on one of the squashed ones (update-ref lands them on the result).
   // A dropped commit is not in the new history at all, so a branch on it is
   // left where it is, as git's own --update-refs leaves it.
-  const rewritten = new Set(target.rows.filter((r) => !r.selected || verb === "squash").map((r) => r.sha));
+  const rewritten = new Set(target.rows.filter((r) => !r.selected || verb !== "drop").map((r) => r.sha));
   const tips = new Map<string, string[]>();
   for (const line of heads.code === 0 ? heads.stdout.split("\n") : []) {
     const at = line.indexOf(" ");
@@ -194,7 +205,7 @@ export async function planMany(
   const subject = (sha: string): string => walked.messages.get(sha)?.subject ?? "";
   const rows: RebasePlanRow[] = target.rows.map((r) => ({
     sha: r.sha,
-    action: !r.selected ? "pick" : verb === "drop" ? "drop" : r.sha === oldest ? "reword" : "fixup",
+    action: !r.selected ? "pick" : verb === "drop" ? "drop" : verb === "reword" || r.sha === oldest ? "reword" : "fixup",
     subject: subject(r.sha),
     ...(tips.has(r.sha) ? { branches: tips.get(r.sha) } : {}),
   }));
@@ -219,7 +230,9 @@ export async function planMany(
               .map((sha) => walked.messages.get(sha) ?? { subject: "", body: "" }),
           ),
         }
-      : {}),
+      : verb === "reword"
+        ? { message: [walked.messages.get(selected[0])?.subject.trim() ?? "", walked.messages.get(selected[0])?.body.trim() ?? ""].filter(Boolean).join("\n\n") }
+        : {}),
   };
 }
 
@@ -227,10 +240,12 @@ export async function planMany(
  * What stops a drop or a squash of several commits from starting right now —
  * said BEFORE the question. The same check Drop Commit makes.
  */
-export function manyBlocker(proc: GitProcess, verb: "drop" | "squash", signal?: AbortSignal): Promise<string | undefined> {
+export function manyBlocker(proc: GitProcess, verb: ManyVerb, signal?: AbortSignal): Promise<string | undefined> {
   return verb === "drop"
     ? rewriteBlocker(proc, "drop-many", DROP_MANY_DIRTY_MESSAGE, signal)
-    : rewriteBlocker(proc, "squash", SQUASH_DIRTY_MESSAGE, signal);
+    : verb === "squash"
+      ? rewriteBlocker(proc, "squash", SQUASH_DIRTY_MESSAGE, signal)
+      : rewriteBlocker(proc, "reword", REWORD_DIRTY_MESSAGE, signal);
 }
 
 /**
@@ -240,13 +255,13 @@ export function manyBlocker(proc: GitProcess, verb: "drop" | "squash", signal?: 
  */
 export async function rewriteMany(
   proc: GitProcess,
-  verb: "drop" | "squash",
+  verb: ManyVerb,
   req: ManyRequest,
   run: (plan: RebasePlan) => Promise<RebaseOutcome>,
 ): Promise<DropOutcome> {
-  const message = verb === "squash" ? (req.message ?? "").trim() : "";
-  if (verb === "squash" && !message) {
-    return { status: "failed", expected: true, message: SQUASH_EMPTY_MESSAGE };
+  const message = verb !== "drop" ? (req.message ?? "").trim() : "";
+  if (verb !== "drop" && !message) {
+    return { status: "failed", expected: true, message: verb === "squash" ? SQUASH_EMPTY_MESSAGE : REWORD_EMPTY_MESSAGE };
   }
   const plan = await planMany(proc, verb, req.shas);
   if (!plan.ok) {

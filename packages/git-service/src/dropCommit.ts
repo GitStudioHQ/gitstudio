@@ -221,7 +221,7 @@ export function dropBlocker(proc: GitProcess, signal?: AbortSignal): Promise<str
  */
 export async function rewriteBlocker(
   proc: GitProcess,
-  door: "drop" | "drop-many" | "squash",
+  door: "drop" | "drop-many" | "squash" | "reword",
   dirty: string,
   signal?: AbortSignal,
 ): Promise<string | undefined> {

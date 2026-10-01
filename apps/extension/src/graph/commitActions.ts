@@ -32,6 +32,8 @@ import {
   applyManyMessage,
   dropManyQuestion,
   manyOutcomeMessage,
+  rewordOutcomeMessage,
+  rewordQuestion,
   squashCarryQuestion,
   squashQuestion,
 } from "@gitstudio/engine/rebase/many";
@@ -40,10 +42,11 @@ import * as l10n from "@vscode/l10n";
 /** The commit actions as plain items for the IN-GRAPH popover (no vscode types
  * / codicon markup) — the webview renders these; ids match runCommitAction.
  *
- * `drop` offers "Drop Commit…" (issue #32). Only the caller knows whether this
- * commit CAN be dropped — see commitMenuItemsFor — and the item is left out
- * where it cannot, the way the per-ref items leave out the branch you are on. */
-export function commitMenuItems(opts: { drop?: boolean } = {}): GraphMenuItem[] {
+ * `drop` offers "Drop Commit…" (issue #32) and `reword` "Edit Message…" (issue
+ * #75). Only the caller knows whether this commit CAN be rewritten — see
+ * commitMenuItemsFor — and each item is left out where it cannot, the way the
+ * per-ref items leave out the branch you are on. */
+export function commitMenuItems(opts: { drop?: boolean; reword?: boolean } = {}): GraphMenuItem[] {
   return [
     { id: "checkout", label: l10n.t("Checkout Commit"), icon: "git-commit" },
     // Detaching stays a FIRST-CLASS action. "Checkout Commit" prefers the
@@ -56,6 +59,7 @@ export function commitMenuItems(opts: { drop?: boolean } = {}): GraphMenuItem[] 
     { id: "tag", label: l10n.t("Create Tag Here…"), icon: "tag" },
     { id: "cherryPick", label: l10n.t("Cherry-Pick Commit"), icon: "git-pull-request" },
     { id: "revert", label: l10n.t("Revert Commit"), icon: "history" },
+    ...(opts.reword ? [{ id: "reword", label: l10n.t("Edit Message…"), icon: "edit" }] : []),
     ...(opts.drop ? [{ id: "drop", label: l10n.t("Drop Commit…"), icon: "trash", danger: true }] : []),
     { id: "reset", label: l10n.t("Reset Current Branch to Here…"), icon: "discard", danger: true },
     { id: "interactiveRebase", label: l10n.t("Start Interactive Rebase Here…"), icon: "git-merge" },
@@ -75,8 +79,11 @@ export function commitMenuItems(opts: { drop?: boolean } = {}): GraphMenuItem[] 
  * "cannot drop", never a menu that fails to open.
  */
 export async function commitMenuItemsFor(ctx: GitContext, sha: string): Promise<GraphMenuItem[]> {
-  const plan = await planDropCommit(ctx.process, sha).catch(() => undefined);
-  return commitMenuItems({ drop: plan?.ok === true });
+  const [drop, reword] = await Promise.all([
+    planDropCommit(ctx.process, sha).catch(() => undefined),
+    planMany(ctx.process, "reword", [sha]).catch(() => undefined),
+  ]);
+  return commitMenuItems({ drop: drop?.ok === true, reword: reword?.ok === true });
 }
 
 /** Namespace for the per-ref items, so they cannot collide with a commit id. */
@@ -245,6 +252,8 @@ export async function runCommitAction(
       return revert(ctx, commit, undo);
     case "drop":
       return dropCommitHere(ctx, commit, undo);
+    case "reword":
+      return rewordHere(ctx, commit.sha, undo);
     case "reset":
       return resetTo(ctx, commit, undo);
     case "copySha":
@@ -1101,6 +1110,96 @@ async function rewriteManyHere(
   );
 
   const text = manyOutcomeMessage(verb, n, outcome);
+  if (outcome.status === "done") {
+    flash(text);
+    return true;
+  }
+  if (outcome.status === "stopped") {
+    notifyPaused(l10n.t("GitStudio: {0}", text));
+    return true;
+  }
+  if (outcome.expected) {
+    void vscode.window.showWarningMessage(l10n.t("GitStudio: {0}", text));
+  } else {
+    void vscode.window.showErrorMessage(l10n.t("GitStudio: {0}", text));
+  }
+  return false;
+}
+
+/**
+ * Edit Message… (issue #75): the commit's whole message in an editor, then a
+ * rebase that rewords it and replays what came after — the squash pipeline
+ * with one row changed (git-service/multiCommit.ts), under the Undo envelope.
+ * Refusals first; when other branches point at rewritten commits, whether
+ * they come along.
+ */
+async function rewordHere(ctx: GitContext, sha: string, undo?: UndoRunner): Promise<boolean> {
+  // Re-read, never trust the menu: it may have been open while history moved.
+  const plan = await planMany(ctx.process, "reword", [sha]);
+  if (!plan.ok) {
+    void vscode.window.showWarningMessage(l10n.t("GitStudio: {0}", plan.message));
+    return false;
+  }
+  const blocked = await manyBlocker(ctx.process, "reword");
+  if (blocked) {
+    void vscode.window.showWarningMessage(l10n.t("GitStudio: {0}", blocked));
+    return false;
+  }
+  const q = rewordQuestion(plan);
+  const message = (
+    await promptInput({
+      title: q.title,
+      hint: q.message,
+      value: plan.message ?? "",
+      multiline: true,
+      selectOnOpen: false,
+      validate: "nonEmpty",
+      confirmLabel: l10n.t("Edit Message"),
+    })
+  )?.trim();
+  if (!message || message === (plan.message ?? "").trim()) {
+    return false;
+  }
+
+  let carry = false;
+  if (plan.carryable.length > 0) {
+    const picked = await promptPick({
+      title: l10n.t("Move the branches on rewritten commits too?"),
+      hint: q.message,
+      choices: [
+        {
+          id: "carry",
+          label: l10n.t("Edit and move those branches"),
+          icon: "git-branch",
+          description: l10n.t("They follow onto the rewritten commits."),
+        },
+        {
+          id: "only",
+          label: l10n.t("Edit on this branch only"),
+          icon: "git-commit",
+          description: l10n.t("They keep pointing at the commits as they are now."),
+        },
+        { id: "no", label: l10n.t("Cancel"), icon: "close" },
+      ],
+    });
+    if (picked !== "carry" && picked !== "only") {
+      return false;
+    }
+    carry = picked === "carry";
+  }
+
+  // The undo entry's label goes into git (the reflog), so it stays English.
+  const outcome = await withUndo(undo, `Edit message of ${short(plan.shas[0])}`, async () => {
+    const out = await rewriteMany(
+      ctx.process,
+      "reword",
+      { shas: plan.shas, head: plan.head, carry, message },
+      (p) => runRebasePlan(ctx.process.cwd, p),
+    );
+    return out.status === "failed" ? { ...out, cancelled: true as const } : out;
+  });
+
+  const text = rewordOutcomeMessage(outcome);
   if (outcome.status === "done") {
     flash(text);
     return true;
