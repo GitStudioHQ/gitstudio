@@ -129,7 +129,18 @@ for (const file of files) {
     report(`${file}: placeholders changed for ${JSON.stringify(key)}: expected ${placeholders(source[key]).map((p) => `{${p}}`).join(" ")} got ${placeholders(translated[key]).map((p) => `{${p}}`).join(" ")}`);
   }
   if (broken.length > 5) report(`${file}: ${broken.length - 5} more message(s) with changed placeholders`);
-  if (!missing.length && !extra.length && !blank.length && !broken.length) {
+
+  // Translations reach pages through innerHTML and quoted attributes, which
+  // trust the English source not to carry markup. A translation may not add a
+  // character that markup or an attribute would read: < > & " beyond what its
+  // English source already has.
+  const count = (text, ch) => String(text).split(ch).length - 1;
+  const markup = keys.filter((key) => ["<", ">", "&", '"'].some((ch) => count(translated[key], ch) > count(source[key], ch)));
+  for (const key of markup.slice(0, 5)) {
+    report(`${file}: adds markup characters (< > & ") the English does not have, in ${JSON.stringify(key)}: ${JSON.stringify(translated[key])}`);
+  }
+  if (markup.length > 5) report(`${file}: ${markup.length - 5} more message(s) adding markup characters`);
+  if (!missing.length && !extra.length && !blank.length && !broken.length && !markup.length) {
     console.log(`bundle-nls: ${file} covers all ${keys.length} messages`);
   }
 }

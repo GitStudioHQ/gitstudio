@@ -47,6 +47,7 @@ export function configureL10n(uri: { fsPath: string } | undefined): void {
   bundleText = undefined;
   locale = undefined;
   scriptCache = undefined;
+  reverse = undefined;
   if (!uri) {
     return;
   }
@@ -157,4 +158,70 @@ export function currentBundle(): l10nJsonFormat | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** Each translation as a pattern that gives its English message back. */
+type Reverse = { exact: Map<string, string>; patterns: { re: RegExp; names: string[]; message: string }[] };
+let reverse: Reverse | undefined;
+
+/**
+ * The English a translated message was made from: "合并 feat" → "Merge feat".
+ *
+ * For what git stores in the repository — a reflog entry, a stash's message, a
+ * commit message — which everyone who reads the history sees, whatever
+ * language GitStudio was showing the person who ran the operation. The label
+ * those are built from is the one the UI showed, so it is turned back here
+ * rather than threading a second, English label through every caller.
+ *
+ * Arguments are matched as wildcards and turned back on their own when they are
+ * whole messages ("提交" → "commit"); a branch name stays as written. Text no
+ * translation produces (English, or no bundle at all) is handed back unchanged.
+ */
+export function englishOf(text: string): string {
+  if (!reverse) {
+    const bundle = currentBundle();
+    if (!bundle) return text;
+    reverse = buildReverse(bundle);
+  }
+  const exact = reverse.exact.get(text);
+  if (exact !== undefined) return exact;
+  for (const { re, names, message } of reverse.patterns) {
+    const m = re.exec(text);
+    if (!m) continue;
+    return message.replace(/\{([^}]+)\}/g, (whole, key: string) => {
+      const at = names.indexOf(key);
+      if (at < 0) return whole;
+      const value = m[at + 1] ?? "";
+      return reverse?.exact.get(value) ?? value;
+    });
+  }
+  return text;
+}
+
+function buildReverse(bundle: l10nJsonFormat): Reverse {
+  const exact = new Map<string, string>();
+  const patterns: Reverse["patterns"] = [];
+  for (const [message, entry] of Object.entries(bundle)) {
+    const translated = typeof entry === "string" ? entry : entry.message;
+    if (!translated || translated === message) continue;
+    const parts = translated.split(/\{([^}]+)\}/);
+    if (parts.length === 1) {
+      if (!exact.has(translated)) exact.set(translated, message);
+      continue;
+    }
+    const names: string[] = [];
+    let source = "^";
+    parts.forEach((part, i) => {
+      if (i % 2) {
+        names.push(part);
+        source += "([\\s\\S]+?)";
+      } else {
+        source += part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      }
+    });
+    patterns.push({ re: new RegExp(`${source}$`), names, message });
+  }
+  // The longest literal text first: "{0} 已推送" must not win over "{0} 已推送到 {1}".
+  patterns.sort((a, b) => b.re.source.length - a.re.source.length);
+  return { exact, patterns };
 }

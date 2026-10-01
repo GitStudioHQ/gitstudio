@@ -521,11 +521,15 @@ export class SyncStatusItem implements vscode.Disposable {
   }): Promise<boolean | undefined> {
     const choice = await promptPick({
       title: l10n.t("This branch was rewritten"),
-      hint: l10n.t(
-        "Your {0} replaced the {1} the remote still has — amending a pushed commit does this. Pulling would bring the old one back.",
-        ab.ahead === 1 ? l10n.t("commit") : l10n.t("commits"),
-        ab.behind === 1 ? l10n.t("version") : l10n.t("versions"),
-      ),
+      // Whole sentences, one per count: a translation reorders the words.
+      hint:
+        ab.ahead === 1
+          ? ab.behind === 1
+            ? l10n.t("Your commit replaced the version the remote still has — amending a pushed commit does this. Pulling would bring the old one back.")
+            : l10n.t("Your commit replaced versions the remote still has — amending a pushed commit does this. Pulling would bring the old one back.")
+          : ab.behind === 1
+            ? l10n.t("Your commits replaced the version the remote still has — amending a pushed commit does this. Pulling would bring the old one back.")
+            : l10n.t("Your commits replaced versions the remote still has — amending a pushed commit does this. Pulling would bring the old one back."),
       choices: [
         {
           id: "force",
