@@ -7189,10 +7189,10 @@ class App {
       const n = stashScope.length;
       const label =
         n === 0
-          ? l10n.t("Stash all changes\u2026")
+          ? l10n.t("Stash all changes…")
           : n === 1
-            ? l10n.t("Stash 1 selected file\u2026")
-            : l10n.t("Stash {0} selected files\u2026", n);
+            ? l10n.t("Stash 1 selected file…")
+            : l10n.t("Stash {0} selected files…", n);
       stashBtn.title = label;
       stashBtn.setAttribute("aria-label", label);
       stashBtn.classList.toggle("is-on", n > 0);
