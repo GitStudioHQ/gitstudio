@@ -7,6 +7,10 @@
 // MergeView for a conflict. Theme is supplied via the desktopTheme shim so every
 // shared component renders unchanged.
 
+// First: the language bundle the preload put on the page goes to @vscode/l10n
+// before any module builds a word (shared modules build some at import time).
+import "@gitstudio/l10n/webview";
+import "./l10nBoot";
 // Reuse the shared component stylesheets verbatim: the JetBrains diff/merge
 // palette + gutter chrome, and the graph host-page frame. The renderer carries
 // the same look as the extension because it ships the same CSS.
@@ -51,6 +55,8 @@ import "./styles/codicons-full.css";
 import { host } from "./bridge";
 import { applyDarkStyle, applyTheme, followSystemTheme, resolveTheme } from "./desktopTheme";
 import { DARK_STYLES, DEFAULT_DARK_STYLE, parseDarkStyle, previewIconFor, type DarkStyle } from "../shared/darkStyle";
+import { LANGUAGES, type LanguageSetting } from "../shared/languages";
+import * as l10n from "@vscode/l10n";
 import type { AppTheme, ThemeMode, LogoMode } from "./desktopTheme";
 import { dismissLaunchScreen } from "./launchScreen";
 import { GraphMount } from "./graphMount";
@@ -5688,8 +5694,49 @@ class App {
     // so it lost the border, gained a plinth, and stands off by --sp-4.
     logoRow.append(logoSeg, preview);
 
-    body.append(sub, seg, styleLabel, styleSub, styleRow, logoLabel, logoSub, logoRow, picRow);
+    body.append(sub, seg, styleLabel, styleSub, styleRow, logoLabel, logoSub, logoRow, picRow, ...this.settingsLanguageField());
     return card;
+  }
+
+  /** Settings ▸ Appearance ▸ Language: a choice saved by main, applied at the next start. */
+  private settingsLanguageField(): HTMLElement[] {
+    const label = el("div", "settings-field-label");
+    label.textContent = l10n.t("Language");
+    const sub = el("div", "settings-sub");
+    sub.textContent = l10n.t("“System” follows your OS. Translations other than English are machine drafts; corrections are welcome on GitHub.");
+    const row = el("div", "settings-language-row");
+    const sel = document.createElement("select");
+    sel.className = "gh-form-select";
+    sel.setAttribute("aria-label", l10n.t("Language"));
+    const restart = el("button", "gh-btn");
+    restart.textContent = l10n.t("Restart to apply");
+    restart.hidden = true;
+    restart.addEventListener("click", () => void host.invoke("app:relaunch", undefined).catch(() => {}));
+    row.append(sel, restart);
+    void host
+      .invoke("language:get", undefined)
+      .then((view) => {
+        const name = (id: string): string => LANGUAGES.find((l) => l.id === id)?.name ?? id;
+        const options: Array<[LanguageSetting, string]> = [
+          ["system", l10n.t("System ({0})", name(view.active))],
+          ...LANGUAGES.filter((l) => view.available.includes(l.id)).map((l): [LanguageSetting, string] => [l.id, l.name]),
+        ];
+        for (const [id, text] of options) {
+          const o = document.createElement("option");
+          o.value = id;
+          o.textContent = text;
+          o.selected = id === view.setting;
+          sel.appendChild(o);
+        }
+        sel.addEventListener("change", () => {
+          // This run keeps the language it loaded; a different choice offers a restart.
+          void host.invoke("language:set", sel.value as LanguageSetting).then((next) => {
+            restart.hidden = next.setting === view.setting;
+          });
+        });
+      })
+      .catch(() => {});
+    return [label, sub, row];
   }
 
   /**

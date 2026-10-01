@@ -23,6 +23,8 @@ import { join, basename, extname, dirname, resolve as resolvePath } from "node:p
 import { readFile, writeFile, mkdir, stat, readdir, rename, rmdir, rm } from "node:fs/promises";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { DEFAULT_DARK_STYLE, parseDarkStyle, windowBackgroundFor, type DarkStyle } from "../shared/darkStyle";
+import { currentBundle } from "@gitstudio/l10n/index";
+import { Language } from "./language";
 import { DockAppearance } from "./dockAppearance";
 import { redactCredentials } from "@gitstudio/host-bridge/scrub";
 import { RepoStore, repoScope } from "./repoStore";
@@ -372,6 +374,8 @@ function appIcon(): string {
  * GitStudio does not change what the Dock showed while it was closed.
  */
 let dockAppearance: DockAppearance | undefined;
+/** Settings ▸ Appearance ▸ Language — picked once, at start (main/language.ts). */
+let language: Language | undefined;
 /** The dark style the page last reported (this run, or the last). */
 function darkStyleNow(): DarkStyle {
   return dockAppearance?.style ?? DEFAULT_DARK_STYLE;
@@ -1138,6 +1142,15 @@ function registerIpc(): void {
 
   // App info + updates (poll → confirm → pull → apply).
   handle("app:info", async () => ({ version: app.getVersion(), platform: process.platform }));
+  handle("language:get", async () => language!.view());
+  handle("language:set", async (setting) => {
+    language!.set(setting);
+    return language!.view();
+  });
+  handle("app:relaunch", async () => {
+    app.relaunch();
+    app.quit();
+  });
   // Is Git there? (gitCheck.ts; the window's answer to "no" is renderer/noGit.ts.)
   // Once it is, the tabs a launch without it held back come back — and any
   // whose folders really are gone are named, as at a normal launch.
@@ -1512,6 +1525,15 @@ async function boot(): Promise<void> {
   // On by default; honors the persisted opt-out and never throws — see
   // errorReporter.ts and PRIVACY.md.
   await ErrorReporter.init().catch(() => undefined);
+
+  // The language, before anything builds a word: the menu, the window, and the
+  // shared packages' l10n.t() all read the bundle loaded here.
+  language = new Language(join(app.getPath("userData"), "gitstudio-language.json"), join(__dirname, "../l10n"));
+  language.start(app.getPreferredSystemLanguages());
+  // The page asks synchronously, from its preload, before its first script runs.
+  ipcMain.on("l10n:bundle", (e) => {
+    e.returnValue = { locale: language?.active ?? "en", bundle: currentBundle() ?? null };
+  });
 
   // Belt-and-suspenders navigation lockdown: any webContents that ever gets
   // created (not just the main window) inherits the same hardening.

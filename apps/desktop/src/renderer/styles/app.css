@@ -4418,6 +4418,8 @@ body.resizing-h .cmp-diffpane .monaco-editor { pointer-events: none; }
    are the two dark token blocks' (--app-bg, --app-panel, --app-hover, and the
    selection's accent tint). */
 .settings-style-row { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+.settings-language-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); }
+.settings-language-row select { min-width: 220px; }
 .settings-card-body > * + .settings-style-row { margin-top: 10px; }
 .settings-card-body > .settings-field-label + .settings-style-row { margin-top: 0; }
 .settings-style-opt {

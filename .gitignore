@@ -32,3 +32,6 @@ downloads/
 
 # c8 coverage reports (CI uploads them to Codecov)
 coverage/
+
+# Translation work batches (scripts/i18n/todo.mjs)
+l10n/.todo/

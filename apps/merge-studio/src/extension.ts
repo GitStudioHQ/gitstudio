@@ -14,6 +14,7 @@
 // (shouldDeferToGitStudio, maybeSayDeferred), and Merge Studio's commands keep
 // working. An older GitStudio, without the dashboard, is never deferred to.
 
+import "./l10n"; // first: configures translations before any shared module builds its strings
 import * as vscode from "vscode";
 import { hasSharedMergeExperience, shouldDeferToGitStudio, type MergePeerApi } from "@gitstudio/merge-vscode/product";
 import { registerMergeExperience } from "@gitstudio/merge-vscode/register";

@@ -179,6 +179,29 @@ function copyStaticAssets() {
       fs.copyFileSync(abs, path.join(distDir, "renderer", dest));
     }
   }
+  writeLanguageBundles();
+}
+
+/**
+ * dist/l10n/bundle.l10n.<locale>.json: each language in the shared catalog
+ * (l10n/<locale>.json at the repository root) cut down to the messages the
+ * desktop asks for (l10n/bundle.l10n.json here, made by
+ * scripts/i18n/bundle-nls.mjs --write). main/language.ts loads one at start.
+ */
+function writeLanguageBundles() {
+  const out = path.join(distDir, "l10n");
+  fs.rmSync(out, { recursive: true, force: true });
+  fs.mkdirSync(out, { recursive: true });
+  const source = JSON.parse(fs.readFileSync(path.join(__dirname, "l10n/bundle.l10n.json"), "utf8"));
+  const catalog = path.join(repoRoot, "l10n");
+  for (const name of fs.existsSync(catalog) ? fs.readdirSync(catalog) : []) {
+    const locale = /^(.+)\.json$/.exec(name)?.[1];
+    if (!locale) continue;
+    const all = JSON.parse(fs.readFileSync(path.join(catalog, name), "utf8"));
+    const cut = {};
+    for (const key of Object.keys(source)) if (key in all) cut[key] = all[key];
+    fs.writeFileSync(path.join(out, `bundle.l10n.${locale}.json`), JSON.stringify(cut));
+  }
 }
 
 /** A plugin that re-copies the static assets after each (re)build, for watch. */

@@ -5,6 +5,8 @@
 // Where the links render (only on the success card, one quiet "Report a
 // problem" mid-operation) is the shared dashboard's job, not the shell's.
 
+import * as l10n from "@vscode/l10n";
+
 export const MS_REPO_URL = "https://github.com/GitStudioHQ/merge-studio";
 /** GitHub Sponsors: recurring support. The manifest's `sponsor` field is the same page. */
 export const MS_SPONSOR_URL = "https://github.com/sponsors/antonarnaudov";
@@ -59,9 +61,9 @@ export function rateUrl(uriScheme: string): string {
 /** The dashboard's support links, in order. Every one is an https page. */
 export function supportLinks(facts: EditorFacts): { label: string; url: string }[] {
   return [
-    { label: "Report a problem", url: reportProblemUrl(facts) },
-    { label: "Rate Merge Studio", url: rateUrl(facts.uriScheme) },
-    { label: "Sponsor", url: MS_SPONSOR_URL },
+    { label: l10n.t("Report a problem"), url: reportProblemUrl(facts) },
+    { label: l10n.t("Rate Merge Studio"), url: rateUrl(facts.uriScheme) },
+    { label: l10n.t("Sponsor"), url: MS_SPONSOR_URL },
   ];
 }
 
@@ -79,11 +81,11 @@ export interface SupportPickItem {
  */
 export function supportPick(): { title: string; placeHolder: string; items: SupportPickItem[] } {
   return {
-    title: "Support Merge Studio",
-    placeHolder: "Merge Studio is free and open source. If it saves you time, you can support it.",
+    title: l10n.t("Support Merge Studio"),
+    placeHolder: l10n.t("Merge Studio is free and open source. If it saves you time, you can support it."),
     items: [
-      { label: "$(heart) Sponsor on GitHub", description: "recurring support", url: MS_SPONSOR_URL },
-      { label: "$(coffee) Buy me a coffee", description: "a one-off tip", url: MS_COFFEE_URL },
+      { label: `$(heart) ${l10n.t("Sponsor on GitHub")}`, description: l10n.t("recurring support"), url: MS_SPONSOR_URL },
+      { label: `$(coffee) ${l10n.t("Buy me a coffee")}`, description: l10n.t("a one-off tip"), url: MS_COFFEE_URL },
     ],
   };
 }
