@@ -78,13 +78,13 @@ jobs:
       - name: Engine purity guard
         run: npm run check-purity
 
-      # Every message the code asks for is in the English source bundle (a new
-      # l10n.t() that nobody re-extracted fails here), and every translation
-      # covers it with the same placeholders and no added markup.
+      # Every message the code asks for is in its product's English source
+      # bundle (a new l10n.t() that nobody re-extracted fails here), and every
+      # translation covers it with the same placeholders and no added markup.
       - name: Translations are complete
         run: |
           node scripts/i18n/bundle-nls.mjs --write
-          git diff --exit-code -- apps/extension/l10n/bundle.l10n.json
+          git diff --exit-code -- apps/extension/l10n apps/merge-studio/l10n apps/desktop/l10n
           npm run i18n
 
       - name: Package extension (smoke-test the build)

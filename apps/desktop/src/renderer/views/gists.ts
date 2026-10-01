@@ -6,6 +6,7 @@
 // Edit, Delete, Copy raw URL. Gists aren't repo-scoped, so the view gates only
 // on the GitHub connection (NEEDS_REPO=false).
 
+import * as l10n from "@vscode/l10n";
 import { fileLines } from "../textFit";
 import { host } from "../bridge";
 import { peek as cachePeek, gget, bust } from "../cache";
@@ -82,10 +83,10 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   };
 
   const { view, listEl } = sectionList();
-  const header = ghHeader("Gists", gate.login, refresh);
+  const header = ghHeader(l10n.t("Gists"), gate.login, refresh);
   const tools = el("div", "gh-head-tools");
   const newBtn = el("button", "btn btn-primary gh-new-btn");
-  newBtn.append(glyph("add"), span("New gist"));
+  newBtn.append(glyph("add"), span(l10n.t("New gist")));
   newBtn.addEventListener("click", () => void newGist(nav, refresh));
   const verbs = el("div", "gh-head-verbs");
   verbs.appendChild(newBtn);
@@ -96,7 +97,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
 
   header.querySelector(".gh-head-titlewrap")?.appendChild(
     searchField({
-      placeholder: "Search gists…",
+      placeholder: l10n.t("Search gists…"),
       initial: S.query,
       onInput: (q) => {
         S.query = q;
@@ -110,12 +111,12 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
 
   const buildRow = (g: GistInfo): HTMLElement => {
     // A gist has no real title — use the description or the first filename.
-    const title = g.description || g.files[0]?.filename || "Untitled gist";
+    const title = g.description || g.files[0]?.filename || l10n.t("Untitled gist");
     // The comment count keeps its column even at zero: dropping the element
     // slid "1 file" 69px between a gist with comments and one without, so the
     // list had no meta columns at all.
     const meta: HTMLElement[] = [
-      span(`${g.fileCount} file${g.fileCount === 1 ? "" : "s"}`, "gist-filecount"),
+      span(g.fileCount === 1 ? l10n.t("1 file") : l10n.t("{0} files", g.fileCount), "gist-filecount"),
       blankable(statBit("comment", g.comments ?? 0), (g.comments ?? 0) > 0),
     ];
     const lead = el("span", "gh-lead-icon is-accent");
@@ -123,11 +124,13 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     const row = secRow({
       lead,
       title,
-      titleSuffix: [statePill(g.public ? "Public" : "Secret", g.public ? "public" : "private")],
+      titleSuffix: [
+        statePill(g.public ? l10n.t("Public") : l10n.t("Secret"), g.public ? "public" : "private"),
+      ],
       meta,
       time: relTimeISO(g.updatedAt),
-      timeTitle: g.updatedAt ? `Updated ${absTimeISO(g.updatedAt)}` : undefined,
-      ariaLabel: `Gist: ${title}`,
+      timeTitle: g.updatedAt ? l10n.t("Updated {0}", absTimeISO(g.updatedAt)) : undefined,
+      ariaLabel: l10n.t("Gist: {0}", title),
       onOpen: () => nav("gists", { id: g.id }),
     });
     row.dataset.num = g.id;
@@ -143,9 +146,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     if (gists.length === 0) {
       header.setCount?.(0);
       listEl.appendChild(
-        emptyState("No gists yet", "Create your first snippet with a new gist.", {
+        emptyState(l10n.t("No gists yet"), l10n.t("Create your first snippet with a new gist."), {
           icon: "code",
-          action: { label: "New gist", icon: "add", onClick: () => void newGist(nav, refresh) },
+          action: { label: l10n.t("New gist"), icon: "add", onClick: () => void newGist(nav, refresh) },
         }),
       );
       return;
@@ -156,7 +159,12 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     // it can't read "2" above "No matching gists".
     header.setCount?.(items.length, gists.length);
     if (items.length === 0) {
-      listEl.appendChild(emptyState("No matching gists", `Nothing matches “${S.query}”.`, { icon: "search", anchor: "inline" }));
+      listEl.appendChild(
+        emptyState(l10n.t("No matching gists"), l10n.t("Nothing matches “{0}”.", S.query), {
+          icon: "search",
+          anchor: "inline",
+        }),
+      );
       return;
     }
     for (const g of items) listEl.appendChild(buildRow(g));
@@ -173,7 +181,11 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     if (!view.isConnected) return;
     if (!gists) {
       listEl.replaceChildren(
-        errorState("Couldn't load gists", cleanErr(e) || "GitHub request failed.", refresh),
+        errorState(
+          l10n.t("Couldn't load gists"),
+          cleanErr(e) || l10n.t("GitHub request failed."),
+          refresh,
+        ),
       );
     }
   }
@@ -189,8 +201,8 @@ function showGistDetailPage(wrap: HTMLElement, nav: SectionNav, id: string): voi
   };
 
   const { view, main, rail, topActions } = detailPage({
-    backLabel: "Gists",
-    pageLabel: "Gist",
+    backLabel: l10n.t("Gists"),
+    pageLabel: l10n.t("Gist"),
     onBack: back,
   });
   main.appendChild(skeletonList(4, false));
@@ -204,13 +216,15 @@ function showGistDetailPage(wrap: HTMLElement, nav: SectionNav, id: string): voi
     } catch (e) {
       if (!view.isConnected) return;
       main.replaceChildren(
-        errorState("Couldn't load gist", cleanErr(e) || "GitHub request failed.", reload),
+        errorState(l10n.t("Couldn't load gist"), cleanErr(e) || l10n.t("GitHub request failed."), reload),
       );
       return;
     }
     if (!view.isConnected) return;
     if (!g) {
-      main.replaceChildren(emptyState("Gist unavailable", "This gist couldn't be loaded."));
+      main.replaceChildren(
+        emptyState(l10n.t("Gist unavailable"), l10n.t("This gist couldn't be loaded.")),
+      );
       return;
     }
     buildGistDetail({ main, rail, topActions, g, reload, back });
@@ -238,7 +252,7 @@ function buildGistDetail(ctx: GistDetailCtx): void {
 
   // ── top-bar actions ──
   const editBtn = el("button", "mini-btn");
-  editBtn.append(glyph("edit"), span("Edit"));
+  editBtn.append(glyph("edit"), span(l10n.t("Edit")));
   editBtn.addEventListener("click", () => void editGist(g, fileIdx(), reload));
   /** Match the affordance to what Edit will actually do — a live button that
    *  refuses on click is a worse answer than one that says why up front.
@@ -248,34 +262,41 @@ function buildGistDetail(ctx: GistDetailCtx): void {
     const blocked = !!f?.truncated;
     (editBtn as HTMLButtonElement).disabled = blocked;
     editBtn.title = blocked
-      ? `GitStudio only received part of ${f?.filename ?? "this file"} — edit it on GitHub`
-      : "Edit this gist";
+      ? l10n.t(
+          "GitStudio only received part of {0} — edit it on GitHub",
+          f?.filename ?? l10n.t("this file"),
+        )
+      : l10n.t("Edit this gist");
   };
   syncEditBtn();
 
   const copyBtn = el("button", "mini-btn");
-  copyBtn.append(glyph("copy"), span("Copy raw URL"));
-  copyBtn.title = "Copy the raw URL of the selected file";
+  copyBtn.append(glyph("copy"), span(l10n.t("Copy raw URL")));
+  copyBtn.title = l10n.t("Copy the raw URL of the selected file");
   copyBtn.addEventListener("click", () => {
     const url = g.files[fileIdx()]?.rawUrl;
-    if (url) void copyText(url, "Raw URL copied.");
-    else toast("This file has no raw URL.", "error");
+    if (url) void copyText(url, l10n.t("Raw URL copied."));
+    else toast(l10n.t("This file has no raw URL."), "error");
   });
 
   const moreBtn = el("button", "mini-btn gh-icon-btn");
   moreBtn.append(glyph("ellipsis"));
-  moreBtn.title = "More actions";
+  moreBtn.title = l10n.t("More actions");
   moreBtn.addEventListener("click", () =>
     openMenu(moreBtn, [
-      { label: "Copy link", icon: "copy", onClick: () => void copyText(g.htmlUrl, "Copied gist link.") },
+      {
+        label: l10n.t("Copy link"),
+        icon: "copy",
+        onClick: () => void copyText(g.htmlUrl, l10n.t("Copied gist link.")),
+      },
       { separator: true },
-      { label: "Delete gist", icon: "trash", onClick: () => void deleteGist(g, moreBtn, back) },
+      { label: l10n.t("Delete gist"), icon: "trash", onClick: () => void deleteGist(g, moreBtn, back) },
     ]),
   );
 
   const openBtn = el("button", "mini-btn gh-icon-btn");
   openBtn.append(glyph("link-external"));
-  openBtn.title = "Open this gist on GitHub";
+  openBtn.title = l10n.t("Open this gist on GitHub");
   openBtn.setAttribute("aria-label", openBtn.title);
   openBtn.addEventListener("click", () => window.open(g.htmlUrl, "_blank", "noopener"));
 
@@ -284,12 +305,14 @@ function buildGistDetail(ctx: GistDetailCtx): void {
   // ── title block ──
   const titleRow = el("div", "det-title-row");
   const h = el("h1", "det-title");
-  h.textContent = g.description || g.files[0]?.filename || "(no description)";
+  h.textContent = g.description || g.files[0]?.filename || l10n.t("(no description)");
   titleRow.appendChild(h);
   // After the title, not before it: a leading pill pushed the H1 ~110px right
   // of the page's left rule, so the heading no longer started where every
   // other heading starts.
-  titleRow.appendChild(statePill(g.public ? "Public" : "Secret", g.public ? "public" : "private"));
+  titleRow.appendChild(
+    statePill(g.public ? l10n.t("Public") : l10n.t("Secret"), g.public ? "public" : "private"),
+  );
   main.appendChild(titleRow);
 
   // No sub-line: it read "updated 2d ago" directly above an About rail whose
@@ -297,7 +320,7 @@ function buildGistDetail(ctx: GistDetailCtx): void {
   // repeating one of them under the title is the same fact twice.
 
   if (g.files.length === 0) {
-    main.appendChild(emptyState("Empty gist", "This gist has no files."));
+    main.appendChild(emptyState(l10n.t("Empty gist"), l10n.t("This gist has no files.")));
   } else {
     // ── file tabs + highlighted content ──
     const content = el("div", "gh-subcontent");
@@ -314,8 +337,9 @@ function buildGistDetail(ctx: GistDetailCtx): void {
       const fileHead = el("div", "gist-file-head");
       const name = span(f.filename, "gist-file-name");
       const fileSub = span(
-        `${f.language || f.type || "text"} · ${formatBytes(f.size)}` +
-          (f.truncated ? " · truncated" : ""),
+        f.truncated
+          ? l10n.t("{0} · {1} · truncated", f.language || f.type || l10n.t("text"), formatBytes(f.size))
+          : l10n.t("{0} · {1}", f.language || f.type || l10n.t("text"), formatBytes(f.size)),
         "gist-file-sub",
       );
       fileHead.append(name, fileSub);
@@ -327,7 +351,7 @@ function buildGistDetail(ctx: GistDetailCtx): void {
       content.id = "gs-gist-filepanel";
       const tabs = subTabs({
         tabs: g.files.map((f, i) => ({ id: String(i), label: f.filename, icon: "file" })),
-        ariaLabel: "Files in this gist",
+        ariaLabel: l10n.t("Files in this gist"),
         panel: content,
         onSelect: (id) => renderFile(Number(id)),
       });
@@ -340,11 +364,11 @@ function buildGistDetail(ctx: GistDetailCtx): void {
   }
 
   // ── rail ──
-  const ownerProp = propSection("Owner");
+  const ownerProp = propSection(l10n.t("Owner"));
   if (g.owner?.login) ownerProp.body.appendChild(personChip(g.owner.login, g.owner.avatarUrl));
   else ownerProp.body.appendChild(span("—", "det-prop-none"));
 
-  const about = propSection("About");
+  const about = propSection(l10n.t("About"));
   about.body.classList.add("det-prop-facts");
   const fact = (k: string, v: string, title?: string): HTMLElement => {
     const row = el("div", "det-fact");
@@ -354,10 +378,10 @@ function buildGistDetail(ctx: GistDetailCtx): void {
     row.append(span(k, "det-fact-k"), val);
     return row;
   };
-  about.body.appendChild(fact("Files", String(g.fileCount)));
-  if (typeof g.comments === "number") about.body.appendChild(fact("Comments", String(g.comments)));
-  about.body.appendChild(fact("Created", relTimeISO(g.createdAt), absTimeISO(g.createdAt)));
-  about.body.appendChild(fact("Updated", relTimeISO(g.updatedAt), absTimeISO(g.updatedAt)));
+  about.body.appendChild(fact(l10n.t("Files"), String(g.fileCount)));
+  if (typeof g.comments === "number") about.body.appendChild(fact(l10n.t("Comments"), String(g.comments)));
+  about.body.appendChild(fact(l10n.t("Created"), relTimeISO(g.createdAt), absTimeISO(g.createdAt)));
+  about.body.appendChild(fact(l10n.t("Updated"), relTimeISO(g.updatedAt), absTimeISO(g.updatedAt)));
 
   rail.append(ownerProp.root, about.root);
 }
@@ -381,8 +405,12 @@ function codeBlock(text: string, fileName: string, truncated: boolean): HTMLElem
   if (capped || truncated) {
     const more = el("div", "ghfile-more");
     more.textContent = truncated
-      ? "GitHub truncated this file — open it on GitHub for the full content."
-      : `Showing the first ${MAX_RENDER_LINES.toLocaleString()} of ${lines.length.toLocaleString()} lines.`;
+      ? l10n.t("GitHub truncated this file — open it on GitHub for the full content.")
+      : l10n.t(
+          "Showing the first {0} of {1} lines.",
+          MAX_RENDER_LINES.toLocaleString(),
+          lines.length.toLocaleString(),
+        );
     const outer = el("div", "ghfile-outer");
     outer.append(wrap, more);
     return outer;
@@ -391,10 +419,11 @@ function codeBlock(text: string, fileName: string, truncated: boolean): HTMLElem
 }
 
 function formatBytes(n: number): string {
-  if (!Number.isFinite(n) || n < 0) return "0 bytes";
-  if (n < 1024) return `${n} byte${n === 1 ? "" : "s"}`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  if (!Number.isFinite(n) || n < 0) return l10n.t("0 bytes");
+  if (n === 1) return l10n.t("1 byte");
+  if (n < 1024) return l10n.t("{0} bytes", n);
+  if (n < 1024 * 1024) return l10n.t("{0} KB", (n / 1024).toFixed(1));
+  return l10n.t("{0} MB", (n / (1024 * 1024)).toFixed(1));
 }
 
 // ── Mutations ────────────────────────────────────────────────────────────────
@@ -405,8 +434,8 @@ async function newGist(nav: SectionNav, refresh: () => void): Promise<void> {
   await formWithRetry<GistDialogResult>(
     (seed, error) =>
       gistDialog({
-        title: "New gist",
-        okLabel: "Create gist",
+        title: l10n.t("New gist"),
+        okLabel: l10n.t("Create gist"),
         description: seed?.description,
         filename: seed?.filename,
         content: seed?.content,
@@ -421,15 +450,15 @@ async function newGist(nav: SectionNav, refresh: () => void): Promise<void> {
           content: v.content,
           public: v.public,
         });
-        if (!r.ok) return r.message || "Couldn't create the gist.";
-        toast("Gist created.", "success");
+        if (!r.ok) return r.message || l10n.t("Couldn't create the gist.");
+        toast(l10n.t("Gist created."), "success");
         bust("gist");
         // The created id comes back in `message` — open the new gist directly.
         if (r.message) nav("gists", { id: r.message });
         else refresh();
         return undefined;
       } catch (e) {
-        return cleanErr(e) || "Couldn't create the gist.";
+        return cleanErr(e) || l10n.t("Couldn't create the gist.");
       }
     },
   );
@@ -445,7 +474,10 @@ async function editGist(g: GistInfo, fileIdx: number, reload: () => void): Promi
   // past the truncation point. The one place that knows is here.
   if (file.truncated) {
     toast(
-      `GitStudio only received part of ${file.filename}. Edit it on GitHub so the rest isn't overwritten.`,
+      l10n.t(
+        "GitStudio only received part of {0}. Edit it on GitHub so the rest isn't overwritten.",
+        file.filename,
+      ),
       "error",
     );
     return;
@@ -453,8 +485,8 @@ async function editGist(g: GistInfo, fileIdx: number, reload: () => void): Promi
   await formWithRetry<GistDialogResult>(
     (seed, error) =>
       gistDialog({
-        title: "Edit gist",
-        okLabel: "Save changes",
+        title: l10n.t("Edit gist"),
+        okLabel: l10n.t("Save changes"),
         description: seed?.description ?? g.description,
         filename: seed?.filename ?? file.filename,
         content: seed?.content ?? file.content,
@@ -471,12 +503,12 @@ async function editGist(g: GistInfo, fileIdx: number, reload: () => void): Promi
           content: v.content,
           newFilename: v.filename, // rename when changed
         });
-        if (!r.ok) return r.message || "Couldn't save the gist.";
-        toast("Gist saved.", "success");
+        if (!r.ok) return r.message || l10n.t("Couldn't save the gist.");
+        toast(l10n.t("Gist saved."), "success");
         reload();
         return undefined;
       } catch (e) {
-        return cleanErr(e) || "Couldn't save the gist.";
+        return cleanErr(e) || l10n.t("Couldn't save the gist.");
       }
     },
   );
@@ -484,9 +516,12 @@ async function editGist(g: GistInfo, fileIdx: number, reload: () => void): Promi
 
 async function deleteGist(g: GistInfo, btn: HTMLElement, back: () => void): Promise<void> {
   const ok = await confirmDialog({
-    title: "Delete this gist?",
-    message: `“${g.description || g.files[0]?.filename || g.id}” will be permanently deleted on GitHub. This can't be undone.`,
-    confirmLabel: "Delete",
+    title: l10n.t("Delete this gist?"),
+    message: l10n.t(
+      "“{0}” will be permanently deleted on GitHub. This can't be undone.",
+      g.description || g.files[0]?.filename || g.id,
+    ),
+    confirmLabel: l10n.t("Delete"),
     danger: true,
   });
   if (!ok) return;
@@ -494,16 +529,16 @@ async function deleteGist(g: GistInfo, btn: HTMLElement, back: () => void): Prom
   try {
     const r = await host.invoke("gist:delete", g.id);
     if (!r.ok) {
-      toast(r.message || "Couldn't delete the gist.", "error");
+      toast(r.message || l10n.t("Couldn't delete the gist."), "error");
       (btn as HTMLButtonElement).disabled = false;
       return;
     }
-    toast("Gist deleted.", "success");
+    toast(l10n.t("Gist deleted."), "success");
     bust("gist");
     back(); // the detail's subject no longer exists — land on the list
   } catch (e) {
     (btn as HTMLButtonElement).disabled = false;
-    toast(cleanErr(e) || "Couldn't delete the gist.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't delete the gist."), "error");
   }
 }
 
@@ -551,19 +586,19 @@ function gistDialog(opts: {
 
       const descIn = document.createElement("input");
       descIn.className = "modal-input";
-      descIn.placeholder = "Description (optional)";
+      descIn.placeholder = l10n.t("Description (optional)");
       descIn.value = opts.description ?? "";
 
       const fileIn = document.createElement("input");
       fileIn.className = "modal-input";
-      fileIn.placeholder = "Filename including extension…";
+      fileIn.placeholder = l10n.t("Filename including extension…");
       fileIn.value = opts.filename ?? "";
       fileIn.spellcheck = false;
       fileIn.autocapitalize = "off";
 
       const contentIn = document.createElement("textarea");
       contentIn.className = "modal-input gist-textarea";
-      contentIn.placeholder = "Gist content…";
+      contentIn.placeholder = l10n.t("Gist content…");
       contentIn.value = opts.content ?? "";
       contentIn.spellcheck = false;
 
@@ -573,19 +608,19 @@ function gistDialog(opts: {
       vis.checked = opts.public ?? false;
       if (opts.lockVisibility) {
         vis.disabled = true;
-        visRow.title = "A gist's visibility can't be changed after it's created.";
+        visRow.title = l10n.t("A gist's visibility can't be changed after it's created.");
       }
-      const visLabel = span(`${vis.checked ? "Public" : "Secret"} gist`);
+      const visLabel = span(vis.checked ? l10n.t("Public gist") : l10n.t("Secret gist"));
       visRow.append(vis, visLabel);
       if (!opts.lockVisibility) {
         vis.addEventListener("change", () => {
-          visLabel.textContent = vis.checked ? "Public gist" : "Secret gist";
+          visLabel.textContent = vis.checked ? l10n.t("Public gist") : l10n.t("Secret gist");
         });
       }
 
       const actions = el("div", "modal-actions");
       const cancel = el("button", "mini-btn");
-      cancel.textContent = "Cancel";
+      cancel.textContent = l10n.t("Cancel");
       const ok = el("button", "btn btn-primary modal-ok");
       ok.appendChild(span(opts.okLabel));
       actions.append(cancel, ok);

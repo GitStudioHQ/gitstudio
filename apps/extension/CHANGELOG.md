@@ -4,6 +4,19 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **GitStudio in 14 languages.** Every view, message and command follows VS
+  Code's display language: Simplified and Traditional Chinese, Japanese, Korean, German, French, Spanish, Italian, Portuguese (Brazil), Russian, Turkish, Polish and Czech, besides English. Simplified Chinese
+  started as a community contribution (thanks, @AutumnPizazz). Translations
+  other than English are machine drafts — corrections are welcome on GitHub.
+
+### Fixed
+- **What git stores stays in English.** Undo's reflog entries, stash messages
+  and the revert commit it makes are written in English whatever language the
+  editor is in, so the repository's history reads the same for everyone.
+
 ## [1.17.0] - 2026-09-29
 
 ### Added

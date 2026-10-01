@@ -17,6 +17,7 @@
 // cannot offer, because the repository is right here: the git verbs. Cherry-pick
 // this onto the current branch, revert it, branch from it, reset to it.
 
+import * as l10n from "@vscode/l10n";
 import { host } from "../bridge";
 import {
   el,
@@ -44,12 +45,12 @@ import type { CommitFileChange } from "@gitstudio/host-bridge/commitDetailsProto
 
 /** Status letter → the word a person reads, and the class that colours it. */
 const STATUS: Record<string, { word: string; cls: string }> = {
-  A: { word: "added", cls: "is-add" },
-  M: { word: "modified", cls: "is-mod" },
-  D: { word: "deleted", cls: "is-del" },
-  R: { word: "renamed", cls: "is-ren" },
-  C: { word: "copied", cls: "is-ren" },
-  T: { word: "type changed", cls: "is-mod" },
+  A: { word: l10n.t("added"), cls: "is-add" },
+  M: { word: l10n.t("modified"), cls: "is-mod" },
+  D: { word: l10n.t("deleted"), cls: "is-del" },
+  R: { word: l10n.t("renamed"), cls: "is-ren" },
+  C: { word: l10n.t("copied"), cls: "is-ren" },
+  T: { word: l10n.t("type changed"), cls: "is-mod" },
 };
 
 function diffstat(files: CommitFileChange[]): { adds: number; dels: number; binary: number } {
@@ -79,7 +80,7 @@ function identity(d: CommitDetailsPayload): HTMLElement {
   authored.append(
     avatar(d.author, undefined, 20),
     span(d.author, "cmt-who-name"),
-    span("authored", "cmt-who-verb"),
+    span(l10n.t("authored"), "cmt-who-verb"),
   );
   // SECONDS. `relTime` and `absTime` both take epoch seconds — passing
   // milliseconds made every commit on this page read "authored just now"
@@ -97,7 +98,7 @@ function identity(d: CommitDetailsPayload): HTMLElement {
     committed.append(
       avatar(d.committer, undefined, 20),
       span(d.committer, "cmt-who-name"),
-      span("committed", "cmt-who-verb"),
+      span(l10n.t("committed"), "cmt-who-verb"),
     );
     const t2 = span(relTime(d.committerDate), "cmt-who-when");
     t2.title = absTime(d.committerDate);
@@ -126,9 +127,9 @@ export async function renderCommit(
   const short = sha.slice(0, 7);
 
   const { view, main, rail, topActions } = detailPage({
-    backLabel: "Commits",
+    backLabel: l10n.t("Commits"),
     crumb: short,
-    pageLabel: `Commit ${short}`,
+    pageLabel: l10n.t("Commit {0}", short),
     onBack: () => nav("graph", { sha }),
   });
   // The message wants a reading measure; a diff wants the window. `.cmt-view`
@@ -138,7 +139,9 @@ export async function renderCommit(
   wrap.replaceChildren(view);
 
   if (!sha) {
-    main.replaceChildren(emptyState("No commit", "Nothing was asked for.", { icon: "git-commit" }));
+    main.replaceChildren(
+      emptyState(l10n.t("No commit"), l10n.t("Nothing was asked for."), { icon: "git-commit" }),
+    );
     return;
   }
 
@@ -147,7 +150,7 @@ export async function renderCommit(
     d = await gget("commit:details", sha, 30_000);
   } catch (e) {
     main.replaceChildren(
-      errorState("Couldn't read this commit", cleanErr(e) || "git failed.", () =>
+      errorState(l10n.t("Couldn't read this commit"), cleanErr(e) || l10n.t("git failed."), () =>
         void renderCommit(wrap, nav, target, run),
       ),
     );
@@ -173,9 +176,11 @@ export async function renderCommit(
     // exactly where the old graph jump dead-ended without saying why.
     main.replaceChildren(
       emptyState(
-        "This commit isn't in your clone",
-        `${short} isn't an object this repository has. It may be on a fork, or on a branch you ` +
-          `haven't fetched. Fetching the remote will bring it in.`,
+        l10n.t("This commit isn't in your clone"),
+        l10n.t(
+          "{0} isn't an object this repository has. It may be on a fork, or on a branch you haven't fetched. Fetching the remote will bring it in.",
+          short,
+        ),
         { icon: "cloud-download" },
       ),
     );
@@ -208,40 +213,47 @@ export async function renderCommit(
     .invoke("commit:branches", d.sha)
     .then((b) => {
       if (!b || !b.branches.length) {
-        where.textContent = d.parents.length > 1 ? "a merge commit" : "not on any local branch";
-        where.title = "No local branch contains this commit — it may only exist on a remote.";
+        where.textContent =
+          d.parents.length > 1 ? l10n.t("a merge commit") : l10n.t("not on any local branch");
+        where.title = l10n.t(
+          "No local branch contains this commit — it may only exist on a remote.",
+        );
         return;
       }
       const others = b.branches.filter((x) => x !== b.current);
       if (b.onCurrent && others.length) {
-        where.textContent = `on ${b.current}, and ${others.length} other branch${others.length === 1 ? "" : "es"}`;
+        where.textContent =
+          others.length === 1
+            ? l10n.t("on {0}, and 1 other branch", String(b.current))
+            : l10n.t("on {0}, and {1} other branches", String(b.current), others.length);
       } else if (b.onCurrent) {
-        where.textContent = `only on ${b.current}`;
+        where.textContent = l10n.t("only on {0}", String(b.current));
       } else {
-        where.textContent = `not on ${b.current ?? "this branch"} — on ${b.branches[0]}`;
+        where.textContent = l10n.t("not on {0} — on {1}", b.current ?? l10n.t("this branch"), b.branches[0]);
       }
-      where.title = `Contained by: ${b.branches.join(", ")}`;
+      where.title = l10n.t("Contained by: {0}", b.branches.join(", "));
     })
     .catch(() => {
       where.remove();
     });
 
   if (d.parents.length > 1) {
-    const m = span(`merge of ${d.parents.length} parents`, "cmt-fact-merge");
-    m.title = "A merge commit — its diff is against the first parent.";
+    const m = span(l10n.t("merge of {0} parents", d.parents.length), "cmt-fact-merge");
+    m.title = l10n.t("A merge commit — its diff is against the first parent.");
     facts.appendChild(m);
   }
 
   // Ref chips: branch tips and tags sitting exactly here.
   for (const r of d.refs) {
     const chip = span(r.name, `cmt-ref is-${r.kind}`);
-    chip.title = `${r.kind === "tag" ? "tag" : "branch"} ${r.name}`;
+    chip.title =
+      r.kind === "tag" ? l10n.t("tag {0}", r.name) : l10n.t("branch {0}", r.name);
     facts.appendChild(chip);
   }
 
   if (d.body.trim()) {
     const toggle = el("button", "cmt-body-toggle") as HTMLButtonElement;
-    toggle.append(glyph("chevron-down"), span("Description"));
+    toggle.append(glyph("chevron-down"), span(l10n.t("Description")));
     toggle.setAttribute("aria-expanded", "false");
     const body = el("div", "gh-body-md cmt-body");
     body.innerHTML = renderMarkdown(d.body);
@@ -249,7 +261,10 @@ export async function renderCommit(
     toggle.addEventListener("click", () => {
       body.hidden = !body.hidden;
       toggle.setAttribute("aria-expanded", String(!body.hidden));
-      toggle.replaceChildren(glyph(body.hidden ? "chevron-down" : "chevron-up"), span("Description"));
+      toggle.replaceChildren(
+        glyph(body.hidden ? "chevron-down" : "chevron-up"),
+        span(l10n.t("Description")),
+      );
     });
     facts.appendChild(toggle);
     head.appendChild(facts);
@@ -264,18 +279,19 @@ export async function renderCommit(
   const n = d.files.length;
   const statBar = el("div", "cmt-statbar");
   statBar.append(
-    span(`${n} file${n === 1 ? "" : "s"}`, "cmt-stat-files"),
+    span(n === 1 ? l10n.t("1 file") : l10n.t("{0} files", n), "cmt-stat-files"),
     span(`+${adds.toLocaleString()}`, "cmt-stat-add"),
     span(`−${dels.toLocaleString()}`, "cmt-stat-del"),
   );
-  if (binary) statBar.appendChild(span(`${binary} binary`, "cmt-stat-bin"));
+  if (binary) statBar.appendChild(span(l10n.t("{0} binary", binary), "cmt-stat-bin"));
 
   if (!n) {
     main.appendChild(
       emptyState(
-        "No file changes",
-        "This commit records no change to any file — an empty commit, or a merge whose result " +
-          "matched its first parent.",
+        l10n.t("No file changes"),
+        l10n.t(
+          "This commit records no change to any file — an empty commit, or a merge whose result matched its first parent.",
+        ),
         { icon: "git-commit" },
       ),
     );
@@ -284,7 +300,7 @@ export async function renderCommit(
     if (prefix) {
       const p = el("div", "cmt-prefix");
       p.append(glyph("folder"), span(prefix));
-      p.title = `Every file in this commit is under ${prefix}`;
+      p.title = l10n.t("Every file in this commit is under {0}", prefix);
       main.appendChild(p);
     }
     const split = el("div", "cmt-split");
@@ -301,8 +317,8 @@ export async function renderCommit(
     const filter = document.createElement("input");
     filter.className = "cmt-filter";
     filter.type = "search";
-    filter.placeholder = `Filter ${n} file${n === 1 ? "" : "s"}…`;
-    filter.setAttribute("aria-label", "Filter the changed files");
+    filter.placeholder = n === 1 ? l10n.t("Filter 1 file…") : l10n.t("Filter {0} files…", n);
+    filter.setAttribute("aria-label", l10n.t("Filter the changed files"));
     const count = el("div", "cmt-filter-count");
     count.hidden = true;
 
@@ -324,7 +340,7 @@ export async function renderCommit(
     // anything was disposed or not. Counting them reports success on the
     // broken build, which is worse than not checking at all.
     disposeOnDetach(view, () => diff.dispose());
-    diff.showEmpty("Select a file to see what changed.");
+    diff.showEmpty(l10n.t("Select a file to see what changed."));
     // The parent this commit is diffed against. A root commit has none, and
     // git's empty-tree hash is the standard stand-in.
     const base = d.parents[0] ?? "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
@@ -367,8 +383,8 @@ export async function renderCommit(
         // said.
         diff.showDiff({
           ...fd,
-          leftLabel: d!.parents.length ? `${base.slice(0, 7)} · before` : "(new file)",
-          rightLabel: `${d!.shortSha} · this commit`,
+          leftLabel: d!.parents.length ? l10n.t("{0} · before", base.slice(0, 7)) : l10n.t("(new file)"),
+          rightLabel: l10n.t("{0} · this commit", d!.shortSha),
         });
       }
       // With no `kind` this defaulted to "waiting" — the reader got the
@@ -378,8 +394,11 @@ export async function renderCommit(
       // this treatment; this one was missed.
       else
         diff.showEmpty(
-          `${f.path} is listed as changed in this commit, so this is a failure to read it — not a file with nothing in it.`,
-          { title: "Couldn't read this file", kind: "error" },
+          l10n.t(
+            "{0} is listed as changed in this commit, so this is a failure to read it — not a file with nothing in it.",
+            f.path,
+          ),
+          { title: l10n.t("Couldn't read this file"), kind: "error" },
         );
     };
 
@@ -387,7 +406,7 @@ export async function renderCommit(
     d.files.forEach((f, i) => {
       const row = el("button", "cmt-file") as HTMLButtonElement;
       rowFor.set(row, f.path.toLowerCase());
-      const st = STATUS[f.status] ?? { word: "changed", cls: "is-mod" };
+      const st = STATUS[f.status] ?? { word: l10n.t("changed"), cls: "is-mod" };
       const letter = span(f.status, `cmt-file-status ${st.cls}`);
       letter.title = st.word;
       const path = span(f.path.slice(prefix.length), "cmt-file-path");
@@ -399,11 +418,13 @@ export async function renderCommit(
         if (f.deletions > 0) counts.appendChild(span(`−${f.deletions}`, "cmt-file-del"));
         row.appendChild(counts);
       } else {
-        row.appendChild(span("binary", "cmt-file-bin"));
+        row.appendChild(span(l10n.t("binary"), "cmt-file-bin"));
       }
       row.setAttribute(
         "aria-label",
-        `${st.word} ${f.path}${f.additions >= 0 ? `, ${f.additions} added, ${f.deletions} removed` : ""}`,
+        f.additions >= 0
+          ? l10n.t("{0} {1}, {2} added, {3} removed", st.word, f.path, f.additions, f.deletions)
+          : l10n.t("{0} {1}", st.word, f.path),
       );
       row.addEventListener("click", () => void openFile(f, row));
       list.appendChild(row);
@@ -430,7 +451,7 @@ export async function renderCommit(
         if (hit) shown++;
       }
       count.hidden = terms.length === 0;
-      count.textContent = shown === 0 ? "No file matches" : `${shown} of ${n}`;
+      count.textContent = shown === 0 ? l10n.t("No file matches") : l10n.t("{0} of {1}", shown, n);
       count.classList.toggle("is-empty", shown === 0);
     };
     filter.addEventListener("input", applyFilter);
@@ -463,41 +484,52 @@ export async function renderCommit(
 
   const shaBtn = el("button", "mini-btn cmt-sha") as HTMLButtonElement;
   shaBtn.append(glyph("copy"), span(d.shortSha));
-  shaBtn.title = `${d.sha}\nCopy the full SHA`;
-  shaBtn.setAttribute("aria-label", `Copy the full SHA ${d.sha}`);
+  shaBtn.title = `${d.sha}\n${l10n.t("Copy the full SHA")}`;
+  shaBtn.setAttribute("aria-label", l10n.t("Copy the full SHA {0}", d.sha));
   // `copyText`, like the other 28 copy buttons in the app — not a raw
   // `clipboard:write`. Two things came free with it and were missing here: the
   // navigator.clipboard path (the IPC channel is only its FALLBACK, for the
   // contexts where the permission is refused), and the confirmation. This was
   // the one sha button in the app that copied in silence, so the only way to
   // know it had worked was to paste.
-  shaBtn.addEventListener("click", () => void copyText(d!.sha, "Copied the full SHA."));
+  shaBtn.addEventListener("click", () => void copyText(d!.sha, l10n.t("Copied the full SHA.")));
   topActions.appendChild(shaBtn);
 
   // The reason to read a commit HERE rather than on github.com: the repository
   // is in hand, so these are real operations rather than links.
   const more = el("button", "mini-btn") as HTMLButtonElement;
   more.append(glyph("kebab-vertical"));
-  more.title = "Actions for this commit";
+  more.title = l10n.t("Actions for this commit");
   more.setAttribute("aria-label", more.title);
   more.addEventListener("click", () => {
     const items = [
-      { label: "Check out this commit", icon: "git-branch", onClick: () => act("checkout") },
-      { label: "Branch from here…", icon: "git-branch", onClick: () => act("branch") },
-      { label: "Tag this commit…", icon: "tag", onClick: () => act("tag") },
+      { label: l10n.t("Check out this commit"), icon: "git-branch", onClick: () => act("checkout") },
+      { label: l10n.t("Branch from here…"), icon: "git-branch", onClick: () => act("branch") },
+      { label: l10n.t("Tag this commit…"), icon: "tag", onClick: () => act("tag") },
       { separator: true },
-      { label: "Cherry-pick onto current branch", icon: "git-commit", onClick: () => act("cherry-pick") },
-      { label: "Revert this commit", icon: "discard", onClick: () => act("revert") },
+      {
+        label: l10n.t("Cherry-pick onto current branch"),
+        icon: "git-commit",
+        onClick: () => act("cherry-pick"),
+      },
+      { label: l10n.t("Revert this commit"), icon: "discard", onClick: () => act("revert") },
       { separator: true },
       ...d!.parents.map((p, i) => ({
-        label: d!.parents.length > 1 ? `Open parent ${i + 1} — ${p.slice(0, 7)}` : `Open parent ${p.slice(0, 7)}`,
+        label:
+          d!.parents.length > 1
+            ? l10n.t("Open parent {0} — {1}", i + 1, p.slice(0, 7))
+            : l10n.t("Open parent {0}", p.slice(0, 7)),
         icon: "git-commit",
         onClick: () => nav("commit", { sha: p }),
       })),
       { separator: true },
       // The graph is a good way to see a commit's SHAPE — just not an answer to
       // "what changed", which is why it stopped being the destination.
-      { label: "View in Commits", icon: "git-commit", onClick: () => nav("graph", { sha: d!.sha }) },
+      {
+        label: l10n.t("View in Commits"),
+        icon: "git-commit",
+        onClick: () => nav("graph", { sha: d!.sha }),
+      },
     ];
     openMenu(more, items);
   });
@@ -526,18 +558,21 @@ export async function renderCommit(
     let name: string | undefined;
     if (action === "branch" || action === "tag") {
       const asked = await promptInline(
-        action === "branch" ? "Create branch here" : "Create tag here",
+        action === "branch" ? l10n.t("Create branch here") : l10n.t("Create tag here"),
         action === "branch" ? "feature/my-branch" : "v1.0.0",
       );
       name = asked?.trim();
       if (!name) return;
     }
     const confirms: Partial<Record<CommitActionRequest["action"], string>> = {
-      checkout: "Check out this commit directly? HEAD will be detached — not on any branch.",
-      revert: "Create a commit that undoes this one, on the current branch?",
+      checkout: l10n.t("Check out this commit directly? HEAD will be detached — not on any branch."),
+      revert: l10n.t("Create a commit that undoes this one, on the current branch?"),
     };
     const message = confirms[action];
-    if (message && !(await confirmDialog({ title: `${short} — ${action.replace(/-/g, " ")}`, message }))) {
+    if (
+      message &&
+      !(await confirmDialog({ title: `${short} — ${action.replace(/-/g, " ")}`, message }))
+    ) {
       return;
     }
     await run({ action, sha: d!.sha, name });

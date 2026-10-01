@@ -771,7 +771,7 @@ function pickedFiles(files: readonly StashFile[], paths: readonly string[]): Sta
 
 /** "1 file", "3 files". */
 function countFiles(n: number): string {
-  return `${n} ${n === 1 ? "file" : "files"}`;
+  return n === 1 ? l10n.t("{0} file", n) : l10n.t("{0} files", n);
 }
 
 /**

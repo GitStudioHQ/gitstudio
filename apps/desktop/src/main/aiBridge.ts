@@ -16,6 +16,7 @@
 // of keys written by the old scheme.
 
 import { app } from "electron";
+import * as l10n from "@vscode/l10n";
 import { readFile, writeFile, mkdir, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
@@ -400,35 +401,42 @@ export class AiBridge {
       // connection is removed. A stale id is a condition, not a defect, so it
       // is not crash-reported (see main/expectedError.ts). An unknown PRESET
       // below is the opposite: only our own table can produce one.
-      return { ok: false, expected: true, message: "Connection not found." };
+      return { ok: false, expected: true, message: l10n.t("Connection not found.") };
     }
     // CLI connections: just confirm the binary is installed (don't spend quota).
     if (conn.wire === "cli") {
       const spec = cliSpecFor(conn.preset);
       if (!spec) {
-        return { ok: false, message: "Unknown local CLI." };
+        return { ok: false, message: l10n.t("Unknown local CLI.") };
       }
       const { ok, version } = await detectCli(spec.command);
       this.cliDetect.set(conn.preset, ok);
       return ok
-        ? { ok: true, message: `Found \`${spec.command}\`${version ? ` (${version})` : ""}.` }
+        ? {
+            ok: true,
+            message: version
+              ? l10n.t("Found `{0}` ({1}).", spec.command, version)
+              : l10n.t("Found `{0}`.", spec.command),
+          }
         : {
             ok: false,
             expected: true,
-            message: `\`${spec.command}\` isn't installed or not on PATH. ${spec.install}`,
+            message: l10n.t("`{0}` isn't installed or not on PATH. {1}", spec.command, spec.install),
           };
     }
     const provider = this.providerFor(conn);
     try {
       const r = await provider.chat(
+        // Sent to the MODEL as a connectivity probe, never shown to a person —
+        // must stay literal English regardless of the app's language.
         [{ role: "user", content: "Reply with exactly: OK" }],
         { model: "fast", maxTokens: 16 },
       );
       const model = resolveModelId(conn, "fast") ?? "model";
       if (r.text.trim().length > 0 || r.stopReason === "stop") {
-        return { ok: true, message: `Connected — ${model} responded.`, model };
+        return { ok: true, message: l10n.t("Connected — {0} responded.", model), model };
       }
-      return { ok: false, message: "The model returned an empty response." };
+      return { ok: false, message: l10n.t("The model returned an empty response.") };
     } catch (err) {
       return { ok: false, message: err instanceof Error ? err.message : String(err) };
     }
@@ -473,12 +481,12 @@ export class AiBridge {
         requestId,
         ok: false,
         expected: true,
-        message: "No AI model is connected. Add one in Settings ▸ AI.",
+        message: l10n.t("No AI model is connected. Add one in Settings ▸ AI."),
       };
     }
     const ctx = this.repos.getContext();
     if (!ctx) {
-      return { requestId, ok: false, expected: true, message: "No repository is open." };
+      return { requestId, ok: false, expected: true, message: l10n.t("No repository is open.") };
     }
     const host = createGitToolHost(ctx);
     const abort = new AbortController();
@@ -493,7 +501,7 @@ export class AiBridge {
         case "commitMessage": {
           const diff = input.diff ?? (await host.diff({ staged: true }));
           if (!diff.trim()) {
-            return { requestId, ok: false, expected: true, message: "Nothing is staged to summarize." };
+            return { requestId, ok: false, expected: true, message: l10n.t("Nothing is staged to summarize.") };
           }
           const recent = input.commits ?? (await host.log({ limit: 10 })).map((c) => c.subject);
           text = await generateCommitMessage(provider, diff, { recentSubjects: recent, ctx: taskCtx });
@@ -502,14 +510,14 @@ export class AiBridge {
         case "explainDiff": {
           const diff = input.diff ?? (await this.gatherDiff(host, input));
           if (!diff.trim())
-            return { requestId, ok: false, expected: true, message: "No changes to explain." };
+            return { requestId, ok: false, expected: true, message: l10n.t("No changes to explain.") };
           text = await explainDiff(provider, diff, taskCtx);
           break;
         }
         case "summarizeChanges": {
           const diff = input.diff ?? (await this.gatherDiff(host, input));
           if (!diff.trim())
-            return { requestId, ok: false, expected: true, message: "No changes to summarize." };
+            return { requestId, ok: false, expected: true, message: l10n.t("No changes to summarize.") };
           text = await summarizeChanges(provider, diff, taskCtx);
           break;
         }
@@ -524,7 +532,7 @@ export class AiBridge {
         case "reviewDiff": {
           const diff = input.diff ?? (await this.gatherDiff(host, input));
           if (!diff.trim())
-            return { requestId, ok: false, expected: true, message: "No changes to review." };
+            return { requestId, ok: false, expected: true, message: l10n.t("No changes to review.") };
           text = await reviewDiff(provider, diff, taskCtx);
           break;
         }
@@ -544,10 +552,10 @@ export class AiBridge {
           break;
         }
         default:
-          return { requestId, ok: false, message: `Unknown task: ${task}` };
+          return { requestId, ok: false, message: l10n.t("Unknown task: {0}", task) };
       }
       if (text === null) {
-        return { requestId, ok: false, message: "The model returned nothing." };
+        return { requestId, ok: false, message: l10n.t("The model returned nothing.") };
       }
       return { requestId, ok: true, text };
     } catch (err) {
@@ -593,12 +601,12 @@ export class AiBridge {
         requestId,
         ok: false,
         expected: true,
-        message: "No AI model is connected. Add one in Settings ▸ AI.",
+        message: l10n.t("No AI model is connected. Add one in Settings ▸ AI."),
       };
     }
     const ctx = this.repos.getContext();
     if (!ctx) {
-      return { requestId, ok: false, expected: true, message: "Open a repository first." };
+      return { requestId, ok: false, expected: true, message: l10n.t("Open a repository first.") };
     }
     const host = createGitToolHost(ctx);
     const tools = selectTools({ write: req.allowWrite, destructive: req.allowDestructive });
@@ -730,7 +738,7 @@ export class AiBridge {
     const { chatId, requestId } = req;
     const session = await this.chats.get(chatId);
     if (!session) {
-      return { requestId, ok: false, expected: true, message: "This chat no longer exists." };
+      return { requestId, ok: false, expected: true, message: l10n.t("This chat no longer exists.") };
     }
     const resolved = await this.resolveProvider(session.connectionId, "agent");
     if (!resolved) {
@@ -738,12 +746,12 @@ export class AiBridge {
         requestId,
         ok: false,
         expected: true,
-        message: "No AI model is connected. Add one in Settings ▸ AI.",
+        message: l10n.t("No AI model is connected. Add one in Settings ▸ AI."),
       };
     }
     const ctx = this.repos.getContext();
     if (!ctx) {
-      return { requestId, ok: false, expected: true, message: "Open a repository first." };
+      return { requestId, ok: false, expected: true, message: l10n.t("Open a repository first.") };
     }
     const cfg = this.agentConfig();
     const abort = new AbortController();
@@ -759,7 +767,7 @@ export class AiBridge {
         // Cold start (the agent process needs booting) reads as "Loading", not
         // a silent spinner; a warm session goes straight to "Thinking".
         if (!warm.warm) {
-          this.send("ai:agentEvent", { requestId, kind: "status", text: "Loading the agent" });
+          this.send("ai:agentEvent", { requestId, kind: "status", text: l10n.t("Loading the agent") });
         }
         const prompt = withThinking(req.goal, req.thinking ?? cfg.thinking);
         let acc = "";
@@ -827,17 +835,21 @@ export class AiBridge {
 export function summarizeArgs(tool: GitTool, args: Record<string, unknown>): string {
   switch (tool.name) {
     case "git_commit":
-      return `Commit staged changes:\n“${String(args.message ?? "").split("\n")[0]}”`;
+      return l10n.t("Commit staged changes:\n“{0}”", String(args.message ?? "").split("\n")[0]);
     case "git_stage":
-      return args.all ? "Stage all changes." : `Stage: ${asList(args.paths)}`;
+      return args.all ? l10n.t("Stage all changes.") : l10n.t("Stage: {0}", asList(args.paths));
     case "git_unstage":
-      return args.all ? "Unstage everything." : `Unstage: ${asList(args.paths)}`;
+      return args.all ? l10n.t("Unstage everything.") : l10n.t("Unstage: {0}", asList(args.paths));
     case "git_create_branch":
-      return `Create branch “${String(args.name ?? "")}”${args.checkout ? " and switch to it" : ""}.`;
+      return args.checkout
+        ? l10n.t("Create branch “{0}” and switch to it.", String(args.name ?? ""))
+        : l10n.t("Create branch “{0}”.", String(args.name ?? ""));
     case "git_checkout":
-      return `Switch to “${String(args.ref ?? "")}”.`;
+      return l10n.t("Switch to “{0}”.", String(args.ref ?? ""));
     case "git_stash_save":
-      return `Stash working-tree changes${args.message ? ` (“${String(args.message)}”)` : ""}.`;
+      return args.message
+        ? l10n.t("Stash working-tree changes (“{0}”).", String(args.message))
+        : l10n.t("Stash working-tree changes.");
     // The three destructive ones say what the app's OWN confirm dialogs say for
     // the same operations. They used to be the weakest text in the app for the
     // most dangerous thing in it: "Reset (hard) to abc123." asked you to
@@ -846,31 +858,43 @@ export function summarizeArgs(tool: GitTool, args: Record<string, unknown>): str
     // could not be undone. The agent's confirm is the LAST gate before an
     // automated actor does it, so it should read stronger, not weaker.
     case "git_discard":
-      return (
-        `Discard your changes to: ${asList(args.paths)}\n\n` +
-        "Their current contents are lost. This can't be undone, and files git " +
-        "isn't tracking are deleted from disk outright."
+      return l10n.t(
+        "Discard your changes to: {0}\n\nTheir current contents are lost. This can't be undone, and files git isn't tracking are deleted from disk outright.",
+        asList(args.paths),
       );
     case "git_delete_branch":
-      return (
-        `Delete branch “${String(args.name ?? "")}”.` +
-        (args.force
-          ? "\n\nForced: commits on it that are not merged anywhere else go with it."
-          : "")
-      );
+      return args.force
+        ? l10n.t(
+            "Delete branch “{0}”.\n\nForced: commits on it that are not merged anywhere else go with it.",
+            String(args.name ?? ""),
+          )
+        : l10n.t("Delete branch “{0}”.", String(args.name ?? ""));
     case "git_reset": {
       const mode = String(args.mode ?? "");
       const to = String(args.ref ?? "");
-      const consequence =
-        mode === "hard"
-          ? "\n\nEvery uncommitted change in your working tree is destroyed. This can't be undone."
-          : mode === "soft"
-            ? "\n\nThe commits are undone; their changes stay staged."
-            : "\n\nThe commits are undone; their changes stay in your working tree.";
-      return `Move this branch to ${to} (${mode || "mixed"} reset).${consequence}`;
+      const modeLabel = mode || "mixed";
+      if (mode === "hard") {
+        return l10n.t(
+          "Move this branch to {0} ({1} reset).\n\nEvery uncommitted change in your working tree is destroyed. This can't be undone.",
+          to,
+          modeLabel,
+        );
+      }
+      if (mode === "soft") {
+        return l10n.t(
+          "Move this branch to {0} ({1} reset).\n\nThe commits are undone; their changes stay staged.",
+          to,
+          modeLabel,
+        );
+      }
+      return l10n.t(
+        "Move this branch to {0} ({1} reset).\n\nThe commits are undone; their changes stay in your working tree.",
+        to,
+        modeLabel,
+      );
     }
     default:
-      return `${tool.title}: ${JSON.stringify(args)}`;
+      return l10n.t("{0}: {1}", tool.title, JSON.stringify(args));
   }
 }
 

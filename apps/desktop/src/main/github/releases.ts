@@ -11,6 +11,7 @@
 // surfaces a 403 from the mutation calls as a normal error message.
 
 import { GitHubClient, enc, mapUser, type RawUser } from "../githubClient";
+import * as l10n from "@vscode/l10n";
 import { PAGE_CAPS } from "../githubPaging";
 import { errorFields } from "../githubErrors";
 import type {
@@ -195,7 +196,7 @@ export async function updateRelease(
   input: ReleaseInput,
 ): Promise<CommitActionResult> {
   if (input.id === undefined) {
-    return { ok: false, changed: false, message: "Missing release id." };
+    return { ok: false, changed: false, message: l10n.t("Missing release id.") };
   }
   try {
     await client.requestBody(

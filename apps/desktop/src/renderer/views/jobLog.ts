@@ -17,6 +17,7 @@
 // no longer hosts logs at all, which also ends the two-entry-points-leave-the
 // -card-in-different-states class of bug.
 
+import * as l10n from "@vscode/l10n";
 import { host } from "../bridge";
 import { el, span, glyph, cleanErr, errorState, skeletonList } from "../ui";
 import { toast } from "../dialogs";
@@ -45,12 +46,12 @@ function jobClass(j: WorkflowJob): string {
 }
 
 function jobWhen(j: WorkflowJob): string {
-  if (!j.startedAt) return j.status === "queued" ? "queued" : "";
-  if (!j.completedAt) return "running";
+  if (!j.startedAt) return j.status === "queued" ? l10n.t("queued") : "";
+  if (!j.completedAt) return l10n.t("running");
   const s = Math.max(0, Math.round((Date.parse(j.completedAt) - Date.parse(j.startedAt)) / 1000));
-  if (s < 60) return `${s}s`;
+  if (s < 60) return l10n.t("{0}s", s);
   const m = Math.floor(s / 60);
-  return m < 60 ? `${m}m ${s % 60}s` : `${Math.floor(m / 60)}h ${m % 60}m`;
+  return m < 60 ? l10n.t("{0}m {1}s", m, s % 60) : l10n.t("{0}h {1}m", Math.floor(m / 60), m % 60);
 }
 
 /** Everything one open job needs; torn down when another job is picked. */
@@ -72,8 +73,8 @@ export async function renderJobLog(
 ): Promise<void> {
   const runId = target?.number;
   const { view, main, rail, topActions } = detailPage({
-    backLabel: "Actions",
-    crumb: runId ? `Run ${runId}` : "Log",
+    backLabel: l10n.t("Actions"),
+    crumb: runId ? l10n.t("Run {0}", runId) : l10n.t("Log"),
     onBack: () => nav("actions", { number: runId }),
   });
   view.classList.add("joblog-view");
@@ -82,7 +83,7 @@ export async function renderJobLog(
   main.appendChild(skeletonList(3, false));
 
   if (!runId) {
-    main.replaceChildren(errorState("No run", "Nothing was asked for."));
+    main.replaceChildren(errorState(l10n.t("No run"), l10n.t("Nothing was asked for.")));
     return;
   }
 
@@ -95,7 +96,7 @@ export async function renderJobLog(
   } catch (e) {
     if (!view.isConnected) return;
     main.replaceChildren(
-      errorState("Couldn't load this run", cleanErr(e) || "GitHub request failed.", () =>
+      errorState(l10n.t("Couldn't load this run"), cleanErr(e) || l10n.t("GitHub request failed."), () =>
         void renderJobLog(wrap, nav, target),
       ),
     );
@@ -103,26 +104,26 @@ export async function renderJobLog(
   }
   if (!view.isConnected) return;
   if (!d) {
-    main.replaceChildren(errorState("Couldn't load this run", "The run could not be read."));
+    main.replaceChildren(errorState(l10n.t("Couldn't load this run"), l10n.t("The run could not be read.")));
     return;
   }
 
   const run = d.run;
   const runNo = run.runNumber || run.id;
-  setPageLabel(`Run #${runNo} log`);
+  setPageLabel(l10n.t("Run #{0} log", runNo));
   // The crumb names the log you are READING, not just the run — on a matrix
   // build "#411" alone leaves the page unable to say which of nine jobs is on
   // screen. Updated as jobs are switched, below.
   const crumb = view.querySelector(".det-crumb");
   const setCrumb = (jobName?: string): void => {
-    if (crumb) crumb.textContent = jobName ? `#${runNo} · ${jobName}` : `#${runNo}`;
+    if (crumb) crumb.textContent = jobName ? l10n.t("#{0} · {1}", runNo, jobName) : l10n.t("#{0}", runNo);
   };
   setCrumb();
 
   const split = el("div", "joblog-split");
   const jobsCol = el("div", "joblog-jobs");
   jobsCol.setAttribute("role", "list");
-  jobsCol.setAttribute("aria-label", "Jobs in this run");
+  jobsCol.setAttribute("aria-label", l10n.t("Jobs in this run"));
   const logCol = el("div", "joblog-log");
   split.append(jobsCol, logCol);
   main.replaceChildren(split);
@@ -244,12 +245,12 @@ export async function renderJobLog(
       // you had read a word of it.
       live: statusOf(j.id) === "in_progress",
       queued: statusOf(j.id) === "queued",
-      ariaLabel: `Log for ${j.name}`,
+      ariaLabel: l10n.t("Log for {0}", j.name),
       onCopy: () => host.invoke("actions:jobLog", { jobId: j.id }),
       onDownload: () => {
         void host.invoke("actions:saveLog", { jobId: j.id, name: j.name }).then((r) => {
           toast(
-            r.ok ? (r.message ?? "Log saved.") : (r.message ?? "Couldn't save the log."),
+            r.ok ? (r.message ?? l10n.t("Log saved.")) : (r.message ?? l10n.t("Couldn't save the log.")),
             r.ok ? "success" : "error",
           );
         });
@@ -277,7 +278,7 @@ export async function renderJobLog(
     } catch (e) {
       if (!s.alive) return;
       logCol.replaceChildren(
-        errorState("Couldn't load this log", cleanErr(e) || "GitHub request failed.", () =>
+        errorState(l10n.t("Couldn't load this log"), cleanErr(e) || l10n.t("GitHub request failed."), () =>
           void openJob(j),
         ),
       );
@@ -357,7 +358,7 @@ export async function renderJobLog(
 
   const open = jobs.find((j) => j.id === currentId) ?? jobs[0];
   if (open) void openJob(open);
-  else logCol.replaceChildren(errorState("No jobs", "This run has no jobs to show."));
+  else logCol.replaceChildren(errorState(l10n.t("No jobs"), l10n.t("This run has no jobs to show.")));
 
   // `j` and `k` walk the rail without leaving the log's keyboard: reading one
   // job's failure and then the next is the whole reason a matrix run is open.
@@ -380,8 +381,8 @@ export async function renderJobLog(
 
   // The run page is one click away, for the parts of a run that are not the log.
   const toRun = el("button", "mini-btn") as HTMLButtonElement;
-  toRun.append(glyph("list-unordered"), span("Run details"));
-  toRun.title = "Steps, artifacts and re-run controls for this run";
+  toRun.append(glyph("list-unordered"), span(l10n.t("Run details")));
+  toRun.title = l10n.t("Steps, artifacts and re-run controls for this run");
   toRun.addEventListener("click", () => nav("actions", { number: runId }));
   topActions.appendChild(toRun);
 }

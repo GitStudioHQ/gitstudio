@@ -9,6 +9,7 @@ import { deepActiveElement } from "./focusReturn";
 import { mdEditor } from "./mdEditor";
 import { wireDraft } from "./draftStore";
 import { refNameProblem, sanitizeRefName } from "../shared/refName";
+import * as l10n from "@vscode/l10n";
 
 function mk(tag: string, cls = ""): HTMLElement {
   const n = document.createElement(tag);
@@ -60,7 +61,7 @@ export function toast(
   const msg = mk("div", "toast-msg");
   msg.textContent = message;
   const close = mk("button", "toast-close");
-  close.setAttribute("aria-label", "Dismiss");
+  close.setAttribute("aria-label", l10n.t("Dismiss"));
   close.appendChild(gl("close"));
   t.append(icon, msg);
   const actions = action === undefined ? [] : Array.isArray(action) ? action : [action];
@@ -304,26 +305,26 @@ export function confirmDialog(opts: {
       body.textContent = opts.message;
       const actions = mk("div", "modal-actions");
       const cancel = mk("button", "mini-btn");
-      cancel.textContent = "Cancel";
+      cancel.textContent = l10n.t("Cancel");
       const ok = mk("button", `btn ${opts.danger ? "btn-danger" : "btn-primary"} modal-ok`);
       const okLabel = mk("span");
-      okLabel.textContent = opts.confirmLabel ?? "Confirm";
+      okLabel.textContent = opts.confirmLabel ?? l10n.t("Confirm");
       ok.appendChild(okLabel);
       actions.append(cancel, ok);
       card.append(h, body);
       let typedInput: HTMLInputElement | undefined;
       if (opts.requireTyped) {
         const hint = mk("div", "modal-message confirm-typed-hint");
-        hint.textContent = `Type ${opts.requireTyped} to confirm.`;
+        hint.textContent = l10n.t("Type {0} to confirm.", opts.requireTyped);
         typedInput = document.createElement("input");
         typedInput.className = "modal-input confirm-typed-input";
         // NOT the required text: using it as the placeholder showed the answer
         // inside the box you had to type it into, which teaches you to copy
         // what is already on screen and defeats the point of the safeguard.
-        typedInput.placeholder = "Type the name to confirm";
+        typedInput.placeholder = l10n.t("Type the name to confirm");
         typedInput.spellcheck = false;
         typedInput.autocapitalize = "off";
-        typedInput.setAttribute("aria-label", `Type ${opts.requireTyped} to confirm`);
+        typedInput.setAttribute("aria-label", l10n.t("Type {0} to confirm", opts.requireTyped));
         const sync = (): void => {
           const match = typedInput!.value.trim() === opts.requireTyped;
           if (match) ok.removeAttribute("disabled");
@@ -416,7 +417,7 @@ export function promptInline(
   title: string,
   placeholder: string,
   value = "",
-  okLabel = "Create",
+  okLabel = l10n.t("Create"),
   /** When true, an empty submission resolves "" (not null) — null then means
    *  ONLY an explicit cancel/dismiss. Lets callers tell "cleared" from "cancelled". */
   allowEmpty = false,
@@ -441,7 +442,7 @@ export function promptInline(
       input.id = "gs-prompt-input";
       const actions = mk("div", "modal-actions");
       const cancel = mk("button", "mini-btn");
-      cancel.textContent = "Cancel";
+      cancel.textContent = l10n.t("Cancel");
       const ok = mk("button", "btn btn-primary modal-ok");
       const okSpan = mk("span");
       okSpan.textContent = okLabel;
@@ -468,11 +469,11 @@ export function promptInline(
       sug.hidden = true;
       const sugCode = mk("code");
       const sugUse = mk("button", "mini-btn prompt-suggest-use");
-      sugUse.textContent = "Use";
-      sugUse.title = "Replace what you typed with this";
+      sugUse.textContent = l10n.t("Use");
+      sugUse.title = l10n.t("Replace what you typed with this");
       (sugUse as HTMLButtonElement).type = "button";
       const sugLead = mk("span");
-      sugLead.textContent = "Use instead";
+      sugLead.textContent = l10n.t("Use instead");
       sug.append(sugLead, sugCode, sugUse);
       if (opts.validate) {
         card.append(err, sug);
@@ -600,12 +601,12 @@ export function promptMessage(opts: {
       area.value = opts.value;
       area.rows = 8;
       area.spellcheck = true;
-      area.setAttribute("aria-label", opts.label ?? "Commit message");
+      area.setAttribute("aria-label", opts.label ?? l10n.t("Commit message"));
       area.setAttribute("aria-describedby", "gs-msg-hint");
       area.setAttribute("aria-keyshortcuts", "Meta+Enter Control+Enter");
       const actions = mk("div", "modal-actions");
       const cancel = mk("button", "mini-btn");
-      cancel.textContent = "Cancel";
+      cancel.textContent = l10n.t("Cancel");
       const ok = mk("button", "btn btn-primary modal-ok");
       const okSpan = mk("span");
       okSpan.textContent = opts.okLabel;
@@ -756,7 +757,7 @@ export function promptChoice(opts: {
       });
       const actions = mk("div", "modal-actions");
       const cancel = mk("button", "mini-btn");
-      cancel.textContent = "Cancel";
+      cancel.textContent = l10n.t("Cancel");
       cancel.addEventListener("click", () => {
         settled = true;
         resolve(opts.cancelId);

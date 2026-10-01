@@ -15,6 +15,7 @@
 // under plain node in tests.
 
 import { execFile } from "node:child_process";
+import * as l10n from "@vscode/l10n";
 import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { githubRepoOfRemote } from "./githubRemote";
@@ -446,7 +447,7 @@ export async function trashRefusalResolved(
   // from the app — but the channel is reachable, and "inside the clone folder"
   // must never be enough on its own to delete a folder.
   if (!(await isRepoDir(real))) {
-    return "That folder isn't a git repository — GitStudio won't delete it.";
+    return l10n.t("That folder isn't a git repository — GitStudio won't delete it.");
   }
   return null;
 }
@@ -466,16 +467,16 @@ export function trashRefusal(
 ): string | null {
   const r = resolve(root);
   if (!r || r === resolve(o.cloneDir)) {
-    return "That's the clone folder itself, not a repository inside it.";
+    return l10n.t("That's the clone folder itself, not a repository inside it.");
   }
   if (o.current && resolve(o.current) === r) {
-    return "That repository is open right now — switch to another one first.";
+    return l10n.t("That repository is open right now — switch to another one first.");
   }
   if (o.open?.some((t) => resolve(t) === r)) {
-    return "That repository is open in a tab — close its tab first.";
+    return l10n.t("That repository is open in a tab — close its tab first.");
   }
   if (!isInside(o.cloneDir, r)) {
-    return "GitStudio only deletes clones inside your clone folder. Remove this one from Finder if you meant to.";
+    return l10n.t("GitStudio only deletes clones inside your clone folder. Remove this one from Finder if you meant to.");
   }
   return null;
 }

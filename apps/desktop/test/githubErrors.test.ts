@@ -9,7 +9,7 @@ import {
   networkError,
   type GraphqlFailure,
 } from "../src/main/githubErrors";
-import { EMPTY_REPO_MESSAGE, isEmptyRepoMessage } from "../src/shared/githubStates";
+import { emptyRepoMessage, isEmptyRepoMessage } from "../src/shared/githubStates";
 
 // 1.1.1 stopped filing "Not connected to GitHub." as a crash. Its siblings kept
 // arriving: being offline, an expired token, the rate limiter. None of them are
@@ -171,7 +171,7 @@ test("a repository with no commits is a state, whatever status GitHub used", asy
     assert.equal(isExpectedError(e), true, `HTTP ${status} "${detail}" must not be reported`);
     // ONE wording, so the renderer has one string to recognise across IPC —
     // where an error is only ever its message — and the collector one to dedupe.
-    assert.equal(e.message, EMPTY_REPO_MESSAGE);
+    assert.equal(e.message, emptyRepoMessage());
   }
 });
 
@@ -184,11 +184,11 @@ test("the empty-repository rule is GitHub's 404/409 shapes, not the words in any
   const validation = await githubHttpError(
     json(422, { message: "Validation Failed: the template repository is empty" }),
   );
-  assert.notEqual(validation.message, EMPTY_REPO_MESSAGE, "a 422 keeps its own words");
+  assert.notEqual(validation.message, emptyRepoMessage(), "a 422 keeps its own words");
   assert.equal(isExpectedError(validation), false, "…and stays reportable, as every 422 is");
 
   const outage = await githubHttpError(json(502, { message: "Upstream says the repository is empty" }));
-  assert.notEqual(outage.message, EMPTY_REPO_MESSAGE, "a 5xx is GitHub's health, not an empty repo");
+  assert.notEqual(outage.message, emptyRepoMessage(), "a 5xx is GitHub's health, not an empty repo");
 
   // The STATUS is half the rule, not decoration: even GitHub's exact sentence
   // on a 422 is a request we built wrong, and must stay reportable.
@@ -197,13 +197,13 @@ test("the empty-repository rule is GitHub's 404/409 shapes, not the words in any
 
   // And a 404/409 whose sentence is something else entirely is not it either.
   const other = await githubHttpError(json(404, { message: "Not Found — is the repository empty?" }));
-  assert.notEqual(other.message, EMPTY_REPO_MESSAGE);
+  assert.notEqual(other.message, emptyRepoMessage());
   assert.equal(isExpectedError(other), false, "the 404 policy still reports it");
 });
 
 test("the renderer recognises only the one normalised sentence", () => {
-  assert.equal(isEmptyRepoMessage(EMPTY_REPO_MESSAGE), true);
-  assert.equal(isEmptyRepoMessage(`  ${EMPTY_REPO_MESSAGE}\n`), true, "whitespace is not a different answer");
+  assert.equal(isEmptyRepoMessage(emptyRepoMessage()), true);
+  assert.equal(isEmptyRepoMessage(`  ${emptyRepoMessage()}\n`), true, "whitespace is not a different answer");
   // A raw message that merely contains the words crossed the IPC unnormalised
   // precisely BECAUSE it is not an empty repository; painting it as one would
   // hide the failure behind "nothing has been pushed yet".

@@ -6,6 +6,7 @@ import { host } from "./bridge";
 import { registerLayer } from "./overlays";
 export { middleTruncate } from "./textFit";
 import { toast } from "./dialogs";
+import * as l10n from "@vscode/l10n";
 
 // ── tiny DOM helpers ─────────────────────────────────────────────────────────
 
@@ -40,12 +41,12 @@ export function glyph(name: string): HTMLElement {
 export function relTime(epochSec: number): string {
   if (!Number.isFinite(epochSec)) return "";
   const d = Math.max(0, Date.now() / 1000 - epochSec);
-  if (d < 60) return "just now";
-  if (d < 3600) return `${Math.floor(d / 60)}m ago`;
-  if (d < 86400) return `${Math.floor(d / 3600)}h ago`;
-  if (d < 86400 * 30) return `${Math.floor(d / 86400)}d ago`;
-  if (d < 86400 * 365) return `${Math.floor(d / 86400 / 30)}mo ago`;
-  return `${Math.floor(d / 86400 / 365)}y ago`;
+  if (d < 60) return l10n.t("just now");
+  if (d < 3600) return l10n.t("{0}m ago", Math.floor(d / 60));
+  if (d < 86400) return l10n.t("{0}h ago", Math.floor(d / 3600));
+  if (d < 86400 * 30) return l10n.t("{0}d ago", Math.floor(d / 86400));
+  if (d < 86400 * 365) return l10n.t("{0}mo ago", Math.floor(d / 86400 / 30));
+  return l10n.t("{0}y ago", Math.floor(d / 86400 / 365));
 }
 
 /** A codicon name for a file/folder, picked from the curated desktop subset by
@@ -270,7 +271,7 @@ export function textBtn(
     // branch"). Tabbing a list with a screen reader was therefore "Stage,
     // Stage, Stage, Stage" — the one thing a person needs to know, WHICH file,
     // being the one thing not said. It is worst on the destructive ones.
-    b.setAttribute("aria-label", `${label} ${identity}`);
+    b.setAttribute("aria-label", l10n.t("{0} {1}", label, identity));
   }
   b.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -288,19 +289,19 @@ export function textBtn(
 export function statusWord(status: string): string {
   switch (status) {
     case "M":
-      return "modified";
+      return l10n.t("modified");
     case "A":
-      return "added";
+      return l10n.t("added");
     case "D":
-      return "deleted";
+      return l10n.t("deleted");
     case "R":
-      return "renamed";
+      return l10n.t("renamed");
     case "C":
-      return "copied";
+      return l10n.t("copied");
     case "U":
-      return "conflicted";
+      return l10n.t("conflicted");
     case "?":
-      return "untracked";
+      return l10n.t("untracked");
     default:
       return status;
   }
@@ -442,10 +443,14 @@ export function statBit(icon: string, text: string | number, cls = "", label?: s
   if (icon) s.appendChild(glyph(icon));
   s.appendChild(span(typeof text === "number" ? text.toLocaleString() : String(text)));
   // A bare "3" next to an icon is a guess; the tooltip names what it counts.
-  const known: Record<string, string> = { comment: "comments", file: "files", "cloud-download": "downloads" };
+  const known: Record<string, string> = {
+    comment: l10n.t("comments"),
+    file: l10n.t("files"),
+    "cloud-download": l10n.t("downloads"),
+  };
   const title = label ?? known[icon];
   if (title) {
-    s.title = typeof text === "number" ? `${text.toLocaleString()} ${title}` : title;
+    s.title = typeof text === "number" ? l10n.t("{0} {1}", text.toLocaleString(), title) : title;
   }
   return s;
 }
@@ -508,13 +513,13 @@ export function stateLead(kind: string, label?: string): HTMLElement {
 }
 
 const STATE_WORDS: Record<string, string> = {
-  open: "Open",
-  "open-pr": "Open",
-  closed: "Closed",
-  completed: "Closed",
-  "not-planned": "Closed as not planned",
-  merged: "Merged",
-  draft: "Draft",
+  open: l10n.t("Open"),
+  "open-pr": l10n.t("Open"),
+  closed: l10n.t("Closed"),
+  completed: l10n.t("Closed"),
+  "not-planned": l10n.t("Closed as not planned"),
+  merged: l10n.t("Merged"),
+  draft: l10n.t("Draft"),
 };
 
 /** Codicon name for a PR/issue state. */
@@ -601,7 +606,7 @@ export function ghRow(o: GhRowOpts): HTMLElement {
 }
 
 /** A centered spinner + label, shown while a view's data is in flight. */
-export function loadingState(text = "Loading…"): HTMLElement {
+export function loadingState(text = l10n.t("Loading…")): HTMLElement {
   const wrap = el("div", "list-loading");
   wrap.append(el("div", "spinner"));
   const t = el("div", "list-loading-label");
@@ -639,7 +644,7 @@ export function errorState(title: string, desc: string, onRetry?: () => void): H
   wrap.append(badge, t, d);
   if (onRetry) {
     const retry = el("button", "mini-btn list-empty-action");
-    retry.append(glyph("refresh"), span("Retry"));
+    retry.append(glyph("refresh"), span(l10n.t("Retry")));
     retry.addEventListener("click", onRetry);
     wrap.appendChild(retry);
   }
@@ -688,14 +693,14 @@ export function settingsField(
  *  device-flow AUTO-copy has no gesture), and used to reject on permission too
  *  — so Copy buttons "hard-errored". The main-process clipboard has none of
  *  those constraints; fall back to it over IPC before declaring failure. */
-export async function copyText(text: string, successMsg = "Copied."): Promise<void> {
+export async function copyText(text: string, successMsg = l10n.t("Copied.")): Promise<void> {
   try {
     await navigator.clipboard.writeText(text);
   } catch {
     try {
       await host.invoke("clipboard:write", text);
     } catch {
-      toast("Couldn't copy to the clipboard.", "error");
+      toast(l10n.t("Couldn't copy to the clipboard."), "error");
       return;
     }
   }
@@ -1121,7 +1126,7 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
       // so it is not a stop of its own.
       const more = el("span", "dropdown-more");
       more.appendChild(glyph("chevron-right"));
-      more.title = it.submenuLabel ?? `Actions for ${it.label ?? "this"}`;
+      more.title = it.submenuLabel ?? l10n.t("Actions for {0}", it.label ?? l10n.t("this"));
       more.setAttribute("aria-hidden", "true");
       more.addEventListener("click", (ev) => {
         ev.stopPropagation();
@@ -1153,7 +1158,7 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
     const mine = ++subSeq;
     const panel = el("div", "dropdown dropdown-submenu");
     panel.setAttribute("role", "menu");
-    panel.setAttribute("aria-label", it.submenuLabel ?? `Actions for ${it.label ?? "this"}`);
+    panel.setAttribute("aria-label", it.submenuLabel ?? l10n.t("Actions for {0}", it.label ?? l10n.t("this")));
     row.setAttribute("aria-expanded", "true");
     row.classList.add("is-open");
     const srows: HTMLElement[] = [];
@@ -1176,10 +1181,12 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
     };
     let built = it.submenu();
     if (built instanceof Promise) {
-      fill([{ label: "Loading…", icon: "loading", disabled: true }]);
+      fill([{ label: l10n.t("Loading…"), icon: "loading", disabled: true }]);
       document.body.appendChild(panel);
       placeSub(panel, row);
-      built = await built.catch(() => [{ label: "Couldn't load these actions", icon: "warning", disabled: true }]);
+      built = await built.catch(() => [
+        { label: l10n.t("Couldn't load these actions"), icon: "warning", disabled: true },
+      ]);
       if (mine !== subSeq || closed) return; // closed, or another row's opened since
     }
     fill(built);
@@ -1245,8 +1252,8 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
     search = document.createElement("input");
     search.className = "dropdown-search";
     search.type = "text";
-    search.placeholder = "Filter…";
-    search.setAttribute("aria-label", "Filter menu");
+    search.placeholder = l10n.t("Filter…");
+    search.setAttribute("aria-label", l10n.t("Filter menu"));
     search.spellcheck = false;
     const labelOf = (r: HTMLElement): string =>
       (r.querySelector(".dropdown-label")?.textContent ?? "").toLowerCase();

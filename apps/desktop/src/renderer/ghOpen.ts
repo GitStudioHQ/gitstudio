@@ -16,6 +16,7 @@ import { openModal, toast } from "./dialogs";
 import { el, cleanErr } from "./ui";
 import { openDestinationSheet } from "./destinationSheet";
 import { closePeek } from "./peek";
+import * as l10n from "@vscode/l10n";
 
 /**
  * The open in flight, if any.
@@ -39,7 +40,7 @@ const OPEN_TIMEOUT_MS = 10 * 60_000;
 function busy(fullName: string): boolean {
   if (!current) return false;
   if (current.fullName === fullName) current.reopen();
-  else toast(`Still opening ${current.fullName} — one at a time.`, "info");
+  else toast(l10n.t("Still opening {0} — one at a time.", current.fullName), "info");
   return true;
 }
 
@@ -95,8 +96,8 @@ function run(fullName: string, opts: { dest?: string; name?: string }): void {
   let subEl: HTMLElement | undefined;
   const cloneCopy = (): string =>
     destDisplay
-      ? `First open clones it into ${destDisplay} — after that it's instant.`
-      : "First open clones it — after that it's instant.";
+      ? l10n.t("First open clones it into {0} — after that it's instant.", destDisplay)
+      : l10n.t("First open clones it — after that it's instant.");
 
   let cardOpen = false;
   const showCard = (): void => {
@@ -107,12 +108,12 @@ function run(fullName: string, opts: { dest?: string; name?: string }): void {
       const card = el("div", "modal-card ghopen-card");
       card.tabIndex = -1;
       const title = el("div", "modal-title");
-      title.textContent = `Opening ${fullName}…`;
+      title.textContent = l10n.t("Opening {0}…", fullName);
       const sub = el("div", "modal-message");
       sub.textContent = cloneCopy();
       subEl = sub;
       const phase = el("div", "clone-progress-phase");
-      phase.textContent = "Preparing…";
+      phase.textContent = l10n.t("Preparing…");
       const bar = el("div", "clone-progress-bar");
       const fill = el("div", "clone-progress-fill");
       bar.appendChild(fill);
@@ -125,7 +126,7 @@ function run(fullName: string, opts: { dest?: string; name?: string }): void {
       return {
         card,
         focusEl: card,
-        label: `Opening ${fullName}`,
+        label: l10n.t("Opening {0}", fullName),
         onClose: () => {
           cardOpen = false;
           phaseEl = undefined;
@@ -143,7 +144,7 @@ function run(fullName: string, opts: { dest?: string; name?: string }): void {
   const giveUp = window.setTimeout(() => {
     if (done) return;
     finish();
-    toast(`Gave up waiting for ${fullName}. It may still be cloning — check your clone folder.`, "error");
+    toast(l10n.t("Gave up waiting for {0}. It may still be cloning — check your clone folder.", fullName), "error");
   }, OPEN_TIMEOUT_MS);
 
   const offProgress = host.on("clone:progress", (p) => {
@@ -175,8 +176,8 @@ function run(fullName: string, opts: { dest?: string; name?: string }): void {
         // you leave, and this one is about the tab you arrive in.
         toast(
           r.cloned
-            ? `Cloned ${fullName} into ${destDisplay || "your clone folder"} and opened it.`
-            : `Opened ${fullName}.`,
+            ? l10n.t("Cloned {0} into {1} and opened it.", fullName, destDisplay || l10n.t("your clone folder"))
+            : l10n.t("Opened {0}.", fullName),
           "success",
         );
         return;
@@ -194,16 +195,16 @@ function run(fullName: string, opts: { dest?: string; name?: string }): void {
             // confirming a collision retry quietly relocated the clone — on the
             // one path whose whole premise is that they picked somewhere else.
             dest: opts.dest,
-            note: r.message || "That folder already exists — pick another spot or name.",
+            note: r.message || l10n.t("That folder already exists — pick another spot or name."),
           },
         );
         return;
       }
-      toast(r.message || `Couldn't open ${fullName}.`, "error");
+      toast(r.message || l10n.t("Couldn't open {0}.", fullName), "error");
     })
     .catch((e) => {
       finish();
-      toast(cleanErr(e) || `Couldn't open ${fullName}.`, "error");
+      toast(cleanErr(e) || l10n.t("Couldn't open {0}.", fullName), "error");
     });
 }
 

@@ -20,6 +20,7 @@ import { homedir } from "node:os";
 import { delimiter, join, posix, win32 } from "node:path";
 import { promisify } from "node:util";
 import { app, nativeImage, shell } from "electron";
+import * as l10n from "@vscode/l10n";
 import type { EditorView, OkResult } from "../shared/ipc";
 
 export interface EditorSpec {
@@ -414,14 +415,14 @@ export async function openEditor(
       return {
         ok: false,
         expected: true,
-        message: "That editor isn't installed any more — check Settings ▸ Editors.",
+        message: l10n.t("That editor isn't installed any more — check Settings ▸ Editors."),
       };
     ({ cmd, args, shell: useShell } = commandFor(hit, root, process.platform));
   }
   return new Promise((resolve) => {
     try {
       const child = spawn(cmd, args, { detached: true, stdio: "ignore", shell: useShell });
-      child.once("error", (e) => resolve({ ok: false, message: `Couldn't launch it: ${e.message}` }));
+      child.once("error", (e) => resolve({ ok: false, message: l10n.t("Couldn't launch it: {0}", e.message) }));
       // `spawn` reports a missing executable asynchronously; give it a beat.
       child.once("spawn", () => {
         child.unref();

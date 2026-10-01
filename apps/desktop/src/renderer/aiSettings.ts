@@ -16,6 +16,11 @@ import { toast, confirmDialog, promptInline } from "./dialogs";
 import { trapTab } from "./views/common";
 import { registerLayer, holdBackground } from "./overlays";
 import type { AiConnectionView, AiPresetView, AiSettingsView, McpInfo } from "../shared/ipc";
+import * as l10n from "@vscode/l10n";
+
+/** Shared with the "Configure" button's title so `openGallery`'s post-add
+ *  auto-open selector (`[title="..."]`) keeps matching after translation. */
+const CONFIGURE_LABEL = l10n.t("Configure");
 
 /** Say that the set of usable models may have changed.
  *
@@ -30,7 +35,7 @@ export function announceAiChanged(): void {
 
 /** The "AI Models" card: manage model connections. */
 export function aiModelsCard(): HTMLElement {
-  const { card, body } = settingsCard("AI Models", "sparkle");
+  const { card, body } = settingsCard(l10n.t("AI Models"), "sparkle");
 
   const render = async (): Promise<void> => {
     // Every connect / remove / set-key / set-default re-renders this card, so this
@@ -38,14 +43,15 @@ export function aiModelsCard(): HTMLElement {
     invalidateAiEnabled();
     body.replaceChildren();
     const sub = el("div", "settings-sub");
-    sub.textContent =
-      "Connect any model to power the ✨ helpers and the Assistant — bring your own key, or run a local model (Ollama / LM Studio) that never leaves your machine. AI is optional and never blocks Git.";
+    sub.textContent = l10n.t(
+      "Connect any model to power the ✨ helpers and the Assistant — bring your own key, or run a local model (Ollama / LM Studio) that never leaves your machine. AI is optional and never blocks Git.",
+    );
     body.append(sub);
 
     /** The card's one action, built where BOTH exits can use it. */
     const addButton = (): HTMLElement => {
       const add = el("button", "btn btn-primary ai-add-btn");
-      add.append(glyph("add"), span("Connect a model"));
+      add.append(glyph("add"), span(l10n.t("Connect a model")));
       add.addEventListener("click", () => openGallery(body, render));
       return add;
     };
@@ -62,7 +68,7 @@ export function aiModelsCard(): HTMLElement {
       // would have succeeded a second later.
       body.append(errorLine(cleanErr(e)));
       const retry = el("button", "mini-btn");
-      retry.append(glyph("refresh"), span("Try again"));
+      retry.append(glyph("refresh"), span(l10n.t("Try again")));
       retry.addEventListener("click", () => void render());
       const row = el("div", "settings-actions");
       row.append(retry, addButton());
@@ -72,7 +78,7 @@ export function aiModelsCard(): HTMLElement {
 
     if (settings.connections.length === 0) {
       const empty = el("div", "settings-empty");
-      empty.textContent = "No models connected yet.";
+      empty.textContent = l10n.t("No models connected yet.");
       body.append(empty);
     } else {
       const list = el("div", "ai-conn-list");
@@ -98,23 +104,27 @@ function connectionRow(c: AiConnectionView, isDefault: boolean, refresh: () => P
   const meta = el("div", "ai-conn-meta");
   const top = el("div", "ai-conn-name");
   top.append(span(c.label));
-  if (isDefault) top.append(pill("Default", "is-default"));
-  if (c.local) top.append(pill("Local", "is-local"));
+  if (isDefault) top.append(pill(l10n.t("Default"), "is-default"));
+  if (c.local) top.append(pill(l10n.t("Local"), "is-local"));
   const bottom = el("div", "ai-conn-sub");
-  bottom.textContent = `${c.models.mid || c.models.fast || "no model set"} · ${hostLabel(c.baseUrl)}`;
+  bottom.textContent = l10n.t(
+    "{0} · {1}",
+    c.models.mid || c.models.fast || l10n.t("no model set"),
+    hostLabel(c.baseUrl),
+  );
   meta.append(top, bottom);
   head.append(meta);
 
   const status = c.usable
-    ? pill("Ready", "is-ready")
+    ? pill(l10n.t("Ready"), "is-ready")
     : c.needsKey && !c.hasKey
-      ? pill("Needs key", "is-warn")
-      : pill("Incomplete", "is-warn");
+      ? pill(l10n.t("Needs key"), "is-warn")
+      : pill(l10n.t("Incomplete"), "is-warn");
   head.append(status);
 
   const actions = el("div", "ai-conn-actions");
   if (!isDefault && c.usable) {
-    const star = iconBtn("star-empty", "Set as default");
+    const star = iconBtn("star-empty", l10n.t("Set as default"));
     star.addEventListener("click", () =>
       void runBusy(star, async () => {
         await host.invoke("ai:setDefault", { id: c.id });
@@ -124,8 +134,8 @@ function connectionRow(c: AiConnectionView, isDefault: boolean, refresh: () => P
     );
     actions.append(star);
   }
-  const edit = iconBtn("gear", "Configure");
-  const remove = iconBtn("trash", "Remove");
+  const edit = iconBtn("gear", CONFIGURE_LABEL);
+  const remove = iconBtn("trash", l10n.t("Remove"));
   actions.append(edit, remove);
   head.append(actions);
   row.append(head);
@@ -143,21 +153,21 @@ function connectionRow(c: AiConnectionView, isDefault: boolean, refresh: () => P
   });
   remove.addEventListener("click", async () => {
     const ok = await confirmDialog({
-      title: "Remove model",
+      title: l10n.t("Remove model"),
       // Only claim the key when there IS one. A local connection that needs no
       // key, or one you have not given a key to yet, was told its key would be
       // deleted — a confirm that describes a consequence that cannot happen
       // teaches people to stop reading confirms.
       message: c.hasKey
-        ? `Remove “${c.label}”? Its stored API key will be deleted from this machine.`
-        : `Remove “${c.label}”?`,
-      confirmLabel: "Remove",
+        ? l10n.t("Remove “{0}”? Its stored API key will be deleted from this machine.", c.label)
+        : l10n.t("Remove “{0}”?", c.label),
+      confirmLabel: l10n.t("Remove"),
       danger: true,
     });
     if (!ok) return;
     await host.invoke("ai:removeConnection", { id: c.id });
     announceAiChanged();
-    toast("Model removed.", "info");
+    toast(l10n.t("Model removed."), "info");
     void refresh();
   });
   row.append(editor);
@@ -168,17 +178,31 @@ function buildEditor(editor: HTMLElement, c: AiConnectionView, refresh: () => Pr
   editor.replaceChildren();
   const isCli = c.wire === "cli";
 
-  const labelF = settingsField("Name", c.label, "My Claude");
+  const labelF = settingsField(l10n.t("Name"), c.label, "My Claude");
   // CLI connections have no base URL or API key — they use the local binary's own
   // login. They just take optional model overrides (mapped to `--model`).
-  const urlF = settingsField("API base URL", c.baseUrl, "https://api.example.com/v1");
-  const fastF = settingsField(isCli ? "Quick model (optional)" : "Fast model", c.models.fast, "e.g. haiku");
-  const midF = settingsField(isCli ? "Default model (optional)" : "Standard model", c.models.mid, "e.g. sonnet");
-  const deepF = settingsField(isCli ? "Deep model (optional)" : "Deep model", c.models.deep, "e.g. opus");
+  const urlF = settingsField(l10n.t("API base URL"), c.baseUrl, "https://api.example.com/v1");
+  const fastF = settingsField(
+    isCli ? l10n.t("Quick model (optional)") : l10n.t("Fast model"),
+    c.models.fast,
+    l10n.t("e.g. haiku"),
+  );
+  const midF = settingsField(
+    isCli ? l10n.t("Default model (optional)") : l10n.t("Standard model"),
+    c.models.mid,
+    l10n.t("e.g. sonnet"),
+  );
+  const deepF = settingsField(
+    isCli ? l10n.t("Deep model (optional)") : l10n.t("Deep model"),
+    c.models.deep,
+    l10n.t("e.g. opus"),
+  );
   editor.append(labelF.row);
   if (isCli) {
     const note = el("div", "settings-sub");
-    note.textContent = "Runs your local CLI with its own login — no API key. Model names map to the CLI's --model flag (leave blank to use its default).";
+    note.textContent = l10n.t(
+      "Runs your local CLI with its own login — no API key. Model names map to the CLI's --model flag (leave blank to use its default).",
+    );
     editor.append(note, fastF.row, midF.row, deepF.row);
   } else {
     editor.append(urlF.row, fastF.row, midF.row, deepF.row);
@@ -189,7 +213,7 @@ function buildEditor(editor: HTMLElement, c: AiConnectionView, refresh: () => Pr
   if (c.needsKey) {
     const keyRow = el("div", "settings-field");
     const kl = el("label", "settings-field-label") as HTMLLabelElement;
-    kl.textContent = "API key";
+    kl.textContent = l10n.t("API key");
     const keyInput = document.createElement("input");
     keyInput.type = "password";
     keyInput.className = "settings-input";
@@ -199,23 +223,25 @@ function buildEditor(editor: HTMLElement, c: AiConnectionView, refresh: () => Pr
     // makes every label ambiguous to a screen reader.
     keyInput.id = `gs-ai-key-${c.id}`;
     kl.htmlFor = keyInput.id;
-    keyInput.placeholder = c.hasKey ? "•••••••• (stored — leave blank to keep)" : "Paste your API key";
+    keyInput.placeholder = c.hasKey
+      ? l10n.t("•••••••• (stored — leave blank to keep)")
+      : l10n.t("Paste your API key");
     keyRow.append(kl, keyInput);
     editor.append(keyRow);
     keyField = keyInput;
 
     const saveKey = el("button", "mini-btn");
-    saveKey.append(glyph("key"), span(c.hasKey ? "Update key" : "Save key"));
+    saveKey.append(glyph("key"), span(c.hasKey ? l10n.t("Update key") : l10n.t("Save key")));
     saveKey.addEventListener("click", () => {
       if (!keyInput.value.trim()) {
-        toast("Enter a key first.", "info");
+        toast(l10n.t("Enter a key first."), "info");
         return;
       }
       void runBusy(saveKey, async () => {
         await host.invoke("ai:setKey", { id: c.id, key: keyInput.value.trim() });
         announceAiChanged();
         keyInput.value = "";
-        toast("Key stored securely.", "success");
+        toast(l10n.t("Key stored securely."), "success");
         void refresh();
       });
     });
@@ -224,7 +250,7 @@ function buildEditor(editor: HTMLElement, c: AiConnectionView, refresh: () => Pr
 
   const actions = el("div", "settings-actions");
   const save = el("button", "btn btn-primary");
-  save.append(glyph("check"), span("Save"));
+  save.append(glyph("check"), span(l10n.t("Save")));
   save.addEventListener("click", () =>
     void runBusy(save, async () => {
       await host.invoke("ai:updateConnection", {
@@ -245,16 +271,16 @@ function buildEditor(editor: HTMLElement, c: AiConnectionView, refresh: () => Pr
         announceAiChanged();
         if (keyField) keyField.value = "";
       }
-      toast(typedKey ? "Saved, and the key stored securely." : "Saved.", "success");
+      toast(typedKey ? l10n.t("Saved, and the key stored securely.") : l10n.t("Saved."), "success");
       void refresh();
     }),
   );
 
   const test = el("button", "mini-btn");
-  test.append(glyph("debug-start"), span("Test"));
+  test.append(glyph("debug-start"), span(l10n.t("Test")));
   test.addEventListener("click", async () => {
     (test as HTMLButtonElement).disabled = true;
-    test.replaceChildren(glyph("loading"), span("Testing…"));
+    test.replaceChildren(glyph("loading"), span(l10n.t("Testing…")));
     try {
       const r = await host.invoke("ai:test", { id: c.id });
       toast(r.message, r.ok ? "success" : "error");
@@ -262,7 +288,7 @@ function buildEditor(editor: HTMLElement, c: AiConnectionView, refresh: () => Pr
       toast(cleanErr(e), "error");
     } finally {
       (test as HTMLButtonElement).disabled = false;
-      test.replaceChildren(glyph("debug-start"), span("Test"));
+      test.replaceChildren(glyph("debug-start"), span(l10n.t("Test")));
     }
   });
 
@@ -285,7 +311,7 @@ async function openGallery(body: HTMLElement, refresh: () => Promise<void>): Pro
   const overlay = el("div", "ai-gallery-pop");
   overlay.setAttribute("role", "dialog");
   overlay.setAttribute("aria-modal", "true");
-  overlay.setAttribute("aria-label", "Connect a model");
+  overlay.setAttribute("aria-label", l10n.t("Connect a model"));
   // Electron: an overlay over a -webkit-app-region:drag surface needs no-drag or
   // its controls aren't clickable.
   overlay.style.setProperty("-webkit-app-region", "no-drag");
@@ -337,12 +363,19 @@ async function openGallery(body: HTMLElement, refresh: () => Promise<void>): Pro
     // key at all. Their users could never lift the Assistant's gate.
     announceAiChanged();
     const ready = !p.needsKey;
-    toast(`Added ${p.label}. ${ready ? "Ready to use." : "Add your API key to finish."}`, "success");
+    toast(
+      l10n.t(
+        "Added {0}. {1}",
+        p.label,
+        ready ? l10n.t("Ready to use.") : l10n.t("Add your API key to finish."),
+      ),
+      "success",
+    );
     await refresh();
     // Auto-open the new connection's editor (to paste a key / pick a model).
     const editors = body.querySelectorAll<HTMLElement>(".ai-conn");
     const gear = editors[editors.length - 1]?.querySelector<HTMLButtonElement>(
-      '.ai-conn-actions [title="Configure"]',
+      `.ai-conn-actions [title="${CONFIGURE_LABEL}"]`,
     );
     gear?.click();
   };
@@ -353,9 +386,9 @@ async function openGallery(body: HTMLElement, refresh: () => Promise<void>): Pro
     const t = el("div", "ai-prov-meta");
     const name = el("div", "ai-prov-name");
     name.append(span(p.label.replace(/\s*\(local\)$/i, "")));
-    if (p.wire === "cli") name.append(pill("Your login", "is-local"));
-    else if (p.local) name.append(pill("On-device", "is-local"));
-    else if (!p.needsKey) name.append(pill("No key", "is-ready"));
+    if (p.wire === "cli") name.append(pill(l10n.t("Your login"), "is-local"));
+    else if (p.local) name.append(pill(l10n.t("On-device"), "is-local"));
+    else if (!p.needsKey) name.append(pill(l10n.t("No key"), "is-ready"));
     const blurb = el("div", "ai-prov-blurb");
     blurb.textContent = p.blurb;
     t.append(name, blurb);
@@ -385,16 +418,28 @@ async function openGallery(body: HTMLElement, refresh: () => Promise<void>): Pro
 
   const panel = el("div", "ai-gallery-panel");
   const ph = el("div", "ai-gallery-head");
-  ph.append(span("Connect a model"));
-  const close = iconBtn("close", "Close");
+  ph.append(span(l10n.t("Connect a model")));
+  const close = iconBtn("close", l10n.t("Close"));
   close.addEventListener("click", () => closeOverlay());
   ph.append(close);
   panel.append(ph);
 
   const sections = [
-    section("Use a local agent", "Drive a CLI you've already signed in to — no API key, your own subscription.", agents),
-    section("Run a model locally", "Open models on your own machine — fully private, no key.", localModels),
-    section("Connect with an API key", "Bring your own key from a cloud provider.", cloud),
+    section(
+      l10n.t("Use a local agent"),
+      l10n.t("Drive a CLI you've already signed in to — no API key, your own subscription."),
+      agents,
+    ),
+    section(
+      l10n.t("Run a model locally"),
+      l10n.t("Open models on your own machine — fully private, no key."),
+      localModels,
+    ),
+    section(
+      l10n.t("Connect with an API key"),
+      l10n.t("Bring your own key from a cloud provider."),
+      cloud,
+    ),
   ].filter((x): x is HTMLElement => x !== null);
   for (const s of sections) panel.append(s);
 
@@ -414,14 +459,15 @@ async function openGallery(body: HTMLElement, refresh: () => Promise<void>): Pro
 // ── Agent Access (MCP) card ────────────────────────────────────────────────────
 
 export function agentAccessCard(): HTMLElement {
-  const { card, body } = settingsCard("Agent Access · MCP", "plug");
+  const { card, body } = settingsCard(l10n.t("Agent Access · MCP"), "plug");
   let permission: "read" | "write" | "destructive" = "read";
 
   const render = async (): Promise<void> => {
     body.replaceChildren();
     const sub = el("div", "settings-sub");
-    sub.textContent =
-      "Expose this repository's Git tools to any MCP agent — Claude Desktop, Cursor, Copilot, Windsurf — so it can inspect history, diffs and branches (and, if you allow, commit) grounded in real state. Your repo, your rules.";
+    sub.textContent = l10n.t(
+      "Expose this repository's Git tools to any MCP agent — Claude Desktop, Cursor, Copilot, Windsurf — so it can inspect history, diffs and branches (and, if you allow, commit) grounded in real state. Your repo, your rules.",
+    );
     body.append(sub);
 
     let info: McpInfo;
@@ -438,12 +484,12 @@ export function agentAccessCard(): HTMLElement {
     // apps/mcp" — beside an Add button that could not work.
     if (!info.available) {
       const warn = el("div", "settings-empty mcp-missing");
-      warn.textContent = info.missing ?? "The MCP server isn't available in this build.";
+      warn.textContent = info.missing ?? l10n.t("The MCP server isn't available in this build.");
       body.append(warn);
     }
     if (!info.repoRoot) {
       const warn = el("div", "settings-empty");
-      warn.textContent = "Open a repository to scope the agent's access to it.";
+      warn.textContent = l10n.t("Open a repository to scope the agent's access to it.");
       body.append(warn);
     }
 
@@ -456,12 +502,12 @@ export function agentAccessCard(): HTMLElement {
     // agent may do") it therefore announced Read-only over a client installed
     // with write, and its description asserted "the agent cannot change your
     // repository" about an agent that could.
-    permLabel.textContent = "Grant to the next client you add or update";
+    permLabel.textContent = l10n.t("Grant to the next client you add or update");
     const seg = el("div", "settings-seg");
     const perms: Array<{ id: typeof permission; label: string }> = [
-      { id: "read", label: "Read-only" },
-      { id: "write", label: "+ Commit & branch" },
-      { id: "destructive", label: "+ Discard & reset" },
+      { id: "read", label: l10n.t("Read-only") },
+      { id: "write", label: l10n.t("+ Commit & branch") },
+      { id: "destructive", label: l10n.t("+ Discard & reset") },
     ];
     for (const p of perms) {
       const b = el("button", "settings-seg-btn" + (permission === p.id ? " active" : ""));
@@ -477,16 +523,25 @@ export function agentAccessCard(): HTMLElement {
     // not to what is already there.
     const permDesc = el("div", "mcp-perm-desc");
     const permDescs: Record<typeof permission, string> = {
-      read: "Adds inspect-only access — history, diffs, branches and file contents. A client added this way cannot change your repository.",
-      write: "Adds everything in Read-only, plus stage, commit and create or switch branches. It won't be able to discard or rewrite existing work.",
-      destructive: "Adds everything above, plus discard, reset and force operations that can lose uncommitted work or rewrite history.",
+      read: l10n.t(
+        "Adds inspect-only access — history, diffs, branches and file contents. A client added this way cannot change your repository.",
+      ),
+      write: l10n.t(
+        "Adds everything in Read-only, plus stage, commit and create or switch branches. It won't be able to discard or rewrite existing work.",
+      ),
+      destructive: l10n.t(
+        "Adds everything above, plus discard, reset and force operations that can lose uncommitted work or rewrite history.",
+      ),
     };
     permDesc.textContent = permDescs[permission];
     permWrap.append(permLabel, seg, permDesc);
     body.append(permWrap);
     if (permission === "destructive") {
       const note = el("div", "mcp-danger-note");
-      note.append(glyph("warning"), span("Only enable for an agent you trust — these tools can permanently lose work."));
+      note.append(
+        glyph("warning"),
+        span(l10n.t("Only enable for an agent you trust — these tools can permanently lose work.")),
+      );
       body.append(note);
     }
 
@@ -501,8 +556,8 @@ export function agentAccessCard(): HTMLElement {
       // Configured, but pointing at a GitStudio that is no longer there (the
       // app was moved after Add): not "Connected" — it cannot start. Say why,
       // and make the one button put the current path back.
-      if (cl.installed && cl.stale) n.append(pill("Moved", "is-warn"));
-      else if (cl.installed) n.append(pill("Connected", "is-ready"));
+      if (cl.installed && cl.stale) n.append(pill(l10n.t("Moved"), "is-warn"));
+      else if (cl.installed) n.append(pill(l10n.t("Connected"), "is-ready"));
       m.append(n);
       if (cl.stale && cl.staleReason) {
         const why = el("div", "mcp-client-stale");
@@ -513,12 +568,12 @@ export function agentAccessCard(): HTMLElement {
       const btn = el("button", "mini-btn") as HTMLButtonElement;
       btn.append(
         glyph(cl.stale ? "refresh" : cl.installed ? "sync" : "add"),
-        span(cl.stale ? "Re-add" : cl.installed ? "Update" : "Add"),
+        span(cl.stale ? l10n.t("Re-add") : cl.installed ? l10n.t("Update") : l10n.t("Add")),
       );
       // No server, no install: a button that can only fail is not an offer.
       if (!info.available) {
         btn.disabled = true;
-        btn.title = info.missing ?? "The MCP server isn't available in this build.";
+        btn.title = info.missing ?? l10n.t("The MCP server isn't available in this build.");
       }
       btn.addEventListener("click", () => void runBusy(btn, async () => {
         try {
@@ -545,11 +600,11 @@ export function agentAccessCard(): HTMLElement {
     const snippet = buildSnippet(info, permission);
     const codeWrap = el("div", "mcp-snippet");
     const codeHead = el("div", "mcp-snippet-head");
-    codeHead.append(span("Or paste this into any MCP client"));
+    codeHead.append(span(l10n.t("Or paste this into any MCP client")));
     const copyBtn = el("button", "icon-btn");
-    copyBtn.title = "Copy config";
+    copyBtn.title = l10n.t("Copy config");
     copyBtn.append(glyph("copy"));
-    copyBtn.addEventListener("click", () => void copyText(snippet, "MCP config copied."));
+    copyBtn.addEventListener("click", () => void copyText(snippet, l10n.t("MCP config copied.")));
     codeHead.append(copyBtn);
     const pre = el("pre", "mcp-snippet-code");
     pre.textContent = snippet;
@@ -601,12 +656,12 @@ function hostLabel(url: string): string {
   try {
     return new URL(url).host || url;
   } catch {
-    return url || "no endpoint";
+    return url || l10n.t("no endpoint");
   }
 }
 
 function errorLine(msg: string): HTMLElement {
   const e = el("div", "settings-empty");
-  e.textContent = msg || "Something went wrong.";
+  e.textContent = msg || l10n.t("Something went wrong.");
   return e;
 }

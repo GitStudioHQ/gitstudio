@@ -12,6 +12,7 @@
 
 import { ExpectedError } from "./expectedError";
 import { networkError } from "./githubErrors";
+import * as l10n from "@vscode/l10n";
 
 /** Public OAuth App Client ID — safe to embed (the secret is intentionally unused). */
 export const GITHUB_CLIENT_ID = "Ov23lizWuHbYyvQhkmwu";
@@ -79,7 +80,7 @@ export async function requestDeviceCode(): Promise<DeviceCode> {
   const j = await readJson(res);
   if (!res.ok || j.error) {
     throw new ExpectedError(
-      String(j.error_description || j.error || `GitHub returned ${res.status}.`),
+      String(j.error_description || j.error || l10n.t("GitHub returned {0}.", res.status)),
     );
   }
   return {
@@ -127,13 +128,13 @@ export async function pollForToken(deviceCode: string): Promise<PollResult> {
     case "slow_down":
       return { state: "slow_down" };
     case "expired_token":
-      return { state: "expired", message: "The code expired before you authorized. Start again." };
+      return { state: "expired", message: l10n.t("The code expired before you authorized. Start again.") };
     case "access_denied":
-      return { state: "denied", message: "Sign-in was cancelled." };
+      return { state: "denied", message: l10n.t("Sign-in was cancelled.") };
     default:
       return {
         state: "error",
-        message: String(j.error_description || j.error || "Sign-in failed."),
+        message: String(j.error_description || j.error || l10n.t("Sign-in failed.")),
       };
   }
 }

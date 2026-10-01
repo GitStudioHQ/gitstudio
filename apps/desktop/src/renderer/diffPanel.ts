@@ -21,6 +21,7 @@ import { confirmDialog, toast } from "./dialogs";
 import { whileSameRepo } from "./repoEpoch";
 import { el, span, glyph } from "./ui";
 import { didUndoable, registerMergeHistory } from "./undo";
+import * as l10n from "@vscode/l10n";
 import {
   DesktopMergeAdapter,
   conflictSignature,
@@ -172,13 +173,13 @@ export class DiffPanel {
       // ones. Both are ordinary, and both read as a puzzling non-answer.
       const what =
         file.onlySide === "added"
-          ? "It was added."
+          ? l10n.t("It was added.")
           : file.onlySide === "deleted" || file.deleted
-            ? "It was deleted."
-            : "Its contents changed.";
+            ? l10n.t("It was deleted.")
+            : l10n.t("Its contents changed.");
       this.showEmpty(
-        `${file.path} is a binary file, so there is nothing to diff line by line. ${what}`,
-        { title: "Binary file", kind: "none" },
+        l10n.t("{0} is a binary file, so there is nothing to diff line by line. {1}", file.path, what),
+        { title: l10n.t("Binary file"), kind: "none" },
       );
       return;
     }
@@ -192,9 +193,11 @@ export class DiffPanel {
     // they held something.
     if (file.truncated && !file.leftText && !file.rightText) {
       this.showEmpty(
-        `${file.path} is too large to fetch a diff for, so none of it could be read. Nothing here is a ` +
-          `statement about what changed in it.`,
-        { title: "Too large to diff", kind: "none" },
+        l10n.t(
+          "{0} is too large to fetch a diff for, so none of it could be read. Nothing here is a statement about what changed in it.",
+          file.path,
+        ),
+        { title: l10n.t("Too large to diff"), kind: "none" },
       );
       return;
     }
@@ -219,19 +222,23 @@ export class DiffPanel {
         const wasCommitted = file.onlySide === "deleted";
         this.showEmpty(
           wasCommitted
-            ? `${file.path} was empty, and has been deleted. There are no lines to show — the change ` +
-                `is the deletion itself.`
-            : `${file.path} is staged as a new file but is no longer on disk. There is nothing to ` +
-                `show — committing it as it stands would add nothing.`,
+            ? l10n.t(
+                "{0} was empty, and has been deleted. There are no lines to show — the change is the deletion itself.",
+                file.path,
+              )
+            : l10n.t(
+                "{0} is staged as a new file but is no longer on disk. There is nothing to show — committing it as it stands would add nothing.",
+                file.path,
+              ),
           {
-            title: wasCommitted ? "Deleted" : "Deleted before it was committed",
+            title: wasCommitted ? l10n.t("Deleted") : l10n.t("Deleted before it was committed"),
             kind: "none",
           },
         );
         return;
       }
-      this.showEmpty(`${file.path} is empty on both sides — there are no lines to compare.`, {
-        title: "Empty file",
+      this.showEmpty(l10n.t("{0} is empty on both sides — there are no lines to compare.", file.path), {
+        title: l10n.t("Empty file"),
         kind: "none",
       });
       return;
@@ -252,9 +259,11 @@ export class DiffPanel {
     if (file.leftText === file.rightText && file.leftText.length > 0) {
       if (file.truncated) {
         this.showEmpty(
-          `${file.path} is too large to diff in full. The part that could be read is identical on ` +
-            `both sides, so whatever changed is further into the file.`,
-          { title: "Too large to diff", kind: "none" },
+          l10n.t(
+            "{0} is too large to diff in full. The part that could be read is identical on both sides, so whatever changed is further into the file.",
+            file.path,
+          ),
+          { title: l10n.t("Too large to diff"), kind: "none" },
         );
         return;
       }
@@ -266,15 +275,20 @@ export class DiffPanel {
       // the one thing about this state worth knowing.
       if (file.indexText !== undefined && file.indexText !== file.leftText) {
         this.showEmpty(
-          `${file.path} is back to its committed contents, but a different version of it is STAGED. ` +
-            `Committing now would commit the staged version, not what is on disk.`,
-          { title: "Staged, then undone on disk", kind: "none" },
+          l10n.t(
+            "{0} is back to its committed contents, but a different version of it is STAGED. Committing now would commit the staged version, not what is on disk.",
+            file.path,
+          ),
+          { title: l10n.t("Staged, then undone on disk"), kind: "none" },
         );
         return;
       }
       this.showEmpty(
-        `${file.path} has the same contents on both sides — it was renamed, or only its file mode changed.`,
-        { title: "No line changes", kind: "none" },
+        l10n.t(
+          "{0} has the same contents on both sides — it was renamed, or only its file mode changed.",
+          file.path,
+        ),
+        { title: l10n.t("No line changes"), kind: "none" },
       );
       return;
     }
@@ -287,7 +301,7 @@ export class DiffPanel {
     const mkBtn = (m: DiffMode, icon: string, label: string): HTMLButtonElement => {
       const b = el("button", "cmp-mode-btn" + (mode === m ? " active" : "")) as HTMLButtonElement;
       b.append(glyph(icon), span(label));
-      b.title = m === "inline" ? "Unified diff (one column)" : "Side-by-side diff";
+      b.title = m === "inline" ? l10n.t("Unified diff (one column)") : l10n.t("Side-by-side diff");
       b.setAttribute("aria-pressed", String(mode === m));
       b.dataset.mode = m;
       b.addEventListener("click", () => {
@@ -317,7 +331,10 @@ export class DiffPanel {
       });
       return b;
     };
-    seg.append(mkBtn("inline", "list-flat", "Inline"), mkBtn("split", "split-horizontal", "Split"));
+    seg.append(
+      mkBtn("inline", "list-flat", l10n.t("Inline")),
+      mkBtn("split", "split-horizontal", l10n.t("Split")),
+    );
     this.seg = seg;
     // The path is truncated from the LEFT (the filename is the part that
     // identifies it), which the stylesheet does with `direction: rtl`. That
@@ -341,7 +358,7 @@ export class DiffPanel {
       const note = el("div", "diff-truncated-note");
       note.append(
         glyph("warning"),
-        span("This file is too large to diff in full — showing the first part of it."),
+        span(l10n.t("This file is too large to diff in full — showing the first part of it.")),
       );
       wrap.insertBefore(note, body);
     }
@@ -435,7 +452,7 @@ export class DiffPanel {
    */
   private showInlineStagingHint(body: HTMLElement): void {
     const hint = el("div", "diff-staging-hint");
-    hint.append(glyph("info"), span("Switch to Split to stage individual changes"));
+    hint.append(glyph("info"), span(l10n.t("Switch to Split to stage individual changes")));
     body.parentElement?.insertBefore(hint, body);
   }
 
@@ -456,7 +473,7 @@ export class DiffPanel {
         staged,
       });
       if (!r.ok) {
-        toast(r.message ?? "Could not stage that change.", r.expected ? "info" : "error");
+        toast(r.message ?? l10n.t("Could not stage that change."), r.expected ? "info" : "error");
         this.onStagingChanged?.();
         return;
       }
@@ -568,7 +585,7 @@ export class DiffPanel {
     const note = el("div", "diff-truncated-note diff-fallback-note");
     note.append(
       glyph("warning"),
-      span("Showing this diff side by side — the unified view didn't come back."),
+      span(l10n.t("Showing this diff side by side — the unified view didn't come back.")),
     );
     body.parentElement?.insertBefore(note, body);
   }
@@ -717,7 +734,10 @@ export class DiffPanel {
       box.setAttribute("role", "status");
       box.append(
         glyph("info"),
-        span(`${name} changed on disk. Your merge is kept: Apply asks before replacing the file.`, "merge-disk-text"),
+        span(
+          l10n.t("{0} changed on disk. Your merge is kept: Apply asks before replacing the file.", name),
+          "merge-disk-text",
+        ),
       );
     } else {
       // Asked, not announced in passing: the user owes it an answer before the
@@ -726,18 +746,21 @@ export class DiffPanel {
       const actions = el("div", "merge-disk-actions");
       const reload = el("button", "mini-btn") as HTMLButtonElement;
       reload.type = "button";
-      reload.append(glyph("refresh"), span("Reload from disk"));
-      reload.title = `Open ${name} again as it is on disk now. The work in this editor is discarded (you are asked first).`;
+      reload.append(glyph("refresh"), span(l10n.t("Reload from disk")));
+      reload.title = l10n.t(
+        "Open {0} again as it is on disk now. The work in this editor is discarded (you are asked first).",
+        name,
+      );
       reload.addEventListener("click", () => void this.reloadFromDisk());
       const keep = el("button", "mini-btn") as HTMLButtonElement;
       keep.type = "button";
-      keep.append(span("Keep my merge"));
-      keep.title = "Carry on with the merge here. Apply asks before replacing what is on disk.";
+      keep.append(span(l10n.t("Keep my merge")));
+      keep.title = l10n.t("Carry on with the merge here. Apply asks before replacing what is on disk.");
       keep.addEventListener("click", () => this.keepMyMerge());
       actions.append(reload, keep);
       box.append(
         glyph("warning"),
-        span(`${name} changed on disk while the merge editor was open.`, "merge-disk-text"),
+        span(l10n.t("{0} changed on disk while the merge editor was open.", name), "merge-disk-text"),
         actions,
       );
     }
@@ -769,11 +792,12 @@ export class DiffPanel {
     if (live.view?.canUndo()) {
       const name = baseName(disk.model.path);
       const ok = await confirmDialog({
-        title: `Reload ${name} from disk?`,
-        message:
-          `The work in the merge editor that is not applied yet is discarded, and ${name} opens again ` +
-          `from the file as it is on disk now.`,
-        confirmLabel: "Discard and reload",
+        title: l10n.t("Reload {0} from disk?", name),
+        message: l10n.t(
+          "The work in the merge editor that is not applied yet is discarded, and {0} opens again from the file as it is on disk now.",
+          name,
+        ),
+        confirmLabel: l10n.t("Discard and reload"),
         danger: true,
         holdWhile: whileSameRepo(),
       });
@@ -859,7 +883,11 @@ export class DiffPanel {
     const icon = kind === "error" ? "warning" : kind === "none" ? "check-all" : "git-compare";
     const title =
       opts.title ??
-      (kind === "error" ? "Couldn't load this diff" : kind === "none" ? "No changes" : "Nothing selected");
+      (kind === "error"
+        ? l10n.t("Couldn't load this diff")
+        : kind === "none"
+          ? l10n.t("No changes")
+          : l10n.t("Nothing selected"));
     const empty = document.createElement("div");
     empty.className = `diff-empty list-empty is-${kind}`;
     const badge = document.createElement("div");

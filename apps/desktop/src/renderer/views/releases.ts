@@ -8,6 +8,7 @@
 // Full CRUD: New release, Edit, Delete (confirmed) — the multi-field form is a
 // local modal on the shared .modal-* CSS.
 
+import * as l10n from "@vscode/l10n";
 import { host } from "../bridge";
 import { avatar,
   el,
@@ -117,16 +118,16 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   };
 
   const { view, listEl } = sectionList();
-  const header = ghHeader("Releases", gate.login, refresh);
+  const header = ghHeader(l10n.t("Releases"), gate.login, refresh);
 
   const tools = el("div", "gh-head-tools");
   const seg = segmented<"releases" | "tags">({
     options: [
-      { value: "releases", label: "Releases" },
-      { value: "tags", label: "Tags" },
+      { value: "releases", label: l10n.t("Releases") },
+      { value: "tags", label: l10n.t("Tags") },
     ],
     value: S.releaseTab,
-    ariaLabel: "Releases view",
+    ariaLabel: l10n.t("Releases view"),
     onChange: (v) => {
       S.releaseTab = v;
       renderReleases(wrap, nav);
@@ -134,8 +135,8 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   });
 
   const newBtn = el("button", "btn btn-primary gh-new-btn");
-  newBtn.append(glyph("plus"), span("New release"));
-  newBtn.title = "Draft a new release";
+  newBtn.append(glyph("plus"), span(l10n.t("New release")));
+  newBtn.title = l10n.t("Draft a new release");
   newBtn.addEventListener("click", () => nav("releasenew"));
 
   const verbs = el("div", "gh-head-verbs");
@@ -147,7 +148,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
 
   header.querySelector(".gh-head-titlewrap")?.appendChild(
     searchField({
-      placeholder: S.releaseTab === "releases" ? "Search releases…" : "Search tags…",
+      placeholder: S.releaseTab === "releases" ? l10n.t("Search releases…") : l10n.t("Search tags…"),
       initial: S.query,
       onInput: (q) => {
         S.query = q;
@@ -170,9 +171,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     lead.appendChild(glyph("tag"));
 
     const suffix: HTMLElement[] = [];
-    if (rel.draft) suffix.push(statePill("Draft", "draft"));
-    if (rel.prerelease) suffix.push(statePill("Pre-release", "prerelease"));
-    if (!rel.draft && rel.id === latestId) suffix.push(statePill("Latest", "latest"));
+    if (rel.draft) suffix.push(statePill(l10n.t("Draft"), "draft"));
+    if (rel.prerelease) suffix.push(statePill(l10n.t("Pre-release"), "prerelease"));
+    if (!rel.draft && rel.id === latestId) suffix.push(statePill(l10n.t("Latest"), "latest"));
 
     // The meta cluster packs right-to-left, so an unpublished draft (no assets,
     // no downloads) used to shove its tag and author 90px right of every other
@@ -189,14 +190,14 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
           const who = el("span", "rel-author");
           if (rel.author) {
             who.append(avatar(rel.author.login, rel.author.avatarUrl, 18), span(rel.author.login));
-            who.title = `Released by ${rel.author.login}`;
+            who.title = l10n.t("Released by {0}", rel.author.login);
           }
           return who;
         })(),
         !!rel.author?.login,
       ),
       withClass(
-        blankable(statBit("file", rel.assets.length, "", "assets"), rel.assets.length > 0),
+        blankable(statBit("file", rel.assets.length, "", l10n.t("assets")), rel.assets.length > 0),
         // NOT "rel-assets" — that name already belongs to the detail page's
         // vertical asset list (`flex-direction: column`), which stacked this
         // row's file icon over its number and pushed the digit onto the row's
@@ -216,9 +217,11 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       title: rel.name || rel.tagName,
       titleSuffix: suffix,
       meta,
-      time: rel.publishedAt ? relTimeISO(rel.publishedAt) : "draft",
-      timeTitle: rel.publishedAt ? `Published ${absTimeISO(rel.publishedAt)}` : "Unpublished draft",
-      ariaLabel: `Release ${rel.name || rel.tagName}`,
+      time: rel.publishedAt ? relTimeISO(rel.publishedAt) : l10n.t("draft"),
+      timeTitle: rel.publishedAt
+        ? l10n.t("Published {0}", absTimeISO(rel.publishedAt))
+        : l10n.t("Unpublished draft"),
+      ariaLabel: l10n.t("Release {0}", rel.name || rel.tagName),
       onOpen: () => nav("releases", { number: rel.id }),
     });
     row.dataset.num = String(rel.id);
@@ -234,7 +237,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       })(),
       title: t.name,
       meta: [span(t.sha.slice(0, 7), "sec-mono")],
-      ariaLabel: `Tag ${t.name}`,
+      ariaLabel: l10n.t("Tag {0}", t.name),
       onOpen: () => openTagPeek(t, nav, refresh),
     });
 
@@ -245,10 +248,14 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       if (!releases) return;
       if (releases.length === 0) {
         listEl.appendChild(
-          emptyState("No releases yet", "Publish your first release to share builds and notes.", {
-            icon: "tag",
-            action: { label: "New release", icon: "plus", onClick: () => nav("releasenew") },
-          }),
+          emptyState(
+            l10n.t("No releases yet"),
+            l10n.t("Publish your first release to share builds and notes."),
+            {
+              icon: "tag",
+              action: { label: l10n.t("New release"), icon: "plus", onClick: () => nav("releasenew") },
+            },
+          ),
         );
         return;
       }
@@ -265,20 +272,34 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       // the unfiltered total directly above a "No matching …" empty state.
       header.setCount?.(items.length, releases.length);
       if (items.length === 0) {
-        listEl.appendChild(emptyState("No matching releases", `Nothing matches “${S.query}”.`, { icon: "search", anchor: "inline" }));
+        listEl.appendChild(
+          emptyState(l10n.t("No matching releases"), l10n.t("Nothing matches “{0}”.", S.query), {
+            icon: "search",
+            anchor: "inline",
+          }),
+        );
         return;
       }
       for (const rel of items) listEl.appendChild(buildReleaseRow(rel, latestId));
     } else {
       if (!tags) return;
       if (tags.length === 0) {
-        listEl.appendChild(emptyState("No tags", "This repository has no git tags yet.", { icon: "tag" }));
+        listEl.appendChild(
+          emptyState(l10n.t("No tags"), l10n.t("This repository has no git tags yet."), {
+            icon: "tag",
+          }),
+        );
         return;
       }
       const items = q ? tags.filter((t) => t.name.toLowerCase().includes(q)) : tags;
       header.setCount?.(items.length, tags.length);
       if (items.length === 0) {
-        listEl.appendChild(emptyState("No matching tags", `Nothing matches “${S.query}”.`, { icon: "search", anchor: "inline" }));
+        listEl.appendChild(
+          emptyState(l10n.t("No matching tags"), l10n.t("Nothing matches “{0}”.", S.query), {
+            icon: "search",
+            anchor: "inline",
+          }),
+        );
         return;
       }
       for (const t of items) listEl.appendChild(buildTagRow(t));
@@ -303,8 +324,8 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     if (!releases && !tags) {
       listEl.replaceChildren(
         errorState(
-          S.releaseTab === "releases" ? "Couldn't load releases" : "Couldn't load tags",
-          cleanErr(e) || "GitHub request failed.",
+          S.releaseTab === "releases" ? l10n.t("Couldn't load releases") : l10n.t("Couldn't load tags"),
+          cleanErr(e) || l10n.t("GitHub request failed."),
           refresh,
         ),
       );
@@ -320,27 +341,27 @@ function openTagPeek(t: TagInfo, nav: SectionNav, refresh: () => void): void {
   openPeek({
     icon: "tag",
     title: t.name,
-    subtitle: t.sha ? `at ${t.sha.slice(0, 7)}` : undefined,
+    subtitle: t.sha ? l10n.t("at {0}", t.sha.slice(0, 7)) : undefined,
     actions: [
       {
-        label: "Copy SHA",
+        label: l10n.t("Copy SHA"),
         icon: "copy",
-        onClick: () => void copyText(t.sha, "Tag SHA copied."),
+        onClick: () => void copyText(t.sha, l10n.t("Tag SHA copied.")),
       },
       {
-        label: "View in Commits",
+        label: l10n.t("View in Commits"),
         icon: "git-commit",
-        title: "Open this tag's commit",
+        title: l10n.t("Open this tag's commit"),
         onClick: (ctx) => {
           ctx.close();
           nav("commit", { sha: t.sha });
         },
       },
       {
-        label: "Draft release",
+        label: l10n.t("Draft release"),
         icon: "plus",
         primary: true,
-        title: `Draft a new release from ${t.name}`,
+        title: l10n.t("Draft a new release from {0}", t.name),
         onClick: (ctx) => {
           ctx.close();
           nav("releasenew", { ref: t.name });
@@ -362,20 +383,20 @@ function openTagPeek(t: TagInfo, nav: SectionNav, refresh: () => void): void {
         // instruction with no affordance is a dead end.
         body.appendChild(
           emptyState(
-            "Commit not in the local clone",
-            "Fetch from the remote to inspect what this tag points at.",
+            l10n.t("Commit not in the local clone"),
+            l10n.t("Fetch from the remote to inspect what this tag points at."),
             {
               icon: "cloud-download",
               action: {
-                label: "Fetch",
+                label: l10n.t("Fetch"),
                 icon: "sync",
                 onClick: () => {
                   void host
                     .invoke("sync:fetch", { prune: pruneOnFetch() })
                     .then(() => {
-                      toast("Fetched. Reopen the tag to inspect its commit.", "success");
+                      toast(l10n.t("Fetched. Reopen the tag to inspect its commit."), "success");
                     })
-                    .catch((e) => toast(cleanErr(e) || "Fetch failed.", "error"));
+                    .catch((e) => toast(cleanErr(e) || l10n.t("Fetch failed."), "error"));
                 },
               },
             },
@@ -387,7 +408,10 @@ function openTagPeek(t: TagInfo, nav: SectionNav, refresh: () => void): void {
       const subj = el("div", "gh-tag-commit-subject");
       subj.textContent = d.subject;
       const who = el("div", "gh-tag-commit-meta");
-      who.textContent = `${d.author} · ${relTime(d.authorDate)} · ${d.files.length} file${d.files.length === 1 ? "" : "s"} changed`;
+      who.textContent =
+        d.files.length === 1
+          ? l10n.t("{0} · {1} · 1 file changed", d.author, relTime(d.authorDate))
+          : l10n.t("{0} · {1} · {2} files changed", d.author, relTime(d.authorDate), d.files.length);
       who.title = absTime(d.authorDate);
       card.append(subj, who);
       if (d.body) {
@@ -418,7 +442,7 @@ function showReleaseDetailPage(
   };
 
   const { view, main, rail, topActions } = detailPage({
-    backLabel: from?.label ?? "Releases",
+    backLabel: from?.label ?? l10n.t("Releases"),
     onBack: back,
   });
   main.appendChild(skeletonList(4, false));
@@ -431,13 +455,19 @@ function showReleaseDetailPage(
     } catch (e) {
       if (!view.isConnected) return;
       main.replaceChildren(
-        errorState("Couldn't load the release", cleanErr(e) || "GitHub request failed.", reload),
+        errorState(
+          l10n.t("Couldn't load the release"),
+          cleanErr(e) || l10n.t("GitHub request failed."),
+          reload,
+        ),
       );
       return;
     }
     if (!view.isConnected) return;
     if (!full) {
-      main.replaceChildren(emptyState("Release unavailable", "This release couldn't be loaded."));
+      main.replaceChildren(
+        emptyState(l10n.t("Release unavailable"), l10n.t("This release couldn't be loaded.")),
+      );
       return;
     }
     // Name this page in the history. Every other detail page does; without it
@@ -467,27 +497,34 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
 
   // ── top-bar actions ──
   const editBtn = el("button", "mini-btn");
-  editBtn.append(glyph("pencil"), span("Edit"));
-  editBtn.title = "Edit this release";
+  editBtn.append(glyph("pencil"), span(l10n.t("Edit")));
+  editBtn.title = l10n.t("Edit this release");
   editBtn.addEventListener("click", () => nav("releasenew", { number: rel.id }));
 
   // On a DRAFT, publishing is not "another action" — it is the one thing the
   // word draft exists to prompt, and it was three clicks deep behind a kebab
   // whose own icon says nothing. A draft release page now leads with it.
   const publishBtn = el("button", "btn btn-primary") as HTMLButtonElement;
-  publishBtn.append(glyph("rocket"), span("Publish release"));
-  publishBtn.title = `Publish ${rel.tagName} — everyone watching this repository is notified`;
+  publishBtn.append(glyph("rocket"), span(l10n.t("Publish release")));
+  publishBtn.title = l10n.t(
+    "Publish {0} — everyone watching this repository is notified",
+    rel.tagName,
+  );
   publishBtn.addEventListener("click", () => void publishRelease(rel, publishBtn, reload));
 
   const moreBtn = el("button", "mini-btn gh-icon-btn");
   moreBtn.append(glyph("ellipsis"));
-  moreBtn.title = "More actions";
+  moreBtn.title = l10n.t("More actions");
   moreBtn.addEventListener("click", () =>
     openMenu(moreBtn, [
-      { label: "Copy link", icon: "copy", onClick: () => void copyText(rel.htmlUrl, "Copied release link.") },
+      {
+        label: l10n.t("Copy link"),
+        icon: "copy",
+        onClick: () => void copyText(rel.htmlUrl, l10n.t("Copied release link.")),
+      },
       { separator: true },
       {
-        label: "Delete release",
+        label: l10n.t("Delete release"),
         icon: "trash",
         onClick: () => void deleteRelease(rel, moreBtn, back),
       },
@@ -496,7 +533,7 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
 
   const openBtn = el("button", "mini-btn gh-icon-btn");
   openBtn.append(glyph("link-external"));
-  openBtn.title = "Open this release on GitHub";
+  openBtn.title = l10n.t("Open this release on GitHub");
   openBtn.setAttribute("aria-label", openBtn.title);
   openBtn.addEventListener("click", () => window.open(rel.htmlUrl, "_blank"));
 
@@ -511,9 +548,9 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
   // had picked out as "Pre-release" showed you a release labelled "Published".
   // Same pills, same rules, computed from the same list.
   const pills = el("div", "det-title-pills");
-  if (rel.draft) pills.appendChild(statePill("Draft", "draft"));
-  if (rel.prerelease) pills.appendChild(statePill("Pre-release", "prerelease"));
-  const published = !rel.draft && !rel.prerelease ? statePill("Published", "latest") : undefined;
+  if (rel.draft) pills.appendChild(statePill(l10n.t("Draft"), "draft"));
+  if (rel.prerelease) pills.appendChild(statePill(l10n.t("Pre-release"), "prerelease"));
+  const published = !rel.draft && !rel.prerelease ? statePill(l10n.t("Published"), "latest") : undefined;
   if (published) pills.appendChild(published);
   titleRow.appendChild(pills);
   // "Latest" is a property of the LIST, not of one release, so it needs the
@@ -528,7 +565,7 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
         // Latest without being Published, and the stronger word is the one worth
         // the space.
         published?.remove();
-        pills.appendChild(statePill("Latest", "latest"));
+        pills.appendChild(statePill(l10n.t("Latest"), "latest"));
       }
     })
     .catch(() => {
@@ -542,13 +579,13 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
   const sub = el("div", "det-sub");
   const tagChip = el("button", "gh-branch-chip");
   tagChip.append(glyph("tag"), span(rel.tagName));
-  tagChip.title = "Copy the tag name";
-  tagChip.addEventListener("click", () => void copyText(rel.tagName, "Tag name copied."));
+  tagChip.title = l10n.t("Copy the tag name");
+  tagChip.addEventListener("click", () => void copyText(rel.tagName, l10n.t("Tag name copied.")));
   sub.appendChild(tagChip);
   const when = el("span");
   when.textContent = rel.publishedAt
-    ? `published ${relTimeISO(rel.publishedAt)}`
-    : "unpublished draft";
+    ? l10n.t("published {0}", relTimeISO(rel.publishedAt))
+    : l10n.t("unpublished draft");
   if (rel.publishedAt) when.title = absTimeISO(rel.publishedAt);
   sub.appendChild(when);
   main.appendChild(sub);
@@ -559,15 +596,15 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
     notes.innerHTML = renderMarkdown(rel.body);
     main.appendChild(notes);
   } else {
-    main.appendChild(emptyState("No release notes", "This release has no description."));
+    main.appendChild(emptyState(l10n.t("No release notes"), l10n.t("This release has no description.")));
   }
 
   // ── assets (download / upload / delete — no browser round-trips) ──
   const assetsHead = el("div", "rel-assets-head");
-  assetsHead.appendChild(groupLabel(`Assets (${rel.assets.length})`));
+  assetsHead.appendChild(groupLabel(l10n.t("Assets ({0})", rel.assets.length)));
   const uploadBtn = el("button", "mini-btn");
-  uploadBtn.append(glyph("cloud-upload"), span("Upload assets…"));
-  uploadBtn.title = "Attach local files to this release";
+  uploadBtn.append(glyph("cloud-upload"), span(l10n.t("Upload assets…")));
+  uploadBtn.title = l10n.t("Attach local files to this release");
   uploadBtn.addEventListener("click", () => void uploadAssets(rel, uploadBtn, reload));
   assetsHead.appendChild(uploadBtn);
   main.appendChild(assetsHead);
@@ -590,14 +627,18 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
       const subT = el("div", "row-meta-sub");
       // Grouped like every other count in the app — the rail above this list already
       // wrote the same figure as "48,200" while these rows wrote "48200".
-      subT.textContent = `${fmtBytes(a.size)} · ${plural(a.downloadCount, "download")}`;
+      subT.textContent = l10n.t(
+        "{0} · {1}",
+        fmtBytes(a.size),
+        plural(a.downloadCount, "download"),
+      );
       m.append(t, subT);
       row.append(m);
       const download = (): void => void window.open(a.downloadUrl, "_blank");
       const acts = el("span", "rel-asset-acts");
       const del = el("button", "icon-btn rel-asset-del");
       del.appendChild(glyph("trash"));
-      del.title = `Delete ${a.name} from this release`;
+      del.title = l10n.t("Delete {0} from this release", a.name);
       del.setAttribute("aria-label", del.title);
       del.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -605,7 +646,7 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
       });
       const dl = el("button", "icon-btn rel-asset-dl");
       dl.appendChild(glyph("cloud-download"));
-      dl.title = `Download ${a.name}`;
+      dl.title = l10n.t("Download {0}", a.name);
       dl.setAttribute("aria-label", dl.title);
       dl.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -613,8 +654,8 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
       });
       acts.append(del, dl);
       row.appendChild(acts);
-      row.setAttribute("aria-label", `Download ${a.name}`);
-      row.title = `Download ${a.name}`;
+      row.setAttribute("aria-label", l10n.t("Download {0}", a.name));
+      row.title = l10n.t("Download {0}", a.name);
       row.addEventListener("click", download);
       row.addEventListener("keydown", (e) => {
         // Only the ROW itself. This row carries a Delete button, and without
@@ -632,26 +673,26 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
     main.appendChild(list);
   } else {
     const none = el("div", "rel-assets-none");
-    none.textContent = "No assets on this release yet.";
+    none.textContent = l10n.t("No assets on this release yet.");
     main.appendChild(none);
   }
 
   // ── rail ──
-  const tagProp = propSection("Tag");
+  const tagProp = propSection(l10n.t("Tag"));
   const tagBtn = el("button", "det-mono-btn");
   tagBtn.append(glyph("copy"), span(rel.tagName));
-  tagBtn.title = "Copy the tag name";
-  tagBtn.addEventListener("click", () => void copyText(rel.tagName, "Tag name copied."));
+  tagBtn.title = l10n.t("Copy the tag name");
+  tagBtn.addEventListener("click", () => void copyText(rel.tagName, l10n.t("Tag name copied.")));
   tagProp.body.appendChild(tagBtn);
 
-  const authorProp = propSection("Author");
+  const authorProp = propSection(l10n.t("Author"));
   if (rel.author?.login) {
     authorProp.body.appendChild(personChip(rel.author.login, rel.author.avatarUrl));
   } else {
     authorProp.body.appendChild(span("—", "det-prop-none"));
   }
 
-  const about = propSection("About");
+  const about = propSection(l10n.t("About"));
   about.body.classList.add("det-prop-facts");
   const fact = (k: string, v: string, title?: string): HTMLElement => {
     const row = el("div", "det-fact");
@@ -661,13 +702,15 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
     row.append(span(k, "det-fact-k"), val);
     return row;
   };
-  if (rel.targetCommitish) about.body.appendChild(fact("Target", rel.targetCommitish));
-  about.body.appendChild(fact("Assets", String(rel.assets.length)));
+  if (rel.targetCommitish) about.body.appendChild(fact(l10n.t("Target"), rel.targetCommitish));
+  about.body.appendChild(fact(l10n.t("Assets"), String(rel.assets.length)));
   const downloads = rel.assets.reduce((sum, a) => sum + (a.downloadCount || 0), 0);
-  if (downloads > 0) about.body.appendChild(fact("Downloads", downloads.toLocaleString()));
-  about.body.appendChild(fact("Created", relTimeISO(rel.createdAt), absTimeISO(rel.createdAt)));
+  if (downloads > 0) about.body.appendChild(fact(l10n.t("Downloads"), downloads.toLocaleString()));
+  about.body.appendChild(fact(l10n.t("Created"), relTimeISO(rel.createdAt), absTimeISO(rel.createdAt)));
   if (rel.publishedAt) {
-    about.body.appendChild(fact("Published", relTimeISO(rel.publishedAt), absTimeISO(rel.publishedAt)));
+    about.body.appendChild(
+      fact(l10n.t("Published"), relTimeISO(rel.publishedAt), absTimeISO(rel.publishedAt)),
+    );
   }
 
   rail.append(tagProp.root, authorProp.root, about.root);
@@ -681,13 +724,13 @@ async function uploadAssets(rel: ReleaseInfo, btn: HTMLElement, reload: () => vo
     const r = await host.invoke("release:uploadAssets", { id: rel.id });
     if (!r.ok) {
       // A cancelled picker is a non-event, not an error toast.
-      if (!r.expected) toast(r.message ?? "Couldn't upload the assets.", "error");
+      if (!r.expected) toast(r.message ?? l10n.t("Couldn't upload the assets."), "error");
       return;
     }
-    toast(r.message ?? "Assets uploaded.", "success");
+    toast(r.message ?? l10n.t("Assets uploaded."), "success");
     reload();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't upload the assets.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't upload the assets."), "error");
   } finally {
     b.disabled = false;
   }
@@ -700,9 +743,9 @@ async function deleteAsset(
   reload: () => void,
 ): Promise<void> {
   const ok = await confirmDialog({
-    title: `Delete asset ${name}?`,
-    message: "This permanently removes the file from the release on GitHub.",
-    confirmLabel: "Delete asset",
+    title: l10n.t("Delete asset {0}?", name),
+    message: l10n.t("This permanently removes the file from the release on GitHub."),
+    confirmLabel: l10n.t("Delete asset"),
     danger: true,
   });
   if (!ok) return;
@@ -710,13 +753,13 @@ async function deleteAsset(
   try {
     const r = await host.invoke("release:deleteAsset", id);
     if (!r.ok) {
-      toast(r.message ?? "Couldn't delete the asset.", "error");
+      toast(r.message ?? l10n.t("Couldn't delete the asset."), "error");
       return;
     }
-    toast(`Deleted ${name}.`, "success");
+    toast(l10n.t("Deleted {0}.", name), "success");
     reload();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't delete the asset.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't delete the asset."), "error");
   } finally {
     (btn as HTMLButtonElement).disabled = false;
   }
@@ -727,9 +770,12 @@ async function deleteAsset(
 /** Draft a new release; `prefillTag` comes from a tag peek. */
 async function deleteRelease(rel: ReleaseInfo, btn: HTMLElement, back: () => void): Promise<void> {
   const ok = await confirmDialog({
-    title: `Delete release ${rel.name || rel.tagName}?`,
-    message: `This permanently deletes the release on GitHub. The git tag ${rel.tagName} is not removed. This can't be undone.`,
-    confirmLabel: "Delete",
+    title: l10n.t("Delete release {0}?", rel.name || rel.tagName),
+    message: l10n.t(
+      "This permanently deletes the release on GitHub. The git tag {0} is not removed. This can't be undone.",
+      rel.tagName,
+    ),
+    confirmLabel: l10n.t("Delete"),
     danger: true,
   });
   if (!ok) return;
@@ -737,14 +783,14 @@ async function deleteRelease(rel: ReleaseInfo, btn: HTMLElement, back: () => voi
   try {
     const r = await host.invoke("release:delete", rel.id);
     if (!r.ok) {
-      toast(r.message ?? "Couldn't delete the release.", "error");
+      toast(r.message ?? l10n.t("Couldn't delete the release."), "error");
       return;
     }
-    toast(`Deleted release ${rel.name || rel.tagName}.`, "success");
+    toast(l10n.t("Deleted release {0}.", rel.name || rel.tagName), "success");
     bust("release");
     back(); // the detail's subject no longer exists — land on the list
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't delete the release.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't delete the release."), "error");
   } finally {
     (btn as HTMLButtonElement).disabled = false;
   }
@@ -760,10 +806,11 @@ async function deleteRelease(rel: ReleaseInfo, btn: HTMLElement, back: () => voi
 /** Flip a draft release to published — the action the word "draft" implies. */
 async function publishRelease(rel: ReleaseInfo, btn: HTMLElement, reload: () => void): Promise<void> {
   const ok = await confirmDialog({
-    title: `Publish ${rel.tagName}?`,
-    message:
+    title: l10n.t("Publish {0}?", rel.tagName),
+    message: l10n.t(
       "The release becomes visible to everyone with access to the repository, and its assets become downloadable.",
-    confirmLabel: "Publish",
+    ),
+    confirmLabel: l10n.t("Publish"),
   });
   if (!ok) return;
   await runBusy(btn, async () => {
@@ -777,14 +824,14 @@ async function publishRelease(rel: ReleaseInfo, btn: HTMLElement, reload: () => 
         draft: false,
       });
       if (!r.ok) {
-        toast(r.message ?? "Couldn't publish the release.", "error");
+        toast(r.message ?? l10n.t("Couldn't publish the release."), "error");
         return;
       }
-      toast(`Published ${rel.tagName}.`, "success");
+      toast(l10n.t("Published {0}.", rel.tagName), "success");
       bust();
       reload();
     } catch (e) {
-      toast(cleanErr(e) || "Couldn't publish the release.", "error");
+      toast(cleanErr(e) || l10n.t("Couldn't publish the release."), "error");
     }
   });
 }

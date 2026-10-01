@@ -13,8 +13,16 @@
 // renderer has one string to recognise across the IPC boundary — where an
 // error is only ever its message — and the crash collector one to dedupe.
 
-/** The one sentence the app uses for "this repository has no commits yet". */
-export const EMPTY_REPO_MESSAGE = "This repository is empty.";
+import * as l10n from "@vscode/l10n";
+
+/** The one sentence the app uses for "this repository has no commits yet". A
+ *  function, not a module-level constant: this file is imported (transitively)
+ *  from main.ts before boot() configures the l10n bundle (main/language.ts),
+ *  and a constant would capture its value — frozen to English — at that
+ *  import, before the bundle is ready. */
+export function emptyRepoMessage(): string {
+  return l10n.t("This repository is empty.");
+}
 
 /**
  * GitHub's own answer for a repository with no commits — and only that answer:
@@ -44,5 +52,5 @@ export function isEmptyRepoResponse(status: number, message: string | undefined 
  * `isEmptyRepoResponse` decided it was not one.
  */
 export function isEmptyRepoMessage(message: string | undefined | null): boolean {
-  return typeof message === "string" && message.trim() === EMPTY_REPO_MESSAGE;
+  return typeof message === "string" && message.trim() === emptyRepoMessage();
 }

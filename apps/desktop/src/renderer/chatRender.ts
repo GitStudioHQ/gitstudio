@@ -23,6 +23,7 @@ const CHAT_MARKDOWN = { remoteImages: false } as const;
 import { highlightProse } from "./highlight";
 import { confirmDialog, toast } from "./dialogs";
 import type { AgentConfirmRequest, AgentEventWire } from "../shared/ipc";
+import * as l10n from "@vscode/l10n";
 
 /** Per-run rendering state for one in-flight agent turn. */
 export interface TurnState {
@@ -78,18 +79,26 @@ export async function runAgentTurn(
   const thinking = el("div", "assistant-thinking");
   const dots = el("span", "ai-think-dots");
   dots.append(el("i"), el("i"), el("i"));
-  const thinkLabel = span("Thinking", "ai-think-label");
+  const thinkLabel = span(l10n.t("Thinking"), "ai-think-label");
   const thinkMeta = span("", "ai-think-meta");
   thinking.append(dots, thinkLabel, thinkMeta);
   turn.append(thinking);
   transcript.append(turn);
   scrollDown(transcript, true); // they just pressed Send — show them their turn
 
-  const state: TurnState = { turn, thinking, stream: null, raw: "", pending: false, lastRenderAt: 0, status: "Thinking" };
+  const state: TurnState = {
+    turn,
+    thinking,
+    stream: null,
+    raw: "",
+    pending: false,
+    lastRenderAt: 0,
+    status: l10n.t("Thinking"),
+  };
   const t0 = Date.now();
   const ticker = window.setInterval(() => {
     const s = Math.max(1, Math.round((Date.now() - t0) / 1000));
-    thinkLabel.textContent = state.stream ? "Responding" : state.status;
+    thinkLabel.textContent = state.stream ? l10n.t("Responding") : state.status;
     thinkMeta.textContent = `${s}s`;
   }, 250);
 
@@ -318,7 +327,7 @@ export function onEvent(state: TurnState, e: AgentEventWire): void {
     }
     case "error":
       finalizeStream(state);
-      turn.insertBefore(errorBlock(e.text ?? "The agent hit an error."), thinking);
+      turn.insertBefore(errorBlock(e.text ?? l10n.t("The agent hit an error.")), thinking);
       break;
     default:
       break;
@@ -336,9 +345,9 @@ export async function onConfirm(
   signal?: AbortSignal,
 ): Promise<void> {
   const approved = await confirmDialog({
-    title: c.mode === "destructive" ? "Approve destructive action" : "Approve action",
+    title: c.mode === "destructive" ? l10n.t("Approve destructive action") : l10n.t("Approve action"),
     message: c.summary,
-    confirmLabel: c.mode === "destructive" ? "Yes, do it" : "Approve",
+    confirmLabel: c.mode === "destructive" ? l10n.t("Yes, do it") : l10n.t("Approve"),
     danger: c.mode === "destructive",
     signal,
   });
@@ -346,7 +355,7 @@ export async function onConfirm(
   // would be harmless but pointless; posting `true` after a Stop is the bug.
   if (signal?.aborted) return;
   await host.invoke("ai:agentConfirm", { requestId, callId: c.callId, approved });
-  if (!approved) toast("Action declined.", "info");
+  if (!approved) toast(l10n.t("Action declined."), "info");
 }
 
 // ── DOM helpers ──────────────────────────────────────────────────────────────
@@ -376,10 +385,10 @@ function decorateMessage(block: HTMLElement, src: string): void {
   sources.set(block, src);
   block.querySelector(":scope > .assistant-copy")?.remove();
   const btn = el("button", "assistant-copy");
-  btn.title = "Copy this answer (as Markdown)";
-  btn.setAttribute("aria-label", "Copy this answer");
+  btn.title = l10n.t("Copy this answer (as Markdown)");
+  btn.setAttribute("aria-label", l10n.t("Copy this answer"));
   btn.append(glyph("copy"));
-  btn.addEventListener("click", () => void copyText(sources.get(block) ?? "", "Copied the answer."));
+  btn.addEventListener("click", () => void copyText(sources.get(block) ?? "", l10n.t("Copied the answer.")));
   block.append(btn);
 }
 
@@ -389,7 +398,7 @@ function toolStep(e: AgentEventWire): HTMLElement {
   const head = el("div", "assistant-tool-head");
   head.append(glyph("tools"));
   const name = el("span", "assistant-tool-name");
-  name.textContent = (e.tool ?? "tool").replace(/^git_/, "").replace(/_/g, " ");
+  name.textContent = (e.tool ?? l10n.t("tool")).replace(/^git_/, "").replace(/_/g, " ");
   head.append(name);
   const argPreview = argSummary(e.args);
   if (argPreview) {
@@ -416,7 +425,7 @@ function finishToolStep(step: HTMLElement, e: AgentEventWire): void {
   // whose body instructed the person who had just made the decision not to
   // retry it.
   if (step.classList.contains("is-denied")) {
-    const said = span("Declined", "assistant-tool-verdict");
+    const said = span(l10n.t("Declined"), "assistant-tool-verdict");
     const status = glyph("circle-slash");
     status.classList.add("assistant-tool-status");
     step.querySelector(".assistant-tool-head")?.append(said, status);
@@ -448,7 +457,7 @@ function argSummary(args?: Record<string, unknown>): string {
   if (Array.isArray(args.paths)) return (args.paths as string[]).join(", ");
   if (typeof args.base === "string") return `${args.base}…${(args.head as string) ?? "HEAD"}`;
   if (typeof args.query === "string") return `“${args.query}”`;
-  if (args.all === true) return "all";
+  if (args.all === true) return l10n.t("all");
   return "";
 }
 
@@ -457,7 +466,7 @@ export function errorBlock(msg: string, retry?: () => void): HTMLElement {
   b.append(glyph("error"), span(msg, "assistant-error-text"));
   if (retry) {
     const again = el("button", "mini-btn assistant-retry");
-    again.append(glyph("refresh"), span("Try again"));
+    again.append(glyph("refresh"), span(l10n.t("Try again")));
     again.addEventListener("click", () => {
       b.remove();
       retry();
@@ -471,15 +480,17 @@ export function connectPrompt(nav: (view: string) => void): HTMLElement {
   const wrap = el("div", "assistant-empty");
   wrap.append(
     glyph("sparkle"),
-    elText("div", "assistant-empty-title", "Connect a model to use the Assistant"),
+    elText("div", "assistant-empty-title", l10n.t("Connect a model to use the Assistant")),
     elText(
       "div",
       "assistant-empty-sub",
-      "Bring your own key — Claude, OpenAI, Gemini and more — or run a local model. Your subscription, your data.",
+      l10n.t(
+        "Bring your own key — Claude, OpenAI, Gemini and more — or run a local model. Your subscription, your data.",
+      ),
     ),
   );
   const btn = el("button", "btn btn-primary");
-  btn.append(glyph("gear"), span("Open AI settings"));
+  btn.append(glyph("gear"), span(l10n.t("Open AI settings")));
   btn.addEventListener("click", () => nav("settings"));
   wrap.append(btn);
   return wrap;
@@ -507,7 +518,7 @@ export function swapToCancel(send: HTMLElement, onCancel: () => void): { restore
   // A single filled square. `codicon-stop-circle` is two thin concentric
   // outlines — a circle inside a circular button, which mushes at this size.
   send.replaceChildren(glyph("debug-stop"));
-  send.title = "Stop";
+  send.title = l10n.t("Stop");
   const handler = (ev: Event): void => {
     ev.stopImmediatePropagation();
     onCancel();

@@ -8,6 +8,7 @@ import { confirmDialog, promptInline } from "./dialogs";
 import { refMenuItems, type RefMenuItem, type RowRef } from "./refMenuItems";
 import { registerLayer } from "./overlays";
 import { deepActiveElement } from "./focusReturn";
+import * as l10n from "@vscode/l10n";
 
 interface MenuItem {
   label: string;
@@ -26,15 +27,24 @@ interface MenuItem {
 }
 
 export const ITEMS: MenuItem[] = [
-  { label: "Checkout", action: "checkout", confirm: "Checkout this commit (detached HEAD)?" },
-  { label: "Create branch here…", action: "branch", prompt: "feature/my-branch" },
-  { label: "Create tag here…", action: "tag", prompt: "v1.0.0" },
-  { label: "Cherry-pick", action: "cherry-pick" },
-  { label: "Revert", action: "revert", confirm: "Create a revert commit for this commit?" },
-  { label: "Reset (soft)", action: "reset-soft", confirm: "Move HEAD here, keep index & working tree?" },
-  { label: "Reset (mixed)", action: "reset-mixed", confirm: "Move HEAD here, reset index, keep working tree?" },
-  { label: "Reset (hard)", action: "reset-hard", confirm: "DISCARD all changes and reset HEAD here? This cannot be undone.", danger: true },
-  { label: "Copy SHA", action: "copy-sha" },
+  { label: l10n.t("Checkout"), action: "checkout", confirm: l10n.t("Checkout this commit (detached HEAD)?") },
+  { label: l10n.t("Create branch here…"), action: "branch", prompt: l10n.t("feature/my-branch") },
+  { label: l10n.t("Create tag here…"), action: "tag", prompt: l10n.t("v1.0.0") },
+  { label: l10n.t("Cherry-pick"), action: "cherry-pick" },
+  { label: l10n.t("Revert"), action: "revert", confirm: l10n.t("Create a revert commit for this commit?") },
+  { label: l10n.t("Reset (soft)"), action: "reset-soft", confirm: l10n.t("Move HEAD here, keep index & working tree?") },
+  {
+    label: l10n.t("Reset (mixed)"),
+    action: "reset-mixed",
+    confirm: l10n.t("Move HEAD here, reset index, keep working tree?"),
+  },
+  {
+    label: l10n.t("Reset (hard)"),
+    action: "reset-hard",
+    confirm: l10n.t("DISCARD all changes and reset HEAD here? This cannot be undone."),
+    danger: true,
+  },
+  { label: l10n.t("Copy SHA"), action: "copy-sha" },
 ];
 
 /**
@@ -43,7 +53,7 @@ export const ITEMS: MenuItem[] = [
  * Revert when the answer is yes. Its question and its run are a flow of their
  * own (renderer/dropCommit.ts), not a commit:action verb.
  */
-const DROP_ITEM: MenuItem = { label: "Drop commit…", action: "drop", danger: true };
+const DROP_ITEM: MenuItem = { label: l10n.t("Drop commit…"), action: "drop", danger: true };
 
 /**
  * The rows for one commit: "Checkout <ref>" for the refs on it, then the
@@ -82,7 +92,7 @@ export async function askForCommitAction(
     const ok = await confirmDialog({
       title: item.label,
       message: item.confirm,
-      confirmLabel: item.danger ? "Reset" : item.label.replace(/…$/, ""),
+      confirmLabel: item.danger ? l10n.t("Reset") : item.label.replace(/…$/, ""),
       danger: item.danger,
     });
     if (!ok) return { ok: false };
@@ -118,14 +128,24 @@ export function manyMenuRows(n: number, opts: { apply: boolean; drop: boolean; s
   return [
     ...(opts.apply
       ? [
-          { action: "cherry-pick-many" as const, label: `Cherry-pick ${n} commits`, icon: "git-pull-request" },
-          { action: "revert-many" as const, label: `Revert ${n} commits`, icon: "history" },
+          {
+            action: "cherry-pick-many" as const,
+            label: l10n.t("Cherry-pick {0} commits", n),
+            icon: "git-pull-request",
+          },
+          { action: "revert-many" as const, label: l10n.t("Revert {0} commits", n), icon: "history" },
         ]
       : []),
-    ...(opts.squash ? [{ action: "squash-many" as const, label: `Squash ${n} commits…`, icon: "fold-down" }] : []),
-    ...(opts.drop ? [{ action: "drop-many" as const, label: `Drop ${n} commits…`, icon: "trash", danger: true }] : []),
-    ...(n === 2 ? [{ action: "compare-two" as const, label: "Compare these two commits", icon: "git-compare" }] : []),
-    { action: "copy-shas" as const, label: "Copy SHAs", icon: "copy" },
+    ...(opts.squash
+      ? [{ action: "squash-many" as const, label: l10n.t("Squash {0} commits…", n), icon: "fold-down" }]
+      : []),
+    ...(opts.drop
+      ? [{ action: "drop-many" as const, label: l10n.t("Drop {0} commits…", n), icon: "trash", danger: true }]
+      : []),
+    ...(n === 2
+      ? [{ action: "compare-two" as const, label: l10n.t("Compare these two commits"), icon: "git-compare" }]
+      : []),
+    { action: "copy-shas" as const, label: l10n.t("Copy SHAs"), icon: "copy" },
   ];
 }
 
@@ -171,11 +191,11 @@ export class CommitContextMenu {
     const menu = document.createElement("div");
     menu.className = "ctx-menu";
     menu.setAttribute("role", "menu");
-    menu.setAttribute("aria-label", `Actions for ${shas.length} commits`);
+    menu.setAttribute("aria-label", l10n.t("Actions for {0} commits", shas.length));
     const header = document.createElement("div");
     // Words, not a sha: the extension's menu for several says the same.
     header.className = "ctx-menu-header is-words";
-    header.textContent = `${shas.length} commits selected`;
+    header.textContent = l10n.t("{0} commits selected", shas.length);
     menu.appendChild(header);
 
     this.rows = [];

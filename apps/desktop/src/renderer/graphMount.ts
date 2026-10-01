@@ -13,6 +13,7 @@ import type { SelectionCommit } from "@gitstudio/webview-ui/commit-details";
 import type { GraphRefEntry, GraphRefFilter, RefPreset, WireRef } from "@gitstudio/host-bridge/graphProtocol";
 import { menuTarget } from "@gitstudio/host-bridge/graphSelection";
 import { GraphHostAdapter, host } from "./bridge";
+import * as l10n from "@vscode/l10n";
 
 export interface GraphCallbacks {
   onSelect(sha: string): void;
@@ -204,10 +205,10 @@ export class GraphMount {
       (err instanceof Error ? err.message : String(err ?? "")).replace(
         /^Error invoking remote method '[^']*':\s*/i,
         "",
-      ) || "The git log couldn't be read for this repository.";
-    const wrap = this.buildTile("warning", "Couldn't load history", desc, {
+      ) || l10n.t("The git log couldn't be read for this repository.");
+    const wrap = this.buildTile("warning", l10n.t("Couldn't load history"), desc, {
       icon: "refresh",
-      label: "Retry",
+      label: l10n.t("Retry"),
       onClick: () => void this.reload(),
     });
     wrap.classList.add("list-error");
@@ -218,8 +219,8 @@ export class GraphMount {
   private renderEmpty(): void {
     const wrap = this.buildTile(
       "git-commit",
-      "No commits yet",
-      "This branch has no history. Make your first commit and it'll appear here.",
+      l10n.t("No commits yet"),
+      l10n.t("This branch has no history. Make your first commit and it'll appear here."),
     );
     this.container.replaceChildren(wrap);
   }

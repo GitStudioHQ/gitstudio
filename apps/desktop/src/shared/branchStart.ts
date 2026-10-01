@@ -5,6 +5,8 @@
 // entry points live inside web components, where a synthetic-event check would
 // pass on a broken build. Same split as `cloneName.ts` and `refName.ts`.
 
+import * as l10n from "@vscode/l10n";
+
 /** Where a new branch starts, and how the dialog talks about it. */
 export interface BranchStart {
   /** What git is given as the start point. Omitted means HEAD. */
@@ -39,19 +41,21 @@ export interface BranchStartCopy {
  * menus live inside web components a synthetic event cannot honestly drive.
  */
 export function branchStartCopy(s: BranchStart): BranchStartCopy {
+  // The sha, parenthesized, when known — appended verbatim to the hints below
+  // ("(a1b2c3d)"); it is data, not prose, so it carries no translation of its own.
   const at = s.sha ? ` (${s.sha})` : "";
   switch (s.kind) {
     case "branch":
       return {
-        title: `New branch from ${s.label}`,
-        hint: `Starts at ${s.label}${at}.`,
+        title: l10n.t("New branch from {0}", s.label),
+        hint: l10n.t("Starts at {0}.", `${s.label}${at}`),
         seed: "",
         switchByDefault: true,
       };
     case "remote":
       return {
-        title: `New branch from ${s.label}`,
-        hint: `Starts at ${s.label}${at}. The new branch tracks it.`,
+        title: l10n.t("New branch from {0}", s.label),
+        hint: l10n.t("Starts at {0}. The new branch tracks it.", `${s.label}${at}`),
         // "origin/feature/x" names the branch "feature/x" — the same promise
         // the remote row's "Check out here" already makes.
         seed: s.label.split("/").slice(1).join("/"),
@@ -59,15 +63,17 @@ export function branchStartCopy(s: BranchStart): BranchStartCopy {
       };
     case "tag":
       return {
-        title: `New branch from ${s.label}`,
-        hint: `Starts at the tag ${s.label}${at}.`,
+        title: l10n.t("New branch from {0}", s.label),
+        hint: l10n.t("Starts at the tag {0}.", `${s.label}${at}`),
         seed: "",
         switchByDefault: true,
       };
     case "commit":
       return {
-        title: `New branch at ${s.sha ?? s.label}`,
-        hint: s.subject ? `${s.subject} — the branch starts here.` : "The branch starts at this commit.",
+        title: l10n.t("New branch at {0}", s.sha ?? s.label),
+        hint: s.subject
+          ? l10n.t("{0} — the branch starts here.", s.subject)
+          : l10n.t("The branch starts at this commit."),
         seed: "",
         // Naming a point in history is bookmarking, not moving — the same
         // answer the extension gives at a commit.
@@ -76,10 +82,10 @@ export function branchStartCopy(s: BranchStart): BranchStartCopy {
     case "head":
     default:
       return {
-        title: "New branch",
+        title: l10n.t("New branch"),
         hint: s.detached
-          ? `Starts at the commit you have checked out${at}.`
-          : `Starts at ${s.label}${at} — where you are now.`,
+          ? l10n.t("Starts at the commit you have checked out{0}.", at)
+          : l10n.t("Starts at {0} — where you are now.", `${s.label}${at}`),
         seed: "",
         switchByDefault: true,
       };

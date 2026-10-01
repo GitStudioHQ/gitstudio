@@ -2629,9 +2629,8 @@ export class CommitViewProvider
       return;
     }
 
-    const plural = count === 1 ? "commit" : "commits";
     const chosen = await promptPick({
-      title: l10n.t("Undo {0} local {1}", count, plural),
+      title: count === 1 ? l10n.t("Undo 1 local commit") : l10n.t("Undo {0} local commits", count),
       hint: l10n.t("Where should the committed changes go? Your work is kept either way."),
       choices: [
         {
@@ -2659,7 +2658,7 @@ export class CommitViewProvider
       );
     } else {
       vscode.window.setStatusBarMessage(
-        l10n.t("$(check) Undid {0} local {1}", count, plural),
+        count === 1 ? l10n.t("$(check) Undid 1 local commit") : l10n.t("$(check) Undid {0} local commits", count),
         3000,
       );
     }
@@ -7884,8 +7883,10 @@ export class CommitViewProvider
         head.querySelector(".bm-sep-count").textContent = String(rows.length);
         // Its name in words: read from the text it would be "REMOTEorigin 56"
         // (the remote's name is set off by a margin, not a space).
-        const noun = key === "tags" ? (rows.length === 1 ? " tag" : " tags") : rows.length === 1 ? " branch" : " branches";
-        head.setAttribute("aria-label", (remote ? label + " " + remote : label) + ", " + rows.length + noun);
+        const counted = key === "tags"
+          ? (rows.length === 1 ? l10nT("{0} tag", rows.length) : l10nT("{0} tags", rows.length))
+          : rows.length === 1 ? l10nT("{0} branch", rows.length) : l10nT("{0} branches", rows.length);
+        head.setAttribute("aria-label", (remote ? label + " " + remote : label) + ", " + counted);
         head.setAttribute("aria-expanded", collapsed ? "false" : "true");
         head.tabIndex = -1; // a click folds it; Tab never leaves the search box
         const body = el("div", "bm-group-body");
@@ -9079,11 +9080,11 @@ export class CommitViewProvider
       const nC = data.commits.length, nF = data.files.length;
       const cStat = el("span", "pm-stat"); cStat.innerHTML = "<b></b> ";
       cStat.querySelector("b").textContent = String(nC);
-      cStat.appendChild(document.createTextNode(nC === 1 ? "commit" : "commits"));
+      cStat.appendChild(document.createTextNode(nC === 1 ? l10nT("commit") : l10nT("commits")));
       stats.appendChild(cStat);
       const fStat = el("span", "pm-stat"); fStat.innerHTML = "<b></b> ";
       fStat.querySelector("b").textContent = String(nF);
-      fStat.appendChild(document.createTextNode(nF === 1 ? "file changed" : "files changed"));
+      fStat.appendChild(document.createTextNode(nF === 1 ? l10nT("file changed") : l10nT("files changed")));
       stats.appendChild(fStat);
       if (data.additions) stats.appendChild(el("span", "pm-add", "+" + data.additions));
       if (data.deletions) stats.appendChild(el("span", "pm-del", "−" + data.deletions));

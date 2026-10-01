@@ -10,6 +10,7 @@
 //    optionally filtered by `search`.
 
 import { dialog } from "electron";
+import * as l10n from "@vscode/l10n";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
@@ -58,7 +59,7 @@ function killTree(child: ReturnType<typeof spawn>): void {
 export async function pickCloneDir(defaultPath?: string): Promise<string | undefined> {
   const r = await dialog.showOpenDialog({
     properties: ["openDirectory", "createDirectory"],
-    title: "Choose a folder to clone into",
+    title: l10n.t("Choose a folder to clone into"),
     ...(defaultPath ? { defaultPath } : {}),
   });
   return r.canceled || !r.filePaths[0] ? undefined : r.filePaths[0];
@@ -91,14 +92,14 @@ export async function startClone(
   // ones (mkdir refused, git could not start, the clone died) and still report.
   const url = req.url?.trim();
   if (!url) {
-    return { ok: false, expected: true, message: "No repository URL was provided." };
+    return { ok: false, expected: true, message: l10n.t("No repository URL was provided.") };
   }
   const urlError = validateCloneUrl(url);
   if (urlError) {
     return { ok: false, expected: true, message: urlError };
   }
   if (!req.parentDir) {
-    return { ok: false, expected: true, message: "No destination folder was chosen." };
+    return { ok: false, expected: true, message: l10n.t("No destination folder was chosen.") };
   }
   const name = targetName(req);
   if (!name) {
@@ -106,7 +107,7 @@ export async function startClone(
       ok: false,
       code: "bad-name",
       expected: true,
-      message: "Couldn't derive a folder name from the URL.",
+      message: l10n.t("Couldn't derive a folder name from the URL."),
     };
   }
   const nameProblem = validateTargetName(name);
@@ -119,7 +120,7 @@ export async function startClone(
       ok: false,
       code: "bad-name",
       expected: true,
-      message: "Couldn't derive a safe folder name from the URL.",
+      message: l10n.t("Couldn't derive a safe folder name from the URL."),
     };
   }
   // The destination folder may simply not be there — the clone folder can be
@@ -132,7 +133,7 @@ export async function startClone(
   } catch (err) {
     return {
       ok: false,
-      message: `Couldn't create ${req.parentDir}: ${messageOf(err)}`,
+      message: l10n.t("Couldn't create {0}: {1}", req.parentDir, messageOf(err)),
     };
   }
   // Pre-check the destination so a collision is a clean, coded failure instead
@@ -142,7 +143,7 @@ export async function startClone(
       ok: false,
       code: "dest-exists",
       expected: true,
-      message: `${join(req.parentDir, name)} already exists — pick another folder name or destination.`,
+      message: l10n.t("{0} already exists — pick another folder name or destination.", join(req.parentDir, name)),
     };
   }
 
@@ -220,7 +221,7 @@ export async function startClone(
       if (code === 0) {
         finish({ ok: true, root: join(req.parentDir, name) });
       } else {
-        finish({ ok: false, message: reason || lastStderr || `git clone exited ${code}` });
+        finish({ ok: false, message: reason || lastStderr || l10n.t("git clone exited {0}", String(code)) });
       }
     });
   });
@@ -228,7 +229,7 @@ export async function startClone(
 
 function messageOf(err: unknown): string {
   const m = err instanceof Error ? err.message : String(err);
-  return m.includes("ENOENT") ? "git was not found on your PATH." : m;
+  return m.includes("ENOENT") ? l10n.t("git was not found on your PATH.") : m;
 }
 
 interface RawGhRepo {

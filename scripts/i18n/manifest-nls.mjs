@@ -26,8 +26,11 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const MANIFEST = join(ROOT, "apps/extension/package.json");
-const DEFAULTS = join(ROOT, "apps/extension/package.nls.json");
+// `--app apps/merge-studio` for the other extension; the extension is the default.
+const appAt = process.argv.indexOf("--app");
+const APP = join(ROOT, appAt > 0 ? process.argv[appAt + 1] : "apps/extension");
+const MANIFEST = join(APP, "package.json");
+const DEFAULTS = join(APP, "package.nls.json");
 
 const apply = process.argv.includes("--apply");
 
@@ -35,7 +38,7 @@ const apply = process.argv.includes("--apply");
 const slug = (value) => String(value).replace(/[^A-Za-z0-9._-]/g, "-");
 
 /** Fields the extension itself must not translate (ids, patterns, defaults). */
-const BRAND = new Set(["GitStudio", "GitStudio Blame"]);
+const BRAND = new Set(["GitStudio", "GitStudio Blame", "Merge Studio"]);
 
 const problems = [];
 const report = (message) => problems.push(message);
@@ -125,7 +128,7 @@ function collect(pkg) {
 
 /** The translation files sitting beside the manifest: package.nls.<locale>.json. */
 function localeFiles() {
-  return readdirSync(join(ROOT, "apps/extension"))
+  return readdirSync(APP)
     .filter((name) => /^package\.nls\..+\.json$/.test(name))
     .sort();
 }
@@ -185,7 +188,7 @@ if (!apply) {
   }
 }
 for (const locale of localeFiles()) {
-  const translated = JSON.parse(readFileSync(join(ROOT, "apps/extension", locale), "utf8"));
+  const translated = JSON.parse(readFileSync(join(APP, locale), "utf8"));
   const missing = [...known].filter((key) => !(key in translated));
   const extra = Object.keys(translated).filter((key) => !known.has(key));
   if (missing.length) report(`${locale}: ${missing.length} key(s) without a translation (e.g. ${missing.slice(0, 3).join(", ")})`);
@@ -196,4 +199,4 @@ if (problems.length) {
   for (const problem of problems) console.error(`manifest-nls: ${problem}`);
   process.exit(1);
 }
-console.log(`manifest-nls: ${found.length} localizable fields OK`);
+console.log(`manifest-nls: ${APP.slice(ROOT.length + 1)}: ${found.length} localizable fields OK`);

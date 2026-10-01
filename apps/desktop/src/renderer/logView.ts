@@ -22,6 +22,7 @@ import {
 } from "./logModel";
 import { el, glyph, span, copyText } from "./ui";
 import { searchField } from "./views/common";
+import * as l10n from "@vscode/l10n";
 
 const LINE_H = 20;
 const OVERSCAN = 30;
@@ -138,10 +139,10 @@ export function createLogPane(o: {
   // ── toolbar ──
   const bar = el("div", "log-toolbar");
   const errChip = el("button", "log-chip log-chip-err");
-  errChip.title = "Jump between errors";
+  errChip.title = l10n.t("Jump between errors");
   errChip.hidden = true;
   const search = searchField({
-    placeholder: "Search log…",
+    placeholder: l10n.t("Search log…"),
     onInput: (q) => {
       query = q;
       rebuildMatches();
@@ -152,9 +153,11 @@ export function createLogPane(o: {
       // only paints and counts.
       matchIdx = -1;
       matchCounter.textContent = matches.length
-        ? `${matches.length} match${matches.length === 1 ? "" : "es"}`
+        ? matches.length === 1
+          ? l10n.t("{0} match", matches.length)
+          : l10n.t("{0} matches", matches.length)
         : q.trim()
-          ? "no matches"
+          ? l10n.t("no matches")
           : "";
       render();
     },
@@ -172,34 +175,36 @@ export function createLogPane(o: {
   // to be answerable without hovering. The three transient verbs (copy, save,
   // expand) stay icons: they're momentary, universally drawn, and grouped
   // behind a hairline so the bar reads as [state] | [actions].
-  const tsBtn = toolBtn("watch", "Show timestamps", () => {
+  const tsBtn = toolBtn("watch", l10n.t("Show timestamps"), () => {
     showTs = !showTs;
     tsBtn.classList.toggle("is-on", showTs);
-    tsBtn.title = showTs ? "Hide timestamps" : "Show timestamps";
+    tsBtn.title = showTs ? l10n.t("Hide timestamps") : l10n.t("Show timestamps");
     tsBtn.setAttribute("aria-label", tsBtn.title);
     tsBtn.setAttribute("aria-pressed", String(showTs));
     render();
-  }, "Timestamps");
+  }, l10n.t("Timestamps"));
   tsBtn.setAttribute("aria-pressed", "false");
   const followBtn = toolBtn(
     "fold-down",
-    "Follow the newest output",
+    l10n.t("Follow the newest output"),
     () => setFollow(!follow),
-    "Follow",
+    l10n.t("Follow"),
   ) as HTMLButtonElement;
   // NOT a hand-stamped "false": `follow` starts ON, so a literal here made the
   // button open lit while announcing itself off. setFollow is the only writer;
   // it is called once below, after it is defined, to paint the initial state.
-  const copyBtn = toolBtn("copy", "Copy the full log", () => {
+  const copyBtn = toolBtn("copy", l10n.t("Copy the full log"), () => {
     // Through the app's helper: it confirms, and it falls back to the main
     // process when the browser refuses the clipboard. Raw, a refused write was
     // swallowed and copying a long log looked identical to doing nothing.
-    void Promise.resolve(o.onCopy()).then((t) => copyText(t, "Log copied."));
+    void Promise.resolve(o.onCopy()).then((t) => copyText(t, l10n.t("Log copied.")));
   });
-  const dlBtn = o.onDownload ? toolBtn("cloud-download", "Save the full log to Downloads", o.onDownload) : null;
+  const dlBtn = o.onDownload
+    ? toolBtn("cloud-download", l10n.t("Save the full log to Downloads"), o.onDownload)
+    : null;
   const expandTitles = o.fill
-    ? { on: "Show the job list", off: "Use the full width" }
-    : { on: "Shrink the pane", off: "Expand the pane" };
+    ? { on: l10n.t("Show the job list"), off: l10n.t("Use the full width") }
+    : { on: l10n.t("Shrink the pane"), off: l10n.t("Expand the pane") };
   const expandBtn = toolBtn("screen-full", expandTitles.off, () => {
     // Resizing the pane changes its scroll height, which the scroll listener
     // reads as "the user scrolled away from the bottom" and silently turns
@@ -220,10 +225,10 @@ export function createLogPane(o: {
   // Stepping through matches was Enter-only and unadvertised, so a search that
   // found 40 hits gave you the first one and no way to reach the other 39
   // unless you guessed. Two buttons, disabled until there is something to step.
-  const prevMatch = toolBtn("chevron-up", "Previous match (Shift+Enter)", () =>
+  const prevMatch = toolBtn("chevron-up", l10n.t("Previous match (Shift+Enter)"), () =>
     jumpToMatch(matchIdx < 0 ? matches.length - 1 : matchIdx - 1),
   );
-  const nextMatch = toolBtn("chevron-down", "Next match (Enter)", () =>
+  const nextMatch = toolBtn("chevron-down", l10n.t("Next match (Enter)"), () =>
     jumpToMatch(matchIdx < 0 ? 0 : matchIdx + 1),
   );
   prevMatch.classList.add("log-match-step");
@@ -264,7 +269,7 @@ export function createLogPane(o: {
   // `aria-label` names which job's output this is.
   scroll.tabIndex = 0;
   scroll.setAttribute("role", "log");
-  scroll.setAttribute("aria-label", "Job log");
+  scroll.setAttribute("aria-label", l10n.t("Job log"));
   const top = el("div", "log-spacer");
   const win = el("div", "log-window");
   const bottom = el("div", "log-spacer");
@@ -281,7 +286,7 @@ export function createLogPane(o: {
   // "not easy to use and practical at all". Click it to jump back to its header.
   const groupBar = el("button", "log-groupbar");
   groupBar.hidden = true;
-  groupBar.title = "Jump to the start of this step";
+  groupBar.title = l10n.t("Jump to the start of this step");
   body.appendChild(groupBar);
   // Where the errors ARE, over the whole log rather than the screenful you can
   // see. A 20,000-line log has no shape without it: you scroll and hope. Each
@@ -291,7 +296,7 @@ export function createLogPane(o: {
   body.appendChild(errMap);
   root.appendChild(body);
   const jumpPill = el("button", "log-jump");
-  jumpPill.append(glyph("arrow-down"), span("Jump to latest"));
+  jumpPill.append(glyph("arrow-down"), span(l10n.t("Jump to latest")));
   jumpPill.hidden = true;
   jumpPill.addEventListener("click", () => setFollow(true));
   root.appendChild(jumpPill);
@@ -331,11 +336,11 @@ export function createLogPane(o: {
     followBtn.classList.toggle("is-on", follow);
     followBtn.title = !producing
       ? notStarted
-        ? "This job hasn't started yet — there is nothing to follow"
-        : "This job has finished — there is nothing left to follow"
+        ? l10n.t("This job hasn't started yet — there is nothing to follow")
+        : l10n.t("This job has finished — there is nothing left to follow")
       : follow
-        ? "Following the newest output"
-        : "Follow the newest output";
+        ? l10n.t("Following the newest output")
+        : l10n.t("Follow the newest output");
     followBtn.setAttribute("aria-label", followBtn.title);
     followBtn.setAttribute("aria-pressed", String(follow));
     // The pill offers to take you to a tail that has moved on WITHOUT you. It
@@ -364,7 +369,7 @@ export function createLogPane(o: {
   // Paint the initial state through the ONE writer, so what the button looks
   // like and what it announces can never start out disagreeing.
   followBtn.classList.toggle("is-on", follow);
-  followBtn.title = follow ? "Following the newest output" : "Follow the newest output";
+  followBtn.title = follow ? l10n.t("Following the newest output") : l10n.t("Follow the newest output");
   followBtn.setAttribute("aria-label", followBtn.title);
   followBtn.setAttribute("aria-pressed", String(follow));
 
@@ -497,9 +502,11 @@ export function createLogPane(o: {
     if (keep) matchIdx = matches.findIndex((i) => doc.lines[i] === keep);
     matchCounter.textContent = matches.length
       ? matchIdx >= 0
-        ? `${matchIdx + 1} of ${matches.length}`
-        : `${matches.length} match${matches.length === 1 ? "" : "es"}`
-      : "no matches";
+        ? l10n.t("{0} of {1}", matchIdx + 1, matches.length)
+        : matches.length === 1
+          ? l10n.t("{0} match", matches.length)
+          : l10n.t("{0} matches", matches.length)
+      : l10n.t("no matches");
     matchStepSync?.();
   }
 
@@ -639,8 +646,16 @@ export function createLogPane(o: {
 
   function syncBanner(): void {
     const bits: string[] = [];
-    if (truncatedTail) bits.push("This log is larger than 8 MB — showing the most recent output. Download for the full text.");
-    if (capped) bits.push(`Very long log — showing the most recent ${MAX_RENDER_LINES.toLocaleString()} lines.`);
+    if (truncatedTail) {
+      bits.push(
+        l10n.t("This log is larger than 8 MB — showing the most recent output. Download for the full text."),
+      );
+    }
+    if (capped) {
+      bits.push(
+        l10n.t("Very long log — showing the most recent {0} lines.", MAX_RENDER_LINES.toLocaleString()),
+      );
+    }
     banner.hidden = bits.length === 0;
     banner.textContent = bits.join(" ");
   }
@@ -663,7 +678,10 @@ export function createLogPane(o: {
       row.setAttribute("role", "button");
       row.tabIndex = 0;
       row.setAttribute("aria-expanded", String(!isCollapsed));
-      row.setAttribute("aria-label", `${isCollapsed ? "Expand" : "Collapse"} group: ${line.text}`);
+      row.setAttribute(
+        "aria-label",
+        isCollapsed ? l10n.t("Expand group: {0}", line.text) : l10n.t("Collapse group: {0}", line.text),
+      );
       // Which doc line this row IS, so the rebuild below can find it again.
       // Deliberately `data-doc-idx` and not `data-num`: focusReturn keys its
       // remembered-row identity off `[data-num]`, and a log's line numbers
@@ -736,16 +754,19 @@ export function createLogPane(o: {
     if (!visible.length) {
       const note = el("div", "log-empty");
       note.textContent = producing
-        ? "Waiting for the first line of output…"
+        ? l10n.t("Waiting for the first line of output…")
         : notStarted
-          ? "This job hasn't started yet."
-          : "This job produced no output.";
+          ? l10n.t("This job hasn't started yet.")
+          : l10n.t("This job produced no output.");
       win.appendChild(note);
     }
     for (let i = first; i < last; i++) win.appendChild(lineRow(visible[i]));
     const errs = errorLines();
     errChip.hidden = errs.length === 0;
-    if (errs.length) errChip.textContent = `${errs.length} error${errs.length === 1 ? "" : "s"}`;
+    if (errs.length) {
+      errChip.textContent =
+        errs.length === 1 ? l10n.t("{0} error", errs.length) : l10n.t("{0} errors", errs.length);
+    }
     // The first line actually IN the port, not the first RENDERED one: `first`
     // carries 30 lines of overscan above the fold, so the strip named the group
     // you had already scrolled past.
@@ -828,7 +849,7 @@ export function createLogPane(o: {
       // on a 3px box sits entirely outside the map, flush on the pane's border,
       // which is exactly where an error on the log's last line landed.
       tick.style.top = `calc(${pct / 100} * (100% - 3px))`;
-      tick.title = `Error on line ${docIdx + 1 + droppedLines}`;
+      tick.title = l10n.t("Error on line {0}", docIdx + 1 + droppedLines);
       tick.tabIndex = -1;
       tick.addEventListener("click", () => jumpToLine(docIdx));
       ticks.push(tick);

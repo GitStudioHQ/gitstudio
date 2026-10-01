@@ -13,6 +13,7 @@ import { TerminalPanel } from "./terminalPanel";
 import { OutputsPanel } from "./outputsPanel";
 import { ChatPanel } from "./chatPanel";
 import { el, span, glyph, wireResizerKeys } from "./ui";
+import * as l10n from "@vscode/l10n";
 
 interface TermSession {
   id: string;
@@ -101,7 +102,7 @@ export class TerminalDock {
       collapsed: !opts.expanded,
       height: opts.height,
       minHeight: 120,
-      label: "Panel",
+      label: l10n.t("Panel"),
       onResize: () => this.layoutActive(),
       onToggle: (collapsed) => {
         if (!collapsed) {
@@ -142,7 +143,10 @@ export class TerminalDock {
     this.termGroup = el("div", "term-group");
     this.termStage = el("div", "term-stage");
     this.termEmpty = el("div", "term-empty");
-    this.termEmpty.append(glyph("terminal"), span("No terminals — start one from the list.", "term-empty-text"));
+    this.termEmpty.append(
+      glyph("terminal"),
+      span(l10n.t("No terminals — start one from the list."), "term-empty-text"),
+    );
     this.termSide = el("div", "term-side");
     // Width is user-resizable (the list was a fixed, oversized slab before) and
     // persists across sessions. Clamped so it can't swallow the terminal.
@@ -158,7 +162,7 @@ export class TerminalDock {
     sideResizer.append(el("div", "term-side-resizer-grip"));
     wireResizerKeys(sideResizer, {
       orientation: "vertical",
-      label: "Resize terminal list",
+      label: l10n.t("Resize terminal list"),
       min: SIDE_MIN,
       max: () => SIDE_MAX,
       get: () => sideW,
@@ -210,7 +214,7 @@ export class TerminalDock {
     surface.style.display = "none";
     const t: TermSession = {
       id: `term-${n}`,
-      label: `Terminal ${n}`,
+      label: l10n.t("Terminal {0}", n),
       surface,
       panel: new TerminalPanel(surface),
       opened: false,
@@ -271,13 +275,13 @@ export class TerminalDock {
     if (this.detailsVisible) {
       tabs.push({
         id: "commit-details",
-        label: this.detailsLabel || "Diff",
+        label: this.detailsLabel || l10n.t("Diff"),
         icon: "diff",
         closable: true,
       });
     }
-    tabs.push({ id: "output", label: "Output", icon: "output" });
-    tabs.push({ id: "terminal", label: "Terminal", icon: "terminal" });
+    tabs.push({ id: "output", label: l10n.t("Output"), icon: "output" });
+    tabs.push({ id: "terminal", label: l10n.t("Terminal"), icon: "terminal" });
     for (const c of this.chats) tabs.push({ id: c.id, label: c.label, icon: "sparkle", chat: true });
     return tabs;
   }
@@ -292,7 +296,7 @@ export class TerminalDock {
   private renderTabs(): void {
     this.tabStrip.replaceChildren();
     this.tabStrip.setAttribute("role", "tablist");
-    this.tabStrip.setAttribute("aria-label", "Panel tabs");
+    this.tabStrip.setAttribute("aria-label", l10n.t("Panel tabs"));
     for (const t of this.topTabs()) {
       const sel = t.id === this.active;
       const cls =
@@ -304,7 +308,7 @@ export class TerminalDock {
       const full = t.id === "commit-details" && this.detailsTitle ? this.detailsTitle : t.label;
       btn.title = full;
       btn.setAttribute("role", "tab");
-      btn.setAttribute("aria-label", t.id === "commit-details" ? `Diff of ${full}` : t.label);
+      btn.setAttribute("aria-label", t.id === "commit-details" ? l10n.t("Diff of {0}", full) : t.label);
       btn.setAttribute("aria-selected", sel ? "true" : "false");
       btn.tabIndex = sel ? 0 : -1;
       btn.addEventListener("click", () => this.setActiveTab(t.id));
@@ -314,9 +318,9 @@ export class TerminalDock {
       if (t.chat || t.closable) {
         const close = el("span", "term-tab-close");
         close.append(glyph("close"));
-        close.title = `Close ${t.label}`;
+        close.title = l10n.t("Close {0}", t.label);
         close.setAttribute("role", "button");
-        close.setAttribute("aria-label", `Close ${t.label}`);
+        close.setAttribute("aria-label", l10n.t("Close {0}", t.label));
         close.tabIndex = -1;
         const doClose = (e: Event): void => {
           e.stopPropagation();
@@ -353,15 +357,18 @@ export class TerminalDock {
   private renderSide(): void {
     this.termSide.replaceChildren();
     const addBtn = el("button", "term-side-add") as HTMLButtonElement;
-    addBtn.append(glyph("add"), span("New terminal"));
+    addBtn.append(glyph("add"), span(l10n.t("New terminal")));
     // At the cap the button used to stay fully lit and do nothing — a click
     // that `newTerminal`'s own guard swallowed, with no message anywhere. A
     // control that cannot act says so.
     const atCap = this.terminals.length >= MAX_TERMINALS;
     addBtn.disabled = atCap;
     addBtn.title = atCap
-      ? `${MAX_TERMINALS} terminals is the most this window will open at once — close one first`
-      : "New terminal";
+      ? l10n.t(
+          "{0} terminals is the most this window will open at once — close one first",
+          MAX_TERMINALS,
+        )
+      : l10n.t("New terminal");
     addBtn.setAttribute("aria-label", addBtn.title);
     addBtn.addEventListener("click", () => this.newTerminal());
     this.termSide.appendChild(addBtn);
@@ -369,7 +376,7 @@ export class TerminalDock {
     const list = el("div", "term-side-list");
     list.setAttribute("role", "tablist");
     list.setAttribute("aria-orientation", "vertical");
-    list.setAttribute("aria-label", "Terminals");
+    list.setAttribute("aria-label", l10n.t("Terminals"));
     const rowEls: HTMLElement[] = [];
     for (const t of this.terminals) {
       const sel = t.id === this.activeTermId;
@@ -395,8 +402,8 @@ export class TerminalDock {
       const dead = t.panel.isExited();
       row.classList.toggle("is-exited", dead);
       row.append(glyph(dead ? "circle-slash" : "terminal"), span(t.label, "term-side-label"));
-      if (dead) row.append(span("exited", "term-side-dead"));
-      row.title = dead ? `${t.label} — the shell has exited` : t.label;
+      if (dead) row.append(span(l10n.t("exited"), "term-side-dead"));
+      row.title = dead ? l10n.t("{0} — the shell has exited", t.label) : t.label;
       row.addEventListener("click", () => this.setActiveTerm(t.id));
       // The kill control is a SIBLING of the row, not a child of it. It used to
       // be a role=button span inside the row's <button>, which is invalid: an
@@ -412,8 +419,8 @@ export class TerminalDock {
       // more reachable than the thing it destroys.
       kill.tabIndex = sel ? 0 : -1;
       kill.append(glyph("trash"));
-      kill.title = `Kill ${t.label}`;
-      kill.setAttribute("aria-label", `Kill ${t.label}`);
+      kill.title = l10n.t("Kill {0}", t.label);
+      kill.setAttribute("aria-label", l10n.t("Kill {0}", t.label));
       kill.addEventListener("click", (e) => {
         e.stopPropagation();
         this.closeTerminal(t.id);

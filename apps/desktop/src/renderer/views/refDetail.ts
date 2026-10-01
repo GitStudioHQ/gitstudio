@@ -8,6 +8,7 @@
 // So each kind of ref gets a page: what it points at, what is on it, and its
 // verbs in the top bar where a page's verbs live.
 
+import * as l10n from "@vscode/l10n";
 import { host } from "../bridge";
 import { el, span, glyph, cleanErr, errorState, skeletonList, relTime, absTime, copyText } from "../ui";
 import { toast, confirmDialog } from "../dialogs";
@@ -22,7 +23,13 @@ import { explainRefusedCheckout } from "../optionLikeRename";
 type RefKind = "head" | "remote" | "tag" | "stash";
 
 function kindLabel(kind: RefKind): string {
-  return kind === "head" ? "branch" : kind === "remote" ? "remote branch" : kind;
+  return kind === "head"
+    ? l10n.t("branch")
+    : kind === "remote"
+      ? l10n.t("remote branch")
+      : kind === "tag"
+        ? l10n.t("tag")
+        : l10n.t("stash");
 }
 
 /**
@@ -38,8 +45,8 @@ export async function renderRefDetail(
   const name = target?.ref;
   const kind = (target?.id as RefKind) || "head";
   const { view, main, rail, topActions } = detailPage({
-    backLabel: "Branches",
-    crumb: name ?? "Ref",
+    backLabel: l10n.t("Branches"),
+    crumb: name ?? l10n.t("Ref"),
     pageLabel: name,
     onBack: () => nav("branches", { list: true }),
   });
@@ -48,7 +55,7 @@ export async function renderRefDetail(
   main.appendChild(skeletonList(4, false));
 
   if (!name) {
-    main.replaceChildren(errorState("No ref", "Nothing was named to open."));
+    main.replaceChildren(errorState(l10n.t("No ref"), l10n.t("Nothing was named to open.")));
     return;
   }
   setPageLabel(name);
@@ -64,7 +71,7 @@ export async function renderRefDetail(
   } catch (e) {
     if (!view.isConnected) return;
     main.replaceChildren(
-      errorState("Couldn't read this ref", cleanErr(e) || "Git did not answer.", () =>
+      errorState(l10n.t("Couldn't read this ref"), cleanErr(e) || l10n.t("Git did not answer."), () =>
         void renderRefDetail(wrap, nav, target),
       ),
     );
@@ -77,8 +84,8 @@ export async function renderRefDetail(
   if (!ref && !stash) {
     main.replaceChildren(
       errorState(
-        `That ${kindLabel(kind)} is not here`,
-        `${name} was not found in this repository. It may have been deleted, or the list you came from is stale.`,
+        l10n.t("That {0} is not here", kindLabel(kind)),
+        l10n.t("{0} was not found in this repository. It may have been deleted, or the list you came from is stale.", String(name)),
         () => nav("branches", { list: true }),
       ),
     );
@@ -99,17 +106,17 @@ export async function renderRefDetail(
   if (ref?.objectType === "tag") {
     // Said in words, not git's own jargon — "annotated" answered nothing on
     // the list rows and answers nothing here either.
-    const a = span("has its own message", "ab-pill annotated");
-    a.title = "An annotated tag: it records who tagged, when, and why";
+    const a = span(l10n.t("has its own message"), "ab-pill annotated");
+    a.title = l10n.t("An annotated tag: it records who tagged, when, and why");
     facts.appendChild(a);
   }
-  if (ref?.isCurrent) facts.appendChild(span("checked out", "ab-pill current"));
+  if (ref?.isCurrent) facts.appendChild(span(l10n.t("checked out"), "ab-pill current"));
   if (ref?.gone) {
-    const g = span("upstream gone", "ab-pill gone");
-    g.title = `${ref.upstream ?? "Its upstream"} no longer exists.`;
+    const g = span(l10n.t("upstream gone"), "ab-pill gone");
+    g.title = l10n.t("{0} no longer exists.", ref.upstream ?? l10n.t("Its upstream"));
     facts.appendChild(g);
   }
-  if (ref?.upstream) facts.appendChild(span(`tracks ${ref.upstream}`, "rd-fact"));
+  if (ref?.upstream) facts.appendChild(span(l10n.t("tracks {0}", ref.upstream), "rd-fact"));
   if (stash) facts.appendChild(span(stash.ref, "rd-fact sec-mono"));
   if (when) {
     const t = span(relTime(when), "rd-fact");
@@ -126,11 +133,11 @@ export async function renderRefDetail(
 
   // ── the top bar's verbs ───────────────────────────────────────────────────
   const shaBtn = el("button", "mini-btn") as HTMLButtonElement;
-  shaBtn.append(glyph("copy"), span(sha.slice(0, 7) || "no sha"));
-  shaBtn.title = `${sha}\nCopy the full SHA`;
-  shaBtn.setAttribute("aria-label", `Copy the full SHA ${sha}`);
+  shaBtn.append(glyph("copy"), span(sha.slice(0, 7) || l10n.t("no sha")));
+  shaBtn.title = l10n.t("{0}\nCopy the full SHA", sha);
+  shaBtn.setAttribute("aria-label", l10n.t("Copy the full SHA {0}", sha));
   shaBtn.disabled = !sha;
-  shaBtn.addEventListener("click", () => void copyText(sha, "Copied the full SHA."));
+  shaBtn.addEventListener("click", () => void copyText(sha, l10n.t("Copied the full SHA.")));
   topActions.appendChild(shaBtn);
 
   const act = (label: string, icon: string, title: string, run: () => void, primary = false): void => {
@@ -145,26 +152,26 @@ export async function renderRefDetail(
   // kind): the short name is "heads/release" beside a tag of that name, and
   // checking THAT out detaches.
   if (kind === "head" && ref && !ref.isCurrent) {
-    act("Check out", "git-branch", `Check out ${name}`, () =>
-      void checkout(ref.fullName, `Checked out ${name}.`), true);
+    act(l10n.t("Check out"), "git-branch", l10n.t("Check out {0}", String(name)), () =>
+      void checkout(ref.fullName, l10n.t("Checked out {0}.", String(name))), true);
   }
   if (kind === "remote" && ref) {
     const local = name.split("/").slice(1).join("/") || name;
-    act("Check out here", "git-branch", `Create ${local} from ${name} and check it out`, () =>
-      void checkout(ref.fullName, `Checked out ${local}.`), true);
+    act(l10n.t("Check out here"), "git-branch", l10n.t("Create {0} from {1} and check it out", local, name), () =>
+      void checkout(ref.fullName, l10n.t("Checked out {0}.", local)), true);
   }
   if (kind === "tag") {
-    act("Push", "cloud-upload", `Publish ${name} to the remote`, () => void pushTag());
-    act("Delete…", "trash", `Delete ${name} from this clone`, () => void deleteTag());
+    act(l10n.t("Push"), "cloud-upload", l10n.t("Publish {0} to the remote", String(name)), () => void pushTag());
+    act(l10n.t("Delete…"), "trash", l10n.t("Delete {0} from this clone", String(name)), () => void deleteTag());
   }
   if (kind === "stash") {
     // codicon's own stash glyphs, as the extension's Stashes group wears them.
-    act("Apply", "git-stash-apply", `Apply ${name}, keeping it in the list`, () => void stashAct("apply"), true);
-    act("Pop", "git-stash-pop", `Apply ${name} and remove it`, () => void stashAct("pop"));
-    act("Drop…", "trash", `Delete ${name} permanently`, () => void stashAct("drop"));
+    act(l10n.t("Apply"), "git-stash-apply", l10n.t("Apply {0}, keeping it in the list", String(name)), () => void stashAct("apply"), true);
+    act(l10n.t("Pop"), "git-stash-pop", l10n.t("Apply {0} and remove it", String(name)), () => void stashAct("pop"));
+    act(l10n.t("Drop…"), "trash", l10n.t("Delete {0} permanently", String(name)), () => void stashAct("drop"));
   }
   if (sha) {
-    act("View in Commits", "git-commit", "Reveal this commit in the Commits view", () =>
+    act(l10n.t("View in Commits"), "git-commit", l10n.t("Reveal this commit in the Commits view"), () =>
       nav("graph", { sha }));
   }
 
@@ -177,18 +184,18 @@ export async function renderRefDetail(
     row.appendChild(v);
     rail.appendChild(row);
   };
-  prop("Kind", kindLabel(kind));
-  if (sha) prop("Commit", sha.slice(0, 7), sha);
-  if (ref?.upstream) prop("Upstream", ref.upstream);
+  prop(l10n.t("Kind"), kindLabel(kind));
+  if (sha) prop(l10n.t("Commit"), sha.slice(0, 7), sha);
+  if (ref?.upstream) prop(l10n.t("Upstream"), ref.upstream);
   // RefInfo carries no ahead/behind: `%(upstream:track)` is only ever populated
   // on LOCAL heads, so the field would be empty on every remote and tag row —
   // the branch list is where that pair lives.
-  if (when) prop("Updated", relTime(when), absTime(when));
-  prop("Full name", ref?.fullName ?? name, ref?.fullName ?? name);
+  if (when) prop(l10n.t("Updated"), relTime(when), absTime(when));
+  prop(l10n.t("Full name"), ref?.fullName ?? name, ref?.fullName ?? name);
 
   // ── what is on it ─────────────────────────────────────────────────────────
   const historyHead = el("div", "rd-section-head");
-  historyHead.append(glyph("git-commit"), span(kind === "stash" ? "The commit it holds" : "Recent commits"));
+  historyHead.append(glyph("git-commit"), span(kind === "stash" ? l10n.t("The commit it holds") : l10n.t("Recent commits")));
   main.appendChild(historyHead);
   const historyBody = el("div", "rd-history");
   historyBody.appendChild(skeletonList(4, false));
@@ -205,7 +212,7 @@ export async function renderRefDetail(
   } catch (e) {
     if (!view.isConnected) return;
     historyBody.replaceChildren(
-      errorState("Couldn't read this ref's history", cleanErr(e) || "Git did not answer."),
+      errorState(l10n.t("Couldn't read this ref's history"), cleanErr(e) || l10n.t("Git did not answer.")),
     );
     return;
   }
@@ -224,7 +231,7 @@ export async function renderRefDetail(
           })),
           {
             onOpen: (s) => nav("commit", { sha: s }),
-            onCopy: (s) => void copyText(s, "Copied the full SHA."),
+            onCopy: (s) => void copyText(s, l10n.t("Copied the full SHA.")),
             // NEWEST first: this is a capped window on an ongoing history, not
             // a complete set. Oldest-first opened on the 30th-newest commit and
             // put the branch tip — the commit every reader is here for — at the
@@ -232,7 +239,7 @@ export async function renderRefDetail(
             order: "newest",
           },
         )
-      : errorState("No history", "Git returned no commits for this ref."),
+      : errorState(l10n.t("No history"), l10n.t("Git returned no commits for this ref.")),
   );
 
   // ── the verbs' plumbing ───────────────────────────────────────────────────
@@ -253,7 +260,7 @@ export async function renderRefDetail(
       // namespace, and the main process plans from the full name.
       r = await host.invoke("commit:action", refCheckoutRequest(fullName));
     } catch (e) {
-      toast(cleanErr(e) || "Couldn't check out.", "error");
+      toast(cleanErr(e) || l10n.t("Couldn't check out."), "error");
       return;
     }
     // Uncommitted changes in the switch's way were asked about (Stash & Retry
@@ -266,7 +273,7 @@ export async function renderRefDetail(
     if (!r?.ok) {
       // A branch named like an option says so, and offers the rename.
       if (explainRefusedCheckout(r, () => nav("branches", { list: true }))) return;
-      toast(r?.message || "Couldn't check out.", r?.expected ? "info" : "error");
+      toast(r?.message || l10n.t("Couldn't check out."), r?.expected ? "info" : "error");
       return;
     }
     toast(ok, "success");
@@ -279,25 +286,25 @@ export async function renderRefDetail(
 
   async function pushTag(): Promise<void> {
     const r = await host.invoke("tag:push", { name: tag });
-    toast(r.ok ? `Pushed ${name}.` : (r.message ?? "Couldn't push the tag."), r.ok ? "success" : "error");
+    toast(r.ok ? l10n.t("Pushed {0}.", String(name)) : (r.message ?? l10n.t("Couldn't push the tag.")), r.ok ? "success" : "error");
   }
 
   async function deleteTag(): Promise<void> {
     const ok = await confirmDialog({
-      title: `Delete tag ${name}?`,
-      message:
-        "This removes the tag from this clone only. If it has already been pushed, the copy " +
-        "on the remote is untouched and a fetch brings it straight back.",
-      confirmLabel: "Delete locally",
+      title: l10n.t("Delete tag {0}?", String(name)),
+      message: l10n.t(
+        "This removes the tag from this clone only. If it has already been pushed, the copy on the remote is untouched and a fetch brings it straight back.",
+      ),
+      confirmLabel: l10n.t("Delete locally"),
       danger: true,
     });
     if (!ok) return;
     const r = await host.invoke("tag:delete", tag);
     if (!r.ok) {
-      toast(r.message ?? "Couldn't delete the tag.", r.expected ? "info" : "error");
+      toast(r.message ?? l10n.t("Couldn't delete the tag."), r.expected ? "info" : "error");
       return;
     }
-    toast(`Deleted tag ${name} locally.`, "success");
+    toast(l10n.t("Deleted tag {0} locally.", String(name)), "success");
     nav("branches", { list: true });
   }
 
@@ -309,9 +316,9 @@ export async function renderRefDetail(
   async function stashAct(action: "apply" | "pop" | "drop"): Promise<void> {
     if (action === "drop") {
       const ok = await confirmDialog({
-        title: `Drop ${name}?`,
-        message: `“${stash?.message || name}” is deleted permanently. This cannot be undone.`,
-        confirmLabel: "Drop",
+        title: l10n.t("Drop {0}?", String(name)),
+        message: l10n.t("“{0}” is deleted permanently. This cannot be undone.", stash?.message || String(name)),
+        confirmLabel: l10n.t("Drop"),
         danger: true,
       });
       if (!ok) return;
@@ -320,12 +327,12 @@ export async function renderRefDetail(
     try {
       fresh = await host.invoke("stash:list", undefined);
     } catch {
-      toast("Couldn't re-read the stash list — nothing was changed.", "error");
+      toast(l10n.t("Couldn't re-read the stash list — nothing was changed."), "error");
       return;
     }
     const still = fresh.find((x) => x.ref === name);
     if (!still || (stash?.sha && still.sha !== stash.sha)) {
-      toast(`${name} is not the stash it was — the list changed underneath.`, "info");
+      toast(l10n.t("{0} is not the stash it was — the list changed underneath.", String(name)), "info");
       nav("branches", { list: true });
       return;
     }
@@ -340,7 +347,15 @@ export async function renderRefDetail(
     // or Cancel — bridge.ts), and the user cancelled: nothing ran.
     if (r.cancelled) return;
     if (!r.ok) {
-      toast(r.message ?? `Couldn't ${action} ${name}.`, r.expected ? "info" : "error");
+      toast(
+        r.message ??
+          (action === "apply"
+            ? l10n.t("Couldn't apply {0}.", String(name))
+            : action === "pop"
+              ? l10n.t("Couldn't pop {0}.", String(name))
+              : l10n.t("Couldn't drop {0}.", String(name))),
+        r.expected ? "info" : "error",
+      );
       return;
     }
     // A Pop whose staging git could not restore was applied and KEPT (the
@@ -348,10 +363,12 @@ export async function renderRefDetail(
     const kept = action === "pop" && r.stashKept === true;
     toast(
       action === "apply" || kept
-        ? `Applied ${name}${kept ? " — it stays in the list" : ""}.`
+        ? kept
+          ? l10n.t("Applied {0} — it stays in the list.", String(name))
+          : l10n.t("Applied {0}.", String(name))
         : action === "pop"
-          ? `Popped ${name}.`
-          : `Dropped ${name}.`,
+          ? l10n.t("Popped {0}.", String(name))
+          : l10n.t("Dropped {0}.", String(name)),
       "success",
     );
     if (action !== "apply" && !kept) nav("branches", { list: true });

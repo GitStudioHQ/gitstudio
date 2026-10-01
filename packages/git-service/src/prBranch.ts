@@ -393,7 +393,7 @@ export async function addRemote(proc: PrGitRunner, name: string, url: string, op
 // ── Words ────────────────────────────────────────────────────────────────────
 
 export function commitsWord(n: number | undefined): string {
-  return n === undefined ? "commits" : n === 1 ? "1 commit" : `${n} commits`;
+  return n === undefined ? l10n.t("commits") : n === 1 ? l10n.t("1 commit") : l10n.t("{0} commits", n);
 }
 
 /**

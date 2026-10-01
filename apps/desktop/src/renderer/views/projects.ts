@@ -9,6 +9,7 @@
 // issue detail; PRs open their full workspace. Reads go through the SWR cache;
 // the move mutation toasts + busts.
 
+import * as l10n from "@vscode/l10n";
 import { host } from "../bridge";
 import {
   el,
@@ -51,7 +52,7 @@ async function renderProjectsAsync(wrap: HTMLElement, nav: SectionNav): Promise<
   const gate = await ghGate(wrap, nav, true, refresh);
   if (!gate) return;
 
-  const header = ghHeader("Projects", gate.login, refresh);
+  const header = ghHeader(l10n.t("Projects"), gate.login, refresh);
   const view = el("div", "gh-view");
   view.appendChild(header);
   // One full-width pane: the selected project's board lives here.
@@ -67,7 +68,11 @@ async function renderProjectsAsync(wrap: HTMLElement, nav: SectionNav): Promise<
     if (!view.isConnected) return;
     if (!list) {
       board.replaceChildren(
-        errorState("Couldn't load projects", cleanErr(e) || "GitHub request failed.", refresh),
+        errorState(
+          l10n.t("Couldn't load projects"),
+          cleanErr(e) || l10n.t("GitHub request failed."),
+          refresh,
+        ),
       );
       return;
     }
@@ -77,7 +82,7 @@ async function renderProjectsAsync(wrap: HTMLElement, nav: SectionNav): Promise<
   header.setCount?.(projects.length);
   // A project GitHub named but could not return is SAID, above the board —
   // kept silently, two projects read as "this repository has two projects".
-  const missing = unreadableNotice(list.unreadable, "project");
+  const missing = unreadableNotice(list.unreadable, l10n.t("project"), l10n.t("projects"));
   if (missing) view.insertBefore(missing, board);
 
   if (projects.length === 0) {
@@ -85,10 +90,10 @@ async function renderProjectsAsync(wrap: HTMLElement, nav: SectionNav): Promise<
     // "None are linked" is only true when GitHub named none.
     board.replaceChildren(
       emptyState(
-        list.unreadable ? "No readable projects" : "No projects",
+        list.unreadable ? l10n.t("No readable projects") : l10n.t("No projects"),
         list.unreadable
-          ? "GitHub lists projects for this repository, but could not return any of them."
-          : "No GitHub Projects (v2) are linked to this repository.",
+          ? l10n.t("GitHub lists projects for this repository, but could not return any of them.")
+          : l10n.t("No GitHub Projects (v2) are linked to this repository."),
         { icon: "project" },
       ),
     );
@@ -108,9 +113,13 @@ async function renderProjectsAsync(wrap: HTMLElement, nav: SectionNav): Promise<
     onOpen: (anchor) => {
       const items: MenuItem[] = all.map((p) => ({
         label: p.title,
-        sub:
-          `#${p.number} · ${p.itemCount} item${p.itemCount === 1 ? "" : "s"}` +
-          (p.closed ? " · closed" : ""),
+        sub: p.closed
+          ? p.itemCount === 1
+            ? l10n.t("#{0} · 1 item · closed", p.number)
+            : l10n.t("#{0} · {1} items · closed", p.number, p.itemCount)
+          : p.itemCount === 1
+            ? l10n.t("#{0} · 1 item", p.number)
+            : l10n.t("#{0} · {1} items", p.number, p.itemCount),
         icon: "project",
         current: p.id === S.selectedProjectId,
         onClick: () => select(p),
@@ -153,8 +162,10 @@ async function showProjectBoard(
   } catch (e) {
     if (!board) {
       detail.replaceChildren(
-        errorState("Couldn't load board", cleanErr(e) || "GitHub request failed.", () =>
-          void showProjectBoard(detail, p, refresh, nav),
+        errorState(
+          l10n.t("Couldn't load board"),
+          cleanErr(e) || l10n.t("GitHub request failed."),
+          () => void showProjectBoard(detail, p, refresh, nav),
         ),
       );
       return;
@@ -177,28 +188,35 @@ async function showProjectBoard(
   const total = p.itemCount;
   const count =
     typeof total === "number" && total > loaded
-      ? `${loaded} of ${total} items`
-      : `${loaded} item${loaded === 1 ? "" : "s"}`;
-  meta.textContent = `#${p.number} · ${count}${b.field ? "" : " · no Status field"}`;
+      ? l10n.t("{0} of {1} items", loaded, total)
+      : loaded === 1
+        ? l10n.t("1 item")
+        : l10n.t("{0} items", loaded);
+  meta.textContent = b.field
+    ? l10n.t("#{0} · {1}", p.number, count)
+    : l10n.t("#{0} · {1} · no Status field", p.number, count);
   const actions = el("div", "gh-detail-actions");
   // Labelled, like the Organizations header: a lone unlabelled glyph on its own
   // row is a guess, and this is the page's only action.
   const openBtn = el("button", "mini-btn");
-  openBtn.append(glyph("link-external"), span("GitHub"));
-  openBtn.title = "Open this project on github.com";
+  openBtn.append(glyph("link-external"), span(l10n.t("GitHub")));
+  openBtn.title = l10n.t("Open this project on github.com");
   openBtn.addEventListener("click", () => window.open(p.url, "_blank"));
   actions.appendChild(openBtn);
   head.append(h, meta, actions);
   detail.appendChild(head);
   // Cards GitHub named but could not return — said, not hidden.
-  const missingCards = unreadableNotice(b.unreadable ?? 0, "card");
+  const missingCards = unreadableNotice(b.unreadable ?? 0, l10n.t("card"), l10n.t("cards"));
   if (missingCards) detail.appendChild(missingCards);
 
   // Columns = Status options, with a leading "No Status" bucket. With no Status
   // field, a single "All items" column holds everything.
   const columns: { id: string | null; name: string }[] = b.field
-    ? [{ id: null, name: "No status" }, ...b.field.options.map((o) => ({ id: o.id, name: o.name }))]
-    : [{ id: null, name: "All items" }];
+    ? [
+        { id: null, name: l10n.t("No status") },
+        ...b.field.options.map((o) => ({ id: o.id, name: o.name })),
+      ]
+    : [{ id: null, name: l10n.t("All items") }];
 
   const itemsById = new Map(b.items.map((it) => [it.id, it]));
   const cardsById = new Map<string, HTMLElement>();
@@ -233,7 +251,7 @@ async function showProjectBoard(
         optionId: targetId,
       });
       if (!r.ok) {
-        toast(r.message ?? "Couldn't move the item.", "error");
+        toast(r.message ?? l10n.t("Couldn't move the item."), "error");
         it.statusOptionId = fromId;
         void showProjectBoard(detail, p, refresh, nav); // revert to the truth
         return;
@@ -262,7 +280,7 @@ async function showProjectBoard(
           ?.scrollIntoView({ block: "nearest", inline: "nearest" });
       });
     } catch (e) {
-      toast(cleanErr(e) || "Couldn't move the item.", "error");
+      toast(cleanErr(e) || l10n.t("Couldn't move the item."), "error");
       it.statusOptionId = fromId;
       void showProjectBoard(detail, p, refresh, nav);
     }
@@ -357,7 +375,7 @@ function projectCard(
   // with no label at all. The dot keeps its place; the word joins the sub-line.
   if (stateKey) {
     const stateWord =
-      stateKey === "merged" ? "Merged" : stateKey === "closed" ? "Closed" : "Open";
+      stateKey === "merged" ? l10n.t("Merged") : stateKey === "closed" ? l10n.t("Closed") : l10n.t("Open");
     dot.title = stateWord;
     dot.setAttribute("role", "img");
     dot.setAttribute("aria-label", stateWord);
@@ -367,8 +385,8 @@ function projectCard(
   top.append(dot, title);
 
   const kebab = el("button", "gh-card-kebab");
-  kebab.setAttribute("aria-label", "Item actions");
-  kebab.title = "Item actions";
+  kebab.setAttribute("aria-label", l10n.t("Item actions"));
+  kebab.title = l10n.t("Item actions");
   kebab.appendChild(glyph("kebab-vertical"));
   kebab.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -378,14 +396,14 @@ function projectCard(
   card.appendChild(top);
 
   const sub = el("div", "gh-card-sub");
-  const num = it.number != null ? `#${it.number}` : it.type === "DRAFT_ISSUE" ? "draft" : "";
+  const num = it.number != null ? `#${it.number}` : it.type === "DRAFT_ISSUE" ? l10n.t("draft") : "";
   const when = relTimeISO(it.updatedAt);
   const stateWord = stateKey
     ? stateKey === "merged"
-      ? "merged"
+      ? l10n.t("merged")
       : stateKey === "closed"
-        ? "closed"
-        : "open"
+        ? l10n.t("closed")
+        : l10n.t("open")
     : "";
   sub.textContent = [num, stateWord, it.author && `@${it.author}`, when]
     .filter(Boolean)
@@ -393,7 +411,7 @@ function projectCard(
   card.appendChild(sub);
 
   const typePill = pill(
-    it.type === "PULL_REQUEST" ? "PR" : it.type === "DRAFT_ISSUE" ? "Draft" : "Issue",
+    it.type === "PULL_REQUEST" ? l10n.t("PR") : it.type === "DRAFT_ISSUE" ? l10n.t("Draft") : l10n.t("Issue"),
   );
   card.appendChild(typePill);
 
@@ -414,7 +432,7 @@ function projectCard(
     card.classList.add("clickable");
     card.tabIndex = 0;
     card.setAttribute("role", "button");
-    card.title = isPr ? `Open pull request #${num}` : `Peek issue #${num}`;
+    card.title = isPr ? l10n.t("Open pull request #{0}", num) : l10n.t("Peek issue #{0}", num);
     card.addEventListener("click", open);
     card.addEventListener("keydown", (e) => {
       if (e.target !== card) return;
@@ -448,18 +466,18 @@ function openIssueDrawer(number: number, nav: SectionNav, onChanged?: () => void
   const drawer = el("div", "gh-drawer");
   drawer.setAttribute("role", "dialog");
   drawer.setAttribute("aria-modal", "true");
-  drawer.setAttribute("aria-label", `Issue #${number}`);
+  drawer.setAttribute("aria-label", l10n.t("Issue #{0}", number));
 
   const head = el("div", "gh-drawer-head");
   const eyebrow = el("div", "gh-drawer-eyebrow");
-  eyebrow.append(glyph("issue-opened"), span(`Issue #${number}`));
+  eyebrow.append(glyph("issue-opened"), span(l10n.t("Issue #{0}", number)));
   const headActions = el("div", "gh-drawer-actions");
   const openFull = el("button", "mini-btn");
-  openFull.append(glyph("issues"), span("Open in Issues"));
-  openFull.title = "Open this issue as a full page in the Issues section";
+  openFull.append(glyph("issues"), span(l10n.t("Open in Issues")));
+  openFull.title = l10n.t("Open this issue as a full page in the Issues section");
   const closeBtn = el("button", "gh-drawer-close");
-  closeBtn.setAttribute("aria-label", "Close");
-  closeBtn.title = "Close  (Esc)";
+  closeBtn.setAttribute("aria-label", l10n.t("Close"));
+  closeBtn.title = l10n.t("Close  (Esc)");
   closeBtn.appendChild(glyph("close"));
   headActions.append(openFull, closeBtn);
   head.append(eyebrow, headActions);
@@ -536,7 +554,11 @@ function projectItemMenu(
   const items: MenuItem[] = [];
   if (it.url) {
     const url = it.url;
-    items.push({ label: "Open on GitHub", icon: "link-external", onClick: () => window.open(url, "_blank") });
+    items.push({
+      label: l10n.t("Open on GitHub"),
+      icon: "link-external",
+      onClick: () => window.open(url, "_blank"),
+    });
   }
   const field = board.field;
   if (field) {
@@ -549,10 +571,10 @@ function projectItemMenu(
     // comment above describes, and openMenu renders a non-separator item as a
     // command button: a live, focusable "Move to" row that did nothing at all,
     // sitting above the four statuses it was supposed to be introducing.
-    items.push({ separator: true, label: "Move to" });
+    items.push({ separator: true, label: l10n.t("Move to") });
     // "No Status" target (clears the field).
     items.push({
-      label: "No status",
+      label: l10n.t("No status"),
       current: it.statusOptionId === null,
       onClick: () => void move(it.id, null),
     });
@@ -565,7 +587,7 @@ function projectItemMenu(
     }
   }
   if (!items.length) {
-    items.push({ label: "No actions available", disabled: true });
+    items.push({ label: l10n.t("No actions available"), disabled: true });
   }
   openMenu(anchor, items);
 }

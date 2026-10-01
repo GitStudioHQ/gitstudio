@@ -24,6 +24,7 @@ import type {
   CommitDetailsPayload,
 } from "../shared/ipc";
 import type { CommitFileChange } from "@gitstudio/host-bridge/commitDetailsProtocol";
+import * as l10n from "@vscode/l10n";
 
 /** The App-owned operations a peek card can trigger. Every mutation funnels
  *  through here so cache-busting, toasts, and view refreshes stay centralized. */
@@ -64,7 +65,7 @@ function commitRow(c: CompareCommit): HTMLElement {
   row.append(authorDot(c.author));
   const main = el("div", "peek-row-main");
   const title = el("div", "peek-row-title");
-  title.textContent = c.subject || "(no subject)";
+  title.textContent = c.subject || l10n.t("(no subject)");
   title.title = c.subject;
   const sub = el("div", "peek-row-sub");
   sub.textContent = `${c.author} · ${relTime(c.date)}`;
@@ -83,7 +84,7 @@ function commitsSection(
   gp: GitPeekHost,
   ctx: PeekContext,
   commits: CompareCommit[],
-  label = "Recent commits",
+  label = l10n.t("Recent commits"),
 ): HTMLElement {
   const { root, body } = peekSection(label, commits.length);
   for (const c of commits) {
@@ -93,7 +94,7 @@ function commitsSection(
   }
   if (!commits.length) {
     const none = el("div", "peek-row");
-    none.appendChild(span("No commits to show.", "peek-row-sub"));
+    none.appendChild(span(l10n.t("No commits to show."), "peek-row-sub"));
     body.appendChild(none);
   }
   return root;
@@ -132,7 +133,7 @@ function fileRow(
     const chev = glyph("chevron-right");
     chev.classList.add("peek-row-chev");
     side.appendChild(chev);
-    row.title = `Open ${f.path} in Commits`;
+    row.title = l10n.t("Open {0} in Commits", f.path);
     row.addEventListener("click", () => {
       ctx.close();
       gp.revealInGraph(sha);
@@ -151,19 +152,19 @@ function fileRow(
 export function commitCard(gp: GitPeekHost, sha: string, brief?: CompareCommit): PeekCard {
   return {
     icon: "git-commit",
-    title: brief?.subject || `Commit ${sha.slice(0, 7)}`,
+    title: brief?.subject || l10n.t("Commit {0}", sha.slice(0, 7)),
     subtitle: brief ? `${brief.author} · ${relTime(brief.date)}` : sha.slice(0, 7),
     actions: [
       {
-        label: "Copy SHA",
+        label: l10n.t("Copy SHA"),
         icon: "copy",
-        onClick: () => void copyText(sha, "Commit SHA copied."),
+        onClick: () => void copyText(sha, l10n.t("Commit SHA copied.")),
       },
       {
-        label: "View in Commits",
+        label: l10n.t("View in Commits"),
         icon: "git-commit",
         primary: true,
-        title: "Reveal this commit in the Commits view",
+        title: l10n.t("Reveal this commit in the Commits view"),
         onClick: (ctx) => {
           ctx.close();
           gp.revealInGraph(sha);
@@ -175,11 +176,11 @@ export function commitCard(gp: GitPeekHost, sha: string, brief?: CompareCommit):
       body.replaceChildren();
       if (!d) {
         const none = el("div", "peek-empty");
-        none.append(glyph("git-commit"), span("This commit couldn't be loaded."));
+        none.append(glyph("git-commit"), span(l10n.t("This commit couldn't be loaded.")));
         body.appendChild(none);
         return;
       }
-      ctx.retitle(d.subject || `Commit ${d.shortSha}`, `${d.author} · ${relTime(d.authorDate)}`);
+      ctx.retitle(d.subject || l10n.t("Commit {0}", d.shortSha), `${d.author} · ${relTime(d.authorDate)}`);
 
       const shaVal = el("span", "peek-mono");
       shaVal.textContent = d.shortSha;
@@ -188,19 +189,21 @@ export function commitCard(gp: GitPeekHost, sha: string, brief?: CompareCommit):
       for (const p of d.parents) {
         const chip = el("button", "peek-parent");
         chip.textContent = p.slice(0, 7);
-        chip.title = `Peek parent ${p.slice(0, 7)}`;
+        chip.title = l10n.t("Peek parent {0}", p.slice(0, 7));
         chip.addEventListener("click", () => ctx.push(commitCard(gp, p)));
         parents.appendChild(chip);
       }
       const meta: Array<[string, string | HTMLElement]> = [
-        ["Commit", shaVal],
-        ["Author", `${d.author} <${d.authorEmail}>`],
-        ["Date", absTime(d.authorDate)],
+        [l10n.t("Commit"), shaVal],
+        [l10n.t("Author"), `${d.author} <${d.authorEmail}>`],
+        [l10n.t("Date"), absTime(d.authorDate)],
       ];
       if (d.committer && d.committer !== d.author) {
-        meta.push(["Committer", `${d.committer} <${d.committerEmail}>`]);
+        meta.push([l10n.t("Committer"), `${d.committer} <${d.committerEmail}>`]);
       }
-      if (d.parents.length) meta.push([d.parents.length > 1 ? "Parents" : "Parent", parents]);
+      if (d.parents.length) {
+        meta.push([d.parents.length > 1 ? l10n.t("Parents") : l10n.t("Parent"), parents]);
+      }
       if (d.refs.length) {
         const refs = el("span");
         for (const r of d.refs) {
@@ -210,14 +213,14 @@ export function commitCard(gp: GitPeekHost, sha: string, brief?: CompareCommit):
           chip.appendChild(
             peekChip(r.name, r.kind === "tag" ? "warn" : r.kind === "currentHead" ? "accent" : "muted"),
           );
-          chip.title = `Show ${r.name} in Branches`;
+          chip.title = l10n.t("Show {0} in Branches", r.name);
           chip.addEventListener("click", () => {
             ctx.close();
             gp.openBranch(r.name);
           });
           refs.appendChild(chip);
         }
-        meta.push(["Refs", refs]);
+        meta.push([l10n.t("Refs"), refs]);
       }
       body.appendChild(peekMetaGrid(meta));
 
@@ -225,11 +228,11 @@ export function commitCard(gp: GitPeekHost, sha: string, brief?: CompareCommit):
       msg.textContent = d.body ? `${d.subject}\n\n${d.body}` : d.subject;
       body.appendChild(msg);
 
-      const { root, body: fbody } = peekSection("Changed files", d.files.length);
+      const { root, body: fbody } = peekSection(l10n.t("Changed files"), d.files.length);
       for (const f of d.files) fbody.appendChild(fileRow(gp, ctx, f, d.sha));
       if (!d.files.length) {
         const none = el("div", "peek-row");
-        none.appendChild(span("No files changed.", "peek-row-sub"));
+        none.appendChild(span(l10n.t("No files changed."), "peek-row-sub"));
         fbody.appendChild(none);
       }
       body.appendChild(root);

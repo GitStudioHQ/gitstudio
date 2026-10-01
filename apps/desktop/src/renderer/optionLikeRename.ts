@@ -14,6 +14,7 @@ import { promptInline, toast } from "./dialogs";
 import { cleanErr } from "./ui";
 import { renameSuggestion } from "./branchRequests";
 import type { CommitActionResult } from "../shared/ipc";
+import * as l10n from "@vscode/l10n";
 
 /**
  * If `result` is an option-like refusal, say so — with "Rename…" for a local
@@ -26,13 +27,13 @@ export function explainRefusedCheckout(
 ): boolean {
   const o = result?.optionLike;
   if (!result || result.ok || !o) return false;
-  const message = result.message || `Git can't safely check out "${o.name}".`;
+  const message = result.message || l10n.t('Git can\'t safely check out "{0}".', o.name);
   if (!o.local) {
     toast(message, "info");
     return true;
   }
   toast(message, "info", undefined, {
-    label: "Rename…",
+    label: l10n.t("Rename…"),
     onClick: () => void renameOptionLike(o.fullName, o.name, after),
   });
   return true;
@@ -44,23 +45,30 @@ export async function renameOptionLike(
   name: string,
   after?: () => void | Promise<void>,
 ): Promise<void> {
-  const to = await promptInline(`Rename branch ${name}`, "new-name", renameSuggestion(name), "Rename", false, {
-    hint: 'A name that does not start with "-" — git can check that out like any other branch.',
-    validate: "refName",
-  });
+  const to = await promptInline(
+    l10n.t("Rename branch {0}", name),
+    l10n.t("new-name"),
+    renameSuggestion(name),
+    l10n.t("Rename"),
+    false,
+    {
+      hint: l10n.t('A name that does not start with "-" — git can check that out like any other branch.'),
+      validate: "refName",
+    },
+  );
   if (!to) return;
   let r: CommitActionResult | undefined;
   try {
     r = await host.invoke("branch:rename", { fullName, to });
   } catch (e) {
-    toast(cleanErr(e) || `Couldn't rename ${name}.`, "error");
+    toast(cleanErr(e) || l10n.t("Couldn't rename {0}.", name), "error");
     return;
   }
   if (!r?.ok) {
-    toast(cleanErr(r?.message) || `Couldn't rename ${name}.`, r?.expected ? "info" : "error");
+    toast(cleanErr(r?.message) || l10n.t("Couldn't rename {0}.", name), r?.expected ? "info" : "error");
     return;
   }
-  toast(`Renamed ${name} to ${to}.`, "success");
+  toast(l10n.t("Renamed {0} to {1}.", name, to), "success");
   bust();
   await after?.();
 }

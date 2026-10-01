@@ -16,10 +16,11 @@
 
 import type { BranchResetPlan, BranchResetResult } from "../shared/ipc";
 import { plural } from "./textFit";
+import * as l10n from "@vscode/l10n";
 
 /** The menu item — the same words the VS Code extension uses for it. */
 export function resetItemLabel(upstream: string): string {
-  return `Reset to '${upstream}'…`;
+  return l10n.t("Reset to '{0}'…", upstream);
 }
 
 /** What the confirm shows. */
@@ -36,45 +37,73 @@ export interface ResetQuestion {
  */
 export function resetQuestion(p: BranchResetPlan): ResetQuestion | undefined {
   // Quoted the way the menu item and the extension's question quote them.
-  const branch = p.branch ? `'${p.branch}'` : "this branch";
-  const up = p.upstream ? `'${p.upstream}'` : "its upstream";
+  const branch = p.branch ? `'${p.branch}'` : l10n.t("this branch");
+  const up = p.upstream ? `'${p.upstream}'` : l10n.t("its upstream");
   const lost = p.lost ?? 0;
   const gained = p.gained ?? 0;
   const dirty = p.current ? (p.dirty ?? 0) : 0;
   if (!lost && !gained && !dirty) return undefined;
 
-  const title = `Reset ${branch} to ${up}?`;
+  const title = l10n.t("Reset {0} to {1}?", branch, up);
   const lines: string[] = [];
   if (p.fetchError) {
-    lines.push(`Couldn't fetch from ${p.remote ?? "the remote"} (${p.fetchError}), so this uses ${up} as it was last fetched.`, "");
+    lines.push(
+      l10n.t(
+        "Couldn't fetch from {0} ({1}), so this uses {2} as it was last fetched.",
+        p.remote ?? l10n.t("the remote"),
+        p.fetchError,
+        up,
+      ),
+      "",
+    );
   }
 
   if (!lost && !dirty) {
     lines.push(
-      `Nothing will be lost: ${branch} has no commits that aren't on ${up}` +
-        (p.current ? ", and no uncommitted changes" : "") +
-        `. It will move forward ${plural(gained, "commit")} to match.`,
+      p.current
+        ? l10n.t(
+            "Nothing will be lost: {0} has no commits that aren't on {1}, and no uncommitted changes. It will move forward {2} to match.",
+            branch,
+            up,
+            plural(gained, "commit"),
+          )
+        : l10n.t(
+            "Nothing will be lost: {0} has no commits that aren't on {1}. It will move forward {2} to match.",
+            branch,
+            up,
+            plural(gained, "commit"),
+          ),
     );
-    return { title, message: lines.join("\n"), confirmLabel: "Reset", danger: false };
+    return { title, message: lines.join("\n"), confirmLabel: l10n.t("Reset"), danger: false };
   }
 
   if (lost) {
-    lines.push(`${branch} will lose ${lost === 1 ? "1 commit that isn't" : `${plural(lost, "commit")} that aren't`} on ${up}:`);
+    lines.push(
+      lost === 1
+        ? l10n.t("{0} will lose 1 commit that isn't on {1}:", branch, up)
+        : l10n.t("{0} will lose {1} that aren't on {2}:", branch, plural(lost, "commit"), up),
+    );
     const named = p.lostSubjects ?? [];
     for (const s of named) lines.push(`  • ${s}`);
-    if (lost > named.length) lines.push(`  …and ${lost - named.length} more`);
+    if (lost > named.length) lines.push(l10n.t("  …and {0} more", lost - named.length));
   }
   if (dirty) {
-    lines.push(`Uncommitted changes to ${plural(dirty, "file")} will be discarded. Untracked files are kept.`);
+    lines.push(
+      l10n.t("Uncommitted changes to {0} will be discarded. Untracked files are kept.", plural(dirty, "file")),
+    );
   }
   lines.push("");
   lines.push(
     p.current
-      ? `${branch} will then match ${up} exactly.`
-      : `${branch} will then match ${up} exactly. You're not on ${branch}, so nothing in your working tree changes.`,
+      ? l10n.t("{0} will then match {1} exactly.", branch, up)
+      : l10n.t(
+          "{0} will then match {1} exactly. You're not on {0}, so nothing in your working tree changes.",
+          branch,
+          up,
+        ),
   );
-  lines.push("You can undo this straight afterwards.");
-  return { title, message: lines.join("\n"), confirmLabel: "Reset", danger: true };
+  lines.push(l10n.t("You can undo this straight afterwards."));
+  return { title, message: lines.join("\n"), confirmLabel: l10n.t("Reset"), danger: true };
 }
 
 /** What a reset came to — the door turns each into one toast. */
@@ -107,19 +136,22 @@ export async function resetToUpstream(deps: ResetFlowDeps): Promise<ResetOutcome
   try {
     p = await deps.plan();
   } catch (e) {
-    return { kind: "refused", message: e instanceof Error ? e.message : "Couldn't read the branch.", tone: "error" };
+    return { kind: "refused", message: e instanceof Error ? e.message : l10n.t("Couldn't read the branch."), tone: "error" };
   }
   if (!p?.ok || !p.from || !p.to) {
     return {
       kind: "refused",
-      message: p?.message || "Couldn't tell what resetting would do — refresh and try again.",
+      message: p?.message || l10n.t("Couldn't tell what resetting would do — refresh and try again."),
       tone: p?.expected ? "info" : "error",
     };
   }
   if (!deps.stillHere()) return { kind: "cancelled" };
   const q = resetQuestion(p);
   if (!q) {
-    return { kind: "nothing", message: `'${p.branch}' already matches '${p.upstream}' — there is nothing to reset.` };
+    return {
+      kind: "nothing",
+      message: l10n.t("'{0}' already matches '{1}' — there is nothing to reset.", String(p.branch), String(p.upstream)),
+    };
   }
   if (!(await deps.ask(q))) return { kind: "cancelled" };
   if (!deps.stillHere()) return { kind: "cancelled" };
@@ -127,10 +159,18 @@ export async function resetToUpstream(deps: ResetFlowDeps): Promise<ResetOutcome
   try {
     r = await deps.reset(p);
   } catch (e) {
-    return { kind: "failed", message: e instanceof Error ? e.message : `Couldn't reset ${p.branch}.`, tone: "error" };
+    return {
+      kind: "failed",
+      message: e instanceof Error ? e.message : l10n.t("Couldn't reset {0}.", String(p.branch)),
+      tone: "error",
+    };
   }
   if (!r?.ok) {
-    return { kind: "failed", message: r?.message || `Couldn't reset ${p.branch}.`, tone: r?.expected ? "info" : "error" };
+    return {
+      kind: "failed",
+      message: r?.message || l10n.t("Couldn't reset {0}.", String(p.branch)),
+      tone: r?.expected ? "info" : "error",
+    };
   }
-  return { kind: "reset", plan: p, result: r, message: `Reset '${p.branch}' to '${p.upstream}'.` };
+  return { kind: "reset", plan: p, result: r, message: l10n.t("Reset '{0}' to '{1}'.", String(p.branch), String(p.upstream)) };
 }

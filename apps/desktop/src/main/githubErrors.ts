@@ -39,16 +39,21 @@
  * treats it differently.
  */
 
-import { EMPTY_REPO_MESSAGE, isEmptyRepoResponse } from "../shared/githubStates";
+import { emptyRepoMessage, isEmptyRepoResponse } from "../shared/githubStates";
 import { ExpectedError, isExpectedError } from "./expectedError";
+import * as l10n from "@vscode/l10n";
 
 /**
  * We never reached GitHub at all — offline, DNS, a dropped TLS handshake. Node
  * surfaces these as a bare `TypeError: fetch failed`, which is both useless to
  * the user and pure noise in the crash reporter.
+ *
+ * The default is a function call, not a literal: a default PARAMETER
+ * expression runs when the function is called, not at module load, so
+ * l10n.t() here already reads the bundle after boot() configures it.
  */
 export function networkError(
-  message = "Couldn't reach GitHub. Check your network connection.",
+  message = l10n.t("Couldn't reach GitHub. Check your network connection."),
 ): ExpectedError {
   return new ExpectedError(message);
 }
@@ -72,28 +77,28 @@ export async function githubHttpError(res: Response): Promise<Error> {
   // a repository they had just created. Normalised to one wording so the
   // renderer can recognise it across IPC, where an error is its message.
   if (isEmptyRepoResponse(res.status, detail)) {
-    return new ExpectedError(EMPTY_REPO_MESSAGE);
+    return new ExpectedError(emptyRepoMessage());
   }
   // Our own wording, not GitHub's "Bad credentials" — which reads as an
   // accusation rather than "sign in again".
   if (res.status === 401) {
-    return new ExpectedError("Your GitHub token is invalid or expired.");
+    return new ExpectedError(l10n.t("Your GitHub token is invalid or expired."));
   }
   // 403 covers both "you lack the scope" and, on REST, the secondary rate limit;
   // 429 is the primary one. Neither is a defect.
   if (res.status === 403) {
     return new ExpectedError(
-      detail || "GitHub denied the request (permissions or rate limit).",
+      detail || l10n.t("GitHub denied the request (permissions or rate limit)."),
     );
   }
   if (res.status === 429) {
     return new ExpectedError(
-      detail || "GitHub is rate-limiting this request. Try again shortly.",
+      detail || l10n.t("GitHub is rate-limiting this request. Try again shortly."),
     );
   }
   if (res.status >= 500) {
     return new ExpectedError(
-      detail || `GitHub is having trouble right now (HTTP ${res.status}).`,
+      detail || l10n.t("GitHub is having trouble right now (HTTP {0}).", res.status),
     );
   }
   // 409 is GitHub's answer for "I understood you, and the repository is not in
@@ -101,12 +106,12 @@ export async function githubHttpError(res: Response): Promise<Error> {
   // merge that conflicts, a ref that moved under a request. None of them is a
   // request we built wrong.
   if (res.status === 409) {
-    return new ExpectedError(detail || "GitHub couldn't apply that to the repository as it stands.");
+    return new ExpectedError(detail || l10n.t("GitHub couldn't apply that to the repository as it stands."));
   }
   if (res.status === 404) {
-    return new Error(detail || "Not found on GitHub.");
+    return new Error(detail || l10n.t("Not found on GitHub."));
   }
-  return new Error(detail || `GitHub request failed (HTTP ${res.status}).`);
+  return new Error(detail || l10n.t("GitHub request failed (HTTP {0}).", res.status));
 }
 
 /** One entry of a GraphQL response's `errors` array, as GitHub sends it. */
@@ -152,13 +157,15 @@ function unresolvedName(message: string): string | undefined {
  * GitHub's own wording and keeps reporting.
  */
 export function graphqlError(err: GraphqlFailure): Error {
-  const message = err.message || "GitHub's GraphQL API returned an error.";
+  const message = err.message || l10n.t("GitHub's GraphQL API returned an error.");
   if (err.type === "NOT_FOUND") {
     const name = unresolvedName(message);
     return name
       ? new ExpectedError(
-          `GitHub couldn't find ${name}. It may have been renamed or deleted, ` +
-            `or this account may not have access to it.`,
+          l10n.t(
+            "GitHub couldn't find {0}. It may have been renamed or deleted, or this account may not have access to it.",
+            name,
+          ),
         )
       : new Error(message);
   }

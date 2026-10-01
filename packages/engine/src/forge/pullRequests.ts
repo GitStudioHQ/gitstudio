@@ -50,10 +50,10 @@ export type PrTone = "open" | "merged" | "closed" | "draft" | "success" | "failu
 
 /** Word, codicon and colour class per state — one table, used everywhere a PR's state is drawn. */
 export const PR_STATES: Record<PrKind, { word: string; codicon: string; cls: string; tone: PrTone }> = {
-  open: { word: "Open", codicon: "git-pull-request", cls: "open", tone: "open" },
-  draft: { word: "Draft", codicon: "git-pull-request-draft", cls: "draft", tone: "draft" },
-  merged: { word: "Merged", codicon: "git-merge", cls: "merged", tone: "merged" },
-  closed: { word: "Closed", codicon: "git-pull-request-closed", cls: "closed", tone: "closed" },
+  open: { word: l10n.t("Open"), codicon: "git-pull-request", cls: "open", tone: "open" },
+  draft: { word: l10n.t("Draft"), codicon: "git-pull-request-draft", cls: "draft", tone: "draft" },
+  merged: { word: l10n.t("Merged"), codicon: "git-merge", cls: "merged", tone: "merged" },
+  closed: { word: l10n.t("Closed"), codicon: "git-pull-request-closed", cls: "closed", tone: "closed" },
 };
 
 /** The desktop's name for the open kind (its stylesheet's `open-pr`). */
@@ -89,28 +89,28 @@ export type PrActionId =
  * menu. `title` is what the control says on hover, in words.
  */
 export const PR_ACTIONS: Record<PrActionId, { label: string; icon: string; title: string }> = {
-  open: { label: "Open", icon: "git-pull-request", title: l10n.t("Open the pull request's page") },
-  checkout: { label: "Checkout", icon: "git-branch", title: l10n.t("Check out its branch here, tracking it on GitHub, so a push reaches the pull request") },
-  review: { label: "Review", icon: "comment", title: l10n.t("Comment, approve or request changes") },
-  approve: { label: "Approve", icon: "check", title: l10n.t("Approve this pull request — opens the review box") },
-  merge: { label: "Merge", icon: "git-merge", title: l10n.t("Merge this pull request — choose how") },
+  open: { label: l10n.t("Open"), icon: "git-pull-request", title: l10n.t("Open the pull request's page") },
+  checkout: { label: l10n.t("Checkout"), icon: "git-branch", title: l10n.t("Check out its branch here, tracking it on GitHub, so a push reaches the pull request") },
+  review: { label: l10n.t("Review"), icon: "comment", title: l10n.t("Comment, approve or request changes") },
+  approve: { label: l10n.t("Approve"), icon: "check", title: l10n.t("Approve this pull request — opens the review box") },
+  merge: { label: l10n.t("Merge"), icon: "git-merge", title: l10n.t("Merge this pull request — choose how") },
   markReady: { label: l10n.t("Mark ready"), icon: "eye", title: l10n.t("Convert this draft to ready for review") },
   updateBranch: { label: l10n.t("Update branch"), icon: "git-merge", title: l10n.t("Merge the base branch into this one, on GitHub") },
   close: { label: l10n.t("Close pull request"), icon: "git-pull-request-closed", title: l10n.t("Close it without merging (you can reopen it)") },
   reopen: { label: l10n.t("Reopen pull request"), icon: "git-pull-request", title: l10n.t("Reopen this pull request") },
   copyLink: { label: l10n.t("Copy link"), icon: "copy", title: l10n.t("Copy the pull request's link") },
   openOnGitHub: { label: l10n.t("Open on GitHub"), icon: "link-external", title: l10n.t("Open this pull request on GitHub") },
-  refresh: { label: "Refresh", icon: "refresh", title: l10n.t("Read the pull request again") },
+  refresh: { label: l10n.t("Refresh"), icon: "refresh", title: l10n.t("Read the pull request again") },
   more: { label: l10n.t("More actions"), icon: "ellipsis", title: l10n.t("More actions") },
   newPullRequest: { label: l10n.t("New pull request"), icon: "git-pull-request", title: l10n.t("Open a new pull request") },
 };
 
 /** A pull request page's sections — the desktop's tabs, in its words and glyphs. */
 export const PR_TABS = {
-  conversation: { label: "Conversation", icon: "comment-discussion" },
-  commits: { label: "Commits", icon: "git-commit" },
-  checks: { label: "Checks", icon: "play" },
-  files: { label: "Files", icon: "code" },
+  conversation: { label: l10n.t("Conversation"), icon: "comment-discussion" },
+  commits: { label: l10n.t("Commits"), icon: "git-commit" },
+  checks: { label: l10n.t("Checks"), icon: "play" },
+  files: { label: l10n.t("Files"), icon: "code" },
 } as const;
 
 // ── Reviews ─────────────────────────────────────────────────────────────────
@@ -135,8 +135,8 @@ export type ReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
 
 /** The three verdicts a reviewer submits — the words both products' review boxes offer. */
 export const REVIEW_VERDICTS: ReadonlyArray<{ event: ReviewEvent; label: string; icon: string; hint: string }> = [
-  { event: "COMMENT", label: "Comment", icon: "comment", hint: l10n.t("Feedback without an explicit approval") },
-  { event: "APPROVE", label: "Approve", icon: "check", hint: l10n.t("The change is good to merge") },
+  { event: "COMMENT", label: l10n.t("Comment"), icon: "comment", hint: l10n.t("Feedback without an explicit approval") },
+  { event: "APPROVE", label: l10n.t("Approve"), icon: "check", hint: l10n.t("The change is good to merge") },
   { event: "REQUEST_CHANGES", label: l10n.t("Request changes"), icon: "request-changes", hint: l10n.t("Must be addressed before merging") },
 ];
 

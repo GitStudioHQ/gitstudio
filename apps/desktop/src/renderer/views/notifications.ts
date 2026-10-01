@@ -5,6 +5,7 @@
 // "Mark all read"). Notifications are ACCOUNT-scoped, so the gate does NOT
 // require a github.com repo (NEEDS_REPO = false).
 
+import * as l10n from "@vscode/l10n";
 import { host } from "../bridge";
 import {
   el,
@@ -89,7 +90,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   // Header: title + signed-in @login + a refresh, then splice in the inbox-wide
   // action cluster (toggle + mark-all-read) so the chrome matches the other
   // section views while exposing the actions unique to a list-of-actions view.
-  const header = ghHeader("Inbox", gate.login, refresh);
+  const header = ghHeader(l10n.t("Inbox"), gate.login, refresh);
   // On the page this is a .gh-head-tools row like every sibling list's —
   // segment first, facets, then the verb pinned right — so the header is
   // the same two lines at the same height. The popover keeps its own shape.
@@ -100,11 +101,11 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   // nothing on screen said whether you were looking at everything or not.
   const toggleBtn = segmented<"unread" | "all">({
     options: [
-      { value: "unread", label: "Unread" },
-      { value: "all", label: "All" },
+      { value: "unread", label: l10n.t("Unread") },
+      { value: "all", label: l10n.t("All") },
     ],
     value: S.notifAll ? "all" : "unread",
-    ariaLabel: "Which notifications to show",
+    ariaLabel: l10n.t("Which notifications to show"),
     onChange: (v) => {
       S.notifAll = v === "all";
       refresh();
@@ -112,13 +113,13 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   });
 
   const markAllBtn = el("button", "mini-btn notif-markall");
-  markAllBtn.append(glyph("check-all"), span("Mark all read"));
+  markAllBtn.append(glyph("check-all"), span(l10n.t("Mark all read")));
   // A tooltip that repeats the label tells nobody anything — and in the bell
   // popover the label is hidden, so this title is the button's ONLY name.
   // It says what the click really does, which is more than the list shows:
   // the request marks the whole inbox on GitHub, not just the 150 threads
   // loaded here, so it deliberately quotes no number.
-  markAllBtn.title = "Mark every notification in your inbox as read on GitHub";
+  markAllBtn.title = l10n.t("Mark every notification in your inbox as read on GitHub");
   markAllBtn.setAttribute("aria-label", markAllBtn.title);
   markAllBtn.addEventListener("click", () => void markAllRead(markAllBtn, refresh));
 
@@ -140,25 +141,25 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
     specs: [
       {
         key: "type",
-        label: "Type",
+        label: l10n.t("Type"),
         icon: "inbox",
-        anyLabel: "Anything",
+        anyLabel: l10n.t("Anything"),
         harvest: harvestValues<NotificationThread>((t) => t.type, notifTypeLabel),
         predicate: (t, v) => t.type === v,
       },
       {
         key: "reason",
-        label: "Reason",
+        label: l10n.t("Reason"),
         icon: "question",
-        anyLabel: "Any reason",
+        anyLabel: l10n.t("Any reason"),
         harvest: harvestValues<NotificationThread>((t) => t.reason, notifReasonLabel),
         predicate: (t, v) => t.reason === v,
       },
       {
         key: "repo",
-        label: "Repo",
+        label: l10n.t("Repo"),
         icon: "repo",
-        anyLabel: "All repos",
+        anyLabel: l10n.t("All repos"),
         harvest: harvestValues<NotificationThread>((t) => t.repo),
         predicate: (t, v) => t.repo === v,
       },
@@ -173,7 +174,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   if (!inPopover) {
     header.querySelector(".gh-head-titlewrap")?.appendChild(
       searchField({
-        placeholder: "Search notifications…",
+        placeholder: l10n.t("Search notifications…"),
         initial: query,
         onInput: (q) => {
           query = q;
@@ -229,7 +230,11 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
     // misleading "inbox zero".
     if (!body.isConnected) return;
     body.replaceChildren(
-      errorState("Couldn't load notifications", cleanErr(e) || "GitHub request failed.", refresh),
+      errorState(
+        l10n.t("Couldn't load notifications"),
+        cleanErr(e) || l10n.t("GitHub request failed."),
+        refresh,
+      ),
     );
     return;
   }
@@ -269,21 +274,25 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
       const filtered = facets.activeCount() > 0 || !!q;
       body.appendChild(
         emptyState(
-          filtered ? "No matching notifications" : S.notifAll ? "Inbox zero" : "You're all caught up",
+          filtered
+            ? l10n.t("No matching notifications")
+            : S.notifAll
+              ? l10n.t("Inbox zero")
+              : l10n.t("You're all caught up"),
           filtered
             ? q
-              ? `Nothing in your inbox matches “${query.trim()}”.`
-              : "Nothing in your inbox matches these filters."
+              ? l10n.t("Nothing in your inbox matches “{0}”.", query.trim())
+              : l10n.t("Nothing in your inbox matches these filters.")
             : S.notifAll
-              ? "You have no notifications."
-              : "No unread notifications right now — nothing needs your attention.",
+              ? l10n.t("You have no notifications.")
+              : l10n.t("No unread notifications right now — nothing needs your attention."),
           {
             icon: filtered ? "filter" : "bell",
             // A filtered-empty inbox answers a question you asked in the
             // toolbar; an unfiltered-empty one is the whole view's state.
             anchor: filtered ? "inline" : "hero",
           secondary: facets.activeCount() > 0
-            ? { label: "Clear filters", icon: "clear-all", onClick: () => facets.clear() }
+            ? { label: l10n.t("Clear filters"), icon: "clear-all", onClick: () => facets.clear() }
             : undefined,
           },
         ),
@@ -308,10 +317,10 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   if (threads.length === 0) {
     body.replaceChildren(
       emptyState(
-        S.notifAll ? "Inbox zero" : "You're all caught up",
+        S.notifAll ? l10n.t("Inbox zero") : l10n.t("You're all caught up"),
         S.notifAll
-          ? "You have no notifications."
-          : "No unread notifications right now — nothing needs your attention.",
+          ? l10n.t("You have no notifications.")
+          : l10n.t("No unread notifications right now — nothing needs your attention."),
         { icon: "bell" },
       ),
     );
@@ -361,7 +370,7 @@ export function openNotificationsPanel(
   // no role, no name, and focus left behind on the bell, so a keyboard user
   // could open it and then Tab through the whole page before reaching it.
   panel.setAttribute("role", "dialog");
-  panel.setAttribute("aria-label", "Notifications");
+  panel.setAttribute("aria-label", l10n.t("Notifications"));
   panel.tabIndex = -1;
   const inner = el("div", "notif-pop-inner");
   panel.appendChild(inner);
@@ -458,7 +467,7 @@ export function openExternalItem(o: {
     };
   });
 
-  card.appendChild(loadingState("Loading…"));
+  card.appendChild(loadingState(l10n.t("Loading…")));
   void (async () => {
     let item;
     try {
@@ -472,14 +481,17 @@ export function openExternalItem(o: {
     card.replaceChildren();
     if (!item) {
       card.appendChild(
-        errorState("Couldn't load this item", `${o.owner}/${o.repo} #${o.number} couldn't be fetched.`),
+        errorState(
+          l10n.t("Couldn't load this item"),
+          l10n.t("{0}/{1} #{2} couldn't be fetched.", o.owner, o.repo, o.number),
+        ),
       );
       const foot = el("div", "modal-actions");
       const gh = el("button", "mini-btn");
-      gh.append(glyph("link-external"), span("Open on GitHub"));
+      gh.append(glyph("link-external"), span(l10n.t("Open on GitHub")));
       gh.addEventListener("click", () => { window.open(o.htmlUrl, "_blank", "noopener"); close(); });
       const cls = el("button", "btn btn-primary modal-ok");
-      cls.appendChild(span("Close"));
+      cls.appendChild(span(l10n.t("Close")));
       cls.addEventListener("click", close);
       foot.append(gh, cls);
       card.appendChild(foot);
@@ -490,7 +502,18 @@ export function openExternalItem(o: {
     const stateKind = item.kind === "pull"
       ? item.state === "merged" ? "merged" : item.state === "draft" ? "draft" : item.state === "closed" ? "closed" : "open-pr"
       : item.state === "closed" ? "completed" : "open";
-    head.appendChild(statePill(item.state === "open" ? (item.kind === "pull" ? "Open" : "Open") : item.state.charAt(0).toUpperCase() + item.state.slice(1), stateKind));
+    const stateLabel: Record<string, string> = {
+      open: l10n.t("Open"),
+      closed: l10n.t("Closed"),
+      merged: l10n.t("Merged"),
+      draft: l10n.t("Draft"),
+    };
+    head.appendChild(
+      statePill(
+        stateLabel[item.state] ?? item.state.charAt(0).toUpperCase() + item.state.slice(1),
+        stateKind,
+      ),
+    );
     const sub = el("span", "ext-item-sub");
     sub.textContent = `${item.repo} #${item.number}${item.author ? ` · ${item.author}` : ""}${item.createdAt ? ` · ${relTimeISO(item.createdAt)}` : ""}`;
     if (item.createdAt) sub.title = absTimeISO(item.createdAt);
@@ -503,12 +526,15 @@ export function openExternalItem(o: {
     const scroll = el("div", "ext-item-scroll");
     const body = el("div", "gh-body-md");
     if (item.body && item.body.trim()) body.innerHTML = renderMarkdown(item.body);
-    else { body.classList.add("gh-empty-body"); body.textContent = "No description provided."; }
+    else { body.classList.add("gh-empty-body"); body.textContent = l10n.t("No description provided."); }
     scroll.appendChild(body);
     for (const c of item.comments) {
       const cm = el("div", "gh-comment");
       const ch = el("div", "gh-comment-head");
-      ch.append(span(c.author ?? "someone"), span(`commented · ${relTimeISO(c.createdAt)}`, "gh-comment-when"));
+      ch.append(
+        span(c.author ?? l10n.t("someone")),
+        span(l10n.t("commented · {0}", relTimeISO(c.createdAt)), "gh-comment-when"),
+      );
       const cb = el("div", "gh-body-md");
       cb.innerHTML = renderMarkdown(c.body || "");
       cm.append(ch, cb);
@@ -518,10 +544,10 @@ export function openExternalItem(o: {
 
     const foot = el("div", "modal-actions");
     const gh = el("button", "mini-btn");
-    gh.append(glyph("link-external"), span("Open on GitHub"));
+    gh.append(glyph("link-external"), span(l10n.t("Open on GitHub")));
     gh.addEventListener("click", () => { window.open(item!.htmlUrl, "_blank", "noopener"); });
     const cls = el("button", "btn btn-primary modal-ok");
-    cls.appendChild(span("Close"));
+    cls.appendChild(span(l10n.t("Close")));
     cls.addEventListener("click", close);
     foot.append(gh, cls);
     card.appendChild(foot);
@@ -553,12 +579,18 @@ function notificationRow(
   lead.appendChild(glyph(notifIcon(t.type)));
 
   const when = relTimeISO(t.updatedAt);
-  const aria = `${notifTypeLabel(t.type)} notification: ${t.title || "(untitled)"}${t.unread ? " (unread)" : ""}`;
+  const aria = t.unread
+    ? l10n.t(
+        "{0} notification: {1} (unread)",
+        notifTypeLabel(t.type),
+        t.title || l10n.t("(untitled)"),
+      )
+    : l10n.t("{0} notification: {1}", notifTypeLabel(t.type), t.title || l10n.t("(untitled)"));
   // The repo name is a door, not a label: browse that repo in-app.
   const repoLink = (): HTMLElement =>
     // The full Explore page, not the peek stack: from an inbox row, "what IS
     // this repo?" deserves breadcrumbs, a README and a way to open it.
-    subLink(t.repo, `Explore ${t.repo} in GitStudio`, () =>
+    subLink(t.repo, l10n.t("Explore {0} in GitStudio", t.repo), () =>
       nav ? nav("explore", { id: `repo/${t.repo}` }) : openRemoteRepoBrowser(t.repo),
     );
 
@@ -573,10 +605,10 @@ function notificationRow(
     if (when) segments.push(when);
     row = ghRow({
       lead,
-      title: t.title || "(untitled)",
+      title: t.title || l10n.t("(untitled)"),
       titleSuffix: t.type ? [pill(notifTypeLabel(t.type), "notif-type")] : [],
       metaSegments: segments,
-      metaTitle: t.updatedAt ? `Updated ${absTimeISO(t.updatedAt)}` : undefined,
+      metaTitle: t.updatedAt ? l10n.t("Updated {0}", absTimeISO(t.updatedAt)) : undefined,
       ariaLabel: aria,
     });
   } else {
@@ -584,7 +616,7 @@ function notificationRow(
     row.setAttribute("aria-label", aria);
     row.appendChild(lead);
     const title = el("span", "notif-line-title");
-    title.textContent = t.title || "(untitled)";
+    title.textContent = t.title || l10n.t("(untitled)");
     title.title = t.title;
     row.appendChild(title);
     // The leading glyph already encodes the type; a pill repeating it made
@@ -604,7 +636,7 @@ function notificationRow(
     row.appendChild(meta);
     const time = el("span", "sec-row-time");
     time.textContent = when;
-    if (t.updatedAt) time.title = `Updated ${absTimeISO(t.updatedAt)}`;
+    if (t.updatedAt) time.title = l10n.t("Updated {0}", absTimeISO(t.updatedAt));
     row.appendChild(time);
   }
   // .notif-row = the inbox read/unread emphasis; .list-row = the shared
@@ -636,7 +668,7 @@ function notificationRow(
     // did not, so opening one from the Inbox retitled the back button
     // "Releases", switched the rail under you, and Escape put you in a list you
     // had never opened — with the thread you were reading nowhere in sight.
-    const origin = { view: "notifications", label: "Inbox" };
+    const origin = { view: "notifications", label: l10n.t("Inbox") };
     if (inAppRelease) {
       nav("releases", { number: t.subjectNumber, from: origin });
     } else if (inAppCommit) {
@@ -654,7 +686,7 @@ function notificationRow(
     } else if (t.htmlUrl) {
       window.open(t.htmlUrl, "_blank", "noopener");
     } else {
-      toast("This notification has no openable subject.", "info");
+      toast(l10n.t("This notification has no openable subject."), "info");
     }
   };
 
@@ -666,8 +698,8 @@ function notificationRow(
   // row but the first these buttons are the ONLY things Tab lands on.
   acts.appendChild(
     textBtn(
-      "Open",
-      openable ? "Open in GitStudio" : "Open the subject on GitHub",
+      l10n.t("Open"),
+      openable ? l10n.t("Open in GitStudio") : l10n.t("Open the subject on GitHub"),
       open,
       false,
       t.title,
@@ -676,8 +708,8 @@ function notificationRow(
   if (t.unread) {
     acts.appendChild(
       textBtn(
-        "Mark read",
-        "Mark this thread as read",
+        l10n.t("Mark read"),
+        l10n.t("Mark this thread as read"),
         () => void markRead(t, row, body, refresh, syncCounts),
         false,
         t.title,
@@ -710,19 +742,25 @@ function notificationRow(
     e.preventDefault();
     openMenu(row, [
       openable
-        ? { label: "Open in GitStudio", icon: "arrow-right", onClick: open }
-        : { label: "Open on GitHub", icon: "link-external", onClick: open },
+        ? { label: l10n.t("Open in GitStudio"), icon: "arrow-right", onClick: open }
+        : { label: l10n.t("Open on GitHub"), icon: "link-external", onClick: open },
       ...(openable && t.htmlUrl
         ? [
             {
-              label: "Open on GitHub",
+              label: l10n.t("Open on GitHub"),
               icon: "link-external",
               onClick: () => window.open(t.htmlUrl, "_blank", "noopener"),
             },
           ]
         : []),
       ...(t.unread
-        ? [{ label: "Mark as read", icon: "mail-read", onClick: () => void markRead(t, row, body, refresh, syncCounts) }]
+        ? [
+            {
+              label: l10n.t("Mark as read"),
+              icon: "mail-read",
+              onClick: () => void markRead(t, row, body, refresh, syncCounts),
+            },
+          ]
         : []),
     ]);
   });
@@ -744,7 +782,7 @@ async function markRead(
   try {
     const r = await host.invoke("notification:markRead", { id: t.id });
     if (!r.ok) {
-      toast(r.message ?? "Couldn't mark the notification read.", "error");
+      toast(r.message ?? l10n.t("Couldn't mark the notification read."), "error");
       return;
     }
     t.unread = false;
@@ -760,11 +798,11 @@ async function markRead(
     // and destroyed the only thing the unread tally could be counted from.
     row.querySelector(".notif-dot")?.classList.add("is-read");
     row.querySelectorAll<HTMLElement>(".row-actions .row-btn").forEach((b) => {
-      if (b.textContent === "Mark read") b.setAttribute("hidden", "");
+      if (b.textContent === l10n.t("Mark read")) b.setAttribute("hidden", "");
     });
     if (!inboxTab().notifAll) {
       row.classList.add("notif-leaving");
-      row.title = "Marked read — leaves this list on the next refresh";
+      row.title = l10n.t("Marked read — leaves this list on the next refresh");
     }
     // Counting is the caller's job, because only the caller can see the whole
     // inbox. Counting the DOM here counted the RENDERED rows — i.e. whatever
@@ -772,9 +810,9 @@ async function markRead(
     // to a single repo wrote that repo's unread total into the global bell
     // badge, and rewrote the header's "12 of 40" as "shown of shown".
     syncCounts();
-    toast("Marked as read.", "success");
+    toast(l10n.t("Marked as read."), "success");
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't mark the notification read.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't mark the notification read."), "error");
   } finally {
     row.classList.remove("is-busy");
   }
@@ -785,23 +823,23 @@ async function markAllRead(btn: HTMLElement, refresh: () => void): Promise<void>
   const button = btn as HTMLButtonElement;
   if (button.disabled) return;
   const ok = await confirmDialog({
-    title: "Mark all notifications as read?",
-    message: "This marks every notification in your inbox as read on GitHub.",
-    confirmLabel: "Mark all read",
+    title: l10n.t("Mark all notifications as read?"),
+    message: l10n.t("This marks every notification in your inbox as read on GitHub."),
+    confirmLabel: l10n.t("Mark all read"),
   });
   if (!ok) return;
   button.disabled = true;
   try {
     const r = await host.invoke("notifications:markAllRead", undefined);
     if (!r.ok) {
-      toast(r.message ?? "Couldn't mark all read.", "error");
+      toast(r.message ?? l10n.t("Couldn't mark all read."), "error");
       button.disabled = false;
       return;
     }
-    toast("Marked all notifications as read.", "success");
+    toast(l10n.t("Marked all notifications as read."), "success");
     refresh();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't mark all read.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't mark all read."), "error");
     button.disabled = false;
   }
 }
@@ -830,17 +868,17 @@ function notifIcon(type: string): string {
 export function notifTypeLabel(type: string): string {
   switch (type) {
     case "PullRequest":
-      return "PR";
+      return l10n.t("PR");
     case "Issue":
-      return "Issue";
+      return l10n.t("Issue");
     case "Release":
-      return "Release";
+      return l10n.t("Release");
     case "Discussion":
-      return "Discussion";
+      return l10n.t("Discussion");
     case "Commit":
-      return "Commit";
+      return l10n.t("Commit");
     default:
-      return type || "Thread";
+      return type || l10n.t("Thread");
   }
 }
 
@@ -848,29 +886,29 @@ export function notifTypeLabel(type: string): string {
 export function notifReasonLabel(reason: string): string {
   switch (reason) {
     case "assign":
-      return "assigned";
+      return l10n.t("assigned");
     case "author":
-      return "you authored";
+      return l10n.t("you authored");
     case "comment":
-      return "new comment";
+      return l10n.t("new comment");
     case "ci_activity":
-      return "CI activity";
+      return l10n.t("CI activity");
     case "invitation":
-      return "invitation";
+      return l10n.t("invitation");
     case "manual":
-      return "subscribed";
+      return l10n.t("subscribed");
     case "mention":
-      return "mentioned";
+      return l10n.t("mentioned");
     case "review_requested":
-      return "review requested";
+      return l10n.t("review requested");
     case "security_alert":
-      return "security alert";
+      return l10n.t("security alert");
     case "state_change":
-      return "state changed";
+      return l10n.t("state changed");
     case "subscribed":
-      return "watching";
+      return l10n.t("watching");
     case "team_mention":
-      return "team mentioned";
+      return l10n.t("team mentioned");
     default:
       return reason.replace(/_/g, " ");
   }

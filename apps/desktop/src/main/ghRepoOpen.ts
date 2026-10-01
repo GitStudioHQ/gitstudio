@@ -10,6 +10,7 @@
 // Branches, PRs — exactly as if the user had opened a local folder.
 
 import { app } from "electron";
+import * as l10n from "@vscode/l10n";
 import { execFile } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -87,7 +88,7 @@ export async function openGitHubRepo(
     return {
       ok: false,
       code: "bad-name",
-      message: "That doesn't look like an owner/repo name.",
+      message: l10n.t("That doesn't look like an owner/repo name."),
     };
   }
 
@@ -111,7 +112,7 @@ export async function openGitHubRepo(
       : (tabsFull(repos) ?? {
           ok: false,
           code: "open-failed",
-          message: `Found a clone at ${hitRoot}, but it couldn't be opened.`,
+          message: l10n.t("Found a clone at {0}, but it couldn't be opened.", hitRoot),
         });
   }
 
@@ -132,7 +133,10 @@ export async function openGitHubRepo(
       ok: false,
       code: "collision",
       expected: true,
-      message: `${join(parent, name)} already exists but isn't this repository — pick another destination or folder name.`,
+      message: l10n.t(
+        "{0} already exists but isn't this repository — pick another destination or folder name.",
+        join(parent, name),
+      ),
     };
   }
   const result = await startClone(
@@ -147,7 +151,7 @@ export async function openGitHubRepo(
       ok: false,
       code: "clone-failed",
       ...(result.expected ? { expected: true } : {}),
-      message: result.message || "The clone failed.",
+      message: result.message || l10n.t("The clone failed."),
     };
   }
   const info = await repos.open(result.root);
@@ -156,7 +160,7 @@ export async function openGitHubRepo(
     : (tabsFull(repos, result.root) ?? {
         ok: false,
         code: "open-failed",
-        message: `Cloned to ${result.root}, but it couldn't be opened.`,
+        message: l10n.t("Cloned to {0}, but it couldn't be opened.", result.root),
       });
 }
 
@@ -171,6 +175,6 @@ function tabsFull(repos: RepoStore, cloned?: string): GhOpenResult | undefined {
     ok: false,
     code: "open-failed",
     expected: true,
-    message: cloned ? `Cloned to ${cloned}. ${says}` : says,
+    message: cloned ? l10n.t("Cloned to {0}. {1}", cloned, says) : says,
   };
 }

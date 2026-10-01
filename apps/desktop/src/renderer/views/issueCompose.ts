@@ -15,6 +15,7 @@
 // rather than being patched on afterwards, because a follow-up request can
 // fail on its own and leave an announced issue missing what its author chose.
 
+import * as l10n from "@vscode/l10n";
 import { host } from "../bridge";
 import { el, span, glyph, avatar, labelChip, cleanErr, errorState, skeletonList, openMenu } from "../ui";
 import { toast } from "../dialogs";
@@ -69,11 +70,14 @@ export async function renderIssueCompose(
   // and it must not quietly turn into the NEW-ISSUE form (which would file an
   // issue when you asked to edit a pull request).
   const section = isPr ? "prs" : "issues";
-  const noun = isPr ? "pull request" : "issue";
   const { view, main, rail, topActions } = detailPage({
-    backLabel: isPr ? "Pull requests" : "Issues",
-    crumb: editNo ? `Edit #${editNo}` : "New issue",
-    pageLabel: editNo ? `Edit ${noun} #${editNo}` : "New issue",
+    backLabel: isPr ? l10n.t("Pull requests") : l10n.t("Issues"),
+    crumb: editNo ? l10n.t("Edit #{0}", editNo) : l10n.t("New issue"),
+    pageLabel: editNo
+      ? isPr
+        ? l10n.t("Edit pull request #{0}", editNo)
+        : l10n.t("Edit issue #{0}", editNo)
+      : l10n.t("New issue"),
     onBack: () => nav(section, editNo ? { number: editNo } : { list: true }),
   });
   view.classList.add("isc-view");
@@ -84,7 +88,7 @@ export async function renderIssueCompose(
   if (isPr && editNo == null) {
     // No Retry here — retrying a routing bug does nothing. The top bar's
     // "← Pull requests" is the way out, and it is already on screen.
-    main.replaceChildren(errorState("No pull request", "Nothing was named to edit."));
+    main.replaceChildren(errorState(l10n.t("No pull request"), l10n.t("Nothing was named to edit.")));
     return;
   }
 
@@ -97,8 +101,10 @@ export async function renderIssueCompose(
     } catch (e) {
       if (!view.isConnected) return;
       main.replaceChildren(
-        errorState(`Couldn't load this ${noun}`, cleanErr(e) || "GitHub request failed.", () =>
-          void renderIssueCompose(wrap, nav, target, kind),
+        errorState(
+          isPr ? l10n.t("Couldn't load this pull request") : l10n.t("Couldn't load this issue"),
+          cleanErr(e) || l10n.t("GitHub request failed."),
+          () => void renderIssueCompose(wrap, nav, target, kind),
         ),
       );
       return;
@@ -107,8 +113,10 @@ export async function renderIssueCompose(
     if (!existing && !existingPr) {
       main.replaceChildren(
         errorState(
-          isPr ? "Pull request unavailable" : "Issue unavailable",
-          `This ${noun} couldn't be read from GitHub.`,
+          isPr ? l10n.t("Pull request unavailable") : l10n.t("Issue unavailable"),
+          isPr
+            ? l10n.t("This pull request couldn't be read from GitHub.")
+            : l10n.t("This issue couldn't be read from GitHub."),
         ),
       );
       return;
@@ -133,10 +141,12 @@ export async function renderIssueCompose(
 
   const titleField = el("div", "isc-field");
   const titleLabel = el("label", "isc-label");
-  titleLabel.textContent = "Title";
+  titleLabel.textContent = l10n.t("Title");
   const title = document.createElement("input");
   title.className = "isc-input isc-title";
-  title.placeholder = isPr ? "What does this change do?" : "Say what happened, in one line";
+  title.placeholder = isPr
+    ? l10n.t("What does this change do?")
+    : l10n.t("Say what happened, in one line");
   title.value = initTitle;
   title.id = "isc-title";
   (titleLabel as HTMLLabelElement).htmlFor = title.id;
@@ -152,16 +162,18 @@ export async function renderIssueCompose(
   title.addEventListener("input", () => titleDraft.save(title.value));
 
   const bodyLabel = el("div", "isc-label isc-body-label");
-  bodyLabel.textContent = "Description";
+  bodyLabel.textContent = l10n.t("Description");
   form.appendChild(bodyLabel);
 
   const body = mdEditor({
     value: initBody,
     placeholder: isPr
-      ? "What changed, why, and anything a reviewer should look at first. Markdown is supported."
-      : "What happened, what you expected, and how to reproduce it. Markdown is supported — drop in a code block with ```.",
+      ? l10n.t("What changed, why, and anything a reviewer should look at first. Markdown is supported.")
+      : l10n.t(
+          "What happened, what you expected, and how to reproduce it. Markdown is supported — drop in a code block with ```.",
+        ),
     fill: true,
-    label: isPr ? "Pull request description" : "Issue description",
+    label: isPr ? l10n.t("Pull request description") : l10n.t("Issue description"),
     onInput: (v) => bodyDraft.save(v),
     onSubmit: () => submitBtn.click(),
   });
@@ -189,10 +201,10 @@ export async function renderIssueCompose(
     restored.hidden = false;
     restored.replaceChildren(
       glyph("history"),
-      span("Restored unsaved changes from this device.", "isc-restored-text"),
+      span(l10n.t("Restored unsaved changes from this device."), "isc-restored-text"),
     );
     const discard = el("button", "mini-btn") as HTMLButtonElement;
-    discard.textContent = `Use the version on GitHub`;
+    discard.textContent = l10n.t("Use the version on GitHub");
     discard.addEventListener("click", () => {
       body.set(initBody);
       title.value = initTitle;
@@ -214,14 +226,14 @@ export async function renderIssueCompose(
 
   const bar = el("div", "isc-actions");
   const cancel = el("button", "btn") as HTMLButtonElement;
-  cancel.textContent = "Cancel";
+  cancel.textContent = l10n.t("Cancel");
   cancel.addEventListener("click", () => nav(section, editNo ? { number: editNo } : { list: true }));
   const submitBtn = el("button", "btn btn-primary") as HTMLButtonElement;
-  const submitLabel = span(composing ? "Create issue" : "Save changes");
+  const submitLabel = span(composing ? l10n.t("Create issue") : l10n.t("Save changes"));
   submitBtn.append(glyph(composing ? "issues" : "save"), submitLabel);
   submitBtn.title = composing
-    ? "Open this issue on GitHub — everyone watching the repository is notified"
-    : "Save the title and description";
+    ? l10n.t("Open this issue on GitHub — everyone watching the repository is notified")
+    : l10n.t("Save the title and description");
   bar.append(cancel, el("span", "isc-spring"), submitBtn);
   form.appendChild(bar);
 
@@ -236,11 +248,11 @@ export async function renderIssueCompose(
     // a second set of controls here would duplicate and then disagree with them.
     rail.remove();
   } else {
-    const labelProp = propSection("Labels");
+    const labelProp = propSection(l10n.t("Labels"));
     const labelBody = labelProp.body;
-    const assignProp = propSection("Assignees");
+    const assignProp = propSection(l10n.t("Assignees"));
     const assignBody = assignProp.body;
-    const mileProp = propSection("Milestone");
+    const mileProp = propSection(l10n.t("Milestone"));
     const mileBody = mileProp.body;
     rail.append(labelProp.root, assignProp.root, mileProp.root);
 
@@ -268,11 +280,11 @@ export async function renderIssueCompose(
           chips.appendChild(labelChip(name, l?.color ?? ""));
         }
         labelBody.appendChild(chips);
-      } else empty(labelBody, "None yet");
+      } else empty(labelBody, l10n.t("None yet"));
       labelBody.appendChild(
-        addBtn(pickedLabels.size ? "Edit labels" : "Add labels", (anchor) => {
+        addBtn(pickedLabels.size ? l10n.t("Edit labels") : l10n.t("Add labels"), (anchor) => {
           if (!choices.labels.length) {
-            toast("This repository has no labels defined.", "info");
+            toast(l10n.t("This repository has no labels defined."), "info");
             return;
           }
           openMenu(
@@ -300,15 +312,15 @@ export async function renderIssueCompose(
         for (const login of pickedPeople) {
           const p = choices.people.find((x) => x.login === login);
           const one = el("span", "isc-person");
-          one.append(avatar(login, p?.avatarUrl, 18, "Assignee"), span(login));
+          one.append(avatar(login, p?.avatarUrl, 18, l10n.t("Assignee")), span(login));
           row.appendChild(one);
         }
         assignBody.appendChild(row);
-      } else empty(assignBody, "No one — leave it unassigned");
+      } else empty(assignBody, l10n.t("No one — leave it unassigned"));
       assignBody.appendChild(
-        addBtn(pickedPeople.size ? "Edit assignees" : "Assign people", (anchor) => {
+        addBtn(pickedPeople.size ? l10n.t("Edit assignees") : l10n.t("Assign people"), (anchor) => {
           if (!choices.people.length) {
-            toast("Couldn't read this repository's collaborators.", "info");
+            toast(l10n.t("Couldn't read this repository's collaborators."), "info");
             return;
           }
           openMenu(
@@ -334,17 +346,17 @@ export async function renderIssueCompose(
       mileBody.replaceChildren();
       const m = choices.milestones.find((x) => x.number === pickedMilestone);
       if (m) mileBody.appendChild(span(m.title, "isc-milestone"));
-      else empty(mileBody, "No milestone");
+      else empty(mileBody, l10n.t("No milestone"));
       mileBody.appendChild(
-        addBtn(m ? "Change milestone" : "Set milestone", (anchor) => {
+        addBtn(m ? l10n.t("Change milestone") : l10n.t("Set milestone"), (anchor) => {
           const open = choices.milestones.filter((x) => x.state === "open");
           if (!open.length) {
-            toast("This repository has no open milestones.", "info");
+            toast(l10n.t("This repository has no open milestones."), "info");
             return;
           }
           openMenu(anchor, [
             {
-              label: "No milestone",
+              label: l10n.t("No milestone"),
               icon: "circle-slash",
               current: pickedMilestone === undefined,
               onClick: () => {
@@ -354,7 +366,7 @@ export async function renderIssueCompose(
             },
             { separator: true },
             ...open.map((x) => ({
-              label: `${x.title} — ${x.openIssues} open`,
+              label: l10n.t("{0} — {1} open", x.title, x.openIssues),
               icon: "milestone",
               current: pickedMilestone === x.number,
               onClick: () => {
@@ -375,7 +387,7 @@ export async function renderIssueCompose(
     if (busy) return;
     const t = title.value.trim();
     if (!t) {
-      showError("An issue needs a title — it is what everyone reads first.");
+      showError(l10n.t("An issue needs a title — it is what everyone reads first."));
       title.setAttribute("aria-invalid", "true");
       title.focus();
       return;
@@ -383,7 +395,7 @@ export async function renderIssueCompose(
     note.hidden = true;
     busy = true;
     submitBtn.disabled = cancel.disabled = true;
-    submitLabel.textContent = composing ? "Creating…" : "Saving…";
+    submitLabel.textContent = composing ? l10n.t("Creating…") : l10n.t("Saving…");
     try {
       if (composing) {
         const r = await host.invoke("issue:create", {
@@ -394,13 +406,13 @@ export async function renderIssueCompose(
           milestone: pickedMilestone,
         });
         if (!r.ok) {
-          showError(r.message ?? "GitHub rejected the issue.");
+          showError(r.message ?? l10n.t("GitHub rejected the issue."));
           return;
         }
         bodyDraft.clear();
         titleDraft.clear();
         bust("issue");
-        toast(r.number ? `Opened issue #${r.number}.` : "Issue created.", "success");
+        toast(r.number ? l10n.t("Opened issue #{0}.", r.number) : l10n.t("Issue created."), "success");
         nav("issues", r.number ? { number: r.number } : { list: true });
       } else {
         if (t === initTitle && body.get() === initBody) {
@@ -411,21 +423,24 @@ export async function renderIssueCompose(
           ? await host.invoke("pr:edit", { number: editNo!, title: t, body: body.get() })
           : await host.invoke("issue:edit", { number: editNo!, title: t, body: body.get() });
         if (!r.ok) {
-          showError(r.message ?? "GitHub rejected the change.");
+          showError(r.message ?? l10n.t("GitHub rejected the change."));
           return;
         }
         bodyDraft.clear();
         titleDraft.clear();
         bust(isPr ? "pr" : "issue");
-        toast(`Updated ${noun} #${editNo}.`, "success");
+        toast(
+          isPr ? l10n.t("Updated pull request #{0}.", editNo) : l10n.t("Updated issue #{0}.", editNo),
+          "success",
+        );
         nav(section, { number: editNo });
       }
     } catch (e) {
-      showError(cleanErr(e) || "Couldn't reach GitHub.");
+      showError(cleanErr(e) || l10n.t("Couldn't reach GitHub."));
     } finally {
       busy = false;
       submitBtn.disabled = cancel.disabled = false;
-      submitLabel.textContent = composing ? "Create issue" : "Save changes";
+      submitLabel.textContent = composing ? l10n.t("Create issue") : l10n.t("Save changes");
     }
   };
   submitBtn.addEventListener("click", () => void submit());
@@ -441,6 +456,12 @@ export async function renderIssueCompose(
     }
   });
 
-  setPageLabel(editNo ? `Edit ${noun} #${editNo}` : "New issue");
+  setPageLabel(
+    editNo
+      ? isPr
+        ? l10n.t("Edit pull request #{0}", editNo)
+        : l10n.t("Edit issue #{0}", editNo)
+      : l10n.t("New issue"),
+  );
   (initTitle ? body.textarea : title).focus();
 }

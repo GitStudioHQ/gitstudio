@@ -6,6 +6,7 @@
 // write/destructive permission flags the user chose.
 
 import { app } from "electron";
+import * as l10n from "@vscode/l10n";
 import { copyFileSync, existsSync, readFileSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
@@ -118,12 +119,15 @@ export function isTranslocated(execPath: string): boolean {
   return /^(?:\/private)?\/var\/folders\/.+\/AppTranslocation\//.test(execPath);
 }
 
-/** Why Agent Access will not write a translocated path, and what to do. */
-const TRANSLOCATED_MESSAGE =
-  "GitStudio is running from a temporary copy macOS made because the app hasn't been moved " +
-  "to Applications yet, and that copy disappears when GitStudio quits — an agent set up now " +
-  "would stop working. Move GitStudio to your Applications folder, open it from there, then " +
-  "add it again.";
+/** Why Agent Access will not write a translocated path, and what to do. A
+ *  function, not a module-level constant — l10n.t() must run AFTER boot()
+ *  configures the bundle (main/language.ts), and a module-level const captures
+ *  its value at import time, before that happens. */
+function translocatedMessage(): string {
+  return l10n.t(
+    "GitStudio is running from a temporary copy macOS made because the app hasn't been moved to Applications yet, and that copy disappears when GitStudio quits — an agent set up now would stop working. Move GitStudio to your Applications folder, open it from there, then add it again.",
+  );
+}
 
 /**
  * Is this executable running straight from a mounted disk image?
@@ -140,11 +144,13 @@ export function isOnDiskImage(execPath: string): boolean {
   return /^\/Volumes\/[^/]+\/[^/]+\.app\/Contents\//.test(execPath);
 }
 
-/** Why Agent Access will not write a disk-image path, and what to do. */
-const DISK_IMAGE_MESSAGE =
-  "GitStudio is running straight from its disk image, and that path goes away when the image " +
-  "is ejected — an agent set up now would stop working. Move GitStudio to Applications first, " +
-  "open it from there, then add it again.";
+/** Why Agent Access will not write a disk-image path, and what to do. A
+ *  function, not a module-level constant — see translocatedMessage() above. */
+function diskImageMessage(): string {
+  return l10n.t(
+    "GitStudio is running straight from its disk image, and that path goes away when the image is ejected — an agent set up now would stop working. Move GitStudio to Applications first, open it from there, then add it again.",
+  );
+}
 
 /**
  * Why the path Add would write will not outlive this run of the app — a
@@ -153,8 +159,8 @@ const DISK_IMAGE_MESSAGE =
  * refuses.
  */
 function vanishingLocation(execPath: string): string | undefined {
-  if (isTranslocated(execPath)) return TRANSLOCATED_MESSAGE;
-  if (isOnDiskImage(execPath)) return DISK_IMAGE_MESSAGE;
+  if (isTranslocated(execPath)) return translocatedMessage();
+  if (isOnDiskImage(execPath)) return diskImageMessage();
   return undefined;
 }
 
@@ -268,7 +274,7 @@ function readConfig(path: string): ConfigRead {
   try {
     const json = JSON.parse(text) as unknown;
     if (!json || typeof json !== "object" || Array.isArray(json)) {
-      return { kind: "unreadable", reason: "the file is not a JSON object" };
+      return { kind: "unreadable", reason: l10n.t("the file is not a JSON object") };
     }
     return { kind: "parsed", json: json as Record<string, unknown> };
   } catch (err) {
@@ -311,7 +317,7 @@ function staleEntry(entry: { command?: unknown; args?: unknown }): string | unde
     (p): p is string => typeof p === "string" && isAbsolute(p),
   );
   const gone = paths.find((p) => !existsSync(p));
-  return gone ? `The GitStudio this was set up with is no longer at ${gone}.` : undefined;
+  return gone ? l10n.t("The GitStudio this was set up with is no longer at {0}.", gone) : undefined;
 }
 
 /**
@@ -336,14 +342,14 @@ function missingServer(
   return rt.packaged
     ? {
         ok: false,
-        message:
-          "This build of GitStudio is missing its MCP server, so Agent Access can't be set up. " +
-          "Reinstalling the app restores it.",
+        message: l10n.t(
+          "This build of GitStudio is missing its MCP server, so Agent Access can't be set up. Reinstalling the app restores it.",
+        ),
       }
     : {
         ok: false,
         expected: true,
-        message: "The MCP server isn't built yet — run `node esbuild.js` in apps/desktop.",
+        message: l10n.t("The MCP server isn't built yet — run `node esbuild.js` in apps/desktop."),
       };
 }
 
@@ -389,7 +395,7 @@ export function installMcp(
   // crash-reportable. A client config the user has hand-edited into something
   // that is not JSON is a state of the machine (see main/expectedError.ts).
   if (!cfg) {
-    return { ok: false, message: `Unknown client: ${req.client}.` };
+    return { ok: false, message: l10n.t("Unknown client: {0}.", req.client) };
   }
   // Refused, not written: the path would name a copy of the app that is gone
   // the moment it quits, or a disk image that is gone the moment it is
@@ -415,10 +421,13 @@ export function installMcp(
       return {
         ok: false,
         expected: true,
-        message:
-          `${cfg.label}'s config at ${cfg.path} couldn't be read as JSON ` +
-          `(${read.reason}). GitStudio won't overwrite it — add the "gitstudio" ` +
-          `entry under "${cfg.serversKey}" by hand, or fix the file and retry.`,
+        message: l10n.t(
+          "{0}'s config at {1} couldn't be read as JSON ({2}). GitStudio won't overwrite it — add the \"gitstudio\" entry under \"{3}\" by hand, or fix the file and retry.",
+          cfg.label,
+          cfg.path,
+          read.reason,
+          cfg.serversKey,
+        ),
       };
     }
     const json = read.kind === "parsed" ? read.json : {};
@@ -437,8 +446,15 @@ export function installMcp(
       }
     }
     writeFileSync(cfg.path, JSON.stringify(json, null, 2));
-    const mode = req.destructive ? "read + write + destructive" : req.write ? "read + write" : "read-only";
-    return { ok: true, message: `Added GitStudio (${mode}) to ${cfg.label}. Restart ${cfg.label} to pick it up.` };
+    const mode = req.destructive
+      ? l10n.t("read + write + destructive")
+      : req.write
+        ? l10n.t("read + write")
+        : l10n.t("read-only");
+    return {
+      ok: true,
+      message: l10n.t("Added GitStudio ({0}) to {1}. Restart {1} to pick it up.", mode, cfg.label),
+    };
   } catch (err) {
     return { ok: false, message: err instanceof Error ? err.message : String(err) };
   }

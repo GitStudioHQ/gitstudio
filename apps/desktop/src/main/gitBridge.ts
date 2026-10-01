@@ -48,6 +48,7 @@ import { GitProcess } from "@gitstudio/git-service/GitProcess";
 import { nativePath, sameFolder } from "@gitstudio/git-service/folderPath";
 import { sshHome } from "@gitstudio/git-service/sshAliases";
 import { worktreeChangedSinceAsked, worktreeRemovalRefusal } from "@gitstudio/host-bridge/worktreeRemoval";
+import * as l10n from "@vscode/l10n";
 import type {
   CommitRecord,
   GitContext,
@@ -181,12 +182,17 @@ function safePullMode(v: unknown): v is PullMode | undefined {
   return v === undefined || PULL_MODES.includes(v as PullMode);
 }
 
-/** Standard rejection for an unsafe ref/name reaching a mutation. */
-const UNSAFE_REF_RESULT: CommitActionResult = {
-  ok: false,
-  changed: false,
-  message: "That value isn't a valid git reference.",
-};
+/** Standard rejection for an unsafe ref/name reaching a mutation. A function,
+ *  not a module-level constant: l10n.t() must run AFTER boot() configures the
+ *  bundle, and this is imported (and its value would otherwise be captured)
+ *  before that happens. */
+function unsafeRefResult(): CommitActionResult {
+  return {
+    ok: false,
+    changed: false,
+    message: l10n.t("That value isn't a valid git reference."),
+  };
+}
 
 /**
  * A FULL ref name in one of `namespaces` — what every branch op now requires
@@ -209,7 +215,7 @@ function notABranch(what: string): CommitActionResult {
   return {
     ok: false,
     changed: false,
-    message: `Couldn't tell which branch to ${what} — refresh and try again.`,
+    message: l10n.t("Couldn't tell which branch to {0} — refresh and try again.", what),
   };
 }
 
@@ -221,12 +227,15 @@ function sameRoot(a: unknown, b: string): boolean {
   return typeof a === "string" && a.length > 0 && sameFolder(a, b);
 }
 
-/** Standard rejection for an unusable path reaching a mutation. */
-const UNSAFE_PATH_RESULT: CommitActionResult = {
-  ok: false,
-  changed: false,
-  message: "That isn't a usable file path.",
-};
+/** Standard rejection for an unusable path reaching a mutation. A function, not
+ *  a module-level constant — see unsafeRefResult() above for why. */
+function unsafePathResult(): CommitActionResult {
+  return {
+    ok: false,
+    changed: false,
+    message: l10n.t("That isn't a usable file path."),
+  };
+}
 
 /**
  * Did a failed git command DECLINE — explain itself on stdout alone — rather
@@ -888,7 +897,7 @@ export class GitBridge {
     // status and renders "Couldn't read the working tree" with a Retry. What the
     // swallow actually did was render a broken repo as a clean one.
     const result = await ctx.process.run(["status", "--porcelain=v1", "-z"]);
-    return parsePorcelainStatus(mustSucceed(result, "Couldn't read the working tree"));
+    return parsePorcelainStatus(mustSucceed(result, l10n.t("Couldn't read the working tree")));
   }
 
   async diffFiles(): Promise<ChangedFile[]> {
@@ -972,8 +981,8 @@ export class GitBridge {
         : await readWorking(ctx, rel);
     return {
       path: rel,
-      leftLabel: `HEAD ${rel}`,
-      rightLabel: gone ? `(deleted) ${rel}` : `Working Tree ${rel}`,
+      leftLabel: l10n.t("HEAD {0}", rel),
+      rightLabel: gone ? l10n.t("(deleted) {0}", rel) : l10n.t("Working Tree {0}", rel),
       ...(gone ? { deleted: true } : {}),
       // Which side the file is missing from — the only way to tell an added
       // binary from a deleted one, since both sides' text is empty either way.
@@ -1005,11 +1014,11 @@ export class GitBridge {
   }): Promise<CommitActionResult & { indexText?: string }> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, expected: true, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: l10n.t("No repository open.") };
     }
     const abs = containedPath(ctx.root, req.path);
     if (!abs) {
-      return UNSAFE_REF_RESULT;
+      return unsafeRefResult();
     }
     return this.serialize(async () => {
       try {
@@ -1195,10 +1204,10 @@ export class GitBridge {
     // can simply be in — `expected` keeps them out of the crash reporter (see
     // main/expectedError.ts). An unusable restore point is NOT one of them: the
     // sha comes from a snapshot this app made, so a refusal here is our bug.
-    if (!ctx) return { ok: false, expected: true, message: "No repository is open." };
-    if (!safeArg(req.sha)) return { ok: false, message: "That restore point is not usable." };
+    if (!ctx) return { ok: false, expected: true, message: l10n.t(l10n.t("No repository is open.")) };
+    if (!safeArg(req.sha)) return { ok: false, message: l10n.t("That restore point is not usable.") };
     const paths = req.paths.filter((p) => p);
-    if (!paths.length) return { ok: false, expected: true, message: "Nothing to restore." };
+    if (!paths.length) return { ok: false, expected: true, message: l10n.t("Nothing to restore.") };
     // Put back only what the discard took. It left each path as the index has
     // it; a path that differs from the index now was edited AGAIN since, and
     // restoring the old changes over it threw the new ones away under a
@@ -1216,7 +1225,7 @@ export class GitBridge {
       names(["--cached", `${req.sha}^2`]),
     ]);
     if (!edited || !notAsTaken || !restaged) {
-      return { ok: false, message: "Couldn't tell whether those files have changed since. Nothing was changed." };
+      return { ok: false, message: l10n.t("Couldn't tell whether those files have changed since. Nothing was changed.") };
     }
     const since = paths.filter((p) => (edited.has(p) && notAsTaken.has(p)) || restaged.has(p));
     if (since.length) {
@@ -1225,8 +1234,8 @@ export class GitBridge {
         expected: true,
         message:
           since.length === 1
-            ? `${since[0]} has changed since its changes were discarded, and bringing them back would overwrite that. Nothing was changed.`
-            : `${since.length} files have changed since their changes were discarded (${since.join(", ")}), and bringing them back would overwrite that. Nothing was changed.`,
+            ? l10n.t("{0} has changed since its changes were discarded, and bringing them back would overwrite that. Nothing was changed.", since[0])
+            : l10n.t("{0} files have changed since their changes were discarded ({1}), and bringing them back would overwrite that. Nothing was changed.", since.length, since.join(", ")),
       };
     }
     const r = await ctx.process.run([
@@ -1237,7 +1246,7 @@ export class GitBridge {
       "--",
       ...paths,
     ]);
-    return r.code === 0 ? { ok: true } : { ok: false, message: r.stderr.trim() || "Couldn't restore." };
+    return r.code === 0 ? { ok: true } : { ok: false, message: r.stderr.trim() || l10n.t("Couldn't restore.") };
   }
 
   async discard(path: string): Promise<CommitActionResult> {
@@ -1345,22 +1354,39 @@ export class GitBridge {
       const parts: string[] = [];
       if (marked.length) {
         parts.push(
-          `${marked.length} still contain${marked.length === 1 ? "s" : ""} conflict markers ` +
-            `(${list(marked)}) — staging a file with markers in it tells git the conflict is settled`,
+          marked.length === 1
+            ? l10n.t(
+                "{0} still contains conflict markers ({1}) — staging a file with markers in it tells git the conflict is settled",
+                marked.length,
+                list(marked),
+              )
+            : l10n.t(
+                "{0} still contain conflict markers ({1}) — staging a file with markers in it tells git the conflict is settled",
+                marked.length,
+                list(marked),
+              ),
         );
       }
       if (needsChoice.length) {
         parts.push(
-          `${needsChoice.length} ${needsChoice.length === 1 ? "is a" : "are"} modify/delete ` +
-            `conflict${needsChoice.length === 1 ? "" : "s"} (${list(needsChoice)}) — one side edited ` +
-            `the file and the other deleted it, so you have to choose keep or delete`,
+          needsChoice.length === 1
+            ? l10n.t(
+                "{0} is a modify/delete conflict ({1}) — one side edited the file and the other deleted it, so you have to choose keep or delete",
+                needsChoice.length,
+                list(needsChoice),
+              )
+            : l10n.t(
+                "{0} are modify/delete conflicts ({1}) — one side edited the file and the other deleted it, so you have to choose keep or delete",
+                needsChoice.length,
+                list(needsChoice),
+              ),
         );
       }
       return {
         ok: false,
         changed: true,
         expected: true,
-        message: `Staged everything else. ${parts.join(". ")}.`,
+        message: l10n.t("Staged everything else. {0}.", parts.join(". ")),
       };
     });
   }
@@ -1395,10 +1421,10 @@ export class GitBridge {
   async commit(req: { message: string; amend?: boolean }): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, expected: true, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: l10n.t(l10n.t("No repository open.")) };
     }
     if (!req.message.trim() && !req.amend) {
-      return { ok: false, changed: false, expected: true, message: "A commit message is required." };
+      return { ok: false, changed: false, expected: true, message: l10n.t("A commit message is required.") };
     }
     // A plain commit does NOT finish a `git am`, it derails it: the session
     // stays open on disk, the remaining patches are never applied, and the
@@ -1412,9 +1438,9 @@ export class GitBridge {
         ok: false,
         changed: false,
         expected: true,
-        message:
-          "A patch series is part-applied (git am). Use Continue in the banner above — a plain commit " +
-          "would leave the rest of the series unapplied and put your name on someone else's patch.",
+        message: l10n.t(
+          "A patch series is part-applied (git am). Use Continue in the banner above — a plain commit would leave the rest of the series unapplied and put your name on someone else's patch.",
+        ),
       };
     }
     return this.serialize(async () => {
@@ -1496,7 +1522,7 @@ export class GitBridge {
    */
   async stashApply(req: string | { ref: string; stashFirst?: string }): Promise<CommitActionResult> {
     const { ref, stashFirst } = stashRequest(req);
-    if (!safeArg(ref)) return UNSAFE_REF_RESULT;
+    if (!safeArg(ref)) return unsafeRefResult();
     // `index`: a stash that holds staged changes brings them back staged
     // where git can (see applyForDoor). A plain apply unstaged them, and a pop
     // then lost a staged version that differed from the file.
@@ -1507,14 +1533,14 @@ export class GitBridge {
   }
   async stashPop(req: string | { ref: string; stashFirst?: string }): Promise<CommitActionResult> {
     const { ref, stashFirst } = stashRequest(req);
-    if (!safeArg(ref)) return UNSAFE_REF_RESULT;
+    if (!safeArg(ref)) return unsafeRefResult();
     return this.staged(async (ctx) => {
       const index = await ctx.stashes.holdsStaged(ref);
       return stagedFrom(await applyForDoor(ctx, { kind: "stash", stash: ref, pop: true, index }, stashFirst));
     });
   }
   async stashDrop(ref: string): Promise<CommitActionResult> {
-    if (!safeArg(ref)) return UNSAFE_REF_RESULT;
+    if (!safeArg(ref)) return unsafeRefResult();
     // By sha, a stash that has left the list drops nothing: the user's state,
     // said, never filed.
     return this.staged(async (ctx) => {
@@ -1547,9 +1573,9 @@ export class GitBridge {
    * undoing "Drop stash@{1}" left the list in a different order than before.
    */
   async stashRestore(req: { sha: string; message?: string }): Promise<CommitActionResult> {
-    if (!safeArg(req.sha)) return UNSAFE_REF_RESULT;
+    if (!safeArg(req.sha)) return unsafeRefResult();
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository is open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: l10n.t(l10n.t("No repository is open.")) };
     const key = `${ctx.root}\0${req.sha}`;
     const place = this.droppedStashes.get(key);
     return this.staged(async (c) => {
@@ -1593,11 +1619,11 @@ export class GitBridge {
   async hunksStage(req: { path: string; index: number }): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, expected: true, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: l10n.t("No repository open.") };
     }
     const abs = containedPath(ctx.root, req.path);
     if (!abs) {
-      return UNSAFE_REF_RESULT;
+      return unsafeRefResult();
     }
     return this.serialize(async () => {
       try {
@@ -1630,13 +1656,13 @@ export class GitBridge {
   }): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, expected: true, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: l10n.t("No repository open.") };
     }
     // Every path is proved to be inside the repository before it reaches git,
     // like every other mutating handler here. A stash pathspec is a write.
     const paths = (opts.paths ?? []).filter((p) => p.length > 0);
     if (paths.some((p) => !containedPath(ctx.root, p))) {
-      return UNSAFE_REF_RESULT;
+      return unsafeRefResult();
     }
     return this.serialize(async () => {
       // NOT via `staged()`, which decides success from the exit code alone. `git
@@ -1650,7 +1676,7 @@ export class GitBridge {
         stagedOnly: opts.stagedOnly,
       });
       if (!r.ok) {
-        return { ok: false, changed: false, message: r.stderr.trim() || "The stash failed." };
+        return { ok: false, changed: false, message: r.stderr.trim() || l10n.t("The stash failed.") };
       }
       if (!r.created) {
         return {
@@ -1706,7 +1732,7 @@ export class GitBridge {
     }
   }
   async worktreeAdd(path: string, ref: string, newBranch?: boolean): Promise<CommitActionResult> {
-    if (!safeArg(ref)) return UNSAFE_REF_RESULT;
+    if (!safeArg(ref)) return unsafeRefResult();
     return this.staged(async (ctx) => ctx.worktrees.add(path, ref, { newBranch }));
   }
   /**
@@ -1757,7 +1783,7 @@ export class GitBridge {
   }): Promise<WorktreeRemoveResult> {
     // The provider passes the path after `--` now; the guard stays, as on
     // every other mutation here that takes a renderer string.
-    if (!safeArg(opts.path)) return UNSAFE_REF_RESULT;
+    if (!safeArg(opts.path)) return unsafeRefResult();
     let changedSince: WorktreeRemovalInfo | undefined;
     const r = await this.staged(async (ctx) => {
       // Never the window's own worktree, whatever the renderer sent — nor
@@ -1767,7 +1793,7 @@ export class GitBridge {
       }
       // One whose folder is gone deletes nothing from under its tab: forgetting it goes on.
       if (existsSync(opts.path) && heldByAnotherTab(opts.path, this.otherTabRoots(ctx))) {
-        return { ok: false, expected: true, message: worktreeRemovalRefusal("openInTab", "That worktree") };
+        return { ok: false, expected: true, message: worktreeRemovalRefusal("openInTab", l10n.t("That worktree")) };
       }
       // The lock's reason, to put back if git refuses (see removeAsAgreed).
       const entry = (await ctx.worktrees.list()).find((e) => sameFolder(e.path, opts.path));
@@ -1787,11 +1813,14 @@ export class GitBridge {
       }
       // Anything else git refuses a remove over is the repository's state
       // (a submodule in it, a lock put back in the meantime), said by git.
-      const verb = now.kind === "present" ? "remove" : "forget";
+      const detail = done.stderr.trim() || l10n.t("git worktree remove failed.");
       return {
         ok: false,
         expected: true,
-        message: `Couldn't ${verb} worktree ${label}: ${done.stderr.trim() || "git worktree remove failed."}`,
+        message:
+          now.kind === "present"
+            ? l10n.t("Couldn't remove worktree {0}: {1}", label, detail)
+            : l10n.t("Couldn't forget worktree {0}: {1}", label, detail),
       };
     });
     return changedSince ? { ...r, changedSince } : r;
@@ -2090,7 +2119,7 @@ export class GitBridge {
     //
     // A value starting with "-" would be read by `git config` as an option.
     if ((name && name.startsWith("-")) || (email && email.startsWith("-"))) {
-      return { ok: false, changed: false, expected: true, message: "Name and email can't start with “-”." };
+      return { ok: false, changed: false, expected: true, message: l10n.t("Name and email can't start with “-”.") };
     }
     // An identity is a PAIR. git refuses to commit without both
     // ("Please tell me who you are"), so a half-filled card is not a saveable
@@ -2098,16 +2127,16 @@ export class GitBridge {
     // clearing one and pressing Save reported "Identity updated" while leaving
     // the old value in ~/.gitconfig, untouched and unmentioned.
     if (!name && !email) {
-      return { ok: false, changed: false, expected: true, message: "Enter a name and an email to save." };
+      return { ok: false, changed: false, expected: true, message: l10n.t("Enter a name and an email to save.") };
     }
     if (!name || !email) {
       return {
         ok: false,
         changed: false,
         expected: true,
-        message: `Git needs both a name and an email to record a commit. ${
-          name ? "Add an email" : "Add a name"
-        } to save, or leave the card as it is — nothing has been changed.`,
+        message: name
+          ? l10n.t("Git needs both a name and an email to record a commit. Add an email to save, or leave the card as it is — nothing has been changed.")
+          : l10n.t("Git needs both a name and an email to record a commit. Add a name to save, or leave the card as it is — nothing has been changed."),
       };
     }
     try {
@@ -2220,7 +2249,7 @@ export class GitBridge {
       return {
         ok: false,
         changed: false,
-        message: "That isn't a way to reconcile a pull.",
+        message: l10n.t("That isn't a way to reconcile a pull."),
       };
     }
     let diverged: PullDivergence | undefined;
@@ -2319,9 +2348,9 @@ export class GitBridge {
           ok: false,
           changed: false,
           expected: true,
-          message:
-            "The remote branch has commits that are not yours to replace. Pull them in " +
-            "(merge or rebase) and push again — a force push would delete them.",
+          message: l10n.t(
+            "The remote branch has commits that are not yours to replace. Pull them in (merge or rebase) and push again — a force push would delete them.",
+          ),
         };
       }
       const pushed = await ctx.sync.push({ setUpstream: opts?.setUpstream, force: opts?.force });
@@ -2366,9 +2395,9 @@ export class GitBridge {
   /** Fetch the branch's upstream and say what resetting to it would cost. */
   async branchResetPlan(req: { fullName: string }): Promise<BranchResetPlan> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, expected: true, message: "No repository open." };
+    if (!ctx) return { ok: false, expected: true, message: l10n.t("No repository open.") };
     const name = localBranchOf(req?.fullName);
-    if (!name) return { ok: false, message: "Couldn't tell which branch to reset — refresh and try again." };
+    if (!name) return { ok: false, message: l10n.t("Couldn't tell which branch to reset — refresh and try again.") };
     // Serialized: the fetch WRITES the remote-tracking ref.
     return this.serialize(() => planBranchReset(ctx, req.fullName, name));
   }
@@ -2376,13 +2405,13 @@ export class GitBridge {
   /** Reset a local branch to its upstream, against the state its plan read. */
   async branchResetToUpstream(req: BranchResetRequest): Promise<BranchResetResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: l10n.t("No repository open.") };
     const name = localBranchOf(req?.fullName);
     if (!name) return notABranch("reset");
     // The plan was read in ONE repository. A reset that arrives after a
     // switch would run the right verb in the wrong place.
     if (!sameRoot(req.root, ctx.root)) {
-      return { ok: false, changed: false, expected: true, message: "Another repository is open now — nothing was changed." };
+      return { ok: false, changed: false, expected: true, message: l10n.t("Another repository is open now — nothing was changed.") };
     }
     return this.serialize(() => resetBranchToUpstream(ctx, name, req));
   }
@@ -2390,13 +2419,13 @@ export class GitBridge {
   /** Undo a reset to upstream — the tip, and any changes it discarded. */
   async branchResetUndo(req: BranchResetUndoRequest): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: l10n.t("No repository open.") };
     const name = localBranchOf(req?.fullName);
     if (!name) return notABranch("put back");
     // An undo belongs to ONE repository (renderer/undo.ts clears the stack on
     // a switch); this is the same rule, held where the git runs.
     if (!sameRoot(req.root, ctx.root)) {
-      return { ok: false, changed: false, expected: true, message: "Another repository is open now — nothing was changed." };
+      return { ok: false, changed: false, expected: true, message: l10n.t("Another repository is open now — nothing was changed.") };
     }
     return this.serialize(() => undoBranchReset(ctx, name, req));
   }
@@ -2416,7 +2445,7 @@ export class GitBridge {
    * the push is refs/heads/<name>:refs/heads/<name> --set-upstream.
    */
   async branchPublishAs(req: { name: string; remote: string }): Promise<CommitActionResult> {
-    if (!safeArg(req.name) || !safeArg(req.remote)) return UNSAFE_REF_RESULT;
+    if (!safeArg(req.name) || !safeArg(req.remote)) return unsafeRefResult();
     // push-force-reviewed: publishes under a name with no remote history, so
     // there is nothing on the server this could overwrite.
     return this.staged((ctx) =>
@@ -2451,8 +2480,8 @@ export class GitBridge {
           ok: false,
           stderr:
             names.length === 0
-              ? `No remote is configured, so '${name}' can't be published.`
-              : `Several remotes are configured — publish '${name}' from the branch's Set upstream… action.`,
+              ? l10n.t("No remote is configured, so '{0}' can't be published.", name)
+              : l10n.t("Several remotes are configured — publish '{0}' from the branch's Set upstream… action.", name),
         };
       }
       // push-force-reviewed: publish — nothing on the remote to overwrite.
@@ -2593,7 +2622,7 @@ export class GitBridge {
       "--sort=-committerdate",
       "refs/heads",
     ]);
-    const out = mustSucceed(r, "Couldn't list branches");
+    const out = mustSucceed(r, l10n.t("Couldn't list branches"));
     const divergence = base ? await this.divergenceFrom(ctx, base) : new Map();
     const branches: BranchInfo[] = [];
     for (const line of out.split("\n")) {
@@ -2659,9 +2688,9 @@ export class GitBridge {
     upstream?: string;
     stashFirst?: string;
   }): Promise<CommitActionResult> {
-    if (!safeArg(req.name)) return UNSAFE_REF_RESULT;
-    if (req.startPoint && !safeArg(req.startPoint)) return UNSAFE_REF_RESULT;
-    if (req.upstream && !safeArg(req.upstream)) return UNSAFE_REF_RESULT;
+    if (!safeArg(req.name)) return unsafeRefResult();
+    if (req.startPoint && !safeArg(req.startPoint)) return unsafeRefResult();
+    if (req.upstream && !safeArg(req.upstream)) return unsafeRefResult();
     const made = await this.staged(async (ctx) =>
       // Switching to a new branch that starts somewhere else is a checkout,
       // refused like one over uncommitted work in its way — so it goes through
@@ -2862,10 +2891,10 @@ export class GitBridge {
       };
     }
     if (!name || !safeArg(name)) {
-      return UNSAFE_REF_RESULT;
+      return unsafeRefResult();
     }
     if (req.fullName !== undefined && !safeArg(req.fullName)) {
-      return UNSAFE_REF_RESULT;
+      return unsafeRefResult();
     }
     // By the FULL name, from every door. The planner reads the namespace and
     // checks a branch out by its name under refs/heads/, where `name` — git's
@@ -2879,14 +2908,14 @@ export class GitBridge {
       return {
         ok: false,
         changed: false,
-        message: `Couldn't tell which ${name} to check out — refresh and try again.`,
+        message: l10n.t("Couldn't tell which {0} to check out — refresh and try again.", name),
       };
     }
     const fullName = req.fullName;
     return this.serialize(async () => {
       const plan = await planRefCheckout(ctx.process, fullName);
       if (!plan) {
-        return UNSAFE_REF_RESULT;
+        return unsafeRefResult();
       }
       // The branch it lands on is checked out in another worktree: git
       // refuses ("already used by worktree at …"). Say where instead.
@@ -2917,7 +2946,7 @@ export class GitBridge {
       return {
         ok: false,
         changed: false,
-        message: stderr || r.stdout.trim() || "The checkout failed.",
+        message: stderr || r.stdout.trim() || l10n.t("The checkout failed."),
         ...(declinedOnStdout(r.stdout, stderr) ? { expected: true } : {}),
         ...withNote,
       };
@@ -3014,7 +3043,7 @@ export class GitBridge {
   ): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, expected: true, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: l10n.t("No repository open.") };
     }
     return this.serialize(async () => {
       try {
@@ -3066,7 +3095,7 @@ export class GitBridge {
           // — `am --continue` puts "error: Failed to merge in the changes." on
           // stderr and the file it stopped on, plus what to do next, on stdout
           // — and showing only stderr threw away the half that helps.
-          message: [stdout.trim(), stderr.trim()].filter(Boolean).join("\n") || "The operation failed.",
+          message: [stdout.trim(), stderr.trim()].filter(Boolean).join("\n") || l10n.t("The operation failed."),
           ...(ordinary || declinedOnStdout(stdout, stderr) ? { expected: true } : {}),
           ...(r.stashNote ? { stashNote: r.stashNote } : {}),
         };
@@ -3085,13 +3114,13 @@ export class GitBridge {
   async commitAction(req: CommitActionRequest): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, expected: true, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: l10n.t("No repository open.") };
     }
     if (req.action !== "copy-sha" && !safeArg(req.sha)) {
-      return UNSAFE_REF_RESULT;
+      return unsafeRefResult();
     }
     if ((req.action === "branch" || req.action === "tag") && !safeArg(req.name)) {
-      return UNSAFE_REF_RESULT;
+      return unsafeRefResult();
     }
     if (req.action === "checkout-ref") {
       return this.checkoutRef(ctx, req);
@@ -3140,7 +3169,7 @@ export class GitBridge {
           return {
             ok: false,
             changed: false,
-            message: stderr || stdout || "The operation failed.",
+            message: stderr || stdout || l10n.t("The operation failed."),
             ...(declinedOnStdout(stdout, stderr) ? { expected: true } : {}),
             ...withNote,
           };
@@ -3168,7 +3197,7 @@ export class GitBridge {
     req: CommitActionRequest,
   ): Promise<CommitActionResult> {
     const shas = selectedCommits(req.shas);
-    if (shas.length < 2) return UNSAFE_REF_RESULT;
+    if (shas.length < 2) return unsafeRefResult();
     return this.serialize(async () => {
       try {
         const [merges, ordered] = await Promise.all([
@@ -3180,7 +3209,7 @@ export class GitBridge {
             ok: false,
             changed: false,
             expected: true,
-            message: "Those commits could not be read any more — refresh the graph and try again.",
+            message: l10n.t("Those commits could not be read any more — refresh the graph and try again."),
           };
         }
         if (merges.length > 0) {
@@ -3222,7 +3251,7 @@ export class GitBridge {
         return {
           ok: false,
           changed: false,
-          message: stderr.trim() || stdout.trim() || "The operation failed.",
+          message: stderr.trim() || stdout.trim() || l10n.t("The operation failed."),
           ...(declinedOnStdout(stdout.trim(), stderr.trim()) ? { expected: true } : {}),
           ...withNote,
         };
@@ -3277,21 +3306,21 @@ export class GitBridge {
     // `from` may be one (a branch update-ref made) — BranchOps puts it after
     // `--`, and renaming such a branch away is exactly what a refused
     // checkout offers (see checkoutRef).
-    if (!safeArg(req.to)) return UNSAFE_REF_RESULT;
+    if (!safeArg(req.to)) return unsafeRefResult();
     return this.staged((ctx) => ctx.branches.rename(from, req.to));
   }
 
   async branchSetUpstream(req: { fullName: string; upstream: string }): Promise<CommitActionResult> {
     const name = localBranchOf(req.fullName);
     if (!name) return notABranch("set the upstream of");
-    if (!safeArg(req.upstream)) return UNSAFE_REF_RESULT;
+    if (!safeArg(req.upstream)) return unsafeRefResult();
     return this.staged((ctx) => ctx.branches.setUpstream(name, req.upstream));
   }
 
   async branchDeleteRemote(
     req: { remote: string; name: string },
   ): Promise<CommitActionResult & { was?: string }> {
-    if (!safeArg(req.remote) || !safeArg(req.name)) return UNSAFE_REF_RESULT;
+    if (!safeArg(req.remote) || !safeArg(req.name)) return unsafeRefResult();
     // The remote-tracking ref is the local record of where that branch was,
     // and the delete removes it too — so read it first or there is nothing to
     // push back.
@@ -3322,9 +3351,9 @@ export class GitBridge {
     name: string;
     sha: string;
   }): Promise<CommitActionResult> {
-    if (!safeArg(req.remote) || !safeArg(req.name) || !safeArg(req.sha)) return UNSAFE_REF_RESULT;
+    if (!safeArg(req.remote) || !safeArg(req.name) || !safeArg(req.sha)) return unsafeRefResult();
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository is open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: l10n.t("No repository is open.") };
     // `--force-with-lease=<ref>:` with an EMPTY expected value means "only if
     // that ref does not exist". Without it this is an ordinary push, and an
     // ordinary push to a branch somebody has re-made in the meantime is a
@@ -3342,7 +3371,7 @@ export class GitBridge {
           ok: false,
           changed: false,
           expected: true,
-          message: r.stderr.trim() || `Couldn't push ${req.name} back to ${req.remote}.`,
+          message: r.stderr.trim() || l10n.t("Couldn't push {0} back to {1}.", req.name, req.remote),
         };
   }
 
@@ -3471,7 +3500,7 @@ export class GitBridge {
   }
   async amAbort(): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: l10n.t("No repository open.") };
     const r = await ctx.process.run(["am", "--abort"]);
     if (r.code !== 0) {
       return { ok: false, changed: false, message: r.stderr.trim() || `git am --abort failed (${r.code}).` };
@@ -3482,9 +3511,9 @@ export class GitBridge {
       changed: true,
       ...(warned
         ? {
-            message:
-              "The patch series was abandoned, but HEAD had moved since it started, so git left it " +
-              "where it is rather than rewinding. Check the log before carrying on.",
+            message: l10n.t(
+              "The patch series was abandoned, but HEAD had moved since it started, so git left it where it is rather than rewinding. Check the log before carrying on.",
+            ),
           }
         : {}),
     };
@@ -3553,7 +3582,7 @@ export class GitBridge {
     run: (root: string, opts: ReturnType<RepoStore["runnerOptions"]>) => Promise<RebaseOutcome>,
   ): Promise<CommitActionResult> {
     const root = this.repos.current()?.root;
-    if (!root) return { ok: false, changed: false, expected: true, message: "No repository open." };
+    if (!root) return { ok: false, changed: false, expected: true, message: l10n.t("No repository open.") };
     return this.serialize(async () => {
       try {
         // The runner spawns git itself, so it has to be told which git and
@@ -3567,7 +3596,7 @@ export class GitBridge {
           ok: false,
           changed: true,
           expected: out.status === "stopped",
-          message: out.message ?? (out.status === "stopped" ? "Rebase paused." : "Rebase failed."),
+          message: out.message ?? (out.status === "stopped" ? l10n.t("Rebase paused.") : l10n.t("Rebase failed.")),
         };
       } catch (err) {
         return { ok: false, changed: false, message: err instanceof Error ? err.message : String(err) };
@@ -3582,8 +3611,8 @@ export class GitBridge {
   // publish. A verb you can only do in one direction is not a feature.
 
   tagCreate(req: { name: string; ref?: string; message?: string }): Promise<CommitActionResult> {
-    if (!safeArg(req.name)) return Promise.resolve(UNSAFE_REF_RESULT);
-    if (req.ref && !safeArg(req.ref)) return Promise.resolve(UNSAFE_REF_RESULT);
+    if (!safeArg(req.name)) return Promise.resolve(unsafeRefResult());
+    if (req.ref && !safeArg(req.ref)) return Promise.resolve(unsafeRefResult());
     return this.staged((ctx) =>
       ctx.tags.create(req.name, {
         ref: req.ref,
@@ -3595,7 +3624,7 @@ export class GitBridge {
 
   /** `git tag -d <name>` — local only; the remote copy outlives it. */
   async tagDelete(name: string): Promise<CommitActionResult & { was?: string }> {
-    if (!safeArg(name)) return UNSAFE_REF_RESULT;
+    if (!safeArg(name)) return unsafeRefResult();
     // What the ref points AT, read before it stops existing. Deliberately not
     // `<name>^{commit}`: an annotated tag is its own object carrying a message
     // and a tagger, and restoring the commit it names would silently turn an
@@ -3617,25 +3646,25 @@ export class GitBridge {
    * was there, whatever kind it was, so an annotated tag comes back annotated.
    */
   async tagRestore(req: { name: string; sha: string }): Promise<CommitActionResult> {
-    if (!safeArg(req.name) || !safeArg(req.sha)) return UNSAFE_REF_RESULT;
+    if (!safeArg(req.name) || !safeArg(req.sha)) return unsafeRefResult();
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository is open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: l10n.t("No repository is open.") };
     const exists = await ctx.process.run(["rev-parse", "--verify", `refs/tags/${req.name}`]);
     if (exists.code === 0) {
-      return { ok: false, changed: false, expected: true, message: `A tag named ${req.name} is there again.` };
+      return { ok: false, changed: false, expected: true, message: l10n.t("A tag named {0} is there again.", req.name) };
     }
     const r = await ctx.process.run(["update-ref", `refs/tags/${req.name}`, req.sha]);
     return r.code === 0
       ? { ok: true, changed: true }
-      : { ok: false, changed: false, expected: true, message: r.stderr.trim() || "Couldn't put the tag back." };
+      : { ok: false, changed: false, expected: true, message: r.stderr.trim() || l10n.t("Couldn't put the tag back.") };
   }
 
   /** `git push <remote> refs/tags/<name>` — publishing one tag, not `--tags`.
    *  Pushing every tag at once is a different, much larger action and must be
    *  asked for explicitly rather than ridden along with a single one. */
   tagPush(req: { name: string; remote?: string }): Promise<CommitActionResult> {
-    if (!safeArg(req.name)) return Promise.resolve(UNSAFE_REF_RESULT);
-    if (req.remote && !safeArg(req.remote)) return Promise.resolve(UNSAFE_REF_RESULT);
+    if (!safeArg(req.name)) return Promise.resolve(unsafeRefResult());
+    if (req.remote && !safeArg(req.remote)) return Promise.resolve(unsafeRefResult());
     return this.staged(async (ctx) => {
       // Not a hardcoded "origin". A fork clone, or a `git remote rename`, and
       // the Push button on every tag could only ever fail — with git's raw
@@ -3652,8 +3681,8 @@ export class GitBridge {
             ok: false,
             stderr:
               names.length === 0
-                ? `No remote is configured, so '${req.name}' can't be pushed.`
-                : `Several remotes are configured — name the one to push '${req.name}' to.`,
+                ? l10n.t("No remote is configured, so '{0}' can't be pushed.", req.name)
+                : l10n.t("Several remotes are configured — name the one to push '{0}' to.", req.name),
           };
         }
       }
@@ -3665,19 +3694,19 @@ export class GitBridge {
 
   async stageLines(req: { path: string; lines: number[]; reverse?: boolean }): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: l10n.t("No repository open.") };
     // Every other mutating path here proves the path stays inside the repo
     // before touching it (hunksStage, hunksList, conflictResolve). This one
     // wrote to the index from a renderer-supplied path without doing so.
     if (!containedPath(ctx.root, req.path)) {
-      return UNSAFE_REF_RESULT;
+      return unsafeRefResult();
     }
     return this.serialize(async () => {
       try {
         const rel = req.path;
         const ranges = linesToRanges(req.lines);
         if (!ranges.length)
-          return { ok: false, changed: false, expected: true, message: "No lines selected." };
+          return { ok: false, changed: false, expected: true, message: l10n.t("No lines selected.") };
         // Before reading anything: this path round-trips the file through a
         // string, which destroys a binary and follows a symlink.
         const safe = await lineStageable(ctx, rel);
@@ -3700,7 +3729,7 @@ export class GitBridge {
             const un = await ctx.staging.unstageFile(rel);
             return un.ok
               ? { ok: true, changed: true }
-              : { ok: false, changed: false, message: un.stderr.trim() || "Couldn't unstage the file." };
+              : { ok: false, changed: false, message: un.stderr.trim() || l10n.t("Couldn't unstage the file.") };
           }
         } else {
           // Stage: apply the selected working-tree changes onto the index.
@@ -3734,12 +3763,12 @@ export class GitBridge {
         if (req.reverse) {
           selection = toOriginalRanges(ranges, computeHunks(original, (await readWorking(ctx, rel)).text));
           if (!selection.length) {
-            return { ok: false, changed: false, message: "Nothing to apply in the selection." };
+            return { ok: false, changed: false, message: l10n.t("Nothing to apply in the selection.") };
           }
         }
         const sideOf = (h: (typeof hunks)[number]): LineRange => (req.reverse ? h.original : h.modified);
         const selected = hunks.filter((h) => selection.some((r) => rangesOverlap(sideOf(h), r)));
-        if (!selected.length) return { ok: false, changed: false, message: "Nothing to apply in the selection." };
+        if (!selected.length) return { ok: false, changed: false, message: l10n.t("Nothing to apply in the selection.") };
         const content = applySelectedChanges(original, modified, selected.map((h) => h.modified));
         // …and report what actually happened. This discarded stageContent's
         // result and answered ok:true unconditionally, so a write that failed
@@ -3755,7 +3784,7 @@ export class GitBridge {
           return {
             ok: false,
             changed: false,
-            message: wrote.stderr.trim() || "Couldn't update the index.",
+            message: wrote.stderr.trim() || l10n.t("Couldn't update the index."),
           };
         }
         return { ok: true, changed: true };
@@ -3790,9 +3819,9 @@ export class GitBridge {
    */
   async conflictResolve(req: { path: string; content: string }): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
-    if (!safePath(req.path)) return UNSAFE_PATH_RESULT;
-    if (typeof req.content !== "string") return { ok: false, changed: false, message: "Nothing to save." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: l10n.t("No repository open.") };
+    if (!safePath(req.path)) return unsafePathResult();
+    if (typeof req.content !== "string") return { ok: false, changed: false, message: l10n.t("Nothing to save.") };
     return this.serialize(async () => {
       try {
         // The advice names the buttons this renderer shows today.
@@ -3815,9 +3844,9 @@ export class GitBridge {
    */
   async conflictTakeSide(req: { path: string; side: "ours" | "theirs" }): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
-    if (!safePath(req.path)) return UNSAFE_PATH_RESULT;
-    if (req.side !== "ours" && req.side !== "theirs") return UNSAFE_PATH_RESULT;
+    if (!ctx) return { ok: false, changed: false, expected: true, message: l10n.t("No repository open.") };
+    if (!safePath(req.path)) return unsafePathResult();
+    if (req.side !== "ours" && req.side !== "theirs") return unsafePathResult();
     return this.serialize(async () => {
       try {
         return await ctx.conflictOps.takeStage(req.path, req.side === "ours" ? 2 : 3);
@@ -3866,10 +3895,10 @@ export class GitBridge {
   /** `conflict:takeRole` — Accept Yours / Accept Theirs (a role with no file deletes it). */
   async conflictTakeRole(req: { path: string; role: SideRole }): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
-    if (!safePath(req?.path)) return UNSAFE_PATH_RESULT;
+    if (!ctx) return { ok: false, changed: false, expected: true, message: l10n.t("No repository open.") };
+    if (!safePath(req?.path)) return unsafePathResult();
     if (req.role !== "yours" && req.role !== "theirs") {
-      return { ok: false, changed: false, message: "Choose Yours or Theirs." };
+      return { ok: false, changed: false, message: l10n.t("Choose Yours or Theirs.") };
     }
     return this.serialize(async () => {
       try {
@@ -3883,8 +3912,8 @@ export class GitBridge {
   /** `conflict:restore` — hold-to-undo / undo of an Apply: the conflict comes back. */
   async conflictRestore(req: { path: string }): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
-    if (!safePath(req?.path)) return UNSAFE_PATH_RESULT;
+    if (!ctx) return { ok: false, changed: false, expected: true, message: l10n.t("No repository open.") };
+    if (!safePath(req?.path)) return unsafePathResult();
     return this.serialize(async () => {
       try {
         return await ctx.conflictOps.restore(req.path);
@@ -3897,8 +3926,8 @@ export class GitBridge {
   /** `conflict:delete` — the one resolution of a file deleted on both sides. */
   async conflictDelete(req: { path: string }): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
-    if (!safePath(req?.path)) return UNSAFE_PATH_RESULT;
+    if (!ctx) return { ok: false, changed: false, expected: true, message: l10n.t("No repository open.") };
+    if (!safePath(req?.path)) return unsafePathResult();
     return this.serialize(async () => {
       try {
         return await ctx.conflictOps.deleteFile(req.path);
@@ -3937,7 +3966,7 @@ export class GitBridge {
         ok: false,
         refused: "not-allowed",
         expected: true,
-        message: "No repository open.",
+        message: l10n.t("No repository open."),
         view: noneOperationView(""),
         remainingConflicts: 0,
       };
@@ -4031,7 +4060,7 @@ async function lineStageable(
   rel: string,
 ): Promise<{ ok: true } | { ok: false; why: string }> {
   const abs = containedPath(ctx.root, rel);
-  if (!abs) return { ok: false, why: "That path is outside the repository." };
+  if (!abs) return { ok: false, why: l10n.t("That path is outside the repository.") };
   const safe = await textWriteSafe(abs, (what) =>
     what === "symlink"
       ? `${rel} is a symbolic link — stage it whole. Staging part of one would write a file's contents into the link.`

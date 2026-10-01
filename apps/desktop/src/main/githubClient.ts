@@ -5,6 +5,7 @@
 // The token is supplied by the caller (GitHubBridge reads it from safeStorage).
 
 import { ExpectedError } from "./expectedError";
+import * as l10n from "@vscode/l10n";
 import {
   githubHttpError,
   graphqlError,
@@ -49,7 +50,7 @@ export class GitHubClient {
   ): Promise<Response> {
     const token = this.getToken();
     if (!token) {
-      throw new ExpectedError("Not connected to GitHub.");
+      throw new ExpectedError(l10n.t("Not connected to GitHub."));
     }
     const headers: Record<string, string> = {
       Authorization: `Bearer ${token}`,
@@ -160,7 +161,7 @@ export class GitHubClient {
   ): Promise<void> {
     const token = this.getToken();
     if (!token) {
-      throw new ExpectedError("Not connected to GitHub.");
+      throw new ExpectedError(l10n.t("Not connected to GitHub."));
     }
     let res: Response;
     try {
@@ -191,7 +192,7 @@ export class GitHubClient {
   async requestBody(method: string, path: string, body: unknown): Promise<void> {
     const token = this.getToken();
     if (!token) {
-      throw new ExpectedError("Not connected to GitHub.");
+      throw new ExpectedError(l10n.t("Not connected to GitHub."));
     }
     // Wrapped for the same reason `request` is: an unwrapped fetch lets a bare
     // `TypeError: fetch failed` escape to the crash reporter, so going offline
@@ -233,7 +234,7 @@ export class GitHubClient {
   ): Promise<T> {
     const token = this.getToken();
     if (!token) {
-      throw new ExpectedError("Not connected to GitHub.");
+      throw new ExpectedError(l10n.t("Not connected to GitHub."));
     }
     let res: Response;
     try {

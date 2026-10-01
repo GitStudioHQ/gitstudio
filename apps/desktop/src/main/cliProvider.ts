@@ -11,6 +11,7 @@
 // grounded in the repo it's run inside.
 
 import { spawn } from "node:child_process";
+import * as l10n from "@vscode/l10n";
 import { AiError, type ChatMessage, type ChatOptions, type ChatResult, type ModelTier, type Provider } from "@gitstudio/ai/index";
 
 /** How to invoke one CLI in non-interactive "print" mode. */
@@ -40,7 +41,13 @@ export const CLI_SPECS: Record<string, CliSpec> = {
     // connecting to a dozen remote MCP servers on every call is a big, variable
     // chunk of the cold-start latency. Claude Code's own Bash/Read/etc. stay.
     args: (prompt, model) => ["-p", "--strict-mcp-config", ...(model ? ["--model", model] : []), prompt],
-    install: "Install Claude Code and run `claude login` (docs.anthropic.com/claude-code).",
+    // A getter, not a plain string: this whole table is a module-level constant,
+    // read before boot() configures the l10n bundle (main/language.ts) — a
+    // plain `l10n.t()` call here would freeze to English. A getter defers the
+    // call to the moment something actually reads `.install`.
+    get install() {
+      return l10n.t("Install Claude Code and run `claude login` (docs.anthropic.com/claude-code).");
+    },
     // Claude Code's stream-json + partial messages emits token-level text deltas.
     streamArgs: (prompt, model) => [
       "-p",
@@ -85,12 +92,16 @@ export const CLI_SPECS: Record<string, CliSpec> = {
   codex: {
     command: "codex",
     args: (prompt, model) => ["exec", ...(model ? ["--model", model] : []), prompt],
-    install: "Install the Codex CLI and sign in (github.com/openai/codex).",
+    get install() {
+      return l10n.t("Install the Codex CLI and sign in (github.com/openai/codex).");
+    },
   },
   "gemini-cli": {
     command: "gemini",
     args: (prompt, model) => ["-p", ...(model ? ["--model", model] : []), prompt],
-    install: "Install the Gemini CLI and sign in (github.com/google-gemini/gemini-cli).",
+    get install() {
+      return l10n.t("Install the Gemini CLI and sign in (github.com/google-gemini/gemini-cli).");
+    },
   },
 };
 
@@ -158,7 +169,7 @@ export class CliProvider implements Provider {
   ): Promise<void> {
     const spec = CLI_SPECS[this.opts.preset];
     if (!spec) {
-      return Promise.reject(new AiError(`Unknown local CLI: ${this.opts.preset}.`));
+      return Promise.reject(new AiError(l10n.t("Unknown local CLI: {0}.", this.opts.preset)));
     }
     const prompt = withThinking(flatten(messages), opts.thinking);
     const model = (opts.modelId ?? this.opts.resolveModel(opts.model));
@@ -176,7 +187,7 @@ export class CliProvider implements Provider {
           stdio: ["ignore", "pipe", "pipe"],
         });
       } catch {
-        reject(new AiError(`Couldn't launch \`${spec.command}\`. ${spec.install}`));
+        reject(new AiError(l10n.t("Couldn't launch `{0}`. {1}", spec.command, spec.install)));
         return;
       }
 
@@ -218,7 +229,9 @@ export class CliProvider implements Provider {
           if (!streamedAny && final) onChunk(final.replace(ANSI, ""));
           if (code === 0 || streamedAny || final) return resolve();
           const detail = stderr.trim().split("\n").slice(-3).join(" ").slice(0, 300);
-          reject(new AiError(`\`${spec.command}\` exited with code ${code}${detail ? `: ${detail}` : "."}`));
+          reject(new AiError(detail
+            ? l10n.t("`{0}` exited with code {1}: {2}", spec.command, String(code), detail)
+            : l10n.t("`{0}` exited with code {1}.", spec.command, String(code))));
         });
       } else {
         child.stdout.on("data", (d: string) => onChunk(d.replace(ANSI, "")));
@@ -227,7 +240,9 @@ export class CliProvider implements Provider {
           if (opts.signal?.aborted) return resolve();
           if (code === 0) return resolve();
           const detail = stderr.trim().split("\n").slice(-3).join(" ").slice(0, 300);
-          reject(new AiError(`\`${spec.command}\` exited with code ${code}${detail ? `: ${detail}` : "."}`));
+          reject(new AiError(detail
+            ? l10n.t("`{0}` exited with code {1}: {2}", spec.command, String(code), detail)
+            : l10n.t("`{0}` exited with code {1}.", spec.command, String(code))));
         });
       }
       child.stderr.setEncoding("utf8");
@@ -236,9 +251,9 @@ export class CliProvider implements Provider {
       child.on("error", (err: NodeJS.ErrnoException) => {
         opts.signal?.removeEventListener("abort", onAbort);
         if (err.code === "ENOENT") {
-          reject(new AiError(`The \`${spec.command}\` CLI isn't installed or not on PATH. ${spec.install}`));
+          reject(new AiError(l10n.t("The `{0}` CLI isn't installed or not on PATH. {1}", spec.command, spec.install)));
         } else {
-          reject(new AiError(`\`${spec.command}\` failed to start: ${err.message}`));
+          reject(new AiError(l10n.t("`{0}` failed to start: {1}", spec.command, err.message)));
         }
       });
     });

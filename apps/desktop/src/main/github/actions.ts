@@ -14,6 +14,7 @@
 // is REST-only — so this module deliberately never touches `graphql()`.
 
 import { access, writeFile } from "node:fs/promises";
+import * as l10n from "@vscode/l10n";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { GitHubClient, enc, type TokenGetter } from "../githubClient";
@@ -106,7 +107,7 @@ function mapVariable(v: RawVariable): RepoVariableInfo {
  *  closure field; we reach it through a typed view rather than widening to `any`. */
 function bearer(client: GitHubClient): string {
   const token = (client as unknown as { getToken: TokenGetter }).getToken();
-  if (!token) throw new ExpectedError("Not connected to GitHub.");
+  if (!token) throw new ExpectedError(l10n.t("Not connected to GitHub."));
   return token;
 }
 
@@ -146,12 +147,12 @@ async function fetchSignedRedirect(
   // undici surfaces the real 3xx (not an opaque response) with a readable Location.
   if (res.status >= 300 && res.status < 400) {
     const loc = res.headers.get("location");
-    if (!loc) throw new Error("GitHub returned a redirect with no location.");
+    if (!loc) throw new Error(l10n.t("GitHub returned a redirect with no location."));
     try {
       res = await fetch(loc, { signal: AbortSignal.timeout(timeoutMs) });
     } catch {
       throw networkError(
-        "Couldn't download from GitHub's storage. Check your network connection.",
+        l10n.t("Couldn't download from GitHub's storage. Check your network connection."),
       );
     }
   }
@@ -292,7 +293,7 @@ export async function saveLog(
     const text = await jobLog(client, owner, repo, { jobId: req.jobId });
     const dest = await uniqueDownloadPath(safeFileName(req.name || `job-${req.jobId}`) + ".log");
     await writeFile(dest, text, "utf8");
-    return { ok: true, changed: false, message: `Saved to ${dest}` };
+    return { ok: true, changed: false, message: l10n.t("Saved to {0}", dest) };
   } catch (err) {
     return { ok: false, changed: false, ...errorFields(err) };
   }
@@ -444,7 +445,7 @@ export async function downloadArtifact(
     const bytes = Buffer.from(await res.arrayBuffer());
     const dest = await uniqueDownloadPath(safeFileName(req.name) + ".zip");
     await writeFile(dest, bytes);
-    return ok(`Saved to ${dest}`);
+    return ok(l10n.t("Saved to {0}", dest));
   } catch (err) {
     return fail(err);
   }
@@ -471,7 +472,7 @@ export async function setSecret(
     // out of the crash reporter (see main/expectedError.ts).
     expected: true,
     message:
-      "Creating or updating secrets needs the libsodium encryption library, which isn't bundled in this build. You can still delete secrets here; to add one, use github.com for now.",
+      l10n.t("Creating or updating secrets needs the libsodium encryption library, which isn't bundled in this build. You can still delete secrets here; to add one, use github.com for now."),
   };
 }
 

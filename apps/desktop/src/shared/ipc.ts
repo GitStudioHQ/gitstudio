@@ -5,6 +5,7 @@
 // them through `window.gitstudio`). It is TYPE-ONLY and imports nothing
 // host-specific, so the renderer (browser) and main (Node) bundles both carry it.
 
+import type { LanguageSetting, LanguageView } from "./languages";
 import type {
   WireRow,
   RowStat,
@@ -2549,6 +2550,11 @@ export interface IpcChannels {
   "repos:deleteEmptyFolder": [string, OkResult];
   // ── App info + updates ──
   "app:info": [void, { version: string; platform: string }];
+  /** Settings ▸ Appearance ▸ Language (main/language.ts); a change applies at the next start. */
+  "language:get": [void, LanguageView];
+  "language:set": [LanguageSetting, LanguageView];
+  /** Quit and start again — to apply a new language. */
+  "app:relaunch": [void, void];
   /**
    * Is the git the app runs there, and does it work? The desktop app does not
    * bundle git, so this is the first thing the window asks. The launch answer

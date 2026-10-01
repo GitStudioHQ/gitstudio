@@ -13,7 +13,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { SUPPORT_LEAD, SUPPORT_LINKS, SUPPORT_SENTENCE } from "../src/shared/support";
+import { SUPPORT_LINKS, supportLead, supportSentence } from "../src/shared/support";
 import { supportMenuItems } from "../src/main/supportMenu";
 
 const SPONSOR = "https://github.com/sponsors/antonarnaudov";
@@ -27,8 +27,8 @@ test("the two ways, in the READMEs' words, to exactly the two pages", () => {
       ["coffee", COFFEE, "coffee", "Buy me a coffee", "a one-off tip"],
     ],
   );
-  assert.equal(SUPPORT_SENTENCE, "GitStudio is free and open source. If it saves you time, you can support it.");
-  assert.equal(SUPPORT_LEAD, "GitStudio is free and open source.");
+  assert.equal(supportSentence(), "GitStudio is free and open source. If it saves you time, you can support it.");
+  assert.equal(supportLead(), "GitStudio is free and open source.");
   // The same pages as the repository's own Sponsor button.
   const funding = readFileSync(join(__dirname, "..", "..", "..", ".github", "FUNDING.yml"), "utf8");
   assert.match(funding, /^github: \[antonarnaudov\]$/m);
@@ -61,9 +61,9 @@ test("main.ts puts them in Help, between Report an Issue and the crash-report sw
   const src = readFileSync(join(__dirname, "..", "src", "main", "main.ts"), "utf8");
   const help = src.slice(src.indexOf('role: "help"'), src.indexOf("Menu.setApplicationMenu"));
   assert.ok(help.length > 0, "the Help menu is where it was");
-  const report = help.indexOf('label: "Report an Issue"');
+  const report = help.indexOf('label: l10n.t("Report an Issue")');
   const support = help.indexOf("...supportMenuItems(openExternalSafely)");
-  const crash = help.indexOf('label: "Send Anonymous Crash Reports"');
+  const crash = help.indexOf('label: l10n.t("Send Anonymous Crash Reports")');
   assert.ok(report >= 0 && support > report && crash > support, "Report an Issue, then support, then crash reports");
   // A separator on each side: a group of its own.
   const between = (a: number, b: number) => help.slice(a, b).match(/type: "separator"/g)?.length ?? 0;

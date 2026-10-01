@@ -18,6 +18,7 @@
 //   repo/<owner>/<name>   a repository page   (E4 fills this in)
 //   user/<login> · org/<login>                (E4 fills these in)
 
+import * as l10n from "@vscode/l10n";
 import { host } from "./../bridge";
 import { gget, peek } from "./../cache";
 import { toast } from "./../dialogs";
@@ -77,10 +78,10 @@ import { perTab } from "../tabState";
 type Tab = "repos" | "users" | "orgs" | "code";
 
 const TABS: ReadonlyArray<{ id: Tab; label: string; icon: string }> = [
-  { id: "repos", label: "Repositories", icon: "repo" },
-  { id: "users", label: "People", icon: "person" },
-  { id: "orgs", label: "Organizations", icon: "organization" },
-  { id: "code", label: "Code", icon: "code" },
+  { id: "repos", label: l10n.t("Repositories"), icon: "repo" },
+  { id: "users", label: l10n.t("People"), icon: "person" },
+  { id: "orgs", label: l10n.t("Organizations"), icon: "organization" },
+  { id: "code", label: l10n.t("Code"), icon: "code" },
 ];
 
 // ── Section state (survives list ⇄ detail round trips, like the other views) ──
@@ -196,23 +197,23 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
   // ── search-first header ──
   const head = el("div", "explore-head");
   const title = el("h1", "explore-title");
-  title.textContent = "Search";
+  title.textContent = l10n.t("Search");
   const sub = el("div", "explore-sub");
   sub.textContent =
     S.scope === "local"
-      ? "Your repositories on this machine — names, folders and origins."
-      : "Repositories, people, organizations and code — all of GitHub, opened here.";
+      ? l10n.t("Your repositories on this machine — names, folders and origins.")
+      : l10n.t("Repositories, people, organizations and code — all of GitHub, opened here.");
 
   // One search system, two worlds. The toggle flips the SAME query into the
   // other world, so a search is never retyped — and the local side is the free
   // one: no network, no sign-in, exactly what the machine can answer alone.
   const scopeSeg = segmented<"local" | "github">({
     options: [
-      { value: "local", label: "This machine" },
-      { value: "github", label: "On GitHub" },
+      { value: "local", label: l10n.t("This machine") },
+      { value: "github", label: l10n.t("On GitHub") },
     ],
     value: S.scope,
-    ariaLabel: "Search scope",
+    ariaLabel: l10n.t("Search scope"),
     onChange: (v) => {
       S.scope = v;
       S.pages = 1;
@@ -225,14 +226,14 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
   const field = searchField({
     placeholder:
       S.scope === "local"
-        ? "Search your repositories — name, folder or origin"
+        ? l10n.t("Search your repositories — name, folder or origin")
         : S.tab === "code"
-        ? "Search code — press Enter (code search is rate-limited)"
+        ? l10n.t("Search code — press Enter (code search is rate-limited)")
         : S.tab === "repos"
-          ? "Search repositories — try  stars:>1000 language:TypeScript"
+          ? l10n.t("Search repositories — try  stars:>1000 language:TypeScript")
           : S.tab === "orgs"
-            ? "Search organizations…"
-            : "Search people…",
+            ? l10n.t("Search organizations…")
+            : l10n.t("Search people…"),
     initial: S.query,
     autofocus: true,
     // Code search costs 10× more of the budget, so it never fires on a
@@ -284,9 +285,9 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
   if (S.scope === "github" && S.tab === "repos") {
     const sortBtn = el("button", "mini-btn explore-sort");
     const sortLabel = (s: SearchSort): string =>
-      s === "stars" ? "Most stars" : s === "updated" ? "Recently updated" : "Best match";
+      s === "stars" ? l10n.t("Most stars") : s === "updated" ? l10n.t("Recently updated") : l10n.t("Best match");
     sortBtn.append(glyph("sort-precedence"), span(sortLabel(S.repoSort)), glyph("chevron-down"));
-    sortBtn.title = "Sort results";
+    sortBtn.title = l10n.t("Sort results");
     sortBtn.addEventListener("click", () =>
       openMenu(
         sortBtn,
@@ -428,8 +429,8 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
       // however many pages of scanning you had done and its Retry started
       // again from page 1.
       const failed = errorState(
-        "Search failed",
-        cleanErr(e) || "GitHub couldn't answer that search.",
+        l10n.t("Search failed"),
+        cleanErr(e) || l10n.t("GitHub couldn't answer that search."),
         () => void run(append),
       );
       if (append) {
@@ -456,7 +457,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
     const items = result.items;
     if (first && items.length === 0) {
       listEl.replaceChildren(
-        emptyState("No results", `Nothing on GitHub matches “${S.query}”.`, {
+        emptyState(l10n.t("No results"), l10n.t("Nothing on GitHub matches “{0}”.", S.query), {
           icon: "search",
           anchor: "inline",
         }),
@@ -596,14 +597,14 @@ function repoRow(r: SearchRepoItem, nav: SectionNav): HTMLElement {
     title: r.fullName,
     titleSuffix: [
       ...(have ? [whereChip("local")] : []),
-      ...(r.archived ? [pill("archived")] : []),
+      ...(r.archived ? [pill(l10n.t("archived"))] : []),
       ...(r.license ? [pill(r.license)] : []),
     ],
     sub: r.description ?? undefined,
     meta,
     time: relTimeISO(r.pushedAt || r.updatedAt),
-    timeTitle: r.pushedAt ? `Last pushed ${r.pushedAt}` : undefined,
-    ariaLabel: `Repository ${r.fullName}`,
+    timeTitle: r.pushedAt ? l10n.t("Last pushed {0}", r.pushedAt) : undefined,
+    ariaLabel: l10n.t("Repository {0}", r.fullName),
     // E4 turns this into the full in-app repository page.
     onOpen: () => nav("explore", { id: `repo/${r.fullName}` }),
     // One verb and the shared ⌄, the way the Repositories screen and the
@@ -618,20 +619,20 @@ function repoRow(r: SearchRepoItem, nav: SectionNav): HTMLElement {
     actions: [
       have
         ? {
-            label: "Open",
-            title: `Already cloned at ${have.root}`,
-            ariaLabel: `Open ${r.fullName}`,
+            label: l10n.t("Open"),
+            title: l10n.t("Already cloned at {0}", have.root),
+            ariaLabel: l10n.t("Open {0}", r.fullName),
             run: () => void openLocal(have, nav),
           }
         : {
-            label: "Open",
-            title: `Clone ${r.fullName} if needed, then open it`,
-            ariaLabel: `Open ${r.fullName}`,
+            label: l10n.t("Open"),
+            title: l10n.t("Clone {0} if needed, then open it", r.fullName),
+            ariaLabel: l10n.t("Open {0}", r.fullName),
             run: () => openGhRepoInApp(r.fullName),
           },
       {
-        title: `More actions for ${r.fullName}`,
-        ariaLabel: `More actions for ${r.fullName}`,
+        title: l10n.t("More actions for {0}", r.fullName),
+        ariaLabel: l10n.t("More actions for {0}", r.fullName),
         // A row that says "on this machine" must not offer to choose where to
         // clone it: that is a question about a copy you already have. Cloning
         // stays reachable there, but BY NAME, so it cannot be mistaken for the
@@ -640,7 +641,7 @@ function repoRow(r: SearchRepoItem, nav: SectionNav): HTMLElement {
           ...(have
             ? [
                 {
-                  label: "Show in Finder",
+                  label: l10n.t("Show in Finder"),
                   sub: middlePath(have.root),
                   icon: "folder-opened",
                   onClick: () => void host.invoke("repos:reveal", have.root),
@@ -648,15 +649,15 @@ function repoRow(r: SearchRepoItem, nav: SectionNav): HTMLElement {
               ]
             : [
                 {
-                  label: "Choose location…",
-                  sub: "Pick the folder it's cloned into",
+                  label: l10n.t("Choose location…"),
+                  sub: l10n.t("Pick the folder it's cloned into"),
                   icon: "root-folder",
                   onClick: () => openGhRepoChooseLocation(r.fullName),
                 },
               ]),
           {
-            label: have ? "Clone another copy…" : "Clone…",
-            sub: have ? `You already have this at ${have.root}` : undefined,
+            label: have ? l10n.t("Clone another copy…") : l10n.t("Clone…"),
+            sub: have ? l10n.t("You already have this at {0}", have.root) : undefined,
             icon: "repo-clone",
             onClick: () =>
               openCloneDialog((root) => host.invoke("repo:openPath", root), {
@@ -665,15 +666,15 @@ function repoRow(r: SearchRepoItem, nav: SectionNav): HTMLElement {
           },
           { separator: true },
           {
-            label: "Open on GitHub",
+            label: l10n.t("Open on GitHub"),
             icon: "link-external",
             onClick: () => window.open(r.htmlUrl, "_blank", "noopener"),
           },
           {
-            label: "Copy clone URL",
+            label: l10n.t("Copy clone URL"),
             icon: "copy",
             onClick: () =>
-              void copyText(`https://github.com/${r.fullName}.git`, "Clone URL copied."),
+              void copyText(`https://github.com/${r.fullName}.git`, l10n.t("Clone URL copied.")),
           },
         ],
       },
@@ -728,11 +729,19 @@ async function runLocal(
   if (!scored.length) {
     // A dead end here is one keypress from the other world: the door carries
     // the query with it, so nothing is retyped.
-    const empty = emptyState("Nothing on this machine", `No repository name, folder or origin matches “${q}”.`, {
-      icon: "search",
-      anchor: "inline",
-      action: { label: `Search GitHub for “${q}”`, icon: "github", onClick: () => searchGitHubInstead(q) },
-    });
+    const empty = emptyState(
+      l10n.t("Nothing on this machine"),
+      l10n.t("No repository name, folder or origin matches “{0}”.", q),
+      {
+        icon: "search",
+        anchor: "inline",
+        action: {
+          label: l10n.t("Search GitHub for “{0}”", q),
+          icon: "github",
+          onClick: () => searchGitHubInstead(q),
+        },
+      },
+    );
     listEl.replaceChildren(empty);
     return;
   }
@@ -756,14 +765,14 @@ function localCanvas(copies: LocalCopy[], nav: SectionNav): HTMLElement[] {
   );
   for (const [band, list] of ordered) {
     const label = el("div", "explore-local-band");
-    label.textContent = band ? shortenHome(band) : "Opened from elsewhere";
+    label.textContent = band ? shortenHome(band) : l10n.t("Opened from elsewhere");
     out.push(label);
     const { loose, groups } = splitBand(band, list, (c) => c.group ?? "");
     for (const c of loose) out.push(localHitRow(c, nav));
     for (const g of groups) for (const c of g.items) out.push(localHitRow(c, nav));
   }
   const manage = el("button", "mini-btn explore-local-manage");
-  manage.append(glyph("repo"), span("Manage in Repositories"));
+  manage.append(glyph("repo"), span(l10n.t("Manage in Repositories")));
   manage.addEventListener("click", () => nav("repositories"));
   out.push(manage);
   return out;
@@ -784,35 +793,35 @@ function localHitRow(c: LocalCopy, nav: SectionNav): HTMLElement {
     lead: glyph(c.current ? "check" : "repo"),
     title: c.name,
     titleSuffix: [
-      ...(c.current ? [pill("open")] : []),
-      ...(c.worktreeOf ? [pill("worktree")] : []),
+      ...(c.current ? [pill(l10n.t("open"))] : []),
+      ...(c.worktreeOf ? [pill(l10n.t("worktree"))] : []),
     ],
     sub: sub || undefined,
     meta: [],
-    ariaLabel: `Repository ${c.name} on this machine`,
+    ariaLabel: l10n.t("Repository {0} on this machine", c.name),
     onOpen: () => void openLocal(c, nav),
     actions: [
       {
-        label: "Open",
-        title: `Open ${c.root}`,
-        ariaLabel: `Open ${c.name}`,
+        label: l10n.t("Open"),
+        title: l10n.t("Open {0}", c.root),
+        ariaLabel: l10n.t("Open {0}", c.name),
         run: () => void openLocal(c, nav),
       },
       {
-        title: `More actions for ${c.name}`,
-        ariaLabel: `More actions for ${c.name}`,
+        title: l10n.t("More actions for {0}", c.name),
+        ariaLabel: l10n.t("More actions for {0}", c.name),
         menu: () => [
           {
-            label: "Show in Finder",
+            label: l10n.t("Show in Finder"),
             sub: middlePath(c.root),
             icon: "folder-opened",
             onClick: () => void host.invoke("repos:reveal", c.root),
           },
           {
-            label: "Copy path",
+            label: l10n.t("Copy path"),
             sub: middlePath(c.root),
             icon: "copy",
-            onClick: () => void copyText(c.root, "Path copied."),
+            onClick: () => void copyText(c.root, l10n.t("Path copied.")),
           },
         ],
       },
@@ -834,21 +843,21 @@ function userRow(u: SearchUserItem, nav: SectionNav): HTMLElement {
   return exploreRow({
     lead: avatar(u.login, u.avatarUrl, 28),
     title: u.login,
-    titleSuffix: isOrg ? [pill("org")] : [],
+    titleSuffix: isOrg ? [pill(l10n.t("org"))] : [],
     extraClass: "explore-person-row",
-    ariaLabel: `${isOrg ? "Organization" : "User"} ${u.login}`,
+    ariaLabel: isOrg ? l10n.t("Organization {0}", u.login) : l10n.t("User {0}", u.login),
     onOpen: () => nav("explore", { id: `${isOrg ? "org" : "user"}/${u.login}` }),
     actions: [
       {
-        label: "Profile",
-        title: `A quick look at @${u.login}`,
-        ariaLabel: `A quick look at ${u.login}`,
+        label: l10n.t("Profile"),
+        title: l10n.t("A quick look at @{0}", u.login),
+        ariaLabel: l10n.t("A quick look at {0}", u.login),
         run: () => openPeek(memberCard({ login: u.login, avatarUrl: u.avatarUrl, htmlUrl: u.htmlUrl })),
       },
       {
-        label: "GitHub",
-        title: "Open on github.com",
-        ariaLabel: `Open ${u.login} on github.com`,
+        label: l10n.t("GitHub"),
+        title: l10n.t("Open on github.com"),
+        ariaLabel: l10n.t("Open {0} on github.com", u.login),
         run: () => window.open(u.htmlUrl, "_blank", "noopener"),
       },
     ],
@@ -884,7 +893,7 @@ function codeRow(c: SearchCodeItem, nav: SectionNav): HTMLElement {
   const row = exploreRow({
     lead: glyph("file-code"),
     title: c.path,
-    ariaLabel: `${c.path} in ${c.repoFullName}`,
+    ariaLabel: l10n.t("{0} in {1}", c.path, c.repoFullName),
     sub: c.repoFullName,
     // Open the FILE you found, not the repository it happens to live in. This
     // navigated to `repo/<fullName>` and threw `c.path` away — so a code search,
@@ -897,9 +906,9 @@ function codeRow(c: SearchCodeItem, nav: SectionNav): HTMLElement {
     extraClass: "explore-code-row",
     actions: [
       {
-        label: "GitHub",
-        title: "Open this file on github.com",
-        ariaLabel: `Open ${c.path} in ${c.repoFullName} on github.com`,
+        label: l10n.t("GitHub"),
+        title: l10n.t("Open this file on github.com"),
+        ariaLabel: l10n.t("Open {0} in {1} on github.com", c.path, c.repoFullName),
         run: () => window.open(c.htmlUrl, "_blank", "noopener"),
       },
     ],
@@ -972,14 +981,16 @@ function rowActions(actions: RowAction[]): HTMLElement {
 
 function startState(): HTMLElement {
   // The header subtitle already makes the pitch; this says what to DO.
-  return emptyState("Start typing to search", "Try a name, an owner, or a qualifier like stars:>1000.", {
-    icon: "telescope",
-  });
+  return emptyState(
+    l10n.t("Start typing to search"),
+    l10n.t("Try a name, an owner, or a qualifier like stars:>1000."),
+    { icon: "telescope" },
+  );
 }
 
 function loadingMore(): HTMLElement {
   const d = el("div", "explore-loading-more");
-  d.append(glyph("sync"), span("Loading more…"));
+  d.append(glyph("sync"), span(l10n.t("Loading more…")));
   return d;
 }
 
@@ -988,9 +999,9 @@ function limitedState(retryInMs: number, retry: () => void): HTMLElement {
   const secs = (ms: number): number => Math.max(0, Math.ceil(ms / 1000));
   const line = (n: number): string =>
     n > 0
-      ? `GitHub allows a limited number of searches per minute. Trying again in ${n}s.`
-      : `GitHub allows a limited number of searches per minute. Trying again now…`;
-  const wrap = emptyState("Search is catching its breath", line(secs(retryInMs)), {
+      ? l10n.t("GitHub allows a limited number of searches per minute. Trying again in {0}s.", n)
+      : l10n.t("GitHub allows a limited number of searches per minute. Trying again now…");
+  const wrap = emptyState(l10n.t("Search is catching its breath"), line(secs(retryInMs)), {
     icon: "watch",
   });
   // A marker only — there is no `.explore-limited` rule and there should not
@@ -998,7 +1009,7 @@ function limitedState(retryInMs: number, retry: () => void): HTMLElement {
   // limit is the one empty state a check needs to tell apart from "no results".
   wrap.classList.add("explore-limited");
   const btn = el("button", "btn btn-soft list-empty-action");
-  btn.append(glyph("sync"), span("Retry now"));
+  btn.append(glyph("sync"), span(l10n.t("Retry now")));
   btn.addEventListener("click", retry);
   wrap.appendChild(btn);
 
@@ -1024,15 +1035,15 @@ function footer(result: SearchPage<unknown>, more: () => void): HTMLElement {
   const f = el("div", "explore-footer");
   const bits: string[] = [];
   const total = result.totalCount;
-  bits.push(`${total.toLocaleString()} ${total === 1 ? "match" : "matches"}`);
-  if (total > 1000) bits.push("GitHub serves the first 1,000");
-  if (result.incomplete) bits.push("GitHub timed out and returned partial results");
+  bits.push(total === 1 ? l10n.t("1 match") : l10n.t("{0} matches", total.toLocaleString()));
+  if (total > 1000) bits.push(l10n.t("GitHub serves the first 1,000"));
+  if (result.incomplete) bits.push(l10n.t("GitHub timed out and returned partial results"));
   const note = el("div", "explore-footer-note");
   note.append(glyph("info"), span(bits.join(" · ")));
   f.appendChild(note);
   if (result.hasMore) {
     const btn = el("button", "btn btn-soft explore-more");
-    btn.append(glyph("chevron-down"), span("Load more"));
+    btn.append(glyph("chevron-down"), span(l10n.t("Load more")));
     btn.addEventListener("click", () => more());
     f.appendChild(btn);
   }
@@ -1042,5 +1053,5 @@ function footer(result: SearchPage<unknown>, more: () => void): HTMLElement {
 /** Toast helper kept for future entity pages (E4) — exported so the module's
  *  error path stays consistent with the rest of the app. */
 export function exploreError(e: unknown): void {
-  toast(cleanErr(e) || "GitHub request failed.", "error");
+  toast(cleanErr(e) || l10n.t("GitHub request failed."), "error");
 }

@@ -9,6 +9,7 @@ import { host } from "./bridge";
 import { openModal, toast } from "./dialogs";
 import { el, span, glyph, cleanErr } from "./ui";
 import { validateTargetName } from "../shared/cloneName";
+import * as l10n from "@vscode/l10n";
 
 export function openDestinationSheet(
   fullName: string,
@@ -33,10 +34,10 @@ export function openDestinationSheet(
   let dest = opts.dest ?? "";
 
   const title = el("div", "modal-title");
-  title.textContent = `Where should ${fullName} go?`;
+  title.textContent = l10n.t("Where should {0} go?", fullName);
 
   const sub = el("div", "modal-message");
-  sub.textContent = opts.note ?? "Pick the folder this repository is cloned into.";
+  sub.textContent = opts.note ?? l10n.t("Pick the folder this repository is cloned into.");
 
   // Destination row — the same look as the clone dialog's, which means the same
   // CLASSES. `.clone-dest` and `.clone-dest-text` have no rules anywhere in the
@@ -44,14 +45,14 @@ export function openDestinationSheet(
   // top of each other and "Choose…" sat under them instead of beside them. The
   // styled control is `.clone-dest-control`.
   const destLabel = el("div", "clone-dest-label");
-  destLabel.textContent = "Destination";
+  destLabel.textContent = l10n.t("Destination");
   const destValue = el("div", "clone-dest-path");
   // A seeded destination is shown as ITSELF, not as "Loading…" — the settings
   // read below must not overwrite one the caller supplied.
-  destValue.textContent = opts.dest || "Loading…";
+  destValue.textContent = opts.dest || l10n.t("Loading…");
   if (opts.dest) destValue.title = opts.dest;
   const chooseBtn = el("button", "mini-btn");
-  chooseBtn.append(glyph("folder-opened"), span("Choose…"));
+  chooseBtn.append(glyph("folder-opened"), span(l10n.t("Choose…")));
   const destControl = el("div", "clone-dest-control");
   destControl.append(destValue, chooseBtn);
   const destRow = el("div", "clone-field");
@@ -59,23 +60,23 @@ export function openDestinationSheet(
 
   // Folder-name override.
   const nameLabel = el("div", "clone-dest-label dest-name-label");
-  nameLabel.textContent = "Folder name";
+  nameLabel.textContent = l10n.t("Folder name");
   const nameInput = document.createElement("input");
   nameInput.className = "modal-input dest-name-input";
   nameInput.placeholder = repo;
   nameInput.value = opts.name ?? "";
   nameInput.spellcheck = false;
   nameInput.autocapitalize = "off";
-  nameInput.setAttribute("aria-label", "Folder name");
+  nameInput.setAttribute("aria-label", l10n.t("Folder name"));
   const nameError = el("div", "dest-name-error");
   nameError.hidden = true;
 
   const actions = el("div", "modal-actions");
   const cancel = el("button", "mini-btn");
-  cancel.textContent = "Cancel";
+  cancel.textContent = l10n.t("Cancel");
   cancel.addEventListener("click", () => close());
   const go = el("button", "btn btn-primary modal-ok");
-  go.textContent = "Clone here";
+  go.textContent = l10n.t("Clone here");
   go.setAttribute("disabled", "true");
   actions.append(cancel, go);
 
@@ -102,7 +103,7 @@ export function openDestinationSheet(
           refresh();
         }
       } catch (e) {
-        toast(cleanErr(e) || "Couldn't choose a folder.", "error");
+        toast(cleanErr(e) || l10n.t("Couldn't choose a folder."), "error");
       }
     })();
   });
@@ -126,7 +127,7 @@ export function openDestinationSheet(
     return {
       card,
       focusEl: nameInput,
-      label: `Choose where ${fullName} goes`,
+      label: l10n.t("Choose where {0} goes", fullName),
       // Same veto as the clone dialog it follows: any file saved in the open
       // repository fires the watcher, and the overlay sweep that follows was
       // taking this sheet down with a destination chosen and a folder name
@@ -151,6 +152,6 @@ export function openDestinationSheet(
     .catch(() => {
       // …and not over a destination the caller gave us. The `if (!dest)` guard
       // above protects the success path; this one protects the failure path.
-      if (!dest) destValue.textContent = "Choose a folder…";
+      if (!dest) destValue.textContent = l10n.t("Choose a folder…");
     });
 }

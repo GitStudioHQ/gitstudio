@@ -41,3 +41,10 @@ const bridge: GitStudioBridge = {
 };
 
 contextBridge.exposeInMainWorld("gitstudio", bridge);
+
+// The language bundle main loaded (main/language.ts), in place before the
+// page's first script: renderer.ts's first import, @gitstudio/l10n/webview,
+// hands it to @vscode/l10n. Nothing at all in English.
+const l10n = ipcRenderer.sendSync("l10n:bundle") as { locale?: string; bundle?: unknown } | undefined;
+if (l10n?.bundle && typeof l10n.bundle === "object") contextBridge.exposeInMainWorld("__gitstudioL10n", l10n.bundle);
+contextBridge.exposeInMainWorld("__gitstudioLocale", typeof l10n?.locale === "string" ? l10n.locale : "en");

@@ -10,6 +10,7 @@
 // restart (the session id is persisted by the caller).
 
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import * as l10n from "@vscode/l10n";
 
 /** Idle a warm session for this long before disposing the process. */
 const IDLE_MS = 5 * 60 * 1000;
@@ -70,7 +71,7 @@ export class WarmCliSession {
   /** Send one user message; streams assistant text via onDelta; resolves on completion. */
   send(text: string, handlers: SendHandlers): Promise<string> {
     if (this.busy) {
-      return Promise.reject(new Error("The session is still answering the previous message."));
+      return Promise.reject(new Error(l10n.t("The session is still answering the previous message.")));
     }
     this.clearIdle();
     if (!this.warm) {
@@ -78,7 +79,7 @@ export class WarmCliSession {
     }
     const proc = this.proc;
     if (!proc) {
-      return Promise.reject(new Error("Couldn't start the Claude Code session."));
+      return Promise.reject(new Error(l10n.t("Couldn't start the Claude Code session.")));
     }
     this.busy = true;
     return new Promise<string>((resolve, reject) => {
@@ -124,7 +125,7 @@ export class WarmCliSession {
       const { reject } = this.active;
       this.active = undefined;
       this.busy = false;
-      reject(new Error("Session cancelled."));
+      reject(new Error(l10n.t("Session cancelled.")));
     }
   }
 
@@ -156,7 +157,7 @@ export class WarmCliSession {
       /* swallow logs; failures surface via close code */
     });
     proc.on("error", (err: NodeJS.ErrnoException) => {
-      const e = err.code === "ENOENT" ? new Error("The `claude` CLI isn't installed or not on PATH.") : err;
+      const e = err.code === "ENOENT" ? new Error(l10n.t("The `claude` CLI isn't installed or not on PATH.")) : err;
       if (this.active && this.busy) this.settle(this.active.reject, e);
     });
     proc.on("close", () => {
@@ -167,7 +168,7 @@ export class WarmCliSession {
         this.active = undefined;
         this.busy = false;
         if (a.streamed || a.final) a.resolve((a.text || a.final).trim());
-        else a.reject(new Error("The Claude Code session ended unexpectedly."));
+        else a.reject(new Error(l10n.t("The Claude Code session ended unexpectedly.")));
       }
       this.opts.onExit?.();
     });

@@ -5,9 +5,17 @@
 // chat == one session, regardless of provider.
 
 import { app } from "electron";
+import * as l10n from "@vscode/l10n";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { WarmCliSession } from "./warmCliSession";
+
+/** The placeholder title for a chat with no user message yet. A function, not
+ *  a module-level constant, so it reads the l10n bundle AFTER boot() configures
+ *  it rather than freezing to English at import time. */
+function newChatTitle(): string {
+  return l10n.t("New chat");
+}
 
 export interface ChatTurn {
   role: "user" | "assistant";
@@ -109,7 +117,7 @@ export class ConversationStore {
   async create(repoRoot: string, connectionId: string, id: string, makeCurrent = true): Promise<ChatSession> {
     await this.ensureLoaded();
     const now = Date.now();
-    const s: ChatSession = { id, repoRoot, connectionId, title: "New chat", turns: [], createdAt: now, updatedAt: now };
+    const s: ChatSession = { id, repoRoot, connectionId, title: newChatTitle(), turns: [], createdAt: now, updatedAt: now };
     this.sessions.set(id, s);
     // Footer AI tabs pass makeCurrent=false so they don't steal the full
     // Assistant's "current chat" (the one it restores on open).
@@ -129,8 +137,8 @@ export class ConversationStore {
     if (!s) return;
     s.turns.push(turn);
     s.updatedAt = turn.at;
-    if (s.title === "New chat" && turn.role === "user") {
-      s.title = turn.text.slice(0, 60).replace(/\s+/g, " ").trim() || "New chat";
+    if (s.title === newChatTitle() && turn.role === "user") {
+      s.title = turn.text.slice(0, 60).replace(/\s+/g, " ").trim() || newChatTitle();
     }
     await this.persist();
   }

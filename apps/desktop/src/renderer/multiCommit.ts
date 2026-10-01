@@ -37,6 +37,7 @@ import type {
 import type { ChoiceOption } from "./dialogs";
 import type { ManyAction } from "./contextMenu";
 import type { Undoable } from "./undo";
+import * as l10n from "@vscode/l10n";
 
 export interface ManyDeps {
   plan(req: CommitsPlanRequest): Promise<CommitsPlanWire>;
@@ -79,7 +80,7 @@ export async function runManyAction(action: ManyAction, shas: string[], d: ManyD
       d.compare(shas[1], shas[0]);
       return "done";
     case "copy-shas":
-      await d.copy(shas.join("\n"), `Copied ${shas.length} SHAs.`);
+      await d.copy(shas.join("\n"), l10n.t("Copied {0} SHAs.", shas.length));
       return "done";
   }
 }
@@ -89,9 +90,12 @@ async function applyManyFlow(verb: "cherry-pick" | "revert", shas: string[], d: 
   // A revert asks, as the one-commit Revert does on this app; a pick does not.
   if (verb === "revert") {
     const ok = await d.confirm({
-      title: `Revert ${n} commits?`,
-      message: `A revert commit will be created for each of these ${n} commits, newest first. Undo is available afterwards.`,
-      confirmLabel: "Revert",
+      title: l10n.t("Revert {0} commits?", n),
+      message: l10n.t(
+        "A revert commit will be created for each of these {0} commits, newest first. Undo is available afterwards.",
+        n,
+      ),
+      confirmLabel: l10n.t("Revert"),
       danger: false,
     });
     if (!ok) return "cancelled";
@@ -103,12 +107,15 @@ async function applyManyFlow(verb: "cherry-pick" | "revert", shas: string[], d: 
     const { before, after, branch } = res;
     if (before && after) {
       d.undoable(text, {
-        label: verb === "cherry-pick" ? `Take the ${n} picked commits back off` : `Take the ${n} revert commits back off`,
+        label:
+          verb === "cherry-pick"
+            ? l10n.t("Take the {0} picked commits back off", n)
+            : l10n.t("Take the {0} revert commits back off", n),
         undo: async () => {
           // The branch it ran on goes back — not whichever HEAD is on by then.
           const back = await d.undo({ before, after, what: verb, ...(branch !== undefined ? { branch } : {}) });
           if (back.ok) return undefined;
-          const why = back.message ?? "Couldn't put the branch back.";
+          const why = back.message ?? l10n.t("Couldn't put the branch back.");
           return back.expected ? { info: why } : why;
         },
         after: () => d.refresh(),
@@ -125,7 +132,13 @@ async function applyManyFlow(verb: "cherry-pick" | "revert", shas: string[], d: 
     await d.landOnConflicts();
     return "stopped";
   }
-  d.toast(res.message ?? `Couldn't ${verb} ${n} commits.`, res.expected ? "info" : "error");
+  d.toast(
+    res.message ??
+      (verb === "cherry-pick"
+        ? l10n.t("Couldn't cherry-pick {0} commits.", n)
+        : l10n.t("Couldn't revert {0} commits.", n)),
+    res.expected ? "info" : "error",
+  );
   if (res.changed) await d.refresh();
   return "failed";
 }
@@ -147,13 +160,17 @@ async function rewriteManyFlow(verb: "drop" | "squash", shas: string[], d: ManyD
   let message: string | undefined;
   if (verb === "squash") {
     const q = squashQuestion(plan);
-    const m = await d.message({ title: q.title, hint: q.message, value: plan.message ?? "", okLabel: "Squash commits" });
+    const m = await d.message({
+      title: q.title,
+      hint: q.message,
+      value: plan.message ?? "",
+      okLabel: l10n.t("Squash commits"),
+    });
     if (!m || !m.trim()) return "cancelled";
     message = m.trim();
   }
 
   let carry = false;
-  const Verb = verb === "drop" ? "Drop" : "Squash";
   if (plan.carryable.length > 0) {
     // The question names the branches; the choice IS the confirmation.
     // A squash's own words here: the editor's "with the message below" is
@@ -164,15 +181,30 @@ async function rewriteManyFlow(verb: "drop" | "squash", shas: string[], d: ManyD
       hint: q.message,
       cancelId: "cancel",
       choices: [
-        { id: "carry", label: `${Verb} and move those branches`, sub: "They follow onto the rewritten commits.", icon: "git-branch" },
-        { id: "only", label: `${Verb} on this branch only`, sub: "They keep pointing at the commits as they are now.", icon: "git-commit" },
+        {
+          id: "carry",
+          label: verb === "drop" ? l10n.t("Drop and move those branches") : l10n.t("Squash and move those branches"),
+          sub: l10n.t("They follow onto the rewritten commits."),
+          icon: "git-branch",
+        },
+        {
+          id: "only",
+          label: verb === "drop" ? l10n.t("Drop on this branch only") : l10n.t("Squash on this branch only"),
+          sub: l10n.t("They keep pointing at the commits as they are now."),
+          icon: "git-commit",
+        },
       ],
     });
     if (picked !== "carry" && picked !== "only") return "cancelled";
     carry = picked === "carry";
   } else if (verb === "drop") {
     const q = dropManyQuestion(plan);
-    const ok = await d.confirm({ title: q.title, message: q.message, confirmLabel: "Drop commits", danger: true });
+    const ok = await d.confirm({
+      title: q.title,
+      message: q.message,
+      confirmLabel: l10n.t("Drop commits"),
+      danger: true,
+    });
     if (!ok) return "cancelled";
   }
 
@@ -182,7 +214,10 @@ async function rewriteManyFlow(verb: "drop" | "squash", shas: string[], d: ManyD
     const { before, after, carried } = out;
     if (before && after) {
       d.undoable(text, {
-        label: verb === "drop" ? `Put the ${n} dropped commits back` : `Put the ${n} squashed commits back`,
+        label:
+          verb === "drop"
+            ? l10n.t("Put the {0} dropped commits back", n)
+            : l10n.t("Put the {0} squashed commits back", n),
         undo: async () => {
           // The branch it rewrote, and the ones it carried: those go back.
           const back = await d.undo({
@@ -193,7 +228,7 @@ async function rewriteManyFlow(verb: "drop" | "squash", shas: string[], d: ManyD
             ...(carried?.length ? { carried } : {}),
           });
           if (back.ok) return undefined;
-          const why = back.message ?? "Couldn't put the branch back.";
+          const why = back.message ?? l10n.t("Couldn't put the branch back.");
           return back.expected ? { info: why } : why;
         },
         after: () => d.refresh(),

@@ -19,6 +19,7 @@
 import { host } from "./bridge";
 import { el, span, glyph, copyText } from "./ui";
 import type { GitLogEntry } from "../shared/ipc";
+import * as l10n from "@vscode/l10n";
 
 /** Hard cap on rendered top-level blocks (rows/groups). */
 const MAX_BLOCKS = 600;
@@ -101,14 +102,14 @@ export class OutputsPanel {
     // pair read as "cancel / cancel". The filled variant carries the pressed
     // state in SHAPE as well as colour.
     const failIcon = glyph("filter");
-    failBtn.append(failIcon, span("Errors only"));
-    failBtn.title = "Show only failed commands";
+    failBtn.append(failIcon, span(l10n.t("Errors only")));
+    failBtn.title = l10n.t("Show only failed commands");
     failBtn.setAttribute("aria-pressed", "false");
     this.setFailuresOnly = (on: boolean): void => {
       this.failuresOnly = on;
       failBtn.setAttribute("aria-pressed", String(on));
       failIcon.className = `glyph codicon codicon-${on ? "filter-filled" : "filter"}`;
-      failBtn.title = on ? "Showing only failed commands" : "Show only failed commands";
+      failBtn.title = on ? l10n.t("Showing only failed commands") : l10n.t("Show only failed commands");
       this.el.classList.toggle("failures-only", on);
       this.renderCount();
     };
@@ -117,12 +118,12 @@ export class OutputsPanel {
       if (this.stick) this.scroller.scrollTop = this.scroller.scrollHeight;
     });
     const copyBtn = el("button", "outputs-act-btn") as HTMLButtonElement;
-    copyBtn.append(glyph("copy"), span("Copy"));
-    copyBtn.title = "Copy the whole log";
+    copyBtn.append(glyph("copy"), span(l10n.t("Copy")));
+    copyBtn.title = l10n.t("Copy the whole log");
     copyBtn.addEventListener("click", () => void this.copyAll());
     const clearBtn = el("button", "outputs-act-btn") as HTMLButtonElement;
-    clearBtn.append(glyph("clear-all"), span("Clear"));
-    clearBtn.title = "Clear the log";
+    clearBtn.append(glyph("clear-all"), span(l10n.t("Clear")));
+    clearBtn.title = l10n.t("Clear the log");
     clearBtn.addEventListener("click", () => this.clear());
     bar.append(this.countEl, failBtn, copyBtn, clearBtn);
     // Nothing logged yet means nothing to filter and nothing to clear. The
@@ -133,16 +134,16 @@ export class OutputsPanel {
     this.scroller = el("div", "outputs-panel");
     this.empty = el("div", "outputs-empty");
     this.empty.append(
-      span("Git command log", "outputs-empty-title"),
-      span("Every git command GitStudio runs will appear here.", "outputs-empty-sub"),
+      span(l10n.t("Git command log"), "outputs-empty-title"),
+      span(l10n.t("Every git command GitStudio runs will appear here."), "outputs-empty-sub"),
     );
     // "Errors only" is a CSS filter over the rows — with nothing failed it hid
     // every one of them and left a blank panel beside a count still reading
     // "40 commands". A filter that empties a list has to say it was the filter.
     this.filteredEmpty = el("div", "outputs-empty");
     this.filteredEmpty.append(
-      span("No failures", "outputs-empty-title"),
-      span("Nothing has failed. Turn off “Errors only” to see every command.", "outputs-empty-sub"),
+      span(l10n.t("No failures"), "outputs-empty-title"),
+      span(l10n.t("Nothing has failed. Turn off “Errors only” to see every command."), "outputs-empty-sub"),
     );
     this.filteredEmpty.hidden = true;
     this.list = el("div", "outputs-list");
@@ -172,10 +173,13 @@ export class OutputsPanel {
       return;
     }
     this.countEl.replaceChildren(
-      span(`${this.total} command${this.total === 1 ? "" : "s"}`, "outputs-count-n"),
+      span(
+        this.total === 1 ? l10n.t("{0} command", this.total) : l10n.t("{0} commands", this.total),
+        "outputs-count-n",
+      ),
     );
     if (this.failed > 0) {
-      this.countEl.append(span(`· ${this.failed} failed`, "outputs-count-f"));
+      this.countEl.append(span(l10n.t("· {0} failed", this.failed), "outputs-count-f"));
     }
   }
 
@@ -284,7 +288,7 @@ export class OutputsPanel {
     const head = el("button", "outputs-group-head") as HTMLButtonElement;
     const chev = glyph("chevron-down");
     chev.classList.add("outputs-group-chev");
-    const label = span(ctx.action ?? "Action", "outputs-group-label");
+    const label = span(ctx.action ?? l10n.t("Action"), "outputs-group-label");
     const meta = span("", "outputs-group-meta");
     head.append(chev, label, meta);
     head.setAttribute("aria-expanded", "true");
@@ -307,7 +311,10 @@ export class OutputsPanel {
 
   private updateGroupMeta(ctx: ActionCtx): void {
     if (ctx.meta) {
-      ctx.meta.textContent = `${ctx.count} command${ctx.count === 1 ? "" : "s"} · ${dur(ctx.totalMs)}`;
+      ctx.meta.textContent =
+        ctx.count === 1
+          ? l10n.t("{0} command · {1}", ctx.count, dur(ctx.totalMs))
+          : l10n.t("{0} commands · {1}", ctx.count, dur(ctx.totalMs));
     }
   }
 
@@ -333,7 +340,7 @@ export class OutputsPanel {
     );
     if (e.failed || (e.exitCode !== null && e.exitCode !== 0)) {
       const code = el("span", "outputs-code");
-      code.textContent = e.exitCode === null ? "error" : `exit ${e.exitCode}`;
+      code.textContent = e.exitCode === null ? l10n.t("error") : l10n.t("exit {0}", e.exitCode);
       line.appendChild(code);
     }
     row.appendChild(line);
@@ -349,10 +356,10 @@ export class OutputsPanel {
       row.appendChild(detail);
       line.setAttribute("role", "button");
       line.setAttribute("tabindex", "0");
-      line.title = "Show error output";
+      line.title = l10n.t("Show error output");
       const toggle = (): void => {
         const open = row.classList.toggle("is-open");
-        line.title = open ? "Hide error output" : "Show error output";
+        line.title = open ? l10n.t("Hide error output") : l10n.t("Show error output");
       };
       line.addEventListener("click", toggle);
       line.addEventListener("keydown", (ev) => {
@@ -426,7 +433,7 @@ export class OutputsPanel {
       .filter(Boolean)
       .join("\n");
     if (!text) return;
-    await copyText(text, this.failuresOnly ? "Failed commands copied." : "Command log copied.");
+    await copyText(text, this.failuresOnly ? l10n.t("Failed commands copied.") : l10n.t("Command log copied."));
   }
 
   dispose(): void {

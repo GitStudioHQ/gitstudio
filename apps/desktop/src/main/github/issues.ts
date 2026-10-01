@@ -14,6 +14,7 @@
 // PRs); GraphQL is only needed for Projects v2, which lives elsewhere.
 
 import { GitHubClient, enc } from "../githubClient";
+import * as l10n from "@vscode/l10n";
 import {
   mapComment,
   mapIssue,
@@ -507,7 +508,7 @@ export async function createIssue(
   // reaches GitHub still reports through errorFields, which makes the same
   // judgement per HTTP status.
   if (!title) {
-    return { ok: false, expected: true, message: "An issue needs a title." };
+    return { ok: false, expected: true, message: l10n.t("An issue needs a title.") };
   }
   try {
     const created = await client.request<RawIssue>(
@@ -530,7 +531,7 @@ export async function commentIssue(
 ): Promise<CommitActionResult> {
   const body = req.body.trim();
   if (!body) {
-    return { ok: false, changed: false, expected: true, message: "Write a comment first." };
+    return { ok: false, changed: false, expected: true, message: l10n.t("Write a comment first.") };
   }
   try {
     await client.requestBody(
@@ -636,10 +637,10 @@ export async function editIssue(
   if (typeof req.title === "string") fields.title = req.title.trim();
   if (typeof req.body === "string") fields.body = req.body;
   if (fields.title !== undefined && fields.title === "") {
-    return { ok: false, changed: false, expected: true, message: "An issue needs a title." };
+    return { ok: false, changed: false, expected: true, message: l10n.t("An issue needs a title.") };
   }
   if (fields.title === undefined && fields.body === undefined) {
-    return { ok: false, changed: false, expected: true, message: "Nothing to update." };
+    return { ok: false, changed: false, expected: true, message: l10n.t("Nothing to update.") };
   }
   try {
     await client.requestBody(

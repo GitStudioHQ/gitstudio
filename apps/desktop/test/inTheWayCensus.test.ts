@@ -227,8 +227,8 @@ test("the question is asked in one place, holds through the watcher's refresh, a
     .split("\n")
     .filter((l) => !COMMENT.test(l))
     .join("\n");
-  assert.match(ask, /label:\s*"Stash & Retry"/);
-  assert.match(ask, /label:\s*"Cancel"/);
+  assert.match(ask, /label:\s*(?:l10n\.t\()?"Stash & Retry"/);
+  assert.match(ask, /label:\s*(?:l10n\.t\()?"Cancel"/);
   assert.match(ask, /holdWhile:/, "held through the refresh a git write sets off");
   assert.doesNotMatch(ask, /holdWhile:\s*\(\)\s*=>\s*true/, "…but not across a switch to another repository");
   assert.doesNotMatch(ask, /"error"/, "never said as a failure");

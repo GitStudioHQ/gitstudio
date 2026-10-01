@@ -28,7 +28,20 @@ interface Step {
   media: { svg?: string; image?: string | Record<string, string>; markdown?: string; altText?: string };
   completionEvents?: string[];
 }
-const pkg = JSON.parse(read("package.json")) as {
+// The manifest as VS Code shows it in English: every `%key%` looked up in
+// package.nls.json, so these tests read the words, not the keys.
+const nls = JSON.parse(read("package.nls.json")) as Record<string, string>;
+const localize = (value: unknown): unknown =>
+  typeof value === "string"
+    ? value.length > 2 && value.startsWith("%") && value.endsWith("%") && value.slice(1, -1) in nls
+      ? nls[value.slice(1, -1)]
+      : value
+    : Array.isArray(value)
+      ? value.map(localize)
+      : value && typeof value === "object"
+        ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, localize(v)]))
+        : value;
+const pkg = localize(JSON.parse(read("package.json"))) as {
   name: string;
   publisher: string;
   version: string;

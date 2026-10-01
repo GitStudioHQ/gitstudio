@@ -13,6 +13,7 @@
 import type { GitStudioBridge, GraphRefFilter, InTheWayInfo, InvokeScope } from "../shared/ipc";
 import type { GraphInitMessage, GraphAppendMessage } from "@gitstudio/host-bridge/graphProtocol";
 import { nextGraphMessage } from "../shared/graphAdapterCore";
+import * as l10n from "@vscode/l10n";
 
 declare global {
   interface Window {
@@ -151,35 +152,35 @@ const OPENING = new Set(["repo:open", "repo:openPath", "ghrepo:open", "clone:sta
  * something closing a tab could lose.
  */
 const OPERATIONS: Readonly<Record<string, string>> = {
-  "sync:fetch": "a fetch",
-  "sync:pull": "a pull",
-  "sync:push": "a push",
-  "branch:push": "a push",
-  "branch:publish": "a publish",
-  "branch:pullFf": "a pull",
-  "branch:merge": "a merge",
-  "branch:rebase": "a rebase",
-  "branch:resetToUpstream": "a reset",
-  "branch:deleteRemote": "a remote branch deletion",
-  "rebase:apply": "a rebase",
-  "rebase:continue": "a rebase",
-  "rebase:skip": "a rebase",
-  "op:continue": "a continue",
-  "op:skip": "a skip",
-  "op:abort": "an abort",
-  commit: "a commit",
-  "commit:action": "a git operation",
-  "commit:drop": "a commit drop",
+  "sync:fetch": l10n.t("a fetch"),
+  "sync:pull": l10n.t("a pull"),
+  "sync:push": l10n.t("a push"),
+  "branch:push": l10n.t("a push"),
+  "branch:publish": l10n.t("a publish"),
+  "branch:pullFf": l10n.t("a pull"),
+  "branch:merge": l10n.t("a merge"),
+  "branch:rebase": l10n.t("a rebase"),
+  "branch:resetToUpstream": l10n.t("a reset"),
+  "branch:deleteRemote": l10n.t("a remote branch deletion"),
+  "rebase:apply": l10n.t("a rebase"),
+  "rebase:continue": l10n.t("a rebase"),
+  "rebase:skip": l10n.t("a rebase"),
+  "op:continue": l10n.t("a continue"),
+  "op:skip": l10n.t("a skip"),
+  "op:abort": l10n.t("an abort"),
+  commit: l10n.t("a commit"),
+  "commit:action": l10n.t("a git operation"),
+  "commit:drop": l10n.t("a commit drop"),
   // Drop N / Squash N (#32): the same rebase as a drop, of several commits.
-  "commits:rewrite": "a rewrite of several commits",
-  "pr:checkout": "a pull request checkout",
-  "stash:apply": "a stash apply",
-  "stash:pop": "a stash pop",
-  "stash:save": "a stash",
-  "tag:push": "a tag push",
-  "worktree:add": "a worktree add",
-  "worktree:remove": "a worktree removal",
-  "ai:agentRun": "an Assistant run",
+  "commits:rewrite": l10n.t("a rewrite of several commits"),
+  "pr:checkout": l10n.t("a pull request checkout"),
+  "stash:apply": l10n.t("a stash apply"),
+  "stash:pop": l10n.t("a stash pop"),
+  "stash:save": l10n.t("a stash"),
+  "tag:push": l10n.t("a tag push"),
+  "worktree:add": l10n.t("a worktree add"),
+  "worktree:remove": l10n.t("a worktree removal"),
+  "ai:agentRun": l10n.t("an Assistant run"),
 };
 
 /** Operation calls still in flight, per session → their channels. */
