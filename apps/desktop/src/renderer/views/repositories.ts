@@ -23,6 +23,7 @@
 // other tracked folders and a one-off picker a click away — the point being
 // that the common case is one click and the uncommon case is still on screen.
 
+import * as l10n from "@vscode/l10n";
 import { el, span, glyph, openMenu, avatar, emptyState, relTimeISO, copyText } from "../ui";
 import type { MenuItem } from "../ui";
 import { toast, confirmDialog } from "../dialogs";
@@ -71,17 +72,17 @@ export const renderRepositories: SectionRender = (wrap, nav) => {
 
 async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   const S = reposTab();
-  const head = ghHeader("Repositories", undefined, () => void refresh(true));
+  const head = ghHeader(l10n.t("Repositories"), undefined, () => void refresh(true));
   const tools = el("div", "gh-head-tools");
 
   const openBtn = el("button", "mini-btn");
-  openBtn.append(glyph("folder-opened"), span("Open…"));
-  openBtn.title = "Open a repository from anywhere on this machine";
+  openBtn.append(glyph("folder-opened"), span(l10n.t("Open…")));
+  openBtn.title = l10n.t("Open a repository from anywhere on this machine");
   openBtn.addEventListener("click", () => void openFromDisk(nav));
 
   const addBtn = el("button", "mini-btn");
-  addBtn.append(glyph("new-folder"), span("Add folder…"));
-  addBtn.title = "Track a folder so every repository inside it is listed here";
+  addBtn.append(glyph("new-folder"), span(l10n.t("Add folder…")));
+  addBtn.title = l10n.t("Track a folder so every repository inside it is listed here");
   addBtn.addEventListener("click", () => void addFolder(refresh));
 
   // "open and clone buttons and menus can be part of the same screens" — this
@@ -89,8 +90,8 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   // you, which is how most clones actually start. The screen that is about
   // repositories should be able to get one.
   const cloneBtn = el("button", "mini-btn");
-  cloneBtn.append(glyph("repo-clone"), span("Clone…"));
-  cloneBtn.title = "Clone a repository from a URL";
+  cloneBtn.append(glyph("repo-clone"), span(l10n.t("Clone…")));
+  cloneBtn.title = l10n.t("Clone a repository from a URL");
   cloneBtn.addEventListener("click", () =>
     openCloneDialog((root) => {
       bust("repos");
@@ -102,11 +103,11 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
 
   const seg = segmented<Side>({
     options: [
-      { value: "local", label: "On this machine", icon: "device-desktop" },
-      { value: "remote", label: "On GitHub", icon: "cloud" },
+      { value: "local", label: l10n.t("On this machine"), icon: "device-desktop" },
+      { value: "remote", label: l10n.t("On GitHub"), icon: "cloud" },
     ],
     value: S.side,
-    ariaLabel: "Which repositories to show",
+    ariaLabel: l10n.t("Which repositories to show"),
     onChange: (v) => {
       S.side = v;
       void refresh();
@@ -114,7 +115,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   });
 
   const search = searchField({
-    placeholder: "Filter repositories…",
+    placeholder: l10n.t("Filter repositories…"),
     initial: S.query,
     onInput: (v) => {
       S.query = v;
@@ -163,7 +164,9 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
     } catch (e) {
       if (!current()) return;
       listEl.replaceChildren(
-        emptyState("Couldn’t list repositories", String((e as Error)?.message ?? e), { icon: "warning" }),
+        emptyState(l10n.t("Couldn’t list repositories"), String((e as Error)?.message ?? e), {
+          icon: "warning",
+        }),
       );
     }
     if (!current()) return;
@@ -254,8 +257,8 @@ async function paintLocal(
     if (!shown && !query.trim()) {
       const none = el("div", "repo-folder-empty");
       none.textContent = band.missing
-        ? "This folder is gone. Stop tracking it, or put it back."
-        : "No repositories in this folder yet.";
+        ? l10n.t("This folder is gone. Stop tracking it, or put it back.")
+        : l10n.t("No repositories in this folder yet.");
       rows.push(none);
       continue;
     }
@@ -289,7 +292,7 @@ async function paintLocal(
   // itself. On this machine that is now nothing at all, which is the point.
   const loose = copies.filter((c) => !c.band && matchesCopy(c));
   if (loose.length) {
-    rows.push(groupLabel("Opened from elsewhere"));
+    rows.push(groupLabel(l10n.t("Opened from elsewhere")));
     for (const c of loose) rows.push(localRow(c, nav, refresh, "loose", editors));
   }
 
@@ -298,25 +301,26 @@ async function paintLocal(
   // straight face. Only ever a NOTE at the bottom: everything above is real.
   if (truncated && !query.trim()) {
     const capped = el("div", "repo-scan-capped");
-    capped.textContent =
-      `The scan stops at ${MAX_LOCAL_REPOS} repositories — there may be more. ` +
-      "Tracking fewer, more specific folders keeps this list complete.";
+    capped.textContent = l10n.t(
+      "The scan stops at {0} repositories — there may be more. Tracking fewer, more specific folders keeps this list complete.",
+      MAX_LOCAL_REPOS,
+    );
     rows.push(capped);
   }
 
   if (!rows.length) {
     listEl.replaceChildren(
       query.trim()
-        ? emptyState("Nothing matches", `No repository matches “${query.trim()}”.`, {
+        ? emptyState(l10n.t("Nothing matches"), l10n.t("No repository matches “{0}”.", query.trim()), {
             // Clears the FILTER. This reloaded the entire application — the
             // heaviest possible response to a text box having the wrong four
             // characters in it, throwing away every other piece of state on the
             // way.
-            secondary: { label: "Clear filter", onClick: () => reposTab().clearFilter() },
+            secondary: { label: l10n.t("Clear filter"), onClick: () => reposTab().clearFilter() },
           })
         : emptyState(
-            "No repositories yet",
-            "Add a folder you keep repositories in, or clone one from GitHub.",
+            l10n.t("No repositories yet"),
+            l10n.t("Add a folder you keep repositories in, or clone one from GitHub."),
           ),
     );
     return;
@@ -508,13 +512,13 @@ function groupHead(
   name.title = path;
   h.appendChild(name);
   h.appendChild(span(String(count), "repo-group-count"));
-  if (tracked) h.appendChild(span("tracked", "repo-folder-chip"));
+  if (tracked) h.appendChild(span(l10n.t("tracked"), "repo-folder-chip"));
 
   h.appendChild(el("span", "repo-folder-spring"));
 
   const more = el("button", "mini-btn gh-icon-btn repo-folder-menu");
   more.appendChild(glyph("ellipsis"));
-  more.title = `Manage ${label}`;
+  more.title = l10n.t("Manage {0}", label);
   more.setAttribute("aria-label", more.title);
   more.setAttribute("aria-haspopup", "menu");
   more.addEventListener("click", (e) => {
@@ -526,19 +530,19 @@ function groupHead(
         ? folderMenu(tracked, refresh)
         : [
             {
-              label: "Show in Finder",
+              label: l10n.t("Show in Finder"),
               icon: "folder-opened",
               onClick: () => void host.invoke("repos:reveal", path),
             },
             {
-              label: "Copy path",
+              label: l10n.t("Copy path"),
               icon: "copy",
-              onClick: () => void copyText(path, "Path copied."),
+              onClick: () => void copyText(path, l10n.t("Path copied.")),
             },
             { separator: true },
             {
-              label: "Track this folder",
-              sub: "Watch it for new repositories",
+              label: l10n.t("Track this folder"),
+              sub: l10n.t("Watch it for new repositories"),
               icon: "eye",
               onClick: () => void trackFolder(path, refresh),
             },
@@ -568,8 +572,8 @@ async function trackFolder(path: string, refresh: () => Promise<void>): Promise<
   await host.invoke("repos:addFolderPath", path);
   bust("repos");
   await refresh();
-  didUndoable(`Now watching ${path.split("/").pop()}.`, {
-    label: "Stop watching it",
+  didUndoable(l10n.t("Now watching {0}.", path.split("/").pop()), {
+    label: l10n.t("Stop watching it"),
     undo: async () => {
       await host.invoke("repos:removeFolder", path);
       bust("repos");
@@ -604,21 +608,21 @@ function folderHeader(
   const n = span(
     shown === undefined
       ? total === 1
-        ? "1 repository"
-        : `${total} repositories`
-      : `${shown} of ${total} repositories`,
+        ? l10n.t("1 repository")
+        : l10n.t("{0} repositories", total)
+      : l10n.t("{0} of {1} repositories", shown, total),
     "repo-folder-count",
   );
   h.appendChild(n);
   if (folder.isCloneDir) {
     // Named, not just implied: this is where a one-click clone lands.
     const chip = el("button", "repo-folder-chip is-clone");
-    chip.textContent = "clones land here";
-    chip.title = "New clones go here unless you choose somewhere else — click to change it";
+    chip.textContent = l10n.t("clones land here");
+    chip.title = l10n.t("New clones go here unless you choose somewhere else — click to change it");
     chip.addEventListener("click", () => void moveCloneFolder(folder, refresh));
     h.appendChild(chip);
   }
-  if (folder.missing) h.appendChild(span("missing", "repo-folder-chip is-warn"));
+  if (folder.missing) h.appendChild(span(l10n.t("missing"), "repo-folder-chip is-warn"));
 
   const spring = el("span", "repo-folder-spring");
   h.appendChild(spring);
@@ -634,7 +638,7 @@ function folderHeader(
   // folder back out of it.
   const more = el("button", "mini-btn gh-icon-btn repo-folder-menu");
   more.appendChild(glyph("ellipsis"));
-  more.title = `Manage ${folder.display}`;
+  more.title = l10n.t("Manage {0}", folder.display);
   more.setAttribute("aria-label", more.title);
   more.setAttribute("aria-haspopup", "menu");
   more.addEventListener("click", () => openMenu(more, folderMenu(folder, refresh)));
@@ -647,15 +651,15 @@ function folderMenu(folder: RepoFolder, refresh: () => Promise<void>): MenuItem[
   const items: MenuItem[] = [];
   if (!folder.missing) {
     items.push({
-      label: "Show in Finder",
+      label: l10n.t("Show in Finder"),
       icon: "folder-opened",
       onClick: () => void host.invoke("repos:reveal", folder.path),
     });
   }
   items.push({
-    label: "Copy path",
+    label: l10n.t("Copy path"),
     icon: "copy",
-    onClick: () => void copyText(folder.path, "Path copied."),
+    onClick: () => void copyText(folder.path, l10n.t("Path copied.")),
   });
   items.push({ separator: true });
 
@@ -673,8 +677,8 @@ function folderMenu(folder: RepoFolder, refresh: () => Promise<void>): MenuItem[
   if (mine.length > 1) {
     const allFolded = mine.every((g) => isFolded(g.dataset.group ?? ""));
     items.push({
-      label: allFolded ? "Expand all projects" : "Collapse all projects",
-      sub: `${mine.length} folders`,
+      label: allFolded ? l10n.t("Expand all projects") : l10n.t("Collapse all projects"),
+      sub: l10n.t("{0} folders", mine.length),
       icon: allFolded ? "unfold" : "fold",
       onClick: () => {
         // In place, never through a repaint: replacing the list drops focus to
@@ -697,7 +701,7 @@ function folderMenu(folder: RepoFolder, refresh: () => Promise<void>): MenuItem[
     });
     if (!folder.isDefaultCloneDir) {
       items.push({
-        label: "Use the default folder",
+        label: l10n.t("Use the default folder"),
         sub: "~/GitStudio",
         icon: "discard",
         onClick: () => void setCloneDir(null, folder, refresh),
@@ -711,15 +715,23 @@ function folderMenu(folder: RepoFolder, refresh: () => Promise<void>): MenuItem[
     const checkouts = folder.containedAnyCount - repos;
     const holds =
       repos && checkouts
-        ? `${repos === 1 ? "1 repository" : `${repos} repositories`} and ${checkouts === 1 ? "a worktree" : `${checkouts} worktrees`} are in it`
+        ? l10n.t(
+            "{0} and {1} are in it",
+            repos === 1 ? l10n.t("1 repository") : l10n.t("{0} repositories", repos),
+            checkouts === 1 ? l10n.t("a worktree") : l10n.t("{0} worktrees", checkouts),
+          )
         : repos
-          ? `${repos === 1 ? "1 repository is" : `${repos} repositories are`} in it`
+          ? repos === 1
+            ? l10n.t("1 repository is in it")
+            : l10n.t("{0} repositories are in it", repos)
           : checkouts
-            ? `${checkouts === 1 ? "1 worktree is" : `${checkouts} worktrees are`} in it`
+            ? checkouts === 1
+              ? l10n.t("1 worktree is in it")
+              : l10n.t("{0} worktrees are in it", checkouts)
             : "";
     items.push({
-      label: "Delete this folder",
-      sub: holds || "It's empty — nothing is lost",
+      label: l10n.t("Delete this folder"),
+      sub: holds || l10n.t("It's empty — nothing is lost"),
       icon: "trash",
       danger: true,
       // `containedAnyCount`, never `repoCount` or even `containedCount`. A
@@ -729,22 +741,22 @@ function folderMenu(folder: RepoFolder, refresh: () => Promise<void>): MenuItem[
       // everything; the label says what kind.
       disabled: folder.containedAnyCount > 0 || folder.missing,
       title: folder.containedAnyCount
-        ? "Move or delete what's inside it first"
-        : `Delete ${folder.display} from disk`,
+        ? l10n.t("Move or delete what's inside it first")
+        : l10n.t("Delete {0} from disk", folder.display),
       onClick: () => void deleteEmptyFolder(folder, refresh),
     });
   } else {
     if (!folder.missing) {
       items.push({
-        label: "Clone new repositories here",
-        sub: "Makes this the clone folder",
+        label: l10n.t("Clone new repositories here"),
+        sub: l10n.t("Makes this the clone folder"),
         icon: "root-folder",
         onClick: () => void setCloneDir(folder.path, folder, refresh),
       });
     }
     items.push({
-      label: "Stop tracking",
-      sub: "Nothing on disk is touched",
+      label: l10n.t("Stop tracking"),
+      sub: l10n.t("Nothing on disk is touched"),
       icon: "eye-closed",
       danger: true,
       onClick: () => void stopTracking(folder, refresh),
@@ -776,8 +788,8 @@ async function setCloneDir(
   const r = await host.invoke("settings:update", { cloneDir: next });
   bust("repos");
   await refresh();
-  didUndoable(`New clones will land in ${r.cloneDirDisplay}.`, {
-    label: "Put the clone folder back",
+  didUndoable(l10n.t("New clones will land in {0}.", r.cloneDirDisplay), {
+    label: l10n.t("Put the clone folder back"),
     undo: async () => {
       // `null` restores the built-in default, which is what it meant on the
       // way in too.
@@ -799,8 +811,8 @@ async function stopTracking(folder: RepoFolder, refresh: () => Promise<void>): P
   await host.invoke("repos:removeFolder", folder.path);
   bust("repos");
   await refresh();
-  didUndoable(`Stopped tracking ${folder.display}.`, {
-    label: `Track ${folder.display} again`,
+  didUndoable(l10n.t("Stopped tracking {0}.", folder.display), {
+    label: l10n.t("Track {0} again", folder.display),
     undo: async () => {
       await host.invoke("repos:addFolderPath", folder.path);
       bust("repos");
@@ -812,7 +824,7 @@ async function stopTracking(folder: RepoFolder, refresh: () => Promise<void>): P
 async function deleteEmptyFolder(folder: RepoFolder, refresh: () => Promise<void>): Promise<void> {
   const r = await host.invoke("repos:deleteEmptyFolder", folder.path);
   if (!r.ok) {
-    toast(r.message ?? "Couldn't delete that folder.", "error");
+    toast(r.message ?? l10n.t("Couldn't delete that folder."), "error");
     return;
   }
   bust("repos");
@@ -820,7 +832,7 @@ async function deleteEmptyFolder(folder: RepoFolder, refresh: () => Promise<void
   // No undo entry: re-creating an empty directory would restore the folder but
   // not the fact that it was there, and offering "undo" for something that
   // leaves no trace to restore is theatre. It says what happened instead.
-  toast(`Deleted ${folder.display}. It comes back the next time you clone.`, "success");
+  toast(l10n.t("Deleted {0}. It comes back the next time you clone.", folder.display), "success");
 }
 
 /**
@@ -846,12 +858,15 @@ function localRow(
   // path are answers to "which copy is this", so they belong together in the
   // fixed-width cluster on the right, where they line up.
   const pills: HTMLElement[] = [];
-  if (c.current) pills.push(span("open", "gh-pill is-current"));
-  if (c.missing) pills.push(span("missing", "gh-pill is-warn"));
+  if (c.current) pills.push(span(l10n.t("open"), "gh-pill is-current"));
+  if (c.missing) pills.push(span(l10n.t("missing"), "gh-pill is-warn"));
   if (c.worktreeOf) {
-    const wt = span("worktree", "gh-pill is-worktree");
+    const wt = span(l10n.t("worktree"), "gh-pill is-worktree");
     const of = c.worktreeOf.split("/").pop() || c.worktreeOf;
-    wt.title = `A linked worktree of ${of} — another checkout of that repository, not a separate one`;
+    wt.title = l10n.t(
+      "A linked worktree of {0} — another checkout of that repository, not a separate one",
+      of,
+    );
     pills.push(wt);
   }
 
@@ -889,8 +904,8 @@ function localRow(
   const actions: HTMLElement[] = [];
   if (!c.missing && !c.current) {
     const open = el("button", "row-btn");
-    open.textContent = "Open";
-    open.setAttribute("aria-label", `Open ${c.name}`);
+    open.textContent = l10n.t("Open");
+    open.setAttribute("aria-label", l10n.t("Open {0}", c.name));
     open.addEventListener("click", () => void openPath(c.root, nav));
     actions.push(open);
   }
@@ -905,7 +920,7 @@ function localRow(
     actions.push(openInButton({ root: () => c.root, nav: (v) => nav(v), row: true, editors }));
   }
   const more = el("button", "row-btn lv-menu-btn");
-  more.setAttribute("aria-label", `More actions for ${c.name}`);
+  more.setAttribute("aria-label", l10n.t("More actions for {0}", c.name));
   more.setAttribute("aria-haspopup", "menu");
   more.appendChild(glyph("ellipsis"));
   more.addEventListener("click", async () => {
@@ -923,22 +938,22 @@ function localRow(
         onClick: () => void host.invoke("repos:reveal", c.root),
       },
       {
-        label: "Copy path",
+        label: l10n.t("Copy path"),
         icon: "copy",
-        onClick: () => void copyText(c.root, "Path copied."),
+        onClick: () => void copyText(c.root, l10n.t("Path copied.")),
       },
     ];
     if (c.recent) {
       items.push({
-        label: "Forget",
-        sub: "Removes it from this list only",
+        label: l10n.t("Forget"),
+        sub: l10n.t("Removes it from this list only"),
         icon: "eye-closed",
         onClick: async () => {
           await host.invoke("repos:removeRecent", c.root);
           bust("repos");
           await refresh();
-          didUndoable(`Forgot ${c.name}.`, {
-            label: `Remember ${c.name}`,
+          didUndoable(l10n.t("Forgot {0}.", c.name), {
+            label: l10n.t("Remember {0}", c.name),
             undo: async () => {
               await host.invoke("repos:restoreRecent", c.root);
               bust("repos");
@@ -952,7 +967,7 @@ function localRow(
     // put there by somebody else, and deleting it is not this app's business.
     if (c.managed && !c.current) {
       items.push({
-        label: "Move to Trash…",
+        label: l10n.t("Move to Trash…"),
         icon: "trash",
         danger: true,
         onClick: async () => {
@@ -962,18 +977,18 @@ function localRow(
           // hold uncommitted work, which is the one thing git cannot get back,
           // and a menu item next to "Copy path" should not be able to take it.
           const ok = await confirmDialog({
-            title: `Move ${c.name} to the Trash?`,
-            message:
-              `The folder at ${c.root} goes to the Trash, including anything in it ` +
-              `that has not been committed. You can put it back straight afterwards, ` +
-              `or from the Trash later.`,
-            confirmLabel: "Move to Trash",
+            title: l10n.t("Move {0} to the Trash?", c.name),
+            message: l10n.t(
+              "The folder at {0} goes to the Trash, including anything in it that has not been committed. You can put it back straight afterwards, or from the Trash later.",
+              c.root,
+            ),
+            confirmLabel: l10n.t("Move to Trash"),
             danger: true,
           });
           if (!ok) return;
           const r = await host.invoke("repos:trash", c.root);
           if (!r.ok) {
-            toast(r.message ?? "Couldn't move it to the Trash.", "error");
+            toast(r.message ?? l10n.t("Couldn't move it to the Trash."), "error");
             return;
           }
           bust("repos");
@@ -982,11 +997,11 @@ function localRow(
           // where to look instead of offering a button that would fail —
           // an undo you cannot honour is worse than none.
           if (r.trashed) {
-            didUndoable(`Moved ${c.name} to the Trash.`, {
-              label: `Put ${c.name} back`,
+            didUndoable(l10n.t("Moved {0} to the Trash.", c.name), {
+              label: l10n.t("Put {0} back", c.name),
               undo: async () => {
                 const back = await host.invoke("repos:untrash", { from: r.trashed!, to: c.root });
-                if (!back.ok) return back.message ?? "Couldn't put it back.";
+                if (!back.ok) return back.message ?? l10n.t("Couldn't put it back.");
                 // The list is cached; without this the folder is back on disk
                 // and absent from the screen, which reads as a failed undo.
                 bust("repos");
@@ -995,7 +1010,7 @@ function localRow(
               after: refresh,
             });
           } else {
-            toast(`Moved ${c.name} to the Trash — recover it from there.`, "success");
+            toast(l10n.t("Moved {0} to the Trash — recover it from there.", c.name), "success");
           }
         },
       });
@@ -1013,7 +1028,12 @@ function localRow(
     // the slot (secRow branches on `!== undefined`), reserving an empty 58px
     // .sec-row-time column on every local row.
     actions,
-    ariaLabel: [c.name, c.origin, c.current ? "currently open" : "", c.missing ? "missing" : ""]
+    ariaLabel: [
+      c.name,
+      c.origin,
+      c.current ? l10n.t("currently open") : "",
+      c.missing ? l10n.t("missing") : "",
+    ]
       .filter(Boolean)
       .join(", "),
     onOpen: () => {
@@ -1079,7 +1099,7 @@ async function addFolder(refresh: () => Promise<void>): Promise<void> {
   // now" over a list that had not changed, which is the app telling you
   // something it had not done.
   await refresh();
-  toast("Tracking that folder — its repositories are listed here now.", "success");
+  toast(l10n.t("Tracking that folder — its repositories are listed here now."), "success");
 }
 
 // ── remote ─────────────────────────────────────────────────────────────────
@@ -1116,10 +1136,12 @@ async function paintRemote(
   if (!shown.length) {
     listEl.replaceChildren(
       emptyState(
-        query.trim() ? "Nothing matches" : "No repositories",
+        query.trim() ? l10n.t("Nothing matches") : l10n.t("No repositories"),
         query.trim()
-          ? `No repository of yours matches “${query.trim()}”.`
-          : "Repositories you own, collaborate on, or share through an organization appear here.",
+          ? l10n.t("No repository of yours matches “{0}”.", query.trim())
+          : l10n.t(
+              "Repositories you own, collaborate on, or share through an organization appear here.",
+            ),
       ),
     );
     return;
@@ -1148,7 +1170,7 @@ async function paintRemote(
       groups.get(key) ??
       {
         key,
-        label: r.mine ? "Your repositories" : r.owner,
+        label: r.mine ? l10n.t("Your repositories") : r.owner,
         kind: r.mine ? ("mine" as const) : r.ownerType === "Organization" ? ("org" as const) : ("shared" as const),
         rows: [],
       };
@@ -1258,7 +1280,7 @@ function ownerHeader(
   h.dataset.group = key;
   h.setAttribute("role", "button");
   h.tabIndex = 0;
-  h.title = `Show or hide ${label} — ${FOLD_ALL_KEY}-click for every owner`;
+  h.title = l10n.t("Show or hide {0} — {1}-click for every owner", label, FOLD_ALL_KEY);
 
   // `repo-group-chevron` is not decoration: applyFoldState finds the chevron by
   // that class, so the local project folders and these sections fold through
@@ -1273,11 +1295,14 @@ function ownerHeader(
   h.appendChild(span(label, "repo-owner-name"));
 
   if (kind !== "mine") {
-    const why = span(kind === "org" ? "organization" : "shared with you", "repo-folder-chip");
+    const why = span(
+      kind === "org" ? l10n.t("organization") : l10n.t("shared with you"),
+      "repo-folder-chip",
+    );
     why.title =
       kind === "org"
-        ? "You can see these because you belong to this organization"
-        : "You have access to these as a collaborator";
+        ? l10n.t("You can see these because you belong to this organization")
+        : l10n.t("You have access to these as a collaborator");
     h.appendChild(why);
   }
 
@@ -1291,9 +1316,9 @@ function ownerHeader(
     span(
       total === undefined
         ? n === 1
-          ? "1 repository"
-          : `${n} repositories`
-        : `${n} of ${total} repositories`,
+          ? l10n.t("1 repository")
+          : l10n.t("{0} repositories", n)
+        : l10n.t("{0} of {1} repositories", n, total),
       "repo-folder-count",
     ),
   );
@@ -1343,8 +1368,8 @@ function remoteRow(
   editors: EditorsView = { editors: [] },
 ): HTMLElement {
   const pills: HTMLElement[] = [];
-  if (r.private) pills.push(span("private", "gh-pill"));
-  if (r.fork) pills.push(span("fork", "gh-pill"));
+  if (r.private) pills.push(span(l10n.t("private"), "gh-pill"));
+  if (r.fork) pills.push(span(l10n.t("fork"), "gh-pill"));
 
   const chips: HTMLElement[] = [];
   if (r.description) {
@@ -1362,7 +1387,7 @@ function remoteRow(
     // 121000 is not a number anyone reads; 121k is. Same rule the Explore
     // footer already follows.
     s.append(glyph("star-full"), span(compactCount(r.stars)));
-    s.title = plural(r.stars, "star");
+    s.title = plural(r.stars, l10n.t("star"), l10n.t("stars"));
     meta.push(s);
   }
 
@@ -1378,9 +1403,9 @@ function remoteRow(
     }
     // Already here. Say WHERE, and offer the thing you actually want.
     const open = el("button", "row-btn");
-    open.textContent = "Open";
-    open.title = `Already cloned at ${local.root}`;
-    open.setAttribute("aria-label", `Open ${r.fullName}`);
+    open.textContent = l10n.t("Open");
+    open.title = l10n.t("Already cloned at {0}", local.root);
+    open.setAttribute("aria-label", l10n.t("Open {0}", r.fullName));
     open.addEventListener("click", () => void openPath(local.root, nav));
     actions.push(open);
     pills.push(whereChip("local"));
@@ -1391,48 +1416,48 @@ function remoteRow(
     // repository except the ones you actually work in.
     const more = el("button", "row-btn lv-menu-btn");
     more.setAttribute("aria-haspopup", "menu");
-    more.setAttribute("aria-label", `More actions for ${r.fullName}`);
+    more.setAttribute("aria-label", l10n.t("More actions for {0}", r.fullName));
     more.appendChild(glyph("chevron-down"));
     more.addEventListener("click", () => {
       openMenu(more, [
         {
-          label: "Open",
+          label: l10n.t("Open"),
           sub: middlePath(local.root),
           icon: "repo",
           onClick: () => void openPath(local.root, nav),
         },
         {
-          label: "Show in Finder",
+          label: l10n.t("Show in Finder"),
           icon: "folder-opened",
           onClick: () => void host.invoke("repos:reveal", local.root),
         },
         { separator: true },
         {
-          label: "Open on GitHub",
+          label: l10n.t("Open on GitHub"),
           icon: "link-external",
           onClick: () => window.open(`https://github.com/${r.fullName}`, "_blank", "noopener"),
         },
         {
-          label: "Copy clone URL",
+          label: l10n.t("Copy clone URL"),
           icon: "copy",
           onClick: () =>
-            void copyText(`https://github.com/${r.fullName}.git`, "Clone URL copied."),
+            void copyText(`https://github.com/${r.fullName}.git`, l10n.t("Clone URL copied.")),
         },
       ]);
     });
     actions.push(more);
   } else {
     const clone = el("button", "row-btn") as HTMLButtonElement;
-    clone.textContent = "Clone";
+    clone.textContent = l10n.t("Clone");
     const dest = folders.find((f) => f.isCloneDir);
-    clone.title = dest ? `Clone into ${dest.display}` : "Clone this repository";
-    clone.setAttribute("aria-label", `Clone ${r.fullName}`);
+    clone.title = dest ? l10n.t("Clone into {0}", dest.display) : l10n.t("Clone this repository");
+    clone.setAttribute("aria-label", l10n.t("Clone {0}", r.fullName));
     clone.addEventListener("click", () => void cloneInto(r, dest?.path, clone, nav, refresh));
     actions.push(clone);
 
     const where = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
     where.setAttribute("aria-haspopup", "menu");
-    where.setAttribute("aria-label", `Choose where to clone ${r.fullName}`);
+    where.setAttribute("aria-label", l10n.t("Choose where to clone {0}", r.fullName));
     where.appendChild(glyph("chevron-down"));
     where.addEventListener("click", () => {
       // Not a folder the same page says is gone. Offering it is offering a
@@ -1441,12 +1466,12 @@ function remoteRow(
       const items = folders
         .filter((f) => !f.missing)
         .map((f) => ({
-          label: f.isCloneDir ? `${f.display} (default)` : f.display,
+          label: f.isCloneDir ? l10n.t("{0} (default)", f.display) : f.display,
           icon: f.isCloneDir ? "root-folder" : "folder",
           onClick: () => void cloneInto(r, f.path, clone, nav, refresh),
         }));
       items.push({
-        label: "Choose a folder…",
+        label: l10n.t("Choose a folder…"),
         icon: "new-folder",
         onClick: () => void cloneInto(r, undefined, clone, nav, refresh, true),
       });
@@ -1454,15 +1479,15 @@ function remoteRow(
         ...items,
         { separator: true },
         {
-          label: "Open on GitHub",
+          label: l10n.t("Open on GitHub"),
           icon: "link-external",
           onClick: () => window.open(`https://github.com/${r.fullName}`, "_blank", "noopener"),
         },
         {
-          label: "Copy clone URL",
+          label: l10n.t("Copy clone URL"),
           icon: "copy",
           onClick: () =>
-            void copyText(`https://github.com/${r.fullName}.git`, "Clone URL copied."),
+            void copyText(`https://github.com/${r.fullName}.git`, l10n.t("Clone URL copied.")),
         },
       ]);
     });
@@ -1480,7 +1505,11 @@ function remoteRow(
     meta,
     time: relTimeISO(r.updatedAt),
     actions,
-    ariaLabel: [r.fullName, r.private ? "private" : "", local ? "already on this machine" : ""]
+    ariaLabel: [
+      r.fullName,
+      r.private ? l10n.t("private") : "",
+      local ? l10n.t("already on this machine") : "",
+    ]
       .filter(Boolean)
       .join(", "),
     onOpen: () => void openRemoteRepo(r, local, nav),
@@ -1507,7 +1536,7 @@ async function cloneInto(
   }
   btn.disabled = true;
   const was = btn.textContent;
-  btn.textContent = "Cloning…";
+  btn.textContent = l10n.t("Cloning…");
   // A clone of anything real takes long enough that a button reading "Cloning…"
   // and never changing is indistinguishable from one that has hung. The main
   // process already streams progress; nothing was listening to it.
@@ -1522,18 +1551,18 @@ async function cloneInto(
       name: r.name,
     });
     if (!res.ok || !res.root) {
-      toast(res.message ?? `Couldn't clone ${r.fullName}.`, "error");
+      toast(res.message ?? l10n.t("Couldn't clone {0}.", r.fullName), "error");
       return;
     }
     bust("repos");
-    toast(`Cloned ${r.fullName}.`, "success");
+    toast(l10n.t("Cloned {0}.", r.fullName), "success");
     // Straight into it — cloning is something you do in order to work, and
     // making you find it again afterwards is a step nobody wants.
     const info = await host.invoke("repo:openPath", res.root);
     if (info) nav("code");
     else await refresh();
   } catch (e) {
-    toast(String((e as Error)?.message ?? e) || `Couldn't clone ${r.fullName}.`, "error");
+    toast(String((e as Error)?.message ?? e) || l10n.t("Couldn't clone {0}.", r.fullName), "error");
   } finally {
     off?.();
     btn.disabled = false;

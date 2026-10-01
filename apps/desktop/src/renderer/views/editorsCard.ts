@@ -7,6 +7,7 @@
 // cannot be the default, so hiding the default hands the role to the next one
 // shown — the card shows that move as it happens.
 
+import * as l10n from "@vscode/l10n";
 import { host } from "../bridge";
 import { el, span, glyph, settingsCard, settingsField } from "../ui";
 import { toast } from "../dialogs";
@@ -18,22 +19,23 @@ const isMac = navigator.platform.toLowerCase().includes("mac");
 function viaText(e: EditorView): string {
   switch (e.via) {
     case "app":
-      return e.location ?? "Application";
+      return e.location ?? l10n.t("Application");
     case "cli":
-      return e.location ? `${e.location} (command line)` : "Command line";
+      return e.location ? l10n.t("{0} (command line)", e.location) : l10n.t("Command line");
     case "path":
-      return e.location ?? "Installed";
+      return e.location ?? l10n.t("Installed");
     case "custom":
-      return e.location ?? "Custom command";
+      return e.location ?? l10n.t("Custom command");
   }
 }
 
 export function editorsCard(): HTMLElement {
-  const { card, body } = settingsCard("Editors", "code");
+  const { card, body } = settingsCard(l10n.t("Editors"), "code");
   card.classList.add("editors-card");
   const sub = el("div", "settings-sub");
-  sub.textContent =
-    "The Open in… button in the top bar, and every repository's menu, list the editors ticked here. Your favourite is the one the button itself opens.";
+  sub.textContent = l10n.t(
+    "The Open in… button in the top bar, and every repository's menu, list the editors ticked here. Your favourite is the one the button itself opens.",
+  );
 
   const list = el("div", "editors-list");
   list.setAttribute("role", "list");
@@ -41,10 +43,10 @@ export function editorsCard(): HTMLElement {
   const found = el("div", "settings-sub editors-found");
   const footBtns = el("div", "settings-clonedir-btns");
   const addBtn = el("button", "mini-btn editors-add") as HTMLButtonElement;
-  addBtn.append(glyph("add"), span("Add a custom editor…"));
+  addBtn.append(glyph("add"), span(l10n.t("Add a custom editor…")));
   const againBtn = el("button", "mini-btn editors-again") as HTMLButtonElement;
-  againBtn.append(glyph("refresh"), span("Look again"));
-  againBtn.title = "Scan this machine for editors again";
+  againBtn.append(glyph("refresh"), span(l10n.t("Look again")));
+  againBtn.title = l10n.t("Scan this machine for editors again");
   footBtns.append(addBtn, againBtn);
   foot.append(found, footBtns);
 
@@ -52,15 +54,15 @@ export function editorsCard(): HTMLElement {
   // bare executable gets it appended.
   const form = el("div", "editors-add-form");
   form.hidden = true;
-  const nameField = settingsField("Name", "", "Helix");
-  const cmdField = settingsField("Command", "", "hx {path}");
+  const nameField = settingsField(l10n.t("Name"), "", "Helix");
+  const cmdField = settingsField(l10n.t("Command"), "", "hx {path}");
   const hint = el("div", "settings-sub");
-  hint.textContent = "Write {path} where the repository folder goes, or leave it off to pass the folder as the last argument.";
+  hint.textContent = l10n.t("Write {path} where the repository folder goes, or leave it off to pass the folder as the last argument.");
   const formBtns = el("div", "settings-clonedir-btns editors-add-btns");
   const saveBtn = el("button", "mini-btn editors-save") as HTMLButtonElement;
-  saveBtn.textContent = "Add editor";
+  saveBtn.textContent = l10n.t("Add editor");
   const cancelBtn = el("button", "mini-btn") as HTMLButtonElement;
-  cancelBtn.textContent = "Cancel";
+  cancelBtn.textContent = l10n.t("Cancel");
   formBtns.append(saveBtn, cancelBtn);
   form.append(nameField.row, cmdField.row, hint, formBtns);
 
@@ -93,9 +95,9 @@ export function editorsCard(): HTMLElement {
       closeForm();
       paint(v);
       bustEditors();
-      toast(`${name} added. It's in every Open in… menu now.`, "success");
+      toast(l10n.t("{0} added. It's in every Open in… menu now.", name), "success");
     } catch (e) {
-      toast(e instanceof Error ? e.message : "Couldn't add the editor.", "error");
+      toast(e instanceof Error ? e.message : l10n.t("Couldn't add the editor."), "error");
       syncSave();
     }
   };
@@ -122,14 +124,14 @@ export function editorsCard(): HTMLElement {
     const box = document.createElement("input");
     box.type = "checkbox";
     box.checked = e.shown;
-    box.setAttribute("aria-label", `Show ${e.name} in Open in… menus`);
+    box.setAttribute("aria-label", l10n.t("Show {0} in Open in… menus", e.name));
     const icon = el("span", "editors-icon");
     icon.appendChild(editorMark(e));
     lab.append(icon);
     const txt = el("div", "settings-check-text");
     const title = el("div", "settings-check-title editors-name");
     title.append(span(e.name));
-    if (e.via === "custom") title.append(span("custom", "editors-tag"));
+    if (e.via === "custom") title.append(span(l10n.t("custom"), "editors-tag"));
     const where = el("div", "settings-sub editors-where");
     where.textContent = viaText(e);
     where.title = e.location ?? "";
@@ -141,18 +143,16 @@ export function editorsCard(): HTMLElement {
     // The favourite is a star you can press, not a label you can only read —
     // it is the one thing on this card people come here to change.
     const fav = el("button", "mini-btn editors-fav" + (e.isDefault ? " is-on" : "")) as HTMLButtonElement;
-    fav.append(glyph(e.isDefault ? "star-full" : "star-empty"), span(e.isDefault ? "Favourite" : "Make favourite"));
-    fav.title = e.isDefault
-      ? `${e.name} is what the Open in button opens`
-      : `Make ${e.name} what the Open in button opens`;
+    fav.append(glyph(e.isDefault ? "star-full" : "star-empty"), span(e.isDefault ? l10n.t("Favourite") : l10n.t("Make favourite")));
+    fav.title = e.isDefault ? l10n.t("{0} is what the Open in button opens", e.name) : l10n.t("Make {0} what the Open in button opens", e.name);
     fav.setAttribute("aria-pressed", String(e.isDefault));
     fav.disabled = e.isDefault || !e.shown;
     fav.addEventListener("click", () => void change(() => host.invoke("editors:setDefault", { id: e.id })));
     side.append(fav);
     if (e.via === "custom") {
       const rm = el("button", "mini-btn gh-icon-btn editors-remove") as HTMLButtonElement;
-      rm.setAttribute("aria-label", `Remove ${e.name}`);
-      rm.title = `Remove ${e.name}`;
+      rm.setAttribute("aria-label", l10n.t("Remove {0}", e.name));
+      rm.title = l10n.t("Remove {0}", e.name);
       rm.append(glyph("trash"));
       rm.addEventListener("click", () => void change(() => host.invoke("editors:removeCustom", { id: e.id })));
       side.append(rm);
@@ -168,7 +168,7 @@ export function editorsCard(): HTMLElement {
       paint(await op());
       bustEditors();
     } catch (e) {
-      toast(e instanceof Error ? e.message : "Couldn't save that.", "error");
+      toast(e instanceof Error ? e.message : l10n.t("Couldn't save that."), "error");
     }
   };
 
@@ -182,16 +182,21 @@ export function editorsCard(): HTMLElement {
         glyph("info"),
         span(
           isMac
-            ? "No editors found in /Applications or ~/Applications. Add one below with the command that opens a folder."
-            : "No editors found on PATH or in the usual install folders. Add one below with the command that opens a folder.",
+            ? l10n.t("No editors found in /Applications or ~/Applications. Add one below with the command that opens a folder.")
+            : l10n.t("No editors found on PATH or in the usual install folders. Add one below with the command that opens a folder."),
         ),
       );
       list.append(none);
       found.textContent = "";
     } else {
-      found.textContent =
-        `${detected} ${detected === 1 ? "editor" : "editors"} found on this ${isMac ? "Mac" : "machine"}` +
-        (shown === v.editors.length ? "" : ` · ${shown} of ${v.editors.length} shown`);
+      const suffix = shown === v.editors.length ? "" : l10n.t(" · {0} of {1} shown", shown, v.editors.length);
+      found.textContent = isMac
+        ? detected === 1
+          ? l10n.t("{0} editor found on this Mac{1}", detected, suffix)
+          : l10n.t("{0} editors found on this Mac{1}", detected, suffix)
+        : detected === 1
+          ? l10n.t("{0} editor found on this machine{1}", detected, suffix)
+          : l10n.t("{0} editors found on this machine{1}", detected, suffix);
     }
   };
 
@@ -202,9 +207,9 @@ export function editorsCard(): HTMLElement {
       paint(v);
       bustEditors();
       const n = v.editors.filter((e) => e.via !== "custom").length;
-      toast(n === 0 ? "Still no editors found." : `Found ${n} ${n === 1 ? "editor" : "editors"}.`, "info");
+      toast(n === 0 ? l10n.t("Still no editors found.") : n === 1 ? l10n.t("Found {0} editor.", n) : l10n.t("Found {0} editors.", n), "info");
     } catch (e) {
-      toast(e instanceof Error ? e.message : "Couldn't look again.", "error");
+      toast(e instanceof Error ? e.message : l10n.t("Couldn't look again."), "error");
     } finally {
       againBtn.disabled = false;
     }

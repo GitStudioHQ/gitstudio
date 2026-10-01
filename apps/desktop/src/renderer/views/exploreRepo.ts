@@ -12,6 +12,7 @@
 //   repo/<owner>/<name>/tree/<ref>/<path…>
 //   repo/<owner>/<name>/blob/<ref>/<path…>
 
+import * as l10n from "@vscode/l10n";
 import { fileLines } from "../textFit";
 import { host } from "../bridge";
 import { gget } from "../cache";
@@ -143,22 +144,22 @@ async function mount(
     if (!local) {
       setMain(
         "cloud-download",
-        "Clone and open",
+        l10n.t("Clone and open"),
         cloneDir
-          ? `Clones ${fullName} into ${cloneDir}, then opens it here.`
-          : `Clones ${fullName} and opens it here.`,
+          ? l10n.t("Clones {0} into {1}, then opens it here.", fullName, cloneDir)
+          : l10n.t("Clones {0} and opens it here.", fullName),
         () => openGhRepoInApp(fullName),
       );
     } else if (local.current) {
       setMain(
         dirty ? "request-changes" : "code",
-        dirty ? "Go to the changes" : "Go to the code",
-        `Go to ${local.name} in GitStudio`,
+        dirty ? l10n.t("Go to the changes") : l10n.t("Go to the code"),
+        l10n.t("Go to {0} in GitStudio", local.name),
         () => nav(dirty ? "changes" : "code"),
       );
     } else {
       const elsewhere = local;
-      setMain("folder", "Open this clone", `Open ${middlePath(elsewhere.root)}`, () =>
+      setMain("folder", l10n.t("Open this clone"), l10n.t("Open {0}", middlePath(elsewhere.root)), () =>
         void openLocalCopy(fullName, elsewhere, nav),
       );
     }
@@ -173,25 +174,25 @@ async function mount(
               // offered on the repository you are standing in is exactly the
               // ambiguity the open/changes prompt was added to kill.
               {
-                label: "Open this clone",
+                label: l10n.t("Open this clone"),
                 sub: middlePath(held.root),
                 icon: "repo",
                 onClick: () => void openLocalCopy(fullName, held, nav),
               },
               {
-                label: "Show in Finder",
+                label: l10n.t("Show in Finder"),
                 icon: "folder-opened",
                 onClick: () => void host.invoke("repos:reveal", held.root),
               },
               {
-                label: "Copy clone URL",
+                label: l10n.t("Copy clone URL"),
                 icon: "copy",
                 onClick: () =>
-                  void copyText(`https://github.com/${fullName}.git`, "Clone URL copied."),
+                  void copyText(`https://github.com/${fullName}.git`, l10n.t("Clone URL copied.")),
               },
               { separator: true },
               {
-                label: "Clone another copy…",
+                label: l10n.t("Clone another copy…"),
                 icon: "repo-clone",
                 onClick: () =>
                   openCloneDialog((root) => host.invoke("repo:openPath", root), {
@@ -201,12 +202,12 @@ async function mount(
             ]
           : [
               {
-                label: "Choose location…",
+                label: l10n.t("Choose location…"),
                 icon: "folder-opened",
                 onClick: () => openGhRepoChooseLocation(fullName),
               },
               {
-                label: "Clone…",
+                label: l10n.t("Clone…"),
                 icon: "repo-clone",
                 onClick: () =>
                   openCloneDialog((root) => host.invoke("repo:openPath", root), {
@@ -216,13 +217,13 @@ async function mount(
             ],
       );
     };
-    openMore.setAttribute("aria-label", `More ways to open ${fullName}`);
+    openMore.setAttribute("aria-label", l10n.t("More ways to open {0}", fullName));
   };
   paintOpen();
 
   const ghBtn = el("button", "mini-btn gh-icon-btn");
   ghBtn.appendChild(glyph("link-external"));
-  ghBtn.title = "Open this repository on GitHub";
+  ghBtn.title = l10n.t("Open this repository on GitHub");
   ghBtn.setAttribute("aria-label", ghBtn.title);
   ghBtn.addEventListener("click", () =>
     window.open(`https://github.com/${fullName}`, "_blank", "noopener"),
@@ -231,26 +232,26 @@ async function mount(
   // The history of a repository nobody has cloned. Read-only by nature — there
   // is nothing on disk to check out — so it is a LIST, not the graph.
   const commitsBtn = el("button", "mini-btn" + (kind === "commits" ? " is-on" : ""));
-  commitsBtn.append(glyph("history"), span("Commits"));
-  commitsBtn.title = "Read this repository's commits";
+  commitsBtn.append(glyph("history"), span(l10n.t("Commits")));
+  commitsBtn.title = l10n.t("Read this repository's commits");
   commitsBtn.addEventListener("click", () =>
     goto(kind === "commits" ? { path: "", kind: "tree" } : { path: "", kind: "commits" }),
   );
 
   const gotoBtn = el("button", "mini-btn");
-  gotoBtn.append(glyph("search"), span("Go to file"));
-  gotoBtn.title = "Fuzzy-search every file in this repository";
+  gotoBtn.append(glyph("search"), span(l10n.t("Go to file")));
+  gotoBtn.title = l10n.t("Fuzzy-search every file in this repository");
   gotoBtn.addEventListener("click", () => void openGoToFile(fullName, ref, (p) => goto({ path: p, kind: "blob" })));
 
   // Filled in from the repo detail once it lands (the rail fetches it anyway).
-  let defaultBranchLabel = "default branch";
+  let defaultBranchLabel = l10n.t("default branch");
   let defaultBranchName: string | undefined;
   const refBtn = el("button", "mini-btn explore-ref-btn");
   // "default branch" described the KIND of thing selected rather than the
   // selection; the rail says the default is "main", so the button said one
   // thing and the rail another.
   refBtn.append(glyph("git-branch"), span(ref ?? defaultBranchLabel, "explore-ref-name"), glyph("chevron-down"));
-  refBtn.title = "Switch branch";
+  refBtn.title = l10n.t("Switch branch");
   refBtn.addEventListener("click", () =>
     // `kind` too. It was the ONLY one of the seven goto call sites that dropped
     // it, and `repoRouteId` defaults a missing kind to "tree" — so switching
@@ -270,7 +271,7 @@ async function mount(
   const { view, main, rail } = detailPage({
     // The app calls this view "Search" everywhere else; "Explore" is a name it
     // no longer uses anywhere the reader can see.
-    backLabel: "Search",
+    backLabel: l10n.t("Search"),
     crumb: fullName,
     crumbTag: whereTag,
     onBack,
@@ -288,7 +289,7 @@ async function mount(
   // section each time. `det-loc` is a marker for the checks; it needs no CSS.
   const locRoot = el("div", "det-prop det-loc");
   const buildLocation = (): void => {
-    const loc = propSection("Location");
+    const loc = propSection(l10n.t("Location"));
     // A column of facts, not a wrapped row of chips.
     loc.body.classList.add("det-prop-facts");
     loc.body.appendChild(whereChip(local ? "local" : "remote"));
@@ -298,11 +299,13 @@ async function mount(
       loc.body.appendChild(pathEl);
     }
     const note = !local
-      ? "Read-only — nothing of this is on your disk."
+      ? l10n.t("Read-only — nothing of this is on your disk.")
       : local.current
-        ? "This is the repository you have open."
+        ? l10n.t("This is the repository you have open.")
         : dirty
-          ? `${dirty} uncommitted ${dirty === 1 ? "file" : "files"} waiting there.`
+          ? dirty === 1
+            ? l10n.t("1 uncommitted file waiting there.")
+            : l10n.t("{0} uncommitted files waiting there.", dirty)
           : "";
     if (note) loc.body.appendChild(span(note, "det-prop-none"));
     // Clean vs dirty is ONE rule, stated once: dirty goes to the changes, clean
@@ -311,14 +314,18 @@ async function mount(
     const held = local;
     loc.body.appendChild(
       !held
-        ? propAddBtn("Clone it here", () => openGhRepoChooseLocation(fullName), "repo-clone")
+        ? propAddBtn(l10n.t("Clone it here"), () => openGhRepoChooseLocation(fullName), "repo-clone")
         : held.current
           ? propAddBtn(
-              dirty ? "Go to the changes" : "Go to the code",
+              dirty ? l10n.t("Go to the changes") : l10n.t("Go to the code"),
               () => nav(dirty ? "changes" : "code"),
               dirty ? "request-changes" : "code",
             )
-          : propAddBtn("Open this clone", () => void openLocalCopy(fullName, held, nav), "folder-opened"),
+          : propAddBtn(
+              l10n.t("Open this clone"),
+              () => void openLocalCopy(fullName, held, nav),
+              "folder-opened",
+            ),
     );
     locRoot.className = `${loc.root.className} det-loc`;
     locRoot.replaceChildren(...loc.root.childNodes);
@@ -434,8 +441,8 @@ async function mount(
     if (isEmptyRepoMessage(cleanErr(e))) {
       content.replaceChildren(
         emptyState(
-          "This repository is empty",
-          `Nothing has been pushed to ${fullName} yet, so there is nothing to read here.`,
+          l10n.t("This repository is empty"),
+          l10n.t("Nothing has been pushed to {0} yet, so there is nothing to read here.", fullName),
           { icon: "repo" },
         ),
       );
@@ -443,7 +450,7 @@ async function mount(
     }
     content.replaceChildren(
       errorState(
-        "Couldn't read this repository",
+        l10n.t("Couldn't read this repository"),
         browseHint(fullName, e),
         () => renderRepoPage(wrap, nav, route, onBack),
       ),
@@ -469,7 +476,10 @@ async function renderCommits(
   if (!content.isConnected) return;
   if (!commits.length) {
     content.replaceChildren(
-      emptyState("No commits", `Nothing has been committed on ${ref ?? "the default branch"} yet.`),
+      emptyState(
+        l10n.t("No commits"),
+        l10n.t("Nothing has been committed on {0} yet.", ref ?? l10n.t("the default branch")),
+      ),
     );
     return;
   }
@@ -479,7 +489,7 @@ async function renderCommits(
     row.href = `https://github.com/${fullName}/commit/${c.sha}`;
     row.target = "_blank";
     row.rel = "noopener";
-    row.title = `Open ${c.shortSha} on GitHub`;
+    row.title = l10n.t("Open {0} on GitHub", c.shortSha);
     const who = el("span", "explore-commit-av");
     if (c.avatarUrl) {
       const img = document.createElement("img");
@@ -507,9 +517,11 @@ async function renderCommits(
   note.textContent =
     commits.length >= 50
       ? have
-        ? "The 50 most recent commits. Open your copy to read the whole history."
-        : "The 50 most recent commits. Clone the repository to read its whole history."
-      : `${commits.length} commit${commits.length === 1 ? "" : "s"}.`;
+        ? l10n.t("The 50 most recent commits. Open your copy to read the whole history.")
+        : l10n.t("The 50 most recent commits. Clone the repository to read its whole history.")
+      : commits.length === 1
+        ? l10n.t("1 commit.")
+        : l10n.t("{0} commits.", commits.length);
   list.appendChild(note);
   content.replaceChildren(list);
 }
@@ -517,10 +529,13 @@ async function renderCommits(
 /** GitHub's 404 on an org repo usually means OAuth-app access is restricted —
  *  say that instead of a bare "Not Found", which sends people to the browser. */
 function browseHint(fullName: string, e: unknown): string {
-  const msg = cleanErr(e) || "GitHub request failed.";
+  const msg = cleanErr(e) || l10n.t("GitHub request failed.");
   if (/not found/i.test(msg)) {
     const owner = fullName.split("/")[0];
-    return `${msg}\n\nIf this repository is private or belongs to ${owner}, the organization may restrict OAuth app access — an owner can approve GitStudio in the org's settings.`;
+    return `${msg}\n\n${l10n.t(
+      "If this repository is private or belongs to {0}, the organization may restrict OAuth app access — an owner can approve GitStudio in the org's settings.",
+      owner,
+    )}`;
   }
   return msg;
 }
@@ -541,7 +556,9 @@ async function renderDir(
   const list = el("div", "explore-tree");
   for (const entry of entries) list.appendChild(entryRow(entry, goto));
   if (!entries.length) {
-    list.appendChild(emptyState("Empty folder", "Nothing here at this ref.", { icon: "folder" }));
+    list.appendChild(
+      emptyState(l10n.t("Empty folder"), l10n.t("Nothing here at this ref."), { icon: "folder" }),
+    );
   }
   content.appendChild(list);
 
@@ -607,11 +624,17 @@ async function renderFile(
   const name = path.split("/").pop() ?? path;
 
   if (file.binary || file.truncated) {
+    const sizeSuffix = file.size ? ` · ${formatBytes(file.size)}` : "";
     content.appendChild(
       emptyState(
-        file.binary ? "Binary file" : "File too large to preview",
-        `${name}${file.size ? ` · ${formatBytes(file.size)}` : ""} — open it on GitHub, or ` +
-          (have ? "open your copy to read it here." : "clone the repository to read it here."),
+        file.binary ? l10n.t("Binary file") : l10n.t("File too large to preview"),
+        have
+          ? l10n.t("{0}{1} — open it on GitHub, or open your copy to read it here.", name, sizeSuffix)
+          : l10n.t(
+              "{0}{1} — open it on GitHub, or clone the repository to read it here.",
+              name,
+              sizeSuffix,
+            ),
         {
           icon: file.binary ? "file-binary" : "file",
           // Advising a clone of something already on disk is advice you cannot
@@ -619,7 +642,7 @@ async function renderFile(
           ...(have
             ? {
                 action: {
-                  label: "Open your copy",
+                  label: l10n.t("Open your copy"),
                   icon: "repo",
                   onClick: () => void openLocalCopy(fullName, have, nav),
                 },
@@ -683,53 +706,53 @@ function renderRepoRail(
   // Location is kept, not rebuilt: it is the one section that must survive the
   // detail fetch failing, which is exactly what happens on a private repo.
   rail.replaceChildren(locRoot);
-  const about = propSection("About");
+  const about = propSection(l10n.t("About"));
   if (d.description) {
     const p = el("div", "det-prop-text");
     p.textContent = d.description;
     about.body.appendChild(p);
   } else {
-    about.body.appendChild(span("No description.", "det-prop-none"));
+    about.body.appendChild(span(l10n.t("No description."), "det-prop-none"));
   }
   rail.appendChild(about.root);
 
-  const stats = propSection("Stats");
+  const stats = propSection(l10n.t("Stats"));
   stats.body.classList.add("det-prop-facts");
   const fact = (k: string, v: string): void => {
     const row = el("div", "det-fact");
     row.append(span(k, "det-fact-k"), span(v, "det-fact-v"));
     stats.body.appendChild(row);
   };
-  if (d.language) fact("Language", d.language);
-  fact("Stars", d.stargazersCount.toLocaleString());
-  fact("Forks", d.forksCount.toLocaleString());
-  fact("Open issues", d.openIssuesCount.toLocaleString());
-  if (d.license) fact("License", d.license);
-  if (d.defaultBranch) fact("Default branch", d.defaultBranch);
-  if (d.pushedAt) fact("Last push", relTimeISO(d.pushedAt));
+  if (d.language) fact(l10n.t("Language"), d.language);
+  fact(l10n.t("Stars"), d.stargazersCount.toLocaleString());
+  fact(l10n.t("Forks"), d.forksCount.toLocaleString());
+  fact(l10n.t("Open issues"), d.openIssuesCount.toLocaleString());
+  if (d.license) fact(l10n.t("License"), d.license);
+  if (d.defaultBranch) fact(l10n.t("Default branch"), d.defaultBranch);
+  if (d.pushedAt) fact(l10n.t("Last push"), relTimeISO(d.pushedAt));
   rail.appendChild(stats.root);
 
   if (d.topics.length) {
-    const topics = propSection("Topics");
+    const topics = propSection(l10n.t("Topics"));
     for (const t of d.topics.slice(0, 12)) topics.body.appendChild(span(t, "gh-pill explore-topic"));
     rail.appendChild(topics.root);
   }
   if (d.fork || d.archived || d.private) {
-    const flags = propSection("Notes");
-    if (d.private) flags.body.appendChild(span("private", "gh-pill"));
-    if (d.fork) flags.body.appendChild(span("fork", "gh-pill"));
-    if (d.archived) flags.body.appendChild(span("archived", "gh-pill"));
+    const flags = propSection(l10n.t("Notes"));
+    if (d.private) flags.body.appendChild(span(l10n.t("private"), "gh-pill"));
+    if (d.fork) flags.body.appendChild(span(l10n.t("fork"), "gh-pill"));
+    if (d.archived) flags.body.appendChild(span(l10n.t("archived"), "gh-pill"));
     rail.appendChild(flags.root);
   }
 
-  const owner = propSection("Owner");
+  const owner = propSection(l10n.t("Owner"));
   const ownerLogin = fullName.split("/")[0];
   // It was a <button> with a pointer cursor and a tooltip promising to open the
   // account, and clicking it did nothing at all. Either a control does its
   // thing or it is not a control.
   const ownerBtn = el("button", "det-person");
   ownerBtn.textContent = ownerLogin;
-  ownerBtn.title = `Open ${ownerLogin} in Explore`;
+  ownerBtn.title = l10n.t("Open {0} in Explore", ownerLogin);
   ownerBtn.setAttribute("aria-label", ownerBtn.title);
   ownerBtn.addEventListener("click", () => nav("explore", { id: `user/${ownerLogin}` }));
   owner.body.appendChild(ownerBtn);
@@ -751,7 +774,7 @@ async function openRefMenu(
   } catch (e) {
     // An empty repository has no branches; that is the answer, not a failure.
     if (!isEmptyRepoMessage(cleanErr(e))) {
-      toast(cleanErr(e) || "Couldn't list branches.", "error");
+      toast(cleanErr(e) || l10n.t("Couldn't list branches."), "error");
       return;
     }
   }
@@ -760,8 +783,8 @@ async function openRefMenu(
   if (!branches.length) {
     openMenu(anchor, [
       {
-        label: "No branches yet",
-        sub: `nothing has been pushed to ${fullName}`,
+        label: l10n.t("No branches yet"),
+        sub: l10n.t("nothing has been pushed to {0}", fullName),
         icon: "info",
         disabled: true,
         onClick: () => {},
@@ -779,7 +802,7 @@ async function openRefMenu(
     anchor,
     branches.map((b) => ({
       label: b.name,
-      sub: b.name === def ? "default" : undefined,
+      sub: b.name === def ? l10n.t("default") : undefined,
       icon: selected === b.name ? "check" : "git-branch",
       current: selected === b.name,
       onClick: () => pick(b.name === def ? undefined : b.name),
@@ -801,9 +824,9 @@ async function openGoToFile(
 
   const input = document.createElement("input");
   input.className = "modal-input gotofile-input";
-  input.placeholder = "Go to file…";
+  input.placeholder = l10n.t("Go to file…");
   input.spellcheck = false;
-  input.setAttribute("aria-label", "Go to file");
+  input.setAttribute("aria-label", l10n.t("Go to file"));
   input.setAttribute("role", "combobox");
   input.setAttribute("aria-expanded", "true");
   input.setAttribute("aria-autocomplete", "list");
@@ -812,12 +835,12 @@ async function openGoToFile(
   listEl.id = "gs-gotofile-list";
   input.setAttribute("aria-controls", listEl.id);
   const note = el("div", "gotofile-note");
-  note.textContent = "Loading the file list…";
+  note.textContent = l10n.t("Loading the file list…");
   card.append(input, listEl, note);
 
   openModal((c) => {
     close = c;
-    return { card, focusEl: input, label: `Go to file in ${fullName}`, onClose: () => {} };
+    return { card, focusEl: input, label: l10n.t("Go to file in {0}", fullName), onClose: () => {} };
   });
 
   let paths: string[] = [];
@@ -858,11 +881,12 @@ async function openGoToFile(
         // repository that simply has none.
         listEl.appendChild(
           isEmptyRepoMessage(failure)
-            ? emptyState("This repository is empty", "There are no files to go to yet.", {
-                icon: "repo",
-                anchor: "inline",
-              })
-            : errorState("Couldn't list the files", failure, () => void load()),
+            ? emptyState(
+                l10n.t("This repository is empty"),
+                l10n.t("There are no files to go to yet."),
+                { icon: "repo", anchor: "inline" },
+              )
+            : errorState(l10n.t("Couldn't list the files"), failure, () => void load()),
         );
       }
       return;
@@ -893,7 +917,7 @@ async function openGoToFile(
       listEl.appendChild(row);
     }
     if (!ranked.length) {
-      listEl.appendChild(span("No file matches that.", "gotofile-empty"));
+      listEl.appendChild(span(l10n.t("No file matches that."), "gotofile-empty"));
       input.removeAttribute("aria-activedescendant");
       return;
     }
@@ -903,7 +927,7 @@ async function openGoToFile(
   const load = async (): Promise<void> => {
     state = "loading";
     failure = "";
-    note.textContent = "Loading the file list…";
+    note.textContent = l10n.t("Loading the file list…");
     note.removeAttribute("role");
     note.classList.remove("is-error");
     render();
@@ -913,16 +937,22 @@ async function openGoToFile(
       paths = res.paths;
       state = "ready";
       note.textContent = res.truncated
-        ? `Searching ${paths.length.toLocaleString()} of ${res.total.toLocaleString()} files — this repository's tree is too large to index fully.`
-        : `${paths.length.toLocaleString()} ${paths.length === 1 ? "file" : "files"}`;
+        ? l10n.t(
+            "Searching {0} of {1} files — this repository's tree is too large to index fully.",
+            paths.length.toLocaleString(),
+            res.total.toLocaleString(),
+          )
+        : paths.length === 1
+          ? l10n.t("1 file")
+          : l10n.t("{0} files", paths.length.toLocaleString());
     } catch (e) {
       if (!card.isConnected) return;
       state = "failed";
-      failure = cleanErr(e) || "GitHub couldn't list this repository's files.";
+      failure = cleanErr(e) || l10n.t("GitHub couldn't list this repository's files.");
       if (isEmptyRepoMessage(failure)) {
         // A state, said once in the list above — not an error to paint red and
         // announce as an alert under it.
-        note.textContent = "0 files";
+        note.textContent = l10n.t("0 files");
       } else {
         note.textContent = failure;
         note.setAttribute("role", "alert");

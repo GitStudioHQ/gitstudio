@@ -13,6 +13,7 @@
 // (ghGate with needsRepo=false) — it works even when the open repo's origin is
 // not on github.com.
 
+import * as l10n from "@vscode/l10n";
 import { host } from "../bridge";
 import {
   avatar,
@@ -164,14 +165,14 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   const S = orgsTab();
   const gen = ++S.renderGen;
 
-  const header = ghHeader("Organizations", gate.login, refresh);
+  const header = ghHeader(l10n.t("Organizations"), gate.login, refresh);
   const view = el("div", "gh-view");
   view.appendChild(header);
   // The live filter over whichever sub-tab is showing (repos / teams / members).
   header.querySelector(".gh-head-titlewrap")?.appendChild(
     searchField({
       // Was "Filter repos, teams, members…" — clipped to "Filter repos, teams, mer".
-      placeholder: "Filter this organization…",
+      placeholder: l10n.t("Filter this organization…"),
       initial: S.query,
       onInput: (q) => {
         S.query = q;
@@ -192,7 +193,11 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
     if (gen !== S.renderGen) return;
     if (!orgs) {
       detail.replaceChildren(
-        errorState("Couldn't load organizations", cleanErr(e) || "GitHub request failed.", refresh),
+        errorState(
+          l10n.t("Couldn't load organizations"),
+          cleanErr(e) || l10n.t("GitHub request failed."),
+          refresh,
+        ),
       );
       return;
     }
@@ -202,9 +207,11 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   header.setCount?.(orgs.length);
   if (orgs.length === 0) {
     detail.replaceChildren(
-      emptyState("No organizations", "You're not a member of any GitHub organizations.", {
-        icon: "organization",
-      }),
+      emptyState(
+        l10n.t("No organizations"),
+        l10n.t("You're not a member of any GitHub organizations."),
+        { icon: "organization" },
+      ),
     );
     return;
   }
@@ -264,14 +271,14 @@ function showOrgDetail(detail: HTMLElement, org: OrgInfo, gen: number, S: OrgsTa
 
   const actions = el("div", "gh-detail-actions");
   const openBtn = el("button", "mini-btn");
-  openBtn.append(glyph("link-external"), span("GitHub"));
-  openBtn.title = "Open this organization on GitHub";
+  openBtn.append(glyph("link-external"), span(l10n.t("GitHub")));
+  openBtn.title = l10n.t("Open this organization on GitHub");
   openBtn.addEventListener("click", () => window.open(org.htmlUrl, "_blank"));
   const copyBtn = el("button", "mini-btn gh-icon-btn");
   copyBtn.append(glyph("copy"));
-  copyBtn.title = `Copy @${org.login}`;
+  copyBtn.title = l10n.t("Copy @{0}", org.login);
   copyBtn.setAttribute("aria-label", copyBtn.title);
-  copyBtn.addEventListener("click", () => void copyText(org.login, "Org login copied."));
+  copyBtn.addEventListener("click", () => void copyText(org.login, l10n.t("Org login copied.")));
   actions.append(openBtn, copyBtn);
 
   head.append(identity, actions);
@@ -282,14 +289,14 @@ function showOrgDetail(detail: HTMLElement, org: OrgInfo, gen: number, S: OrgsTa
   const content = el("div", "gh-subcontent gh-org-grid");
   wireListNav(content, ".list-row");
   const subDefs: ReadonlyArray<{ id: SubTabId; label: string; icon: string }> = [
-    { id: "repos", label: "Repositories", icon: "repo" },
-    { id: "teams", label: "Teams", icon: "organization" },
-    { id: "members", label: "Members", icon: "organization" },
+    { id: "repos", label: l10n.t("Repositories"), icon: "repo" },
+    { id: "teams", label: l10n.t("Teams"), icon: "organization" },
+    { id: "members", label: l10n.t("Members"), icon: "organization" },
   ];
   content.id = "gs-org-subpanel";
   const tabs = subTabs({
     tabs: subDefs,
-    ariaLabel: "Organization sections",
+    ariaLabel: l10n.t("Organization sections"),
     panel: content,
     onSelect: (id) => {
       S.orgSubTab = id;
@@ -326,7 +333,7 @@ async function renderSubTab(
   content.classList.toggle("is-people", id === "members");
   const q = S.query.trim().toLowerCase();
   const noMatches = (): HTMLElement =>
-    emptyState("No matches", `Nothing matches “${S.query.trim()}”.`, {
+    emptyState(l10n.t("No matches"), l10n.t("Nothing matches “{0}”.", S.query.trim()), {
       icon: "search",
       anchor: "inline",
     });
@@ -340,7 +347,11 @@ async function renderSubTab(
       if (isStale(org, gen, S)) return;
       if (!repos) {
         content.replaceChildren(
-          errorState("Couldn't load repositories", cleanErr(e) || "GitHub request failed.", retry),
+          errorState(
+            l10n.t("Couldn't load repositories"),
+            cleanErr(e) || l10n.t("GitHub request failed."),
+            retry,
+          ),
         );
         return;
       }
@@ -349,7 +360,10 @@ async function renderSubTab(
     content.replaceChildren();
     if (repos.length === 0) {
       content.appendChild(
-        emptyState("No repositories", "This organization has no repositories you can see."),
+        emptyState(
+          l10n.t("No repositories"),
+          l10n.t("This organization has no repositories you can see."),
+        ),
       );
       return;
     }
@@ -375,7 +389,7 @@ async function renderSubTab(
       if (isStale(org, gen, S)) return;
       if (!teams) {
         content.replaceChildren(
-          errorState("Couldn't load teams", cleanErr(e) || "GitHub request failed.", retry),
+          errorState(l10n.t("Couldn't load teams"), cleanErr(e) || l10n.t("GitHub request failed."), retry),
         );
         return;
       }
@@ -384,7 +398,7 @@ async function renderSubTab(
     content.replaceChildren();
     if (teams.length === 0) {
       content.appendChild(
-        emptyState("No teams", "This organization has no teams visible to you."),
+        emptyState(l10n.t("No teams"), l10n.t("This organization has no teams visible to you.")),
       );
       return;
     }
@@ -408,7 +422,11 @@ async function renderSubTab(
     if (isStale(org, gen, S)) return;
     if (!members) {
       content.replaceChildren(
-        errorState("Couldn't load members", cleanErr(e) || "GitHub request failed.", retry),
+        errorState(
+          l10n.t("Couldn't load members"),
+          cleanErr(e) || l10n.t("GitHub request failed."),
+          retry,
+        ),
       );
       return;
     }
@@ -417,7 +435,10 @@ async function renderSubTab(
   content.replaceChildren();
   if (members.length === 0) {
     content.appendChild(
-      emptyState("No members", "No public members are visible for this organization."),
+      emptyState(
+        l10n.t("No members"),
+        l10n.t("No public members are visible for this organization."),
+      ),
     );
     return;
   }
@@ -446,20 +467,20 @@ function renderRepoRow(content: HTMLElement, r: OrgRepo): void {
   const row = el("div", "list-row gh-org-repo is-clickable");
   row.setAttribute("role", "button");
   row.tabIndex = 0;
-  row.setAttribute("aria-label", `Browse ${r.fullName}`);
+  row.setAttribute("aria-label", l10n.t("Browse {0}", r.fullName));
   row.appendChild(glyph(r.fork ? "repo-forked" : "repo"));
   const m = el("div", "row-meta");
   const t = el("div", "row-meta-title");
   t.textContent = r.name;
   const sub = el("div", "row-meta-sub");
-  const bits = [r.private ? "private" : "public"];
+  const bits = [r.private ? l10n.t("private") : l10n.t("public")];
   if (r.language) bits.push(r.language);
   if (r.stargazersCount) bits.push(`★ ${r.stargazersCount.toLocaleString()}`);
-  if (r.archived) bits.push("archived");
+  if (r.archived) bits.push(l10n.t("archived"));
   const when = relTimeISO(r.pushedAt);
-  if (when) bits.push(`updated ${when}`);
+  if (when) bits.push(l10n.t("updated {0}", when));
   sub.textContent = bits.join(" · ");
-  if (r.pushedAt) sub.title = `Last pushed ${absTimeISO(r.pushedAt)}`;
+  if (r.pushedAt) sub.title = l10n.t("Last pushed {0}", absTimeISO(r.pushedAt));
   // The description, on the card rather than only in its tooltip.
   //
   // It is the one line that tells you what a repository IS, and the card had
@@ -475,8 +496,8 @@ function renderRepoRow(content: HTMLElement, r: OrgRepo): void {
   }
   row.appendChild(m);
   row.title = r.description
-    ? `${r.description}\n\nClick to browse ${r.name}`
-    : `Click to browse ${r.fullName}`;
+    ? `${r.description}\n\n${l10n.t("Click to browse {0}", r.name)}`
+    : l10n.t("Click to browse {0}", r.fullName);
   const browse = (): void => {
     if (sectionNav) sectionNav("explore", { id: `repo/${r.fullName}` });
     else openPeek(repoDirCard(r.fullName, ""));
@@ -504,21 +525,21 @@ function renderRepoRow(content: HTMLElement, r: OrgRepo): void {
   // are discoverable without hovering to find out they exist.
   const more = el("button", "row-more") as HTMLButtonElement;
   more.append(glyph("kebab-vertical"));
-  more.title = `More actions for ${r.name}`;
+  more.title = l10n.t("More actions for {0}", r.name);
   more.setAttribute("aria-label", more.title);
   more.addEventListener("click", (e) => {
     // The row itself browses; the overflow must not also trigger that.
     e.stopPropagation();
     openMenu(more, [
       {
-        label: "Details",
-        sub: "Stars, licence, activity",
+        label: l10n.t("Details"),
+        sub: l10n.t("Stars, licence, activity"),
         icon: "info",
         onClick: () => openRepoPeek(r),
       },
       {
-        label: "Open in GitStudio",
-        sub: "Clone it if needed",
+        label: l10n.t("Open in GitStudio"),
+        sub: l10n.t("Clone it if needed"),
         icon: "repo-clone",
         onClick: () => openGhRepoInApp(r.fullName),
       },
@@ -535,7 +556,7 @@ function renderTeamRow(content: HTMLElement, org: string, t: OrgTeam): void {
   const ttl = el("div", "row-meta-title");
   ttl.textContent = t.name;
   const sub = el("div", "row-meta-sub");
-  sub.textContent = t.description || `@${t.slug}${t.privacy ? " · " + t.privacy : ""}`;
+  sub.textContent = t.description || (t.privacy ? `@${t.slug} · ${t.privacy}` : `@${t.slug}`);
   m.append(ttl, sub);
   row.appendChild(m);
   row.setAttribute("aria-haspopup", "dialog");
@@ -545,7 +566,7 @@ function renderTeamRow(content: HTMLElement, org: string, t: OrgTeam): void {
 
 function renderMemberRow(content: HTMLElement, u: OrgMember): void {
   const row = el("button", "list-row gh-org-member");
-  row.appendChild(avatar(u.login, u.avatarUrl, 20, "Member"));
+  row.appendChild(avatar(u.login, u.avatarUrl, 20, l10n.t("Member")));
   const m = el("div", "row-meta");
   const t = el("div", "row-meta-title");
   t.textContent = u.login;
@@ -575,9 +596,9 @@ function extLink(url: string): HTMLElement {
 /** The repo peek: the full record, with Clone… as the primary action — the org
  *  browser stops being a launcher for github.com and becomes a way IN. */
 function openRepoPeek(r: OrgRepo): void {
-  const chips = [peekChip(r.private ? "private" : "public", r.private ? "warn" : "muted")];
-  if (r.fork) chips.push(peekChip("fork", "muted"));
-  if (r.archived) chips.push(peekChip("archived", "warn"));
+  const chips = [peekChip(r.private ? l10n.t("private") : l10n.t("public"), r.private ? "warn" : "muted")];
+  if (r.fork) chips.push(peekChip(l10n.t("fork"), "muted"));
+  if (r.archived) chips.push(peekChip(l10n.t("archived"), "warn"));
   openPeek({
     icon: r.fork ? "repo-forked" : "repo",
     title: r.name,
@@ -585,14 +606,14 @@ function openRepoPeek(r: OrgRepo): void {
     subtitle: r.fullName,
     actions: [
       {
-        label: "Open on GitHub",
+        label: l10n.t("Open on GitHub"),
         icon: "link-external",
         onClick: () => window.open(r.htmlUrl, "_blank"),
       },
       {
-        label: "Clone…",
+        label: l10n.t("Clone…"),
         icon: "repo-clone",
-        title: "Clone this repository and open it in GitStudio",
+        title: l10n.t("Clone this repository and open it in GitStudio"),
         onClick: (ctx) => {
           ctx.close();
           openCloneDialog((root) => host.invoke("repo:openPath", root), {
@@ -603,24 +624,24 @@ function openRepoPeek(r: OrgRepo): void {
       {
         // Browsing beats bouncing: read the code + README right here, no
         // clone, no github.com.
-        label: "Browse files",
+        label: l10n.t("Browse files"),
         icon: "folder-opened",
         onClick: (ctx) => ctx.push(repoDirCard(r.fullName, "")),
       },
       {
-        label: "Choose location…",
+        label: l10n.t("Choose location…"),
         icon: "folder-opened",
-        title: `Pick the folder ${r.fullName} is cloned into, then open it`,
+        title: l10n.t("Pick the folder {0} is cloned into, then open it", r.fullName),
         onClick: () => openGhRepoChooseLocation(r.fullName),
       },
       {
         // THE action: open this like any local repo — Code, Commits,
         // Branches, PRs, everything. Reuses an existing clone or makes one
         // in the configured clone folder, no questions asked.
-        label: "Open",
+        label: l10n.t("Open"),
         icon: "folder-library",
         primary: true,
-        title: `Open ${r.fullName} in GitStudio as a full repo`,
+        title: l10n.t("Open {0} in GitStudio as a full repo", r.fullName),
         onClick: () => openGhRepoInApp(r.fullName),
       },
     ],
@@ -633,16 +654,16 @@ function openRepoPeek(r: OrgRepo): void {
         body.appendChild(p);
       }
       const meta: Array<[string, string | HTMLElement]> = [
-        ["Language", d.language ?? ""],
+        [l10n.t("Language"), d.language ?? ""],
         // Real zeros — hiding "0 stars" made new repos look broken, not new.
-        ["Stars", d.stargazersCount.toLocaleString()],
-        ["Forks", d.forksCount.toLocaleString()],
-        ["Open issues", d.openIssuesCount.toLocaleString()],
-        ["Default branch", d.defaultBranch],
-        ["License", d.license ?? ""],
-        ["Last pushed", d.pushedAt ? relTimeISO(d.pushedAt) : ""],
-        ["Created", d.createdAt ? relTimeISO(d.createdAt) : ""],
-        ["Homepage", d.homepage ? extLink(d.homepage) : ""],
+        [l10n.t("Stars"), d.stargazersCount.toLocaleString()],
+        [l10n.t("Forks"), d.forksCount.toLocaleString()],
+        [l10n.t("Open issues"), d.openIssuesCount.toLocaleString()],
+        [l10n.t("Default branch"), d.defaultBranch],
+        [l10n.t("License"), d.license ?? ""],
+        [l10n.t("Last pushed"), d.pushedAt ? relTimeISO(d.pushedAt) : ""],
+        [l10n.t("Created"), d.createdAt ? relTimeISO(d.createdAt) : ""],
+        [l10n.t("Homepage"), d.homepage ? extLink(d.homepage) : ""],
       ];
       body.appendChild(peekMetaGrid(meta));
       if (d.topics.length) {
@@ -664,7 +685,7 @@ function openTeamPeek(org: string, t: OrgTeam): void {
     actions: t.htmlUrl
       ? [
           {
-            label: "Open on GitHub",
+            label: l10n.t("Open on GitHub"),
             icon: "link-external",
             onClick: () => window.open(t.htmlUrl, "_blank"),
           },
@@ -678,10 +699,10 @@ function openTeamPeek(org: string, t: OrgTeam): void {
         p.textContent = t.description;
         body.appendChild(p);
       }
-      const { root, body: mbody } = peekSection("Members", members.length);
+      const { root, body: mbody } = peekSection(l10n.t("Members"), members.length);
       for (const m of members) {
         const row = el("button", "peek-row");
-        row.appendChild(avatar(m.login, m.avatarUrl, 22, "Member"));
+        row.appendChild(avatar(m.login, m.avatarUrl, 22, l10n.t("Member")));
         const main = el("div", "peek-row-main");
         const title = el("div", "peek-row-title");
         title.textContent = m.login;
@@ -697,7 +718,7 @@ function openTeamPeek(org: string, t: OrgTeam): void {
       }
       if (!members.length) {
         const none = el("div", "peek-row");
-        none.appendChild(span("No members visible to you.", "peek-row-sub"));
+        none.appendChild(span(l10n.t("No members visible to you."), "peek-row-sub"));
         mbody.appendChild(none);
       }
       body.appendChild(root);
@@ -714,28 +735,28 @@ export function memberCard(u: OrgMember): PeekCard {
     // instead of a generic account glyph.
     iconEl: avatar(u.login, u.avatarUrl, 22),
     title: u.login,
-    subtitle: "GitHub profile",
+    subtitle: l10n.t("GitHub profile"),
     actions: [
       {
-        label: "Copy login",
+        label: l10n.t("Copy login"),
         icon: "copy",
-        onClick: () => void copyText(u.login, "Login copied."),
+        onClick: () => void copyText(u.login, l10n.t("Login copied.")),
       },
       // The peek is a glance; the full page is where their repositories are.
       // Every person chip in the app opens this peek, so this one action makes
       // every author, assignee and reviewer a doorway into Explore.
       {
-        label: "View full profile",
+        label: l10n.t("View full profile"),
         icon: "person",
         primary: true,
-        title: `Open @${u.login}'s profile page in Explore`,
+        title: l10n.t("Open @{0}'s profile page in Explore", u.login),
         onClick: (ctx) => {
           ctx.close();
           sectionNav?.("explore", { id: `user/${u.login}` });
         },
       },
       {
-        label: "Open on GitHub",
+        label: l10n.t("Open on GitHub"),
         icon: "link-external",
         onClick: () => window.open(u.htmlUrl, "_blank"),
       },
@@ -751,12 +772,15 @@ export function memberCard(u: OrgMember): PeekCard {
       }
       body.appendChild(
         peekMetaGrid([
-          ["Company", info.company ?? ""],
-          ["Location", info.location ?? ""],
-          ["Website", info.blog ? extLink(info.blog) : ""],
-          ["Followers", typeof info.followers === "number" ? info.followers.toLocaleString() : ""],
-          ["Public repos", typeof info.publicRepos === "number" ? info.publicRepos.toLocaleString() : ""],
-          ["Joined", info.createdAt ? relTimeISO(info.createdAt) : ""],
+          [l10n.t("Company"), info.company ?? ""],
+          [l10n.t("Location"), info.location ?? ""],
+          [l10n.t("Website"), info.blog ? extLink(info.blog) : ""],
+          [l10n.t("Followers"), typeof info.followers === "number" ? info.followers.toLocaleString() : ""],
+          [
+            l10n.t("Public repos"),
+            typeof info.publicRepos === "number" ? info.publicRepos.toLocaleString() : "",
+          ],
+          [l10n.t("Joined"), info.createdAt ? relTimeISO(info.createdAt) : ""],
         ]),
       );
     },
