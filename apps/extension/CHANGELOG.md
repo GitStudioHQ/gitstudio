@@ -4,7 +4,7 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.18.0] - 2026-10-01
 
 ### Added
 - **GitStudio in 14 languages.** Every view, message and command follows VS

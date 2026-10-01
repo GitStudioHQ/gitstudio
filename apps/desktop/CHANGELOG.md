@@ -9,7 +9,7 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
-## [Unreleased]
+## [2.5.0] - 2026-10-01
 
 ### Added
 - **GitStudio in 14 languages.** Settings ▸ Appearance ▸ Language picks one,
