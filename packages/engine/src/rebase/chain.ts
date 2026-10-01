@@ -104,7 +104,7 @@ export function stopReason(stop: ChainStop): string {
     case "merge":
       return l10n.t("Reordering stops at a merge — moving a commit past one would flatten it.");
     case "published":
-      return publishedWarning("Reordering");
+      return publishedWarning(l10n.t("Reordering"));
     default:
       return l10n.t("The first commit — there is nothing below it to reorder past.");
   }

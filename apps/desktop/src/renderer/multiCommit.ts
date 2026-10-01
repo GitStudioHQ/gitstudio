@@ -24,7 +24,15 @@
 // Everything it touches comes in through `ManyDeps`, so the flow is tested
 // without a DOM or an Electron (test/multiCommitFlow.test.ts).
 
-import { applyManyMessage, dropManyQuestion, manyOutcomeMessage, squashCarryQuestion, squashQuestion } from "@gitstudio/engine/rebase/many";
+import {
+  applyManyMessage,
+  dropManyQuestion,
+  manyOutcomeMessage,
+  rewordOutcomeMessage,
+  rewordQuestion,
+  squashCarryQuestion,
+  squashQuestion,
+} from "@gitstudio/engine/rebase/many";
 import type {
   CommitActionRequest,
   CommitActionResult,
@@ -74,6 +82,8 @@ export async function runManyAction(action: ManyAction, shas: string[], d: ManyD
       return rewriteManyFlow("drop", shas, d);
     case "squash-many":
       return rewriteManyFlow("squash", shas, d);
+    case "reword":
+      return rewordFlow(shas, d);
     case "compare-two":
       if (shas.length !== 2) return "refused";
       // Newest first as listed: the second is the older — the base.
@@ -248,3 +258,75 @@ async function rewriteManyFlow(verb: "drop" | "squash", shas: string[], d: ManyD
   d.toast(text, out.expected ? "info" : "error");
   return "failed";
 }
+
+/**
+ * Edit message… (issue #75): one commit's whole message in the editor, then a
+ * rebase that rewords it and replays what came after — git-service's
+ * multiCommit.ts, the extension's path too — with Undo after.
+ */
+async function rewordFlow(shas: string[], d: ManyDeps): Promise<ManyFlowResult> {
+  const plan = await d.plan({ verb: "reword", shas, preflight: true });
+  if (!plan.ok) {
+    d.toast(plan.message, "info");
+    return "refused";
+  }
+  if (plan.blocked) {
+    d.toast(plan.blocked, "info");
+    return "refused";
+  }
+  const q = rewordQuestion(plan);
+  const m = await d.message({ title: q.title, hint: q.message, value: plan.message ?? "", okLabel: l10n.t("Edit message") });
+  const message = m?.trim();
+  if (!message || message === (plan.message ?? "").trim()) return "cancelled";
+
+  let carry = false;
+  if (plan.carryable.length > 0) {
+    const picked = await d.choose({
+      title: l10n.t("Move the branches on rewritten commits too?"),
+      hint: q.message,
+      cancelId: "cancel",
+      choices: [
+        { id: "carry", label: l10n.t("Edit and move those branches"), sub: l10n.t("They follow onto the rewritten commits."), icon: "git-branch" },
+        { id: "only", label: l10n.t("Edit on this branch only"), sub: l10n.t("They keep pointing at the commits as they are now."), icon: "git-commit" },
+      ],
+    });
+    if (picked !== "carry" && picked !== "only") return "cancelled";
+    carry = picked === "carry";
+  }
+
+  const out = await d.rewrite({ verb: "reword", shas: plan.shas, head: plan.head, carry, message });
+  const text = rewordOutcomeMessage(out);
+  if (out.status === "done") {
+    const { before, after, carried } = out;
+    if (before && after) {
+      d.undoable(text, {
+        label: l10n.t("Put the old message back"),
+        undo: async () => {
+          const back = await d.undo({
+            before,
+            after,
+            what: "reword",
+            ...(out.branch !== undefined ? { branch: out.branch } : {}),
+            ...(carried?.length ? { carried } : {}),
+          });
+          if (back.ok) return undefined;
+          const why = back.message ?? l10n.t("Couldn't put the branch back.");
+          return back.expected ? { info: why } : why;
+        },
+        after: () => d.refresh(),
+      });
+    } else {
+      d.toast(text, "success");
+    }
+    await d.refresh();
+    return "done";
+  }
+  if (out.status === "stopped") {
+    d.toast(text, "info");
+    await d.landOnConflicts();
+    return "stopped";
+  }
+  d.toast(text, out.expected ? "info" : "error");
+  return "failed";
+}
+

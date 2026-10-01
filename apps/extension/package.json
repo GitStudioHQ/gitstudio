@@ -2,7 +2,7 @@
   "name": "gitstudio",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "1.17.0",
+  "version": "1.18.0",
   "publisher": "gitstudio",
   "license": "Apache-2.0",
   "icon": "media/icon.png",

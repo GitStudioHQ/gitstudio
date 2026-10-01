@@ -11058,9 +11058,12 @@ class App {
    */
   private async openCommitMenu(sha: string, x: number, y: number): Promise<void> {
     const seq = ++this.commitMenuSeq;
-    const plan = await host.invoke("commit:dropPlan", { sha }).catch(() => undefined);
+    const [plan, reword] = await Promise.all([
+      host.invoke("commit:dropPlan", { sha }).catch(() => undefined),
+      host.invoke("commits:plan", { verb: "reword", shas: [sha] }).catch(() => undefined),
+    ]);
     if (seq !== this.commitMenuSeq) return;
-    this.contextMenu.open(sha, x, y, this.refsOn(sha), { drop: plan?.ok === true });
+    this.contextMenu.open(sha, x, y, this.refsOn(sha), { drop: plan?.ok === true, reword: reword?.ok === true });
   }
 
   /**

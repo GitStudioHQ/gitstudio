@@ -9,13 +9,16 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
-## [Unreleased]
+## [2.5.0] - 2026-10-01
 
 ### Added
 - **GitStudio in 14 languages.** Settings ▸ Appearance ▸ Language picks one,
   or follows your OS: Simplified and Traditional Chinese, Japanese, Korean, German, French, Spanish, Italian, Portuguese (Brazil), Russian, Turkish, Polish and Czech, besides English. A change applies after a
   restart. Translations other than English are machine drafts — corrections
   are welcome on GitHub.
+- **Edit message… on a commit.** Right-click a commit in the graph to rewrite
+  its message: the whole message opens in an editor, the commits after it are
+  replayed, branches on them can come along, and Undo puts it back.
 
 ## [2.4.0] - 2026-09-29
 

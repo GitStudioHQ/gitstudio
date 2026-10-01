@@ -13,7 +13,7 @@ import * as l10n from "@vscode/l10n";
 interface MenuItem {
   label: string;
   /** A commit:action verb — or "drop", which is its own flow (see DROP_ITEM). */
-  action: CommitActionRequest["action"] | "drop";
+  action: CommitActionRequest["action"] | "drop" | "reword";
   /** For checkout-ref: the ref this item checks out, its kind, and its full
    *  name when the row knew it (see RowRef.fullName). */
   ref?: { name: string; kind: "head" | "remote" | "tag"; fullName?: string };
@@ -55,15 +55,19 @@ export const ITEMS: MenuItem[] = [
  */
 const DROP_ITEM: MenuItem = { label: l10n.t("Drop commit…"), action: "drop", danger: true };
 
+/** "Edit message…" (issue #75): offered, like Drop, only where it can work. */
+const REWORD_ITEM: MenuItem = { label: l10n.t("Edit message…"), action: "reword" };
+
 /**
  * The rows for one commit: "Checkout <ref>" for the refs on it, then the
  * commit actions — with "Drop commit…" beside Revert and the resets when the
  * commit can be dropped from the current branch.
  */
-export function commitMenuRows(refs: readonly RowRef[], opts: { drop?: boolean } = {}): MenuItem[] {
+export function commitMenuRows(refs: readonly RowRef[], opts: { drop?: boolean; reword?: boolean } = {}): MenuItem[] {
   const rows: MenuItem[] = refMenuItems(refs).map(refRow);
   for (const item of ITEMS) {
     rows.push(item);
+    if (item.action === "revert" && opts.reword) rows.push(REWORD_ITEM);
     if (item.action === "revert" && opts.drop) rows.push(DROP_ITEM);
   }
   return rows;
@@ -108,7 +112,7 @@ export function commitActionItem(action: string): MenuItem | undefined {
 // ── Several commits at once (issue #32) ──────────────────────────────────────
 
 /** An action of the menu for a selection of several commits. */
-export type ManyAction = "cherry-pick-many" | "revert-many" | "squash-many" | "drop-many" | "compare-two" | "copy-shas";
+export type ManyAction = "cherry-pick-many" | "revert-many" | "squash-many" | "drop-many" | "compare-two" | "copy-shas" | "reword";
 
 /** One row of that menu (and one button of the "N commits selected" summary). */
 export interface ManyMenuRow {
@@ -251,7 +255,7 @@ export class CommitContextMenu {
     x: number,
     y: number,
     refs: readonly RowRef[] = [],
-    opts: { drop?: boolean } = {},
+    opts: { drop?: boolean; reword?: boolean } = {},
   ): void {
     this.close();
     this.layer = registerLayer(() => this.close(false), "menu");
@@ -348,6 +352,10 @@ export class CommitContextMenu {
   private async dispatch(item: MenuItem, sha: string): Promise<void> {
     if (item.action === "drop") {
       this.drop?.(sha);
+      return;
+    }
+    if (item.action === "reword") {
+      this.many?.("reword", [sha]);
       return;
     }
     let name: string | undefined;

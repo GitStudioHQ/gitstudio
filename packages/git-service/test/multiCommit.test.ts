@@ -10,6 +10,8 @@ import { runRebasePlan, abortRebase } from "../src/RebaseRunner";
 import {
   DROP_MANY_DIRTY_MESSAGE,
   MANY_MOVED_MESSAGE,
+  REWORD_DIRTY_MESSAGE,
+  REWORD_EMPTY_MESSAGE,
   SQUASH_DIRTY_MESSAGE,
   SQUASH_EMPTY_MESSAGE,
   applyManyArgs,
@@ -72,7 +74,7 @@ const run = (r: Repo) => (plan: Parameters<typeof runRebasePlan>[1]) => runRebas
 const said = (o: DropOutcome): unknown[] =>
   o.status === "done" ? [o.status] : [o.status, o.message, "expected" in o ? o.expected : undefined];
 
-async function planOk(r: Repo, verb: "drop" | "squash", shas: string[]): Promise<ManyPlan> {
+async function planOk(r: Repo, verb: "drop" | "squash" | "reword", shas: string[]): Promise<ManyPlan> {
   const plan = await planMany(r.ctx.process, verb, shas);
   assert.ok(plan.ok, plan.ok ? "" : `expected a plan, got: ${plan.message}`);
   return plan;
@@ -608,3 +610,70 @@ test("undo after several commits were cherry-picked goes back to where HEAD was"
     r.dispose();
   }
 });
+
+// ── Edit Message… (issue #75): reword one commit ────────────────────────────
+
+test("editing a commit's message: the plan carries the whole message, the run writes the new one and replays the rest", async () => {
+  const r = repo();
+  try {
+    r.commit("base");
+    r.git("commit", "-q", "--allow-empty", "-m", "Old subject", "-m", "Old description.");
+    const b = r.git("rev-parse", "HEAD");
+    const c = r.commit("C");
+    const plan = await planOk(r, "reword", [b]);
+    assert.equal(plan.message, "Old subject\n\nOld description.", "pre-filled with subject and description");
+    assert.deepEqual(plan.rows.map((x) => x.action), ["pick", "reword"]);
+    assert.equal(plan.replayed, 1);
+    const out = await rewriteMany(r.ctx.process, "reword", { shas: plan.shas, head: plan.head, message: "New subject\n\nNew description." }, run(r));
+    assert.deepEqual(said(out), ["done"]);
+    assert.deepEqual(r.subjects(), ["C", "New subject", "base"]);
+    assert.equal(r.git("log", "-1", "--format=%B", "HEAD~1"), "New subject\n\nNew description.");
+    assert.notEqual(r.git("rev-parse", "HEAD"), c, "the later commit was replayed");
+    assert.equal(r.git("show", "HEAD:C.txt"), "C");
+  } finally {
+    r.dispose();
+  }
+});
+
+test("editing HEAD's own message, and the root commit's, both work", async () => {
+  const r = repo();
+  try {
+    const root = r.commit("root");
+    const head = r.commit("tip");
+    let out = await rewriteMany(r.ctx.process, "reword", { shas: [head], head, message: "tip, edited" }, run(r));
+    assert.deepEqual(said(out), ["done"]);
+    const now = r.git("rev-parse", "HEAD");
+    out = await rewriteMany(r.ctx.process, "reword", { shas: [root], head: now, message: "root, edited" }, run(r));
+    assert.deepEqual(said(out), ["done"]);
+    assert.deepEqual(r.subjects(), ["tip, edited", "root, edited"]);
+  } finally {
+    r.dispose();
+  }
+});
+
+test("Edit Message refuses: an empty message, uncommitted changes, a merge, a commit not on the branch", async () => {
+  const r = repo();
+  try {
+    r.commit("base");
+    const a = r.commit("A");
+    const head = r.git("rev-parse", "HEAD");
+    assert.deepEqual(said(await rewriteMany(r.ctx.process, "reword", { shas: [a], head, message: "  " }, run(r))), ["failed", REWORD_EMPTY_MESSAGE, true]);
+    writeFileSync(join(r.dir, "A.txt"), "changed\n");
+    assert.equal(await manyBlocker(r.ctx.process, "reword"), REWORD_DIRTY_MESSAGE);
+    r.git("checkout", "--", "A.txt");
+    r.git("checkout", "-q", "-b", "side", "HEAD~1");
+    const s = r.commit("S");
+    r.git("checkout", "-q", "main");
+    const off = await planMany(r.ctx.process, "reword", [s]);
+    assert.equal(off.ok, false);
+    r.git("merge", "-q", "--no-ff", "-m", "Merge side", "side");
+    const merge = r.git("rev-parse", "HEAD");
+    const m = await planMany(r.ctx.process, "reword", [merge]);
+    assert.equal(m.ok, false);
+    assert.equal(!m.ok && m.reason, "merge");
+    assert.equal((await planMany(r.ctx.process, "reword", [a, merge])).ok, false, "one commit at a time");
+  } finally {
+    r.dispose();
+  }
+});
+

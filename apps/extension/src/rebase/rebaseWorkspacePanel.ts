@@ -27,6 +27,8 @@ interface RebaseCommit {
   sha: string;
   shortSha: string;
   subject: string;
+  /** The full message, when it says more than the subject — what a reword starts from. */
+  body?: string;
   author: string;
   rel: string;
 }
@@ -438,21 +440,28 @@ async function loadCommits(active: RepoEntry, base: string): Promise<RebaseCommi
     "--topo-order",
     // NEWEST FIRST, matching the Commits list (issue #18). git's todo file is the
     // other way round; buildRebasePlan does that reversal in exactly one place.
-    `--format=%H${sep}%h${sep}%an${sep}%at${sep}%s`,
+    // NUL-separated RECORDS, with the full message LAST (issue #75): a reword
+    // started from the subject alone, so applying it dropped the description.
+    // %B has newlines of its own, so records cannot end in one; -z ends each
+    // with NUL, which a message cannot contain.
+    "-z",
+    `--format=%H${sep}%h${sep}%an${sep}%at${sep}%s${sep}%B`,
     range,
   ]);
   if (r.code !== 0) {
     return [];
   }
   const out: RebaseCommit[] = [];
-  for (const line of r.stdout.split("\n")) {
+  for (const line of r.stdout.split("\0")) {
     if (!line.trim()) continue;
-    const [sha, shortSha, author, at, subject] = line.split(sep);
+    const [sha, shortSha, author, at, subject, body] = line.split(sep);
     out.push({
-      sha,
+      sha: sha.replace(/^\n/, ""),
       shortSha,
       author,
       subject: subject ?? "",
+      // Trailing newlines are git's, not the author's.
+      ...(body?.trim() ? { body: body.replace(/\n+$/, "") } : {}),
       rel: relativeTime(Number(at) || 0),
     });
   }
@@ -748,7 +757,8 @@ function consequenceHtml(action, targetSubj) {
 }
 
 // Working model — clones so Reset can restore the original order/actions.
-const ORIGINAL = DATA.commits.map((c) => ({ ...c, action: "pick", message: c.subject }));
+// A reword starts from the FULL message (issue #75), not the subject line.
+const ORIGINAL = DATA.commits.map((c) => ({ ...c, action: "pick", message: c.body || c.subject }));
 let rows = ORIGINAL.map((c) => ({ ...c }));
 let busy = false;
 
@@ -763,7 +773,7 @@ let selection = rows.length ? P.selectOnly(rows[0].sha) : P.NO_SELECTION;
 // The rows a drag picked up, by sha: the selection, or just the row.
 let dragging = [];
 
-$("rb-count").textContent = rows.length + (rows.length === 1 ? " commit" : " commits");
+$("rb-count").textContent = rows.length === 1 ? l10nT("{0} commit", rows.length) : l10nT("{0} commits", rows.length);
 
 // The toolbar's six actions, in words, each naming its key in its tooltip.
 const setBtns = {};
@@ -822,6 +832,8 @@ function makeRow(r, i) {
   main.appendChild(line);
   const rw = el("div", "rb-reword");
   const ta = el("textarea"); ta.value = r.message || r.subject; ta.placeholder = l10nT("New commit message…");
+  // Tall enough to show the description it starts with (issue #75), up to ten lines.
+  ta.rows = Math.min(10, Math.max(2, ta.value.split("\n").length));
   ta.addEventListener("input", () => { r.message = ta.value; });
   rw.appendChild(ta); main.appendChild(rw);
   const cons = el("div", "rb-consequence"); cons.innerHTML = consequenceHtml(r.action, foldTargetSubject(i)); main.appendChild(cons);

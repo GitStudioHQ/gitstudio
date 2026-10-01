@@ -2169,7 +2169,7 @@ export interface CommitsMenuWire {
 
 /** Plan dropping or squashing several commits; `preflight` adds what stops it now. */
 export interface CommitsPlanRequest {
-  verb: "drop" | "squash";
+  verb: "drop" | "squash" | "reword";
   /** Newest first, as the graph lists them. */
   shas: string[];
   preflight?: boolean;
@@ -2178,7 +2178,7 @@ export interface CommitsPlanRequest {
 export type CommitsPlanWire =
   | {
       ok: true;
-      verb: "drop" | "squash";
+      verb: "drop" | "squash" | "reword";
       /** The selected commits, full shas, newest first along the branch. */
       shas: string[];
       /** Short sha and subject of each, in that order — what the question names. */
@@ -2206,7 +2206,7 @@ export type CommitsPlanWire =
 
 /** Run a confirmed drop or squash of several commits. */
 export interface CommitsRewriteRequest {
-  verb: "drop" | "squash";
+  verb: "drop" | "squash" | "reword";
   shas: string[];
   head: string;
   carry?: boolean;
@@ -2219,7 +2219,7 @@ export interface CommitsUndoRequest {
   before: string;
   after: string;
   /** Names it in the refusal's words: "since the squash". */
-  what: "drop" | "squash" | "cherry-pick" | "revert";
+  what: "drop" | "squash" | "reword" | "cherry-pick" | "revert";
   /** The branch a drop, squash, cherry-pick or revert moved (refs/heads/…),
    *  null when HEAD was detached: that branch goes back, not whichever HEAD
    *  is on by then. */

@@ -689,7 +689,7 @@ export class RebaseBridge {
     if (!ctx) {
       return { ok: false, expected: true, reason: "no-repo", message: l10n.t("Open a repository first.") };
     }
-    const verb = req?.verb === "squash" ? "squash" : "drop";
+    const verb = req?.verb === "squash" ? "squash" : req?.verb === "reword" ? "reword" : "drop";
     const plan = await planMany(ctx.process, verb, selectedCommits(Array.isArray(req?.shas) ? req.shas : []));
     if (!plan.ok) {
       return { ok: false, expected: true, reason: plan.reason, message: plan.message };
@@ -719,7 +719,7 @@ export class RebaseBridge {
       return { status: "failed", ok: false, expected: true, message: l10n.t("Open a repository first.") };
     }
     try {
-      const verb = req?.verb === "squash" ? "squash" : "drop";
+      const verb = req?.verb === "squash" ? "squash" : req?.verb === "reword" ? "reword" : "drop";
       const out = await rewriteMany(
         ctx.process,
         verb,
@@ -744,7 +744,7 @@ export class RebaseBridge {
     if (!ctx) {
       return { ok: false, changed: false, expected: true, message: l10n.t("Open a repository first.") };
     }
-    const what = ["drop", "squash", "cherry-pick", "revert"].includes(String(req?.what)) ? String(req.what) : "change";
+    const what = ["drop", "squash", "reword", "cherry-pick", "revert"].includes(String(req?.what)) ? String(req.what) : "change";
     const r = await undoRewrite(
       ctx.process,
       {

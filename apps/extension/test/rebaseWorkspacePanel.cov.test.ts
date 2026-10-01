@@ -169,7 +169,7 @@ async function open(f: Fx, sha?: string, undo: unknown = f.ledger) {
     base: string;
     branch: string;
     baseCommit: { shortSha: string; subject: string } | null;
-    commits: { sha: string; shortSha: string; subject: string; author: string; rel: string }[];
+    commits: { sha: string; shortSha: string; subject: string; body?: string; author: string; rel: string }[];
   };
   return { p, data };
 }
@@ -199,6 +199,31 @@ test("the workspace lists the commits after the base, newest first, under the br
   assert.ok(p.html.includes(`<b class="rb-branch">main</b>`));
   await p.send({ type: "cancel" });
   assert.equal(p.disposed, true, "Cancel closes it");
+});
+
+test("a reword starts from the whole message and keeps the description (issue #75)", async () => {
+  const f = fixture();
+  f.commit("base");
+  const a = f.commit("A");
+  writeFileSync(join(f.dir, "b.txt"), "b\n");
+  f.git("add", "-A");
+  f.git("commit", "-q", "-m", "Subject line", "-m", "First paragraph of the description.\nIts second line.", "-m", "Refs: #75");
+  const { p, data } = await open(f, a);
+  const [bRow, aRow] = data.commits;
+  assert.equal(bRow.subject, "Subject line");
+  assert.equal(bRow.body, "Subject line\n\nFirst paragraph of the description.\nIts second line.\n\nRefs: #75");
+  assert.equal(aRow.body, "A", "a subject-only message is just its subject");
+  assert.ok(p.html.includes("message: c.body || c.subject"), "the page seeds a reword from the whole message");
+  // The page sends the box's text as it was seeded: the whole message, unchanged.
+  await p.send({
+    type: "apply",
+    rows: [
+      { sha: bRow.sha, subject: bRow.subject, action: "reword", message: bRow.body },
+      { sha: aRow.sha, subject: aRow.subject, action: "pick" },
+    ],
+  });
+  assert.deepEqual((p.posted[0] as { outcome: unknown }).outcome, { status: "done" });
+  assert.equal(f.git("log", "-1", "--format=%B"), "Subject line\n\nFirst paragraph of the description.\nIts second line.\n\nRefs: #75");
 });
 
 test("a root commit is rebased with --root, and a detached HEAD is named as such", async () => {

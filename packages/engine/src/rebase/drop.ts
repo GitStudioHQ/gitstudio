@@ -130,7 +130,7 @@ export function dropQuestion(s: DropSummary): { title: string; message: string }
     parts.push(l10n.t("{0} {1} at a commit that will be replayed.", names, which));
   }
   if (s.published) {
-    parts.push(l10n.t("{0} The next push will need to be a force push.", publishedWarning("Dropping")));
+    parts.push(l10n.t("{0} The next push will need to be a force push.", publishedWarning(l10n.t("Dropping"))));
   }
   parts.push(l10n.t("Undo is available afterwards."));
   return { title: l10n.t("Drop {0}?", s.shortSha), message: parts.join(" ") };
