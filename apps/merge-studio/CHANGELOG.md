@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Merge Studio in 14 languages.** The merge editor, the conflicts dashboard and every command follow VS Code's display language: Simplified and Traditional Chinese, Japanese, Korean, German, French, Spanish, Italian, Portuguese (Brazil), Russian, Turkish, Polish and Czech, besides English. Translations other than English are machine drafts — corrections are welcome on GitHub.
+
 ## 1.2.0 — 2026-09-29
 
 ### Added
