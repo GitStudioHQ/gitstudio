@@ -27,7 +27,7 @@ output and VS Code's Polish UI.
 | detached HEAD | odłączony HEAD |
 | working tree | drzewo robocze |
 | worktree | worktree (drzewo robocze) |
-| staged / staging / unstage | zastaged / staging / unstage (dodać do / usunąć z indeksu) |
+| staged / staging / unstage | przygotowane / przygotowanie (staging) / cofnięcie przygotowania |
 | conflict | konflikt |
 | resolve | rozwiązać |
 | abort | przerwać |
@@ -52,7 +52,7 @@ output and VS Code's Polish UI.
 | checkout / switch | checkout / przełączenie |
 | discard | odrzuć (zmiany) |
 | undo | undo / anuluj |
-| yours / theirs | Twoje / Ich |
+| yours / theirs | Twoje / Ich (decline "Twoje" for case inside a sentence, e.g. "w Twoich", "z Twoich" — "Ich" stays invariant) |
 | hunk | fragment (hunk) |
 | line | linia |
 | file | plik |
@@ -60,7 +60,8 @@ output and VS Code's Polish UI.
 | settings | ustawienia |
 | commit message | treść commita / opis commita |
 | sign-off | sign-off |
-| stage (verb) | zastaged (dodać do indeksu) |
+| stage (verb) | przygotować (dodać do przygotowanych) |
+| unstage (verb) | cofnąć przygotowanie |
 | local branch | lokalny branch |
 | remote branch | zdalny branch |
 | default branch | domyślny branch |
