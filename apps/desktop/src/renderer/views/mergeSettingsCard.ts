@@ -7,6 +7,7 @@
 //
 // The main process stores it (merge:settings / merge:setSettings).
 
+import * as l10n from "@vscode/l10n";
 import { host } from "../bridge";
 import { el, settingsCard } from "../ui";
 import { toast } from "../dialogs";
@@ -14,7 +15,7 @@ import type { MergeSettings } from "@gitstudio/host-bridge/conflictsProtocol";
 import { loadMergeSettings, saveMergeSettings } from "../mergeParity";
 
 export function mergeSettingsCard(): HTMLElement {
-  const { card, body } = settingsCard("Merge", "git-merge");
+  const { card, body } = settingsCard(l10n.t("Merge"), "git-merge");
   card.classList.add("merge-settings-card");
 
   // ── auto-apply ──
@@ -22,14 +23,14 @@ export function mergeSettingsCard(): HTMLElement {
   const autoBox = document.createElement("input");
   autoBox.type = "checkbox";
   autoBox.disabled = true;
-  autoBox.setAttribute("aria-label", "Apply non-conflicting changes when a merge opens");
+  autoBox.setAttribute("aria-label", l10n.t("Apply non-conflicting changes when a merge opens"));
   const autoText = el("div", "settings-check-text");
   const autoTitle = el("div", "settings-check-title");
-  autoTitle.textContent = "Apply non-conflicting changes when a merge opens";
+  autoTitle.textContent = l10n.t("Apply non-conflicting changes when a merge opens");
   const autoSub = el("div", "settings-sub");
-  autoSub.textContent =
-    "Changes only one side made (or both made the same way) start out accepted, and only the real " +
-    "conflicts are left for you. Off, every change waits for you to accept it.";
+  autoSub.textContent = l10n.t(
+    "Changes only one side made (or both made the same way) start out accepted, and only the real conflicts are left for you. Off, every change waits for you to accept it.",
+  );
   autoText.append(autoTitle, autoSub);
   autoRow.append(autoBox, autoText);
 
@@ -48,7 +49,7 @@ export function mergeSettingsCard(): HTMLElement {
     try {
       paint(await saveMergeSettings(host.invoke, patch));
     } catch (e) {
-      toast(e instanceof Error ? e.message : "Couldn't save the merge settings.", "error");
+      toast(e instanceof Error ? e.message : l10n.t("Couldn't save the merge settings."), "error");
       if (current) paint(current);
     }
   };

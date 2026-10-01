@@ -10,6 +10,7 @@
 // returns the same profile shape for either, and `type` tells us which words
 // to use.
 
+import * as l10n from "@vscode/l10n";
 import { gget } from "../cache";
 import {
   avatar,
@@ -60,14 +61,14 @@ async function mount(
 
   const ghBtn = el("button", "mini-btn gh-icon-btn");
   ghBtn.appendChild(glyph("link-external"));
-  ghBtn.title = `Open @${login} on GitHub`;
+  ghBtn.title = l10n.t("Open @{0} on GitHub", login);
   ghBtn.setAttribute("aria-label", ghBtn.title);
   ghBtn.addEventListener("click", () =>
     window.open(`https://github.com/${login}`, "_blank", "noopener"),
   );
 
   const { view, main, rail } = detailPage({
-    backLabel: "Explore",
+    backLabel: l10n.t("Explore"),
     crumb: `@${login}`,
     onBack,
     actions: [ghBtn],
@@ -92,7 +93,7 @@ async function mount(
       names.appendChild(title);
       if (u.name) names.appendChild(span(`@${u.login}`, "explore-account-login"));
       names.appendChild(
-        span(u.type === "Organization" ? "Organization" : "Person", "gh-pill explore-pill"),
+        span(u.type === "Organization" ? l10n.t("Organization") : l10n.t("Person"), "gh-pill explore-pill"),
       );
       head.appendChild(names);
       main.insertBefore(head, content);
@@ -113,7 +114,7 @@ async function mount(
     content.replaceChildren();
     if (!repos.length) {
       content.appendChild(
-        emptyState("No public repositories", `@${login} hasn't published any.`, { icon: "repo" }),
+        emptyState(l10n.t("No public repositories"), l10n.t("@{0} hasn't published any.", login), { icon: "repo" }),
       );
       return;
     }
@@ -134,11 +135,13 @@ async function mount(
       // nothing leaves the previous number standing.
       count.textContent =
         shown.length === repos.length
-          ? `${repos.length} ${repos.length === 1 ? "repository" : "repositories"}`
-          : `${shown.length} of ${repos.length}`;
+          ? repos.length === 1
+            ? l10n.t("{0} repository", repos.length)
+            : l10n.t("{0} repositories", repos.length)
+          : l10n.t("{0} of {1}", shown.length, repos.length);
       list.replaceChildren();
       if (!shown.length) {
-        list.appendChild(span("No repository matches that.", "gotofile-empty"));
+        list.appendChild(span(l10n.t("No repository matches that."), "gotofile-empty"));
         return;
       }
       for (const r of shown) list.appendChild(repoRow(r, nav));
@@ -147,7 +150,7 @@ async function mount(
     head.append(count);
     head.appendChild(
       searchField({
-        placeholder: "Filter repositories…",
+        placeholder: l10n.t("Filter repositories…"),
         onInput: (q) => {
           filter = q;
           paint();
@@ -160,8 +163,8 @@ async function mount(
     if (!content.isConnected) return;
     content.replaceChildren(
       errorState(
-        "Couldn't load repositories",
-        cleanErr(e) || "GitHub request failed.",
+        l10n.t("Couldn't load repositories"),
+        cleanErr(e) || l10n.t("GitHub request failed."),
         () => renderAccountPage(wrap, nav, login, onBack),
       ),
     );
@@ -179,7 +182,7 @@ function repoRow(r: OrgRepo, nav: SectionNav): HTMLElement {
   const body = el("div", "explore-row-body");
   const head = el("div", "explore-row-head");
   head.appendChild(span(r.name, "sec-row-title"));
-  if (r.archived) head.appendChild(span("archived", "gh-pill explore-pill"));
+  if (r.archived) head.appendChild(span(l10n.t("archived"), "gh-pill explore-pill"));
   if (localByOrigin.get(r.fullName.toLowerCase())) head.appendChild(whereChip("local"));
   body.appendChild(head);
   if (r.description) {
@@ -190,8 +193,8 @@ function repoRow(r: OrgRepo, nav: SectionNav): HTMLElement {
   open.appendChild(body);
   row.setAttribute("role", "button");
   row.tabIndex = 0;
-  row.setAttribute("aria-label", `Open ${r.fullName}`);
-  row.title = `Open ${r.fullName}`;
+  row.setAttribute("aria-label", l10n.t("Open {0}", r.fullName));
+  row.title = l10n.t("Open {0}", r.fullName);
   const go = (): void => nav("explore", { id: repoRouteId({ fullName: r.fullName }) });
   row.addEventListener("click", go);
   row.addEventListener("keydown", (e) => {
@@ -224,8 +227,8 @@ function repoRow(r: OrgRepo, nav: SectionNav): HTMLElement {
     return b;
   };
   acts.append(
-    mk("Open", `Clone ${r.fullName} if needed, then open it`, () => openGhRepoInApp(r.fullName)),
-    mk("Choose location…", "Pick the folder it's cloned into", () =>
+    mk(l10n.t("Open"), l10n.t("Clone {0} if needed, then open it", r.fullName), () => openGhRepoInApp(r.fullName)),
+    mk(l10n.t("Choose location…"), l10n.t("Pick the folder it's cloned into"), () =>
       openGhRepoChooseLocation(r.fullName),
     ),
   );
@@ -236,19 +239,19 @@ function repoRow(r: OrgRepo, nav: SectionNav): HTMLElement {
 function renderProfileRail(rail: HTMLElement, u: GhUserInfo, nav: SectionNav): void {
   rail.replaceChildren();
 
-  const facts = propSection("Profile");
+  const facts = propSection(l10n.t("Profile"));
   facts.body.classList.add("det-prop-facts");
   const fact = (k: string, v: string): void => {
     const row = el("div", "det-fact");
     row.append(span(k, "det-fact-k"), span(v, "det-fact-v"));
     facts.body.appendChild(row);
   };
-  if (u.company) fact("Company", u.company);
-  if (u.location) fact("Location", u.location);
-  fact("Repositories", u.publicRepos.toLocaleString());
-  fact("Followers", u.followers.toLocaleString());
-  if (u.type !== "Organization") fact("Following", u.following.toLocaleString());
-  if (u.createdAt) fact("Joined", relTimeISO(u.createdAt));
+  if (u.company) fact(l10n.t("Company"), u.company);
+  if (u.location) fact(l10n.t("Location"), u.location);
+  fact(l10n.t("Repositories"), u.publicRepos.toLocaleString());
+  fact(l10n.t("Followers"), u.followers.toLocaleString());
+  if (u.type !== "Organization") fact(l10n.t("Following"), u.following.toLocaleString());
+  if (u.createdAt) fact(l10n.t("Joined"), relTimeISO(u.createdAt));
   rail.appendChild(facts.root);
 
   const links: Array<[string, string, string]> = [];
@@ -256,7 +259,7 @@ function renderProfileRail(rail: HTMLElement, u: GhUserInfo, nav: SectionNav): v
   if (u.twitter) links.push(["twitter", `@${u.twitter}`, `https://twitter.com/${u.twitter}`]);
   if (u.email) links.push(["mail", u.email, `mailto:${u.email}`]);
   if (links.length) {
-    const linkProp = propSection("Links");
+    const linkProp = propSection(l10n.t("Links"));
     for (const [icon, label, href] of links) {
       const b = el("button", "gh-link explore-account-link");
       b.append(glyph(icon), span(label));
@@ -269,7 +272,7 @@ function renderProfileRail(rail: HTMLElement, u: GhUserInfo, nav: SectionNav): v
 
   // Orgs load separately — a slow membership call must not hold the profile.
   if (u.type !== "Organization") {
-    const orgProp = propSection("Organizations");
+    const orgProp = propSection(l10n.t("Organizations"));
     orgProp.body.appendChild(span("…", "det-prop-none"));
     rail.appendChild(orgProp.root);
     void gget("users:orgs", u.login, 300_000)
@@ -277,7 +280,7 @@ function renderProfileRail(rail: HTMLElement, u: GhUserInfo, nav: SectionNav): v
         if (!orgProp.body.isConnected) return;
         orgProp.body.replaceChildren();
         if (!orgs.length) {
-          orgProp.body.appendChild(span("None public.", "det-prop-none"));
+          orgProp.body.appendChild(span(l10n.t("None public."), "det-prop-none"));
           return;
         }
         for (const o of orgs) {
@@ -285,14 +288,14 @@ function renderProfileRail(rail: HTMLElement, u: GhUserInfo, nav: SectionNav): v
           // door and opened onto nothing.
           const chip = el("button", "det-person");
           chip.append(avatar(o.login, o.avatarUrl, 20), span(o.login));
-          chip.title = `Explore ${o.login}`;
+          chip.title = l10n.t("Explore {0}", o.login);
           chip.setAttribute("aria-label", chip.title);
           chip.addEventListener("click", () => nav("explore", { id: `org/${o.login}` }));
           orgProp.body.appendChild(chip);
         }
       })
       .catch(() => {
-        if (orgProp.body.isConnected) orgProp.body.replaceChildren(span("Unavailable.", "det-prop-none"));
+        if (orgProp.body.isConnected) orgProp.body.replaceChildren(span(l10n.t("Unavailable."), "det-prop-none"));
       });
   }
 }

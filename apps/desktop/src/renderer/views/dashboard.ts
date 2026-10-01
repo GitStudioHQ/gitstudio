@@ -22,6 +22,7 @@
 // filtered to the current branch. Nothing polls. Nothing waits on anything
 // else. A fill that resolves after the page has been left paints nothing.
 
+import * as l10n from "@vscode/l10n";
 import { el, span, glyph, emptyState } from "../ui";
 import { host } from "../bridge";
 import { openInButton } from "../openIn";
@@ -82,8 +83,13 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   view.appendChild(hero);
 
   const grid = el("div", "dash-grid");
-  const reposCol = column("Repositories", "repo", "All repositories", () => nav("repositories"));
-  const workCol = column("Needs you", "bell", "My Work", () => nav("mywork"));
+  const reposCol = column(
+    l10n.t("Repositories"),
+    "repo",
+    l10n.t("All repositories"),
+    () => nav("repositories"),
+  );
+  const workCol = column(l10n.t("Needs you"), "bell", l10n.t("My Work"), () => nav("mywork"));
   grid.append(reposCol.root, workCol.root);
   view.appendChild(grid);
   view.appendChild(supportLine());
@@ -115,7 +121,7 @@ function supportLine(): HTMLElement {
     const b = el("button", "dash-support-link") as HTMLButtonElement;
     b.type = "button";
     b.dataset.support = link.id;
-    b.title = `${link.label} — ${link.blurb}`;
+    b.title = l10n.t("{0} — {1}", link.label, link.blurb);
     b.append(glyph(link.icon), span(link.label));
     b.addEventListener("click", () => window.open(link.url, "_blank"));
     foot.appendChild(b);
@@ -125,10 +131,10 @@ function supportLine(): HTMLElement {
 
 function greeting(): string {
   const h = new Date().getHours();
-  if (h < 5) return "Still up";
-  if (h < 12) return "Good morning";
-  if (h < 18) return "Good afternoon";
-  return "Good evening";
+  if (h < 5) return l10n.t("Still up");
+  if (h < 12) return l10n.t("Good morning");
+  if (h < 18) return l10n.t("Good afternoon");
+  return l10n.t("Good evening");
 }
 
 // ── the search box ─────────────────────────────────────────────────────────
@@ -140,8 +146,8 @@ function searchBox(nav: SectionNav): HTMLElement {
   const wrap = el("div", "dash-search");
   const input = document.createElement("input");
   input.type = "search";
-  input.placeholder = "Search your repositories — or GitHub  (⌘K for everything)";
-  input.setAttribute("aria-label", "Search repositories");
+  input.placeholder = l10n.t("Search your repositories — or GitHub  (⌘K for everything)");
+  input.setAttribute("aria-label", l10n.t("Search repositories"));
   input.value = S.searchDraft;
   input.addEventListener("input", () => (S.searchDraft = input.value));
   input.addEventListener("focus", () => (S.searchHadFocus = true));
@@ -217,10 +223,18 @@ async function fillHero(hero: HTMLElement, nav: SectionNav, live: () => boolean)
     // is DESIGNED for this state, not degraded by it — it is the first thing
     // a new install ever shows.
     hero.replaceChildren(
-      emptyState("No repository open", "Open one you already have, or clone one from GitHub.", {
-        action: { label: "Open a repository", icon: "folder-opened", onClick: () => void openDialog(nav) },
-        secondary: { label: "Browse repositories", onClick: () => nav("repositories") },
-      }),
+      emptyState(
+        l10n.t("No repository open"),
+        l10n.t("Open one you already have, or clone one from GitHub."),
+        {
+          action: {
+            label: l10n.t("Open a repository"),
+            icon: "folder-opened",
+            onClick: () => void openDialog(nav),
+          },
+          secondary: { label: l10n.t("Browse repositories"), onClick: () => nav("repositories") },
+        },
+      ),
     );
     return;
   }
@@ -240,7 +254,7 @@ async function fillHero(hero: HTMLElement, nav: SectionNav, live: () => boolean)
   const identity = el("button", "dash-hero-name");
   identity.append(glyph("repo"), span(repo.name, "dash-hero-repo"));
   if (sync?.branch) identity.append(span("·", "dash-hero-dot"), span(sync.branch, "dash-hero-branch"));
-  identity.title = "All repositories";
+  identity.title = l10n.t("All repositories");
   identity.addEventListener("click", () => nav("repositories"));
   top.appendChild(identity);
   top.appendChild(el("span", "dash-card-spring"));
@@ -250,14 +264,14 @@ async function fillHero(hero: HTMLElement, nav: SectionNav, live: () => boolean)
   // shell, which owns that flow.
   if (sync && !sync.noUpstream && sync.ahead > 0) {
     const push = el("button", "mini-btn");
-    push.append(glyph("cloud-upload"), span(`Push ${sync.ahead}`));
+    push.append(glyph("cloud-upload"), span(l10n.t("Push {0}", sync.ahead)));
     push.addEventListener("click", () =>
       window.dispatchEvent(new CustomEvent("gs:sync", { detail: { action: "push" } })),
     );
     top.appendChild(push);
   }
   const fetchBtn = el("button", "mini-btn");
-  fetchBtn.append(glyph("sync"), span("Fetch"));
+  fetchBtn.append(glyph("sync"), span(l10n.t("Fetch")));
   fetchBtn.addEventListener("click", () =>
     window.dispatchEvent(new CustomEvent("gs:sync", { detail: { action: "fetch" } })),
   );
@@ -266,7 +280,7 @@ async function fillHero(hero: HTMLElement, nav: SectionNav, live: () => boolean)
   // in the editor you work in, one click from the first screen.
   top.appendChild(openInButton({ root: () => repo.root, nav: (v) => nav(v) }));
   const openChanges = el("button", "btn btn-primary dash-hero-cta");
-  openChanges.textContent = "Open Changes";
+  openChanges.textContent = l10n.t("Open Changes");
   openChanges.addEventListener("click", () => nav("changes"));
   top.appendChild(openChanges);
 
@@ -282,29 +296,62 @@ async function fillHero(hero: HTMLElement, nav: SectionNav, live: () => boolean)
         tone: "warn",
         text:
           staged && unstaged
-            ? `${staged} staged, ${unstaged} to stage`
+            ? l10n.t("{0} staged, {1} to stage", staged, unstaged)
             : staged
-              ? `${staged} staged and ready to commit`
-              : `${unstaged} ${unstaged === 1 ? "file" : "files"} changed`,
-        hint: "Changes",
+              ? l10n.t("{0} staged and ready to commit", staged)
+              : unstaged === 1
+                ? l10n.t("1 file changed")
+                : l10n.t("{0} files changed", unstaged),
+        hint: l10n.t("Changes"),
         onClick: () => nav("changes"),
       }),
     );
   } else {
-    rows.push(line({ icon: "check", tone: "ok", text: "Nothing uncommitted" }));
+    rows.push(line({ icon: "check", tone: "ok", text: l10n.t("Nothing uncommitted") }));
   }
 
   if (sync) {
     if (sync.noUpstream) {
-      rows.push(line({ icon: "cloud-upload", tone: "warn", text: "This branch has never been pushed", hint: "Branches", onClick: () => nav("branches") }));
+      rows.push(
+        line({
+          icon: "cloud-upload",
+          tone: "warn",
+          text: l10n.t("This branch has never been pushed"),
+          hint: l10n.t("Branches"),
+          onClick: () => nav("branches"),
+        }),
+      );
     } else if (sync.ahead && sync.behind) {
-      rows.push(line({ icon: "git-compare", tone: "warn", text: `${sync.ahead} to push, ${sync.behind} to pull`, hint: "Branches", onClick: () => nav("branches") }));
+      rows.push(
+        line({
+          icon: "git-compare",
+          tone: "warn",
+          text: l10n.t("{0} to push, {1} to pull", sync.ahead, sync.behind),
+          hint: l10n.t("Branches"),
+          onClick: () => nav("branches"),
+        }),
+      );
     } else if (sync.ahead) {
-      rows.push(line({ icon: "cloud-upload", text: `${sync.ahead} ${sync.ahead === 1 ? "commit" : "commits"} to push`, hint: "Branches", onClick: () => nav("branches") }));
+      rows.push(
+        line({
+          icon: "cloud-upload",
+          text: sync.ahead === 1 ? l10n.t("1 commit to push") : l10n.t("{0} commits to push", sync.ahead),
+          hint: l10n.t("Branches"),
+          onClick: () => nav("branches"),
+        }),
+      );
     } else if (sync.behind) {
-      rows.push(line({ icon: "cloud-download", text: `${sync.behind} ${sync.behind === 1 ? "commit" : "commits"} to pull`, hint: "Branches", onClick: () => nav("branches") }));
+      rows.push(
+        line({
+          icon: "cloud-download",
+          text:
+            sync.behind === 1 ? l10n.t("1 commit to pull") : l10n.t("{0} commits to pull", sync.behind),
+          hint: l10n.t("Branches"),
+          onClick: () => nav("branches"),
+        }),
+      );
     } else {
-      rows.push(line({ icon: "check", tone: "ok", text: "Up to date with the remote" }));
+      rows.push(line({ icon: "check", tone: "ok", text: l10n.t("Up to date with the remote") }));
     }
   }
 
@@ -320,8 +367,11 @@ async function fillHero(hero: HTMLElement, nav: SectionNav, live: () => boolean)
     rows.push(
       line({
         icon: "git-branch",
-        text: `${swept.length} ${swept.length === 1 ? "branch" : "branches"} merged — clean up?`,
-        hint: "Branches",
+        text:
+          swept.length === 1
+            ? l10n.t("1 branch merged — clean up?")
+            : l10n.t("{0} branches merged — clean up?", swept.length),
+        hint: l10n.t("Branches"),
         // The lens, not just the page: land on the branches this line COUNTED.
         onClick: () => nav("branches", { lens: "merged" }),
       }),
@@ -332,8 +382,8 @@ async function fillHero(hero: HTMLElement, nav: SectionNav, live: () => boolean)
     rows.push(
       line({
         icon: "archive",
-        text: `${stashes.length} ${stashes.length === 1 ? "stash" : "stashes"}`,
-        hint: "Branches",
+        text: stashes.length === 1 ? l10n.t("1 stash") : l10n.t("{0} stashes", stashes.length),
+        hint: l10n.t("Branches"),
         onClick: () => nav("branches"),
       }),
     );
@@ -345,7 +395,7 @@ async function fillHero(hero: HTMLElement, nav: SectionNav, live: () => boolean)
         icon: "git-commit",
         tone: "muted",
         text: `${headCommit.shortSha ?? ""} ${headCommit.subject ?? ""}`.trim(),
-        hint: "Commits",
+        hint: l10n.t("Commits"),
         onClick: () => nav("graph"),
       }),
     );
@@ -379,8 +429,8 @@ async function fillRepos(body: HTMLElement, nav: SectionNav, live: () => boolean
   const alive = copies.filter((c) => !c.current && !c.missing);
   if (!alive.length) {
     body.replaceChildren(
-      emptyState("No other repositories", "Add a folder you keep repositories in.", {
-        action: { label: "Repositories", icon: "repo", onClick: () => nav("repositories") },
+      emptyState(l10n.t("No other repositories"), l10n.t("Add a folder you keep repositories in."), {
+        action: { label: l10n.t("Repositories"), icon: "repo", onClick: () => nav("repositories") },
       }),
     );
     return;
@@ -408,7 +458,9 @@ async function fillRepos(body: HTMLElement, nav: SectionNav, live: () => boolean
       text: r.name,
       // WHERE it is — the project folder when there is one, else the band —
       // and WHAT it is when it is not a repository of its own.
-      hint: (r.worktreeOf ? "worktree · " : "") + (r.group || bandName(r.band)),
+      hint: r.worktreeOf
+        ? l10n.t("worktree · {0}", r.group || bandName(r.band))
+        : r.group || bandName(r.band),
       onClick: () => void openPath(r.root, nav),
     }),
   );
@@ -419,7 +471,10 @@ async function fillRepos(body: HTMLElement, nav: SectionNav, live: () => boolean
       line({
         icon: "ellipsis",
         tone: "muted",
-        text: `${rest} more in ${folders.size} ${folders.size === 1 ? "folder" : "folders"}`,
+        text:
+          folders.size === 1
+            ? l10n.t("{0} more in 1 folder", rest)
+            : l10n.t("{0} more in {1} folders", rest, folders.size),
         onClick: () => nav("repositories"),
       }),
     );
@@ -469,8 +524,8 @@ async function fillWork(body: HTMLElement, nav: SectionNav, live: () => boolean)
   if (status && !status.connected) {
     const connect = line({
       icon: "github",
-      text: "Sign in to see reviews, assignments and mentions",
-      hint: "Settings",
+      text: l10n.t("Sign in to see reviews, assignments and mentions"),
+      hint: l10n.t("Settings"),
       onClick: () => nav("settings"),
     });
     body.replaceChildren(connect);
@@ -491,7 +546,13 @@ async function fillWork(body: HTMLElement, nav: SectionNav, live: () => boolean)
 
   const rows: HTMLElement[] = [];
   if (!reachable) {
-    rows.push(line({ icon: "warning", tone: "muted", text: "Couldn't reach GitHub — your work will appear when it answers" }));
+    rows.push(
+      line({
+        icon: "warning",
+        tone: "muted",
+        text: l10n.t("Couldn't reach GitHub — your work will appear when it answers"),
+      }),
+    );
   } else {
     // What is WAITING, not everything of yours: your own open PRs are work in
     // progress; a review requested of you is a person blocked on you.
@@ -499,12 +560,12 @@ async function fillWork(body: HTMLElement, nav: SectionNav, live: () => boolean)
       (i) => i.kind === "review-requested" || i.kind === "assigned" || i.kind === "mentions",
     );
     if (!waiting.length) {
-      rows.push(line({ icon: "check-all", tone: "ok", text: "Nothing waiting on you" }));
+      rows.push(line({ icon: "check-all", tone: "ok", text: l10n.t("Nothing waiting on you") }));
     }
     const label: Record<string, string> = {
-      "review-requested": "Review",
-      assigned: "Assigned",
-      mentions: "Mentioned",
+      "review-requested": l10n.t("Review"),
+      assigned: l10n.t("Assigned"),
+      mentions: l10n.t("Mentioned"),
     };
     const current = peek("repo:current", undefined);
     for (const i of waiting.slice(0, 6)) {
@@ -533,7 +594,14 @@ async function fillWork(body: HTMLElement, nav: SectionNav, live: () => boolean)
       );
     }
     if (waiting.length > 6) {
-      rows.push(line({ icon: "ellipsis", tone: "muted", text: `${waiting.length - 6} more`, onClick: () => nav("mywork") }));
+      rows.push(
+        line({
+          icon: "ellipsis",
+          tone: "muted",
+          text: l10n.t("{0} more", waiting.length - 6),
+          onClick: () => nav("mywork"),
+        }),
+      );
     }
   }
 
@@ -551,7 +619,7 @@ async function fillWork(body: HTMLElement, nav: SectionNav, live: () => boolean)
   rows.push(
     line({
       icon: "inbox",
-      text: unread > 0 ? `Inbox · ${unread} unread` : "Inbox",
+      text: unread > 0 ? l10n.t("Inbox · {0} unread", unread) : l10n.t("Inbox"),
       onClick: () => nav("notifications"),
     }),
   );
@@ -570,25 +638,26 @@ async function fillWork(body: HTMLElement, nav: SectionNav, live: () => boolean)
         // says "in progress", and this line saying "in_progress" beside it
         // read as two different apps.
         const SAY: Record<string, string> = {
-          in_progress: "in progress",
-          queued: "queued",
-          requested: "queued",
-          waiting: "waiting",
-          success: "passed",
-          failure: "failed",
-          cancelled: "cancelled",
-          skipped: "skipped",
-          timed_out: "timed out",
-          action_required: "needs approval",
-          neutral: "finished",
-          stale: "stale",
+          in_progress: l10n.t("in progress"),
+          queued: l10n.t("queued"),
+          requested: l10n.t("queued"),
+          waiting: l10n.t("waiting"),
+          success: l10n.t("passed"),
+          failure: l10n.t("failed"),
+          cancelled: l10n.t("cancelled"),
+          skipped: l10n.t("skipped"),
+          timed_out: l10n.t("timed out"),
+          action_required: l10n.t("needs approval"),
+          neutral: l10n.t("finished"),
+          stale: l10n.t("stale"),
+          finished: l10n.t("finished"),
         };
         const state = raw;
         rows.push(
           line({
             icon: state === "success" ? "check" : state === "failure" ? "close" : "play-circle",
             tone: state === "success" ? "ok" : state === "failure" ? "warn" : "muted",
-            text: `CI · ${sync.branch}: ${SAY[raw] ?? raw.replace(/_/g, " ")}`,
+            text: l10n.t("CI · {0}: {1}", sync.branch, SAY[raw] ?? raw.replace(/_/g, " ")),
             onClick: () => nav("actions", { number: latest.id }),
           }),
         );

@@ -7,6 +7,7 @@
 // the section router. Every mutation disables its trigger, toasts the result,
 // busts the SWR cache and re-fetches so the UI stays authoritative.
 
+import * as l10n from "@vscode/l10n";
 import { host } from "../bridge";
 import type { MenuItem } from "../ui";
 import { createSearchScheduler } from "../searchDebounce";
@@ -149,7 +150,7 @@ function quoteInto(liveComposer: ReplyBox | undefined, body: string, author?: st
     .split("\n")
     .map((l) => `> ${l}`)
     .join("\n");
-  const prefix = author ? `@${author} said:\n` : "";
+  const prefix = author ? `${l10n.t("@{0} said:", author)}\n` : "";
   const existing = liveComposer.get().trim();
   liveComposer.set(`${existing ? `${existing}\n\n` : ""}${prefix}${quoted}\n\n`);
   liveComposer.focus();
@@ -207,8 +208,8 @@ function commentCard(
   // A comment edited after posting is a different artifact from what people
   // replied to — GitHub says so, and silence here has burned readers.
   if (extra.updatedAt && extra.updatedAt !== createdAt) {
-    const ed = span("edited", "gh-comment-edited");
-    ed.title = `Edited ${absTimeISO(extra.updatedAt)}`;
+    const ed = span(l10n.t("edited"), "gh-comment-edited");
+    ed.title = l10n.t("Edited {0}", absTimeISO(extra.updatedAt));
     hd.appendChild(ed);
   }
   // Everything a comment can do, in the place GitHub puts it. The id has been
@@ -220,13 +221,13 @@ function commentCard(
     hd.appendChild(spring);
     const more = el("button", "mini-btn gh-icon-btn gh-comment-menu");
     more.setAttribute("aria-haspopup", "menu");
-    more.setAttribute("aria-label", `Actions for ${author}'s comment`);
+    more.setAttribute("aria-label", l10n.t("Actions for {0}'s comment", author));
     more.appendChild(glyph("ellipsis"));
     more.addEventListener("click", () => {
       const items: Array<{ label: string; icon?: string; danger?: boolean; onClick: () => void }> = [];
       if (extra.onQuote) {
         items.push({
-          label: "Quote reply",
+          label: l10n.t("Quote reply"),
           icon: "quote",
           onClick: () => extra.onQuote?.(body),
         });
@@ -234,9 +235,9 @@ function commentCard(
       const c = extra.comment;
       if (c?.htmlUrl) {
         items.push({
-          label: "Copy link",
+          label: l10n.t("Copy link"),
           icon: "link",
-          onClick: () => void copyText(c.htmlUrl!, "Link copied."),
+          onClick: () => void copyText(c.htmlUrl!, l10n.t("Link copied.")),
         });
       }
       // YOUR comment only. These were offered on everyone's: Edit opened the
@@ -246,12 +247,12 @@ function commentCard(
       // the menu, not merely fail politely afterwards.
       if (c && c.mine) {
         items.push({
-          label: "Edit",
+          label: l10n.t("Edit"),
           icon: "edit",
           onClick: () => void editComment(c.id, body, card, c.reload),
         });
         items.push({
-          label: "Delete…",
+          label: l10n.t("Delete…"),
           icon: "trash",
           danger: true,
           onClick: () => void deleteComment(c.id, c.reload),
@@ -274,7 +275,7 @@ function commentCard(
     }
   } else {
     bd.classList.add("gh-empty-body");
-    bd.textContent = "No description provided.";
+    bd.textContent = l10n.t("No description provided.");
   }
   card.appendChild(bd);
   const react = extra.comment
@@ -301,12 +302,12 @@ async function editComment(
   const bd = card.querySelector<HTMLElement>(".gh-body-md");
   if (!bd) return;
   const was = bd.innerHTML;
-  const ed = mdEditor({ value: body, rows: 6, label: "Edit comment" });
+  const ed = mdEditor({ value: body, rows: 6, label: l10n.t("Edit comment") });
   const row = el("div", "gh-composer-actions");
   const save = el("button", "btn btn-primary") as HTMLButtonElement;
-  save.textContent = "Save";
+  save.textContent = l10n.t("Save");
   const cancel = el("button", "mini-btn");
-  cancel.textContent = "Cancel";
+  cancel.textContent = l10n.t("Cancel");
   row.append(save, cancel);
   const wrap = el("div", "gh-comment-edit");
   wrap.append(ed.root, row);
@@ -319,21 +320,21 @@ async function editComment(
   save.addEventListener("click", async () => {
     const next = ed.get().trim();
     if (!next) {
-      toast("A comment cannot be empty — delete it instead.", "info");
+      toast(l10n.t("A comment cannot be empty — delete it instead."), "info");
       return;
     }
     save.disabled = true;
     try {
       const r = await host.invoke("issue:editComment", { id, body: next });
       if (!r.ok) {
-        toast(r.message ?? "Couldn’t save the edit.", "error");
+        toast(r.message ?? l10n.t("Couldn’t save the edit."), "error");
         save.disabled = false;
         return;
       }
-      toast("Comment updated.", "success");
+      toast(l10n.t("Comment updated."), "success");
       reload();
     } catch (e) {
-      toast(cleanErr(e) || "Couldn’t save the edit.", "error");
+      toast(cleanErr(e) || l10n.t("Couldn’t save the edit."), "error");
       save.disabled = false;
     }
   });
@@ -356,12 +357,12 @@ async function toggleReaction(
   try {
     const r = await host.invoke("issue:react", { subject, id, content, on });
     if (!r.ok) {
-      toast(r.message ?? "Couldn’t change the reaction.", "error");
+      toast(r.message ?? l10n.t("Couldn’t change the reaction."), "error");
       return false;
     }
     return true;
   } catch (e) {
-    toast(cleanErr(e) || "Couldn’t change the reaction.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn’t change the reaction."), "error");
     return false;
   }
 }
@@ -369,22 +370,22 @@ async function toggleReaction(
 /** Delete, after asking — GitHub has no undo for this. */
 async function deleteComment(id: number, reload: () => void): Promise<void> {
   const ok = await confirmDialog({
-    title: "Delete this comment?",
-    message: "It will be removed from the issue on GitHub. This cannot be undone.",
-    confirmLabel: "Delete comment",
+    title: l10n.t("Delete this comment?"),
+    message: l10n.t("It will be removed from the issue on GitHub. This cannot be undone."),
+    confirmLabel: l10n.t("Delete comment"),
     danger: true,
   });
   if (!ok) return;
   try {
     const r = await host.invoke("issue:deleteComment", id);
     if (!r.ok) {
-      toast(r.message ?? "Couldn’t delete the comment.", "error");
+      toast(r.message ?? l10n.t("Couldn’t delete the comment."), "error");
       return;
     }
-    toast("Comment deleted.", "success");
+    toast(l10n.t("Comment deleted."), "success");
     reload();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn’t delete the comment.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn’t delete the comment."), "error");
   }
 }
 
@@ -397,7 +398,7 @@ async function deleteComment(id: number, reload: () => void): Promise<void> {
  */
 function timelineEvent(ev: TimelineEvent, nav: SectionNav): HTMLElement {
   const row = el("div", "gh-event");
-  const who = ev.actor ?? "somebody";
+  const who = ev.actor ?? l10n.t("somebody");
   const icons: Record<TimelineEvent["kind"], string> = {
     closed: "issue-closed",
     reopened: "issue-reopened",
@@ -430,57 +431,68 @@ function timelineEvent(ev: TimelineEvent, nav: SectionNav): HTMLElement {
   add(who, "gh-event-actor");
   switch (ev.kind) {
     case "closed":
-      add(ev.reason === "not_planned" ? " closed this as not planned" : " closed this");
+      add(ev.reason === "not_planned" ? l10n.t(" closed this as not planned") : l10n.t(" closed this"));
       break;
     case "reopened":
-      add(" reopened this");
+      add(l10n.t(" reopened this"));
       break;
     case "labeled":
     case "unlabeled":
-      add(ev.kind === "labeled" ? " added the " : " removed the ");
+      add(ev.kind === "labeled" ? l10n.t(" added the ") : l10n.t(" removed the "));
       if (ev.label) {
         const chip = span(ev.label.name, "gh-label");
         chip.style.setProperty("--label", `#${ev.label.color}`);
         text.appendChild(chip);
       }
-      add(" label");
+      add(l10n.t(" label"));
       break;
     case "assigned":
     case "unassigned":
       // "assigned themselves" reads better than "x assigned x", and it is the
       // most common assignment there is.
-      if (ev.assignee && ev.assignee === ev.actor) add(ev.kind === "assigned" ? " self-assigned this" : " unassigned themselves");
-      else add(`${ev.kind === "assigned" ? " assigned " : " unassigned "}${ev.assignee ?? "someone"}`);
+      if (ev.assignee && ev.assignee === ev.actor)
+        add(ev.kind === "assigned" ? l10n.t(" self-assigned this") : l10n.t(" unassigned themselves"));
+      else
+        add(
+          ev.kind === "assigned"
+            ? l10n.t(" assigned {0}", ev.assignee ?? l10n.t("someone"))
+            : l10n.t(" unassigned {0}", ev.assignee ?? l10n.t("someone")),
+        );
       break;
     case "renamed":
-      add(" changed the title");
+      add(l10n.t(" changed the title"));
       if (ev.rename) {
         const from = span(ev.rename.from, "gh-event-was");
         from.title = ev.rename.from;
-        text.append(span(" from "), from, span(" to "), span(ev.rename.to, "gh-event-now"));
+        text.append(
+          span(l10n.t(" from ")),
+          from,
+          span(l10n.t(" to ")),
+          span(ev.rename.to, "gh-event-now"),
+        );
       }
       break;
     case "milestoned":
-      add(` added this to ${ev.milestone ?? "a milestone"}`);
+      add(l10n.t(" added this to {0}", ev.milestone ?? l10n.t("a milestone")));
       break;
     case "demilestoned":
-      add(` removed this from ${ev.milestone ?? "a milestone"}`);
+      add(l10n.t(" removed this from {0}", ev.milestone ?? l10n.t("a milestone")));
       break;
     case "locked":
-      add(" locked the conversation");
+      add(l10n.t(" locked the conversation"));
       break;
     case "unlocked":
-      add(" unlocked the conversation");
+      add(l10n.t(" unlocked the conversation"));
       break;
     case "marked-duplicate":
-      add(" marked this as a duplicate");
+      add(l10n.t(" marked this as a duplicate"));
       break;
     case "referenced":
-      add(" referenced this in ");
+      add(l10n.t(" referenced this in "));
       if (ev.source) add(ev.source.ref, "gh-event-ref sec-mono");
       break;
     case "cross-referenced": {
-      add(" mentioned this in ");
+      add(l10n.t(" mentioned this in "));
       const src = ev.source;
       if (src) {
         // WHICH repository mentioned it. A cross-reference very often comes
@@ -497,7 +509,9 @@ function timelineEvent(ev: TimelineEvent, nav: SectionNav): HTMLElement {
         const link = el("button", "gh-event-link");
         link.textContent = `${label}${src.title ? ` ${src.title}` : ""}`;
         link.title = foreign
-          ? `${src.title ? `${src.title} — ` : ""}read ${label}`
+          ? src.title
+            ? l10n.t("{0} — read {1}", src.title, label)
+            : l10n.t("read {0}", label)
           : (src.title ?? src.ref);
         link.addEventListener("click", () => {
           const num = Number(src.ref.replace("#", ""));
@@ -566,7 +580,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   };
 
   const { view, listEl } = sectionList();
-  const header = ghHeader("Issues", gate.login, refresh);
+  const header = ghHeader(l10n.t("Issues"), gate.login, refresh);
 
   // Toolbar: state segment · facets · New Issue (search rides in the titlewrap).
   const tools = el("div", "gh-head-tools");
@@ -580,12 +594,12 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   };
   const seg = segmented<"open" | "closed" | "all">({
     options: [
-      { value: "open", label: `Open${countFor("open")}` },
-      { value: "closed", label: `Closed${countFor("closed")}` },
-      { value: "all", label: "All" },
+      { value: "open", label: l10n.t("Open{0}", countFor("open")) },
+      { value: "closed", label: l10n.t("Closed{0}", countFor("closed")) },
+      { value: "all", label: l10n.t("All") },
     ],
     value: S.issueState,
-    ariaLabel: "Issue state",
+    ariaLabel: l10n.t("Issue state"),
     onChange: (v) => {
       S.issueState = v;
       renderIssues(wrap, nav);
@@ -598,16 +612,16 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   // nothing said so, and there was no way to ask the questions a sort answers:
   // what is oldest and still open, what has everyone piled onto.
   const SORT_LABELS: Record<IssueSort, string> = {
-    updated: "Recently updated",
-    newest: "Newest",
-    oldest: "Oldest",
-    commented: "Most commented",
-    reactions: "Most reactions",
+    updated: l10n.t("Recently updated"),
+    newest: l10n.t("Newest"),
+    oldest: l10n.t("Oldest"),
+    commented: l10n.t("Most commented"),
+    reactions: l10n.t("Most reactions"),
   };
   const sortBtn = el("button", "mini-btn gh-sort-btn");
   const sortLabel = span(SORT_LABELS[S.issueSort]);
   sortBtn.append(glyph("sort-precedence"), sortLabel, glyph("chevron-down"));
-  sortBtn.title = "Change the list order";
+  sortBtn.title = l10n.t("Change the list order");
   sortBtn.setAttribute("aria-haspopup", "menu");
   sortBtn.addEventListener("click", () =>
     openMenu(
@@ -625,7 +639,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   );
 
   const newBtn = el("button", "btn btn-primary gh-new-btn");
-  newBtn.append(glyph("add"), span("New issue"));
+  newBtn.append(glyph("add"), span(l10n.t("New issue")));
   newBtn.addEventListener("click", () => nav("issuenew"));
   const verbs = el("div", "gh-head-verbs");
   verbs.append(sortBtn, newBtn);
@@ -642,10 +656,10 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   const buildRow = (it: IssueInfo): HTMLElement => {
     // One order across every list: who wrote it, who owns it, then the counts.
     const meta: HTMLElement[] = [];
-    if (it.user) meta.push(avatarStack([it.user], 1, 18, "Author"));
+    if (it.user) meta.push(avatarStack([it.user], 1, 18, l10n.t("Author")));
     // Reserved even when empty, so the author avatar keeps its column on rows
     // that happen to have no assignee.
-    meta.push(blankable(avatarStack(it.assignees, 3, 18, "Assignee"), it.assignees.length > 0));
+    meta.push(blankable(avatarStack(it.assignees, 3, 18, l10n.t("Assignee")), it.assignees.length > 0));
     // Rendered even at zero (blanked, not omitted): the meta cluster packs
     // right-to-left, so an absent count used to slide the avatars into the
     // column where every other row shows its comments.
@@ -674,10 +688,11 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       // Both dates are in the tooltip; only one can be the sorted column.
       time: relTimeISO(it.updatedAt),
       timeTitle: it.updatedAt
-        ? `Updated ${absTimeISO(it.updatedAt)}` +
-          (it.createdAt ? `\nOpened ${absTimeISO(it.createdAt)}` : "")
+        ? it.createdAt
+          ? `${l10n.t("Updated {0}", absTimeISO(it.updatedAt))}\n${l10n.t("Opened {0}", absTimeISO(it.createdAt))}`
+          : l10n.t("Updated {0}", absTimeISO(it.updatedAt))
         : undefined,
-      ariaLabel: `Issue #${it.number}: ${it.title}`,
+      ariaLabel: l10n.t("Issue #{0}: {1}", it.number, it.title),
       onOpen: () => nav("issues", { number: it.number }),
     });
     row.dataset.num = String(it.number);
@@ -710,17 +725,19 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
         if (!searcher.isCurrent(gen) || !view.isConnected || S.query.trim() !== q) return;
         S.serverHits = res.items;
         S.serverNote = res.incomplete
-          ? `${res.items.length} from GitHub — it gave up early, so there may be more`
+          ? l10n.t("{0} from GitHub — it gave up early, so there may be more", res.items.length)
           : res.totalCount > res.items.length
-            ? `${res.items.length} of ${res.totalCount} matching issues on GitHub`
-            : `${res.items.length} matching ${res.items.length === 1 ? "issue" : "issues"} on GitHub`;
+            ? l10n.t("{0} of {1} matching issues on GitHub", res.items.length, res.totalCount)
+            : res.items.length === 1
+              ? l10n.t("1 matching issue on GitHub")
+              : l10n.t("{0} matching issues on GitHub", res.items.length);
         renderList();
       } catch {
         // Leave the local filter on screen and say so, rather than emptying
         // the list because the network hiccuped.
         if (!searcher.isCurrent(gen) || !view.isConnected) return;
         S.serverHits = null;
-        S.serverNote = "Couldn’t reach GitHub — showing matches from the issues already loaded";
+        S.serverNote = l10n.t("Couldn’t reach GitHub — showing matches from the issues already loaded");
         renderList();
       }
     })();
@@ -739,29 +756,34 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     header.setCount?.(items.length, S.serverHits && q ? undefined : issues.length);
     // The tab learns its count the moment the list lands, not on the next visit.
     if (S.issueState !== "all") {
-      seg.setLabel(S.issueState, `${S.issueState === "open" ? "Open" : "Closed"} (${issues.length})`);
+      seg.setLabel(
+        S.issueState,
+        S.issueState === "open"
+          ? l10n.t("Open ({0})", issues.length)
+          : l10n.t("Closed ({0})", issues.length),
+      );
     } else {
       // All carries both counts — label both tabs so neither grows on the next click.
-      seg.setLabel("open", `Open (${issues.filter((i) => i.state === "open").length})`);
-      seg.setLabel("closed", `Closed (${issues.filter((i) => i.state === "closed").length})`);
+      seg.setLabel("open", l10n.t("Open ({0})", issues.filter((i) => i.state === "open").length));
+      seg.setLabel("closed", l10n.t("Closed ({0})", issues.filter((i) => i.state === "closed").length));
     }
     setSearchNote(S.serverNote);
     listEl.replaceChildren();
     if (issues.length === 0) {
       const emptyCopy: Record<typeof S.issueState, { title: string; desc: string; icon: string }> = {
         open: {
-          title: "No open issues",
-          desc: "You're all caught up — there's nothing open to triage right now.",
+          title: l10n.t("No open issues"),
+          desc: l10n.t("You're all caught up — there's nothing open to triage right now."),
           icon: "issue-opened",
         },
         closed: {
-          title: "No closed issues",
-          desc: "Closed issues will show here once you close some.",
+          title: l10n.t("No closed issues"),
+          desc: l10n.t("Closed issues will show here once you close some."),
           icon: "issue-closed",
         },
         all: {
-          title: "No issues yet",
-          desc: "This repo has no issues. Open the first one to start tracking work.",
+          title: l10n.t("No issues yet"),
+          desc: l10n.t("This repo has no issues. Open the first one to start tracking work."),
           icon: "issue-opened",
         },
       };
@@ -774,21 +796,23 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
             ? { icon: c.icon }
             : {
                 icon: c.icon,
-                action: { label: "New issue", icon: "add", onClick: () => nav("issuenew") },
+                action: { label: l10n.t("New issue"), icon: "add", onClick: () => nav("issuenew") },
               },
         ),
       );
       return;
     }
     if (items.length === 0) {
-      const desc = S.query ? `Nothing matches “${S.query}”.` : "No issues match the active filters.";
+      const desc = S.query
+        ? l10n.t("Nothing matches “{0}”.", S.query)
+        : l10n.t("No issues match the active filters.");
       listEl.appendChild(
-        emptyState("No matching issues", desc, {
+        emptyState(l10n.t("No matching issues"), desc, {
           icon: "search",
           anchor: "inline",
           secondary:
             facets.activeCount() > 0
-              ? { label: "Clear filters", icon: "clear-all", onClick: () => facets.clear() }
+              ? { label: l10n.t("Clear filters"), icon: "clear-all", onClick: () => facets.clear() }
               : undefined,
         }),
       );
@@ -817,12 +841,12 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   // tab rather than offered as a filter that can only ever match zero rows.
   const closedReasonSpec: FacetSpec<IssueInfo> = {
     key: "reason",
-    label: "Closed as",
+    label: l10n.t("Closed as"),
     icon: "circle-slash",
-    anyLabel: "Any reason",
+    anyLabel: l10n.t("Any reason"),
     options: [
-      { value: "completed", label: "Completed", icon: "issue-closed" },
-      { value: "not_planned", label: "Not planned", icon: "circle-slash" },
+      { value: "completed", label: l10n.t("Completed"), icon: "issue-closed" },
+      { value: "not_planned", label: l10n.t("Not planned"), icon: "circle-slash" },
     ],
     predicate: (it, v) =>
       v === "completed"
@@ -834,9 +858,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     specs: [
       {
         key: "label",
-        label: "Label",
+        label: l10n.t("Label"),
         icon: "tag",
-        anyLabel: "All labels",
+        anyLabel: l10n.t("All labels"),
         harvest: (items) => {
           const seen = new Map<string, string>();
           for (const l of repoLabels) seen.set(l.name, l.color);
@@ -847,9 +871,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       },
       {
         key: "assignee",
-        label: "Assignee",
+        label: l10n.t("Assignee"),
         icon: "person",
-        anyLabel: "Anyone",
+        anyLabel: l10n.t("Anyone"),
         harvest: (items) => {
           const seen = new Map<string, string | null>();
           for (const it of items) for (const a of it.assignees) if (!seen.has(a.login)) seen.set(a.login, a.avatarUrl);
@@ -863,17 +887,17 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       },
       {
         key: "milestone",
-        label: "Milestone",
+        label: l10n.t("Milestone"),
         icon: "milestone",
-        anyLabel: "Any milestone",
+        anyLabel: l10n.t("Any milestone"),
         harvest: harvestValues<IssueInfo>((it) => it.milestone?.title),
         predicate: (it, v) => it.milestone?.title === v,
       },
       {
         key: "author",
-        label: "Author",
+        label: l10n.t("Author"),
         icon: "account",
-        anyLabel: "Anyone",
+        anyLabel: l10n.t("Anyone"),
         harvest: (items) => {
           const seen = new Map<string, string | null>();
           for (const it of items) if (it.user && !seen.has(it.user.login)) seen.set(it.user.login, it.user.avatarUrl);
@@ -899,7 +923,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
 
   header.querySelector(".gh-head-titlewrap")?.appendChild(
     searchField({
-      placeholder: "Search issues…",
+      placeholder: l10n.t("Search issues…"),
       initial: S.query,
       onInput: (q) => {
         S.query = q;
@@ -907,7 +931,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
         // stops a stale "12 matching issues on GitHub" sitting above results
         // for something else entirely.
         S.serverHits = null;
-        S.serverNote = q.trim() ? "Searching GitHub…" : "";
+        S.serverNote = q.trim() ? l10n.t("Searching GitHub…") : "";
         renderList();
         searcher.queue(q);
       },
@@ -925,7 +949,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     if (!view.isConnected) return;
     if (!issues) {
       listEl.replaceChildren(
-        errorState("Couldn't load issues", cleanErr(e) || "GitHub request failed.", refresh),
+        errorState(l10n.t("Couldn't load issues"), cleanErr(e) || l10n.t("GitHub request failed."), refresh),
       );
     }
   }
@@ -949,9 +973,9 @@ function showDetailPage(
   };
 
   const { view, main, rail, topActions } = detailPage({
-    backLabel: from?.label ?? "Issues",
+    backLabel: from?.label ?? l10n.t("Issues"),
     crumb: `#${n}`,
-    pageLabel: `Issue #${n}`,
+    pageLabel: l10n.t("Issue #{0}", n),
     onBack: back,
   });
   main.appendChild(skeletonList(4, false));
@@ -964,13 +988,15 @@ function showDetailPage(
     } catch (e) {
       if (!view.isConnected) return;
       main.replaceChildren(
-        errorState("Couldn't load issue", cleanErr(e) || "GitHub request failed.", reload),
+        errorState(l10n.t("Couldn't load issue"), cleanErr(e) || l10n.t("GitHub request failed."), reload),
       );
       return;
     }
     if (!view.isConnected) return;
     if (!d) {
-      main.replaceChildren(emptyState("Issue unavailable", "This issue couldn't be loaded."));
+      main.replaceChildren(
+        emptyState(l10n.t("Issue unavailable"), l10n.t("This issue couldn't be loaded.")),
+      );
       return;
     }
     const viewer = await gget("github:status", undefined, 30_000)
@@ -1012,13 +1038,15 @@ export async function renderIssueDetailInto(
     d = await gget("issue:detail", number, 8000);
   } catch (e) {
     container.replaceChildren(
-      errorState("Couldn't load issue", cleanErr(e) || "GitHub request failed.", reload),
+      errorState(l10n.t("Couldn't load issue"), cleanErr(e) || l10n.t("GitHub request failed."), reload),
     );
     return;
   }
   if (!container.isConnected) return;
   if (!d) {
-    container.replaceChildren(emptyState("Issue unavailable", "This issue couldn't be loaded."));
+    container.replaceChildren(
+      emptyState(l10n.t("Issue unavailable"), l10n.t("This issue couldn't be loaded.")),
+    );
     return;
   }
   const main = el("div", "det-main det-main-drawer");
@@ -1065,10 +1093,11 @@ function buildDetail(ctx: DetailCtx): void {
 
   const analyzeBtn = el("button", "mini-btn ai-mini");
   analyzeBtn.hidden = true;
-  analyzeBtn.append(glyph("sparkle"), span("Analyze"));
+  analyzeBtn.append(glyph("sparkle"), span(l10n.t("Analyze")));
   analyzeBtn.addEventListener("click", () =>
     openAssistantTab({
-      title: `Analyze #${it.number}`,
+      title: l10n.t("Analyze #{0}", it.number),
+      // Sent to the AI model, not rendered in the UI — not translated.
       goal: `Analyze this GitHub issue. Summarize the problem, the likely root cause, and a concrete suggested approach. Be concise and use Markdown.\n\n${aiCtx()}`,
       nav,
     }),
@@ -1077,13 +1106,16 @@ function buildDetail(ctx: DetailCtx): void {
   actions.push(analyzeBtn);
 
   const editBtn = el("button", "mini-btn");
-  editBtn.append(glyph("edit"), span("Edit"));
+  editBtn.append(glyph("edit"), span(l10n.t("Edit")));
   editBtn.addEventListener("click", () => nav("issuenew", { number: it.number }));
   actions.push(editBtn);
 
   const closing = it.state === "open";
   const stateBtn = el("button", closing ? "btn btn-primary" : "mini-btn");
-  stateBtn.append(glyph(closing ? "issue-closed" : "issue-opened"), span(closing ? "Close issue" : "Reopen"));
+  stateBtn.append(
+    glyph(closing ? "issue-closed" : "issue-opened"),
+    span(closing ? l10n.t("Close issue") : l10n.t("Reopen")),
+  );
   // Close opens a chooser (completed / not planned) — say so, like Merge and Review do.
   if (closing) stateBtn.appendChild(glyph("chevron-down"));
   if (closing) {
@@ -1102,12 +1134,12 @@ function buildDetail(ctx: DetailCtx): void {
     stateBtn.addEventListener("click", () => {
       openMenu(stateBtn, [
         {
-          label: "Close as completed",
+          label: l10n.t("Close as completed"),
           icon: "pass-filled",
           onClick: () => void changeState(it.number, "closed", stateBtn, reload, "completed"),
         },
         {
-          label: "Close as not planned",
+          label: l10n.t("Close as not planned"),
           icon: "circle-slash",
           onClick: () => void changeState(it.number, "closed", stateBtn, reload, "not_planned"),
         },
@@ -1125,30 +1157,28 @@ function buildDetail(ctx: DetailCtx): void {
   // discussion without leaving the app.
   const moreBtn = el("button", "mini-btn gh-icon-btn");
   moreBtn.append(glyph("ellipsis"));
-  moreBtn.title = "More actions";
-  moreBtn.setAttribute("aria-label", "More actions");
+  moreBtn.title = l10n.t("More actions");
+  moreBtn.setAttribute("aria-label", l10n.t("More actions"));
   moreBtn.setAttribute("aria-haspopup", "menu");
   moreBtn.addEventListener("click", () => {
     const items: MenuItem[] = [
       {
-        label: "Copy link",
+        label: l10n.t("Copy link"),
         icon: "copy",
-        onClick: () => void copyText(it.htmlUrl, "Copied issue link."),
+        onClick: () => void copyText(it.htmlUrl, l10n.t("Copied issue link.")),
       },
       {
-        label: "Reference in new issue",
-        sub: `Starts one that links #${it.number}`,
+        label: l10n.t("Reference in new issue"),
+        sub: l10n.t("Starts one that links #{0}", it.number),
         icon: "issue-draft",
-        onClick: () => nav("issuenew", { seedBody: `Ref #${it.number} — ${it.title}
-
-` }),
+        onClick: () => nav("issuenew", { seedBody: `${l10n.t("Ref #{0} — {1}", it.number, it.title)}\n\n` }),
       },
       { separator: true },
     ];
     if (it.locked) {
       items.push({
-        label: "Unlock conversation",
-        sub: "Everyone can comment again",
+        label: l10n.t("Unlock conversation"),
+        sub: l10n.t("Everyone can comment again"),
         icon: "unlock",
         onClick: () => void setLocked(it.number, false, undefined, reload),
       });
@@ -1157,11 +1187,11 @@ function buildDetail(ctx: DetailCtx): void {
       // than behind a second hop — GitHub's own vocabulary, plus "no reason",
       // because a lock does not owe anyone an explanation.
       for (const [reason, label] of [
-        [undefined, "Lock conversation"],
-        ["off-topic", "Lock as off-topic"],
-        ["too heated", "Lock as too heated"],
-        ["resolved", "Lock as resolved"],
-        ["spam", "Lock as spam"],
+        [undefined, l10n.t("Lock conversation")],
+        ["off-topic", l10n.t("Lock as off-topic")],
+        ["too heated", l10n.t("Lock as too heated")],
+        ["resolved", l10n.t("Lock as resolved")],
+        ["spam", l10n.t("Lock as spam")],
       ] as const) {
         items.push({
           label,
@@ -1177,7 +1207,7 @@ function buildDetail(ctx: DetailCtx): void {
   // The de-emphasized escape hatch: everything above is doable in-app.
   const openBtn = el("button", "mini-btn gh-icon-btn");
   openBtn.append(glyph("link-external"));
-  openBtn.title = "Open this issue on GitHub";
+  openBtn.title = l10n.t("Open this issue on GitHub");
   openBtn.setAttribute("aria-label", openBtn.title);
   openBtn.addEventListener("click", () => window.open(it.htmlUrl, "_blank"));
   actions.push(openBtn);
@@ -1195,7 +1225,11 @@ function buildDetail(ctx: DetailCtx): void {
   const stKind = issueStateKind(it.state, it.stateReason);
   titleRow.appendChild(
     statePill(
-      stKind === "open" ? "Open" : stKind === "not-planned" ? "Closed as not planned" : "Closed",
+      stKind === "open"
+        ? l10n.t("Open")
+        : stKind === "not-planned"
+          ? l10n.t("Closed as not planned")
+          : l10n.t("Closed"),
       stKind,
     ),
   );
@@ -1206,8 +1240,8 @@ function buildDetail(ctx: DetailCtx): void {
   // in one place, on both detail pages.
   const editTitleBtn = el("button", "mini-btn gh-icon-btn det-title-edit");
   editTitleBtn.append(glyph("pencil"));
-  editTitleBtn.title = "Edit title & description";
-  editTitleBtn.setAttribute("aria-label", "Edit issue title and description");
+  editTitleBtn.title = l10n.t("Edit title & description");
+  editTitleBtn.setAttribute("aria-label", l10n.t("Edit issue title and description"));
   editTitleBtn.addEventListener("click", () => nav("issuenew", { number: it.number }));
   titleRow.appendChild(editTitleBtn);
   main.appendChild(titleRow);
@@ -1217,14 +1251,17 @@ function buildDetail(ctx: DetailCtx): void {
   if (author) {
     const chip = el("button", "gh-meta-author");
     chip.append(avatar(author, it.user?.avatarUrl ?? null, 18), span(author));
-    chip.title = `View @${author}'s profile`;
+    chip.title = l10n.t("View @{0}'s profile", author);
     chip.addEventListener("click", () =>
       openPeek(memberCard({ login: author, avatarUrl: it.user?.avatarUrl ?? null, htmlUrl: `https://github.com/${author}` })),
     );
     sub.appendChild(chip);
   }
   const subText = el("span");
-  subText.textContent = `opened ${relTimeISO(it.createdAt)} · ${it.comments} comment${it.comments === 1 ? "" : "s"}`;
+  subText.textContent =
+    it.comments === 1
+      ? l10n.t("opened {0} · 1 comment", relTimeISO(it.createdAt))
+      : l10n.t("opened {0} · {1} comments", relTimeISO(it.createdAt), it.comments);
   subText.title = absTimeISO(it.createdAt);
   sub.appendChild(subText);
   main.appendChild(sub);
@@ -1235,7 +1272,10 @@ function buildDetail(ctx: DetailCtx): void {
   const milestoneEdit = (anchor: HTMLElement): void => void milestoneMenu(anchor, it, reload);
 
   if (rail) {
-    const assignProp = propSection("Assignees", { onEdit: assigneesEdit, editTitle: "Edit assignees" });
+    const assignProp = propSection(l10n.t("Assignees"), {
+      onEdit: assigneesEdit,
+      editTitle: l10n.t("Edit assignees"),
+    });
     if (d.assignees.length) {
       const byLogin = new Map(it.assignees.map((a) => [a.login, a]));
       for (const login of d.assignees) {
@@ -1246,21 +1286,24 @@ function buildDetail(ctx: DetailCtx): void {
         );
       }
     } else {
-      assignProp.body.appendChild(propAddBtn("Assign", assigneesEdit));
+      assignProp.body.appendChild(propAddBtn(l10n.t("Assign"), assigneesEdit));
     }
 
-    const labelProp = propSection("Labels", { onEdit: labelsEdit, editTitle: "Edit labels" });
+    const labelProp = propSection(l10n.t("Labels"), {
+      onEdit: labelsEdit,
+      editTitle: l10n.t("Edit labels"),
+    });
     if (it.labels.length) {
       for (const l of it.labels) labelProp.body.appendChild(labelChip(l.name, l.color));
     } else {
-      labelProp.body.appendChild(propAddBtn("Add labels", () => labelsEdit(labelProp.root)));
+      labelProp.body.appendChild(propAddBtn(l10n.t("Add labels"), () => labelsEdit(labelProp.root)));
     }
 
     // Who closed it, when, and WHY — the three questions a closed issue raises
     // and the app used to answer with silence.
     if (it.state === "closed" && (it.closedBy || it.closedAt)) {
       const closedProp = propSection(
-        it.stateReason === "not_planned" ? "Closed as not planned" : "Closed",
+        it.stateReason === "not_planned" ? l10n.t("Closed as not planned") : l10n.t("Closed"),
       );
       const cb = it.closedBy;
       if (cb) {
@@ -1278,16 +1321,19 @@ function buildDetail(ctx: DetailCtx): void {
       rail.appendChild(closedProp.root);
     }
 
-    const msProp = propSection("Milestone", { onEdit: milestoneEdit, editTitle: "Set milestone" });
+    const msProp = propSection(l10n.t("Milestone"), {
+      onEdit: milestoneEdit,
+      editTitle: l10n.t("Set milestone"),
+    });
     if (it.milestone) {
       const m = el("span", "det-milestone");
       m.append(glyph("milestone"), span(it.milestone.title));
       msProp.body.appendChild(m);
     } else {
-      msProp.body.appendChild(propAddBtn("Set milestone", () => milestoneEdit(msProp.root)));
+      msProp.body.appendChild(propAddBtn(l10n.t("Set milestone"), () => milestoneEdit(msProp.root)));
     }
 
-    const about = propSection("About");
+    const about = propSection(l10n.t("About"));
     const fact = (k: string, iso: string): HTMLElement => {
       const row = el("div", "det-fact");
       const v = el("span", "det-fact-v");
@@ -1297,7 +1343,7 @@ function buildDetail(ctx: DetailCtx): void {
       return row;
     };
     about.body.classList.add("det-prop-facts");
-    about.body.append(fact("Created", it.createdAt), fact("Updated", it.updatedAt));
+    about.body.append(fact(l10n.t("Created"), it.createdAt), fact(l10n.t("Updated"), it.updatedAt));
 
     // GitHub's rail order, which readers already know: the things you can
     // EDIT first (assignees, labels, milestone), then the things the issue
@@ -1324,7 +1370,7 @@ function buildDetail(ctx: DetailCtx): void {
       }
     }
     if (linkedPrs.size) {
-      const dev = propSection("Development");
+      const dev = propSection(l10n.t("Development"));
       for (const src of linkedPrs.values()) {
         const foreign = !!src.repo && !!mine && src.repo !== mine;
         const ref = foreign ? `${src.repo}${src.ref}` : src.ref;
@@ -1337,9 +1383,13 @@ function buildDetail(ctx: DetailCtx): void {
         const t = span(src.title ? `${ref} ${src.title}` : ref, "det-dev-title");
         t.title = src.title ? `${src.title} — ${ref}` : ref;
         row.append(ic, t);
+        const stateWord =
+          state === "merged" ? l10n.t("merged") : state === "closed" ? l10n.t("closed") : l10n.t("open");
         row.setAttribute(
           "aria-label",
-          `Pull request ${ref}${src.title ? `: ${src.title}` : ""} (${state})`,
+          src.title
+            ? l10n.t("Pull request {0}: {1} ({2})", ref, src.title, stateWord)
+            : l10n.t("Pull request {0} ({1})", ref, stateWord),
         );
         const num = Number(src.ref.replace("#", ""));
         row.addEventListener("click", () => {
@@ -1374,7 +1424,7 @@ function buildDetail(ctx: DetailCtx): void {
     for (const cm of d.comments) if (cm.author) people.set(cm.author.login, cm.author.avatarUrl);
     if (it.closedBy) people.set(it.closedBy.login, it.closedBy.avatarUrl);
     const parts = propSection(
-      people.size === 1 ? "1 participant" : `${people.size} participants`,
+      people.size === 1 ? l10n.t("1 participant") : l10n.t("{0} participants", people.size),
     );
     parts.body.appendChild(
       avatarStack([...people].map(([login, avatarUrl]) => ({ login, avatarUrl })), 8, 22),
@@ -1384,12 +1434,14 @@ function buildDetail(ctx: DetailCtx): void {
     // A locked thread says so where the properties live, not only in a
     // timeline event that may be forty comments up.
     if (it.locked) {
-      const lock = propSection("Conversation locked");
+      const lock = propSection(l10n.t("Conversation locked"));
       const line = el("div", "det-lock-line");
       line.append(
         glyph("lock"),
         span(
-          it.activeLockReason ? `as ${it.activeLockReason}` : "by a collaborator",
+          it.activeLockReason
+            ? l10n.t("as {0}", it.activeLockReason)
+            : l10n.t("by a collaborator"),
           "det-lock-why",
         ),
       );
@@ -1424,7 +1476,7 @@ function buildDetail(ctx: DetailCtx): void {
     // No `comment` here: the issue BODY is edited through the composer page,
     // which is a different endpoint and a different screen. Quoting it is
     // still the same gesture, so that stays.
-    commentCard(it.user?.login ?? "author", "opened this issue", it.body ?? "", it.createdAt, {
+    commentCard(it.user?.login ?? "author", l10n.t("opened this issue"), it.body ?? "", it.createdAt, {
       association: it.authorAssociation,
       reactions: it.reactions,
       onQuote: (text) => quoteInto(reply.box, text, it.user?.login),
@@ -1450,7 +1502,7 @@ function buildDetail(ctx: DetailCtx): void {
     }
     const c = entry.comment!;
     timeline.appendChild(
-      commentCard(c.author?.login ?? "unknown", "commented", c.body, c.createdAt, {
+      commentCard(c.author?.login ?? "unknown", l10n.t("commented"), c.body, c.createdAt, {
         updatedAt: c.updatedAt,
         association: c.authorAssociation,
         reactions: c.reactions,
@@ -1471,9 +1523,9 @@ function buildDetail(ctx: DetailCtx): void {
   // is markdown you find out about after you post it.
   const ed = mdEditor({
     value: commentDrafts.get(draftKey(it.number)) ?? "",
-    placeholder: "Leave a comment…",
+    placeholder: l10n.t("Leave a comment…"),
     rows: 4,
-    label: `Comment on issue #${it.number}`,
+    label: l10n.t("Comment on issue #{0}", it.number),
     onInput: (v) => {
       if (v.trim()) commentDrafts.set(draftKey(it.number), v);
       else commentDrafts.delete(draftKey(it.number));
@@ -1489,17 +1541,18 @@ function buildDetail(ctx: DetailCtx): void {
   reply.box = ed;
   const crow = el("div", "gh-composer-actions");
   const send = el("button", "btn btn-primary") as HTMLButtonElement;
-  send.append(glyph("comment"), span("Comment"));
+  send.append(glyph("comment"), span(l10n.t("Comment")));
   const syncSend = (): void => {
     const ready = ed.get().trim().length > 0;
     send.disabled = !ready;
-    send.title = ready ? "Post this comment" : "Write something first";
+    send.title = ready ? l10n.t("Post this comment") : l10n.t("Write something first");
   };
   syncSend();
   send.addEventListener("click", () => void postComment(it.number, ta, send, reload));
-  const draftChip = aiChip("Draft a reply", () =>
+  const draftChip = aiChip(l10n.t("Draft a reply"), () =>
     void streamInto(
       "assist",
+      // Sent to the AI model, not rendered in the UI — not translated.
       { description: `Draft a concise, helpful reply comment for this GitHub issue. Output only the comment text.\n\n${aiCtx()}` },
       ta,
       draftChip as HTMLButtonElement,
@@ -1534,7 +1587,7 @@ async function postComment(
 ): Promise<void> {
   const body = ta.value.trim();
   if (!body) {
-    toast("Write a comment first.", "info");
+    toast(l10n.t("Write a comment first."), "info");
     return;
   }
   (btn as HTMLButtonElement).disabled = true;
@@ -1542,14 +1595,14 @@ async function postComment(
   try {
     const r = await host.invoke("issue:comment", { number: n, body });
     if (!r.ok) {
-      toast(r.message ?? "Couldn't post the comment.", "error");
+      toast(r.message ?? l10n.t("Couldn't post the comment."), "error");
       return;
     }
-    toast("Comment posted.", "success");
+    toast(l10n.t("Comment posted."), "success");
     commentDrafts.delete(draftKey(n));
     reload();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't post the comment.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't post the comment."), "error");
   } finally {
     (btn as HTMLButtonElement).disabled = false;
     ta.disabled = false;
@@ -1579,7 +1632,7 @@ function sortIssues(items: IssueInfo[], issueSort: IssueSort): IssueInfo[] {
 function milestoneChip(title: string): HTMLElement {
   const m = span("", "sec-milestone");
   m.append(glyph("milestone"), span(title));
-  m.title = `Milestone: ${title}`;
+  m.title = l10n.t("Milestone: {0}", title);
   return m;
 }
 
@@ -1591,10 +1644,16 @@ async function setLocked(
 ): Promise<void> {
   const r = await host.invoke("issue:setLocked", { number, locked, reason });
   if (!r.ok) {
-    toast(r.message ?? `Couldn't ${locked ? "lock" : "unlock"} the conversation.`, "error");
+    toast(
+      r.message ??
+        (locked
+          ? l10n.t("Couldn't lock the conversation.")
+          : l10n.t("Couldn't unlock the conversation.")),
+      "error",
+    );
     return;
   }
-  toast(locked ? "Conversation locked." : "Conversation unlocked.", "success");
+  toast(locked ? l10n.t("Conversation locked.") : l10n.t("Conversation unlocked."), "success");
   bust("issue");
   reload();
 }
@@ -1610,20 +1669,20 @@ async function changeState(
   try {
     const r = await host.invoke("issue:setState", { number: n, state, reason });
     if (!r.ok) {
-      toast(r.message ?? "Couldn't update the issue.", "error");
+      toast(r.message ?? l10n.t("Couldn't update the issue."), "error");
       return;
     }
     toast(
       state === "closed"
         ? reason === "not_planned"
-          ? `Closed #${n} as not planned.`
-          : `Closed issue #${n}.`
-        : `Reopened issue #${n}.`,
+          ? l10n.t("Closed #{0} as not planned.", n)
+          : l10n.t("Closed issue #{0}.", n)
+        : l10n.t("Reopened issue #{0}.", n),
       "success",
     );
     reload();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't update the issue.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't update the issue."), "error");
   } finally {
     (btn as HTMLButtonElement).disabled = false;
   }
@@ -1634,11 +1693,11 @@ async function labelsMenu(anchor: HTMLElement, it: IssueInfo, reload: () => void
   try {
     repoLabels = await gget("issue:labels", undefined, 60000);
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't load labels.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't load labels."), "error");
     return;
   }
   if (repoLabels.length === 0) {
-    toast("This repo has no labels defined.", "info");
+    toast(l10n.t("This repo has no labels defined."), "info");
     return;
   }
   const before = new Set(it.labels.map((l) => l.name));
@@ -1678,13 +1737,13 @@ async function applyLabels(n: number, labels: string[], reload: () => void): Pro
   try {
     const r = await host.invoke("issue:setLabels", { number: n, labels });
     if (!r.ok) {
-      toast(r.message ?? "Couldn't update labels.", "error");
+      toast(r.message ?? l10n.t("Couldn't update labels."), "error");
       return;
     }
-    toast("Labels updated.", "success");
+    toast(l10n.t("Labels updated."), "success");
     reload();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't update labels.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't update labels."), "error");
   }
 }
 
@@ -1695,11 +1754,11 @@ async function milestoneMenu(anchor: HTMLElement, it: IssueInfo, reload: () => v
   try {
     ms = await gget("issue:milestones", undefined, 60000);
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't load milestones.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't load milestones."), "error");
     return;
   }
   if (ms.length === 0) {
-    toast("This repo has no milestones defined.", "info");
+    toast(l10n.t("This repo has no milestones defined."), "info");
     return;
   }
   const ordered = [...ms].sort((a, b) => (a.state === b.state ? 0 : a.state === "open" ? -1 : 1));
@@ -1707,7 +1766,7 @@ async function milestoneMenu(anchor: HTMLElement, it: IssueInfo, reload: () => v
     anchor,
     [
       {
-        label: "No milestone",
+        label: l10n.t("No milestone"),
         icon: "circle-slash",
         current: !it.milestone,
         onClick: () => void applyMilestone(it.number, null, reload),
@@ -1715,12 +1774,12 @@ async function milestoneMenu(anchor: HTMLElement, it: IssueInfo, reload: () => v
       { separator: true },
       ...ordered.map((m) => {
         const total = m.openIssues + m.closedIssues;
-        const progress = total > 0 ? `${m.closedIssues}/${total} closed` : "no issues";
+        const progress = total > 0 ? l10n.t("{0}/{1} closed", m.closedIssues, total) : l10n.t("no issues");
         return {
           label: m.title,
           icon: "milestone",
           current: it.milestone?.number === m.number,
-          sub: m.state === "closed" ? `closed · ${progress}` : progress,
+          sub: m.state === "closed" ? l10n.t("closed · {0}", progress) : progress,
           onClick: () => void applyMilestone(it.number, m.number, reload),
         };
       }),
@@ -1733,13 +1792,13 @@ async function applyMilestone(n: number, milestone: number | null, reload: () =>
   try {
     const r = await host.invoke("issue:setMilestone", { number: n, milestone });
     if (!r.ok) {
-      toast(r.message ?? "Couldn't update the milestone.", "error");
+      toast(r.message ?? l10n.t("Couldn't update the milestone."), "error");
       return;
     }
-    toast(milestone == null ? "Milestone cleared." : "Milestone updated.", "success");
+    toast(milestone == null ? l10n.t("Milestone cleared.") : l10n.t("Milestone updated."), "success");
     reload();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't update the milestone.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't update the milestone."), "error");
   }
 }
 
@@ -1754,13 +1813,18 @@ async function editAssignees(it: IssueInfo, current: string[], reload: () => voi
   }
   let assignees: string[] | null;
   if (people.length) {
-    assignees = await peoplePickerModal({ title: "Assignees", okLabel: "Save", people, selected: current });
+    assignees = await peoplePickerModal({
+      title: l10n.t("Assignees"),
+      okLabel: l10n.t("Save"),
+      people,
+      selected: current,
+    });
   } else {
     const csv = await promptInline(
-      "Assignees",
-      "comma-separated logins, e.g. octocat, hubot",
+      l10n.t("Assignees"),
+      l10n.t("comma-separated logins, e.g. octocat, hubot"),
       current.join(", "),
-      "Save",
+      l10n.t("Save"),
     );
     assignees = csv === null ? null : csv.split(",").map((s) => s.trim().replace(/^@/, "")).filter(Boolean);
   }
@@ -1768,12 +1832,12 @@ async function editAssignees(it: IssueInfo, current: string[], reload: () => voi
   try {
     const r = await host.invoke("issue:setAssignees", { number: it.number, assignees });
     if (!r.ok) {
-      toast(r.message ?? "Couldn't update assignees.", "error");
+      toast(r.message ?? l10n.t("Couldn't update assignees."), "error");
       return;
     }
-    toast("Assignees updated.", "success");
+    toast(l10n.t("Assignees updated."), "success");
     reload();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't update assignees.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't update assignees."), "error");
   }
 }

@@ -10,6 +10,7 @@
 // trigger, confirms destructive ops, toasts success/error, busts the SWR cache
 // and re-renders the affected surface.
 
+import * as l10n from "@vscode/l10n";
 import { host } from "../bridge";
 import { mdEditor } from "../mdEditor";
 import { peek as cachePeek, gget, bust, prime, cacheScope } from "../cache";
@@ -318,7 +319,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   };
 
   const { view, listEl } = sectionList();
-  const header = ghHeader("Pull Requests", gate.login, refresh);
+  const header = ghHeader(l10n.t("Pull Requests"), gate.login, refresh);
   const tools = el("div", "gh-head-tools");
   // Pull Requests was permanently open-only while Issues had a state control
   // one rail item away. "Merged" is a fourth option because it is the state
@@ -331,13 +332,13 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   const n = (k: number | undefined): string => (typeof k === "number" ? ` (${k})` : "");
   const stateSeg = segmented<"open" | "closed" | "merged" | "all">({
     options: [
-      { value: "open", label: `Open${n(cachedOpen?.length)}` },
-      { value: "merged", label: `Merged${n(cachedClosed?.filter((x) => x.mergedAt).length)}` },
-      { value: "closed", label: `Closed${n(cachedClosed?.filter((x) => !x.mergedAt).length)}` },
-      { value: "all", label: "All" },
+      { value: "open", label: l10n.t("Open{0}", n(cachedOpen?.length)) },
+      { value: "merged", label: l10n.t("Merged{0}", n(cachedClosed?.filter((x) => x.mergedAt).length)) },
+      { value: "closed", label: l10n.t("Closed{0}", n(cachedClosed?.filter((x) => !x.mergedAt).length)) },
+      { value: "all", label: l10n.t("All") },
     ],
     value: S.prState,
-    ariaLabel: "Pull request state",
+    ariaLabel: l10n.t("Pull request state"),
     onChange: (v) => {
       S.prState = v;
       renderPrs(wrap, nav);
@@ -349,16 +350,16 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   // oldest and still open" and "what has everyone piled onto" are the same
   // questions on either list, and only one of them could answer.
   const SORT_LABELS: Record<PrSort, string> = {
-    updated: "Recently updated",
-    newest: "Newest",
-    oldest: "Oldest",
-    commented: "Most commented",
-    reviewed: "Most review comments",
+    updated: l10n.t("Recently updated"),
+    newest: l10n.t("Newest"),
+    oldest: l10n.t("Oldest"),
+    commented: l10n.t("Most commented"),
+    reviewed: l10n.t("Most review comments"),
   };
   const sortBtn = el("button", "mini-btn gh-sort-btn");
   const sortLabel = span(SORT_LABELS[S.prSort]);
   sortBtn.append(glyph("sort-precedence"), sortLabel, glyph("chevron-down"));
-  sortBtn.title = "Change the list order";
+  sortBtn.title = l10n.t("Change the list order");
   sortBtn.setAttribute("aria-haspopup", "menu");
   sortBtn.addEventListener("click", () =>
     openMenu(
@@ -376,8 +377,8 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   );
 
   const newBtn = el("button", "btn btn-primary gh-new-btn");
-  newBtn.append(glyph("git-pull-request"), span("New PR"));
-  newBtn.title = "Open a new pull request";
+  newBtn.append(glyph("git-pull-request"), span(l10n.t("New PR")));
+  newBtn.title = l10n.t("Open a new pull request");
   newBtn.addEventListener("click", () => void openCreatePr(refresh));
   const verbs = el("div", "gh-head-verbs");
   verbs.append(sortBtn, newBtn);
@@ -395,8 +396,10 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     const kind = prKind(pr);
     // One order across every list: who wrote it, who owns it, then the counts.
     const meta: HTMLElement[] = [];
-    if (pr.user) meta.push(avatarStack([pr.user], 1, 18, "Author"));
-    meta.push(blankable(avatarStack(pr.assignees ?? [], 3, 18, "Assignee"), !!pr.assignees?.length));
+    if (pr.user) meta.push(avatarStack([pr.user], 1, 18, l10n.t("Author")));
+    meta.push(
+      blankable(avatarStack(pr.assignees ?? [], 3, 18, l10n.t("Assignee")), !!pr.assignees?.length),
+    );
     if (typeof pr.additions === "number" || typeof pr.deletions === "number") {
       const stat = el("span", "sec-diffstat");
       if (typeof pr.additions === "number") stat.appendChild(span(`+${pr.additions}`, "add"));
@@ -410,7 +413,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       num: `#${pr.number}`,
       title: pr.title,
       titleSuffix: [
-        ...(pr.draft ? [statePill("Draft", "draft")] : []),
+        ...(pr.draft ? [statePill(l10n.t("Draft"), "draft")] : []),
         // A PR from a fork runs someone else's branch through your CI — a fact
         // worth seeing in the LIST, not only after you open it.
         ...(pr.headRepoFullName ? [forkChip(pr.headRepoFullName)] : []),
@@ -425,7 +428,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
               (() => {
                 const m = span("", "sec-milestone");
                 m.append(glyph("milestone"), span(pr.milestone.title));
-                m.title = `Milestone: ${pr.milestone.title}`;
+                m.title = l10n.t("Milestone: {0}", pr.milestone.title);
                 return m;
               })(),
             ]
@@ -433,8 +436,8 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       ],
       meta,
       time: relTimeISO(pr.updatedAt),
-      timeTitle: pr.updatedAt ? `Updated ${absTimeISO(pr.updatedAt)}` : undefined,
-      ariaLabel: `Pull request #${pr.number}: ${pr.title}`,
+      timeTitle: pr.updatedAt ? l10n.t("Updated {0}", absTimeISO(pr.updatedAt)) : undefined,
+      ariaLabel: l10n.t("Pull request #{0}: {1}", pr.number, pr.title),
       onOpen: () => nav("prs", { number: pr.number }),
     });
     row.dataset.num = String(pr.number);
@@ -463,9 +466,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     specs: [
       {
         key: "label",
-        label: "Label",
+        label: l10n.t("Label"),
         icon: "tag",
-        anyLabel: "All labels",
+        anyLabel: l10n.t("All labels"),
         harvest: (items) => {
           const seen = new Map<string, string>();
           for (const pr of items) for (const l of pr.labels) if (!seen.has(l.name)) seen.set(l.name, l.color);
@@ -479,9 +482,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       // question either way; the two lists must answer alike.
       {
         key: "assignee",
-        label: "Assignee",
+        label: l10n.t("Assignee"),
         icon: "person",
-        anyLabel: "Anyone",
+        anyLabel: l10n.t("Anyone"),
         harvest: (items) => {
           const seen = new Map<string, string | null>();
           for (const pr of items) for (const a of pr.assignees ?? []) if (!seen.has(a.login)) seen.set(a.login, a.avatarUrl);
@@ -495,17 +498,17 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       },
       {
         key: "milestone",
-        label: "Milestone",
+        label: l10n.t("Milestone"),
         icon: "milestone",
-        anyLabel: "Any milestone",
+        anyLabel: l10n.t("Any milestone"),
         harvest: harvestValues<PullRequest>((pr) => pr.milestone?.title),
         predicate: (pr, v) => pr.milestone?.title === v,
       },
       {
         key: "author",
-        label: "Author",
+        label: l10n.t("Author"),
         icon: "account",
-        anyLabel: "Anyone",
+        anyLabel: l10n.t("Anyone"),
         harvest: (items) => {
           const seen = new Map<string, string | null>();
           for (const pr of items) if (pr.user && !seen.has(pr.user.login)) seen.set(pr.user.login, pr.user.avatarUrl);
@@ -519,9 +522,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       },
       {
         key: "base",
-        label: "Base",
+        label: l10n.t("Base"),
         icon: "git-branch",
-        anyLabel: "Any base",
+        anyLabel: l10n.t("Any base"),
         harvest: harvestValues<PullRequest>((pr) => pr.base.ref),
         predicate: (pr, v) => pr.base.ref === v,
       },
@@ -529,23 +532,23 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       // head branch lives are two different questions, and neither is a state.
       {
         key: "draft",
-        label: "Review",
+        label: l10n.t("Review"),
         icon: "git-pull-request",
-        anyLabel: "Ready and draft",
+        anyLabel: l10n.t("Ready and draft"),
         options: [
-          { value: "ready", label: "Ready for review", icon: "git-pull-request" },
-          { value: "draft", label: "Draft", icon: "git-pull-request-draft" },
+          { value: "ready", label: l10n.t("Ready for review"), icon: "git-pull-request" },
+          { value: "draft", label: l10n.t("Draft"), icon: "git-pull-request-draft" },
         ],
         predicate: (pr, v) => (v === "draft" ? pr.draft : !pr.draft),
       },
       {
         key: "origin",
-        label: "Origin",
+        label: l10n.t("Origin"),
         icon: "repo-forked",
-        anyLabel: "Anywhere",
+        anyLabel: l10n.t("Anywhere"),
         options: [
-          { value: "same", label: "This repository", icon: "repo" },
-          { value: "fork", label: "From a fork", icon: "repo-forked" },
+          { value: "same", label: l10n.t("This repository"), icon: "repo" },
+          { value: "fork", label: l10n.t("From a fork"), icon: "repo-forked" },
         ],
         predicate: (pr, v) => (v === "fork" ? !!pr.headRepoFullName : !pr.headRepoFullName),
       },
@@ -575,10 +578,10 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     const items = sortPrs(inSegment.filter((pr) => facets.passes(pr) && (q ? matches(pr, q) : true)), S.prSort);
     header.setCount?.(items.length, inSegment.length);
     // The tabs learn their counts the moment the list lands.
-    if (fetchState === "open") stateSeg.setLabel("open", `Open (${prs.length})`);
+    if (fetchState === "open") stateSeg.setLabel("open", l10n.t("Open ({0})", prs.length));
     else {
-      stateSeg.setLabel("merged", `Merged (${prs.filter((x) => x.mergedAt).length})`);
-      stateSeg.setLabel("closed", `Closed (${prs.filter((x) => !x.mergedAt).length})`);
+      stateSeg.setLabel("merged", l10n.t("Merged ({0})", prs.filter((x) => x.mergedAt).length));
+      stateSeg.setLabel("closed", l10n.t("Closed ({0})", prs.filter((x) => !x.mergedAt).length));
     }
     listEl.replaceChildren();
     // The empty state has to answer the question the SEGMENT asked. It was
@@ -587,23 +590,23 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     // Same table Issues already uses.
     const emptyCopy: Record<typeof S.prState, { title: string; desc: string; icon: string }> = {
       open: {
-        title: "No open pull requests",
-        desc: "You're all caught up — nothing to review right now.",
+        title: l10n.t("No open pull requests"),
+        desc: l10n.t("You're all caught up — nothing to review right now."),
         icon: "git-pull-request",
       },
       merged: {
-        title: "No merged pull requests",
-        desc: "Merged pull requests will show here once some land.",
+        title: l10n.t("No merged pull requests"),
+        desc: l10n.t("Merged pull requests will show here once some land."),
         icon: "git-merge",
       },
       closed: {
-        title: "No closed pull requests",
-        desc: "Pull requests closed without merging will show here.",
+        title: l10n.t("No closed pull requests"),
+        desc: l10n.t("Pull requests closed without merging will show here."),
         icon: "git-pull-request-closed",
       },
       all: {
-        title: "No pull requests yet",
-        desc: "This repo has none. Open the first one to propose a change.",
+        title: l10n.t("No pull requests yet"),
+        desc: l10n.t("This repo has none. Open the first one to propose a change."),
         icon: "git-pull-request",
       },
     };
@@ -628,12 +631,12 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       const bySegment = facets.activeCount() === 0 && !S.query;
       listEl.appendChild(
         emptyState(
-          bySegment ? ec.title : "No matching pull requests",
+          bySegment ? ec.title : l10n.t("No matching pull requests"),
           bySegment
             ? ec.desc
             : S.query
-              ? `Nothing matches “${S.query}”.`
-              : "No pull request matches these filters.",
+              ? l10n.t("Nothing matches “{0}”.", S.query)
+              : l10n.t("No pull request matches these filters."),
           {
             icon: bySegment ? ec.icon : "search",
           // A filtered-empty list answers a question the toolbar asked, so it
@@ -643,7 +646,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
           // `.is-inline` drops the badge.
           anchor: bySegment ? "hero" : "inline",
           secondary: facets.activeCount() > 0
-            ? { label: "Clear filters", icon: "clear-all", onClick: () => facets.clear() }
+            ? { label: l10n.t("Clear filters"), icon: "clear-all", onClick: () => facets.clear() }
             : undefined,
           },
         ),
@@ -657,7 +660,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
 
   header.querySelector(".gh-head-titlewrap")?.appendChild(
     searchField({
-      placeholder: "Search pull requests…",
+      placeholder: l10n.t("Search pull requests…"),
       initial: S.query,
       onInput: (q) => {
         S.query = q;
@@ -677,7 +680,11 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     if (!view.isConnected) return;
     if (!prs) {
       listEl.replaceChildren(
-        errorState("Couldn't load pull requests", cleanErr(e) || "GitHub request failed.", refresh),
+        errorState(
+          l10n.t("Couldn't load pull requests"),
+          cleanErr(e) || l10n.t("GitHub request failed."),
+          refresh,
+        ),
       );
     }
   }
@@ -708,12 +715,12 @@ function showDetailPage(
   };
 
   const { view, main, rail, topActions } = detailPage({
-    backLabel: from?.label ?? "Pull Requests",
+    backLabel: from?.label ?? l10n.t("Pull Requests"),
     crumb: `#${n}`,
     // What the NEXT page's back button calls this one. Without it, leaving for
     // a pipeline and pressing back read "← Pull requests" and landed on the
     // list rather than the pull request you were reading.
-    pageLabel: `Pull Request #${n}`,
+    pageLabel: l10n.t("Pull Request #{0}", n),
     onBack: back,
   });
   main.appendChild(skeletonList(4, false));
@@ -788,13 +795,19 @@ function showDetailPage(
     } catch (e) {
       if (!view.isConnected) return;
       main.replaceChildren(
-        errorState("Couldn't load this pull request", cleanErr(e) || "GitHub request failed.", reload),
+        errorState(
+          l10n.t("Couldn't load this pull request"),
+          cleanErr(e) || l10n.t("GitHub request failed."),
+          reload,
+        ),
       );
       return;
     }
     if (!view.isConnected) return;
     if (!d) {
-      main.replaceChildren(emptyState("Pull request unavailable", "This pull request couldn't be loaded."));
+      main.replaceChildren(
+        emptyState(l10n.t("Pull request unavailable"), l10n.t("This pull request couldn't be loaded.")),
+      );
       return;
     }
     lastSig = pollSig(d);
@@ -829,35 +842,36 @@ function buildDetail(ctx: DetailCtx): void {
   // model is connected. SHAs, not branch names — they resolve once fetched.
   const aiBtn = el("button", "mini-btn ai-mini");
   aiBtn.hidden = true;
-  aiBtn.append(glyph("sparkle"), span("AI"), glyph("chevron-down"));
+  aiBtn.append(glyph("sparkle"), span(l10n.t("AI")), glyph("chevron-down"));
   const diffCmd = `git diff ${full.base.sha}..${full.head.sha}`;
   aiBtn.addEventListener("click", () =>
     openMenu(aiBtn, [
       {
-        label: "Explain this PR",
+        label: l10n.t("Explain this PR"),
         icon: "comment",
         onClick: () =>
           openAssistantTab({
-            title: `Explain PR #${full.number}`,
+            title: l10n.t("Explain PR #{0}", full.number),
+            // Sent to the AI model, not rendered in the UI — not translated.
             goal: `Explain pull request #${full.number} ("${full.title}"). Run \`${diffCmd}\` to see the changes, then give a clear, structured summary of what it changes and why it matters.`,
           }),
       },
       {
-        label: "Review this PR",
+        label: l10n.t("Review this PR"),
         icon: "search",
         onClick: () =>
           openAssistantTab({
-            title: `Review PR #${full.number}`,
+            title: l10n.t("Review PR #{0}", full.number),
             goal: `Review pull request #${full.number} ("${full.title}") for correctness bugs, security issues and risky changes. Run \`${diffCmd}\` to see the diff. Be specific and cite files.`,
           }),
       },
       { separator: true },
       {
-        label: "Draft a comment",
+        label: l10n.t("Draft a comment"),
         icon: "comment",
         onClick: () =>
           openAssistantTab({
-            title: `Draft · PR #${full.number}`,
+            title: l10n.t("Draft · PR #{0}", full.number),
             goal: `Draft a concise, constructive review comment for pull request #${full.number}. Output just the comment text.\n\nTitle: ${full.title}\n\n${full.body ?? ""}`,
           }),
       },
@@ -869,7 +883,7 @@ function buildDetail(ctx: DetailCtx): void {
   const checkoutBtn = el("button", "mini-btn");
   // One vocabulary with the extension: the shared words and glyphs.
   checkoutBtn.append(glyph(PR_ACTIONS.checkout.icon), span(PR_ACTIONS.checkout.label));
-  checkoutBtn.title = `Fetch and check out this PR as pr/${full.number}`;
+  checkoutBtn.title = l10n.t("Fetch and check out this PR as pr/{0}", full.number);
   checkoutBtn.addEventListener("click", () => void doCheckout(full.number, checkoutBtn));
   actions.push(checkoutBtn);
 
@@ -880,7 +894,7 @@ function buildDetail(ctx: DetailCtx): void {
   // review body the modal exists for finally gets used.
   const approveBtn = el("button", "mini-btn");
   approveBtn.append(glyph(PR_ACTIONS.approve.icon), span(PR_ACTIONS.approve.label));
-  approveBtn.title = "Approve this pull request — opens the review composer";
+  approveBtn.title = l10n.t("Approve this pull request — opens the review composer");
   approveBtn.addEventListener("click", () => void doReview(full.number, "APPROVE", approveBtn, reload));
 
   const reviewBtn = el("button", "mini-btn");
@@ -888,21 +902,31 @@ function buildDetail(ctx: DetailCtx): void {
     const q = pendingFor(full.number).length;
     reviewBtn.replaceChildren(
       glyph(PR_ACTIONS.review.icon),
-      span(q > 0 ? `${PR_ACTIONS.review.label} (${q} pending)` : PR_ACTIONS.review.label),
+      span(q > 0 ? l10n.t("{0} ({1} pending)", PR_ACTIONS.review.label, q) : PR_ACTIONS.review.label),
       glyph("chevron-down"),
     );
     reviewBtn.classList.toggle("has-pending", q > 0);
     reviewBtn.title =
       q > 0
-        ? `Submit your review — ${q} queued comment${q === 1 ? "" : "s"} will post with it`
-        : "Submit a review";
+        ? q === 1
+          ? l10n.t("Submit your review — 1 queued comment will post with it")
+          : l10n.t("Submit your review — {0} queued comments will post with it", q)
+        : l10n.t("Submit a review");
   };
   paintReview();
   S.syncPendingUi = paintReview;
   reviewBtn.addEventListener("click", () =>
     openMenu(reviewBtn, [
-      { label: "Comment", icon: "comment", onClick: () => void doReview(full.number, "COMMENT", reviewBtn, reload) },
-      { label: "Request changes", icon: "request-changes", onClick: () => void doReview(full.number, "REQUEST_CHANGES", reviewBtn, reload) },
+      {
+        label: l10n.t("Comment"),
+        icon: "comment",
+        onClick: () => void doReview(full.number, "COMMENT", reviewBtn, reload),
+      },
+      {
+        label: l10n.t("Request changes"),
+        icon: "request-changes",
+        onClick: () => void doReview(full.number, "REQUEST_CHANGES", reviewBtn, reload),
+      },
     ]),
   );
   if (kind === "open-pr" || kind === "draft") actions.push(approveBtn, reviewBtn);
@@ -911,18 +935,30 @@ function buildDetail(ctx: DetailCtx): void {
   if (kind === "draft") {
     const readyBtn = el("button", "btn btn-primary");
     readyBtn.append(glyph(PR_ACTIONS.markReady.icon), span(PR_ACTIONS.markReady.label));
-    readyBtn.title = "Convert this draft to ready for review";
+    readyBtn.title = l10n.t("Convert this draft to ready for review");
     readyBtn.addEventListener("click", () => void doMarkReady(full.number, readyBtn, reload));
     actions.push(readyBtn);
   } else if (kind === "open-pr") {
     const mergeBtn = el("button", "btn btn-primary gh-merge-btn");
     mergeBtn.append(glyph(PR_ACTIONS.merge.icon), span(PR_ACTIONS.merge.label), glyph("chevron-down"));
-    mergeBtn.title = "Merge this pull request";
+    mergeBtn.title = l10n.t("Merge this pull request");
     mergeBtn.addEventListener("click", () =>
       openMenu(mergeBtn, [
-        { label: "Create a merge commit", icon: "git-merge", onClick: () => void doMerge(full.number, "merge", reload) },
-        { label: "Squash and merge", icon: "git-commit", onClick: () => void doMerge(full.number, "squash", reload) },
-        { label: "Rebase and merge", icon: "git-compare", onClick: () => void doMerge(full.number, "rebase", reload) },
+        {
+          label: l10n.t("Create a merge commit"),
+          icon: "git-merge",
+          onClick: () => void doMerge(full.number, "merge", reload),
+        },
+        {
+          label: l10n.t("Squash and merge"),
+          icon: "git-commit",
+          onClick: () => void doMerge(full.number, "squash", reload),
+        },
+        {
+          label: l10n.t("Rebase and merge"),
+          icon: "git-compare",
+          onClick: () => void doMerge(full.number, "rebase", reload),
+        },
       ]),
     );
     actions.push(mergeBtn);
@@ -933,21 +969,29 @@ function buildDetail(ctx: DetailCtx): void {
   moreBtn.title = PR_ACTIONS.more.label;
   moreBtn.addEventListener("click", () =>
     openMenu(moreBtn, [
-      { label: "Edit title & description", icon: "pencil", onClick: () => nav("predit", { number: full.number }) },
+      {
+        label: l10n.t("Edit title & description"),
+        icon: "pencil",
+        onClick: () => nav("predit", { number: full.number }),
+      },
       { label: PR_ACTIONS.updateBranch.label, icon: PR_ACTIONS.updateBranch.icon, onClick: () => void doUpdateBranch(full.number, reload) },
       { separator: true },
       full.state === "open"
         ? { label: PR_ACTIONS.close.label, icon: PR_ACTIONS.close.icon, onClick: () => void doSetState(full.number, "closed", reload) }
         : { label: PR_ACTIONS.reopen.label, icon: PR_ACTIONS.reopen.icon, onClick: () => void doSetState(full.number, "open", reload) },
       { separator: true },
-      { label: PR_ACTIONS.copyLink.label, icon: PR_ACTIONS.copyLink.icon, onClick: () => void copyText(full.htmlUrl, "Copied PR link.") },
+      {
+        label: PR_ACTIONS.copyLink.label,
+        icon: PR_ACTIONS.copyLink.icon,
+        onClick: () => void copyText(full.htmlUrl, l10n.t("Copied PR link.")),
+      },
     ]),
   );
   actions.push(moreBtn);
 
   const openBtn = el("button", "mini-btn gh-icon-btn");
   openBtn.append(glyph(PR_ACTIONS.openOnGitHub.icon));
-  openBtn.title = "Open this pull request on GitHub";
+  openBtn.title = l10n.t("Open this pull request on GitHub");
   openBtn.setAttribute("aria-label", openBtn.title);
   openBtn.addEventListener("click", () => window.open(full.htmlUrl, "_blank"));
   actions.push(openBtn);
@@ -962,8 +1006,8 @@ function buildDetail(ctx: DetailCtx): void {
   titleRow.appendChild(h);
   const editTitleBtn = el("button", "mini-btn gh-icon-btn det-title-edit");
   editTitleBtn.append(glyph("pencil"));
-  editTitleBtn.title = "Edit title & description";
-  editTitleBtn.setAttribute("aria-label", "Edit pull request title and description");
+  editTitleBtn.title = l10n.t("Edit title & description");
+  editTitleBtn.setAttribute("aria-label", l10n.t("Edit pull request title and description"));
   editTitleBtn.addEventListener("click", () => nav("predit", { number: full.number }));
   titleRow.appendChild(editTitleBtn);
   main.appendChild(titleRow);
@@ -973,7 +1017,7 @@ function buildDetail(ctx: DetailCtx): void {
   if (author?.login) {
     const who = el("button", "gh-meta-author");
     who.append(avatar(author.login, author.avatarUrl, 18), span(author.login));
-    who.title = `View @${author.login}'s profile`;
+    who.title = l10n.t("View @{0}'s profile", author.login);
     who.addEventListener("click", () =>
       openPeek(memberCard({ login: author.login, avatarUrl: author.avatarUrl, htmlUrl: `https://github.com/${author.login}` })),
     );
@@ -984,9 +1028,12 @@ function buildDetail(ctx: DetailCtx): void {
   // "updated" time lives in the ABOUT rail (and in this hover) on both.
   const nComments = typeof full.comments === "number" ? full.comments : undefined;
   when.textContent =
-    `opened ${relTimeISO(full.createdAt)}` +
-    (nComments !== undefined ? ` · ${nComments} comment${nComments === 1 ? "" : "s"}` : "");
-  when.title = full.updatedAt ? `Updated ${absTimeISO(full.updatedAt)}` : "";
+    nComments === undefined
+      ? l10n.t("opened {0}", relTimeISO(full.createdAt))
+      : nComments === 1
+        ? l10n.t("opened {0} · 1 comment", relTimeISO(full.createdAt))
+        : l10n.t("opened {0} · {1} comments", relTimeISO(full.createdAt), nComments);
+  when.title = full.updatedAt ? l10n.t("Updated {0}", absTimeISO(full.updatedAt)) : "";
   sub.appendChild(when);
   main.appendChild(sub);
 
@@ -994,17 +1041,28 @@ function buildDetail(ctx: DetailCtx): void {
   const content = el("div", "gh-subcontent");
   const subDefs = [
     { id: "conversation", label: PR_TABS.conversation.label, icon: PR_TABS.conversation.icon },
-    { id: "commits", label: `${PR_TABS.commits.label}${typeof full.commits === "number" ? ` (${full.commits})` : ""}`, icon: PR_TABS.commits.icon },
+    {
+      id: "commits",
+      label:
+        typeof full.commits === "number"
+          ? l10n.t("{0} ({1})", PR_TABS.commits.label, full.commits)
+          : PR_TABS.commits.label,
+      icon: PR_TABS.commits.icon,
+    },
     { id: "checks", label: PR_TABS.checks.label, icon: PR_TABS.checks.icon },
     // The tab's count is the PR's OWN total, not the length of the page we
     // happened to fetch. GitHub caps the files response, so the two disagreed
     // on the same screen: the rail read 412 and this tab read 300.
-    { id: "files", label: `${PR_TABS.files.label} (${full.changedFiles ?? d.files.length})`, icon: PR_TABS.files.icon },
+    {
+      id: "files",
+      label: l10n.t("{0} ({1})", PR_TABS.files.label, full.changedFiles ?? d.files.length),
+      icon: PR_TABS.files.icon,
+    },
   ];
   content.id = "gs-pr-subpanel";
   const tabs = subTabs({
     tabs: subDefs,
-    ariaLabel: "Pull request sections",
+    ariaLabel: l10n.t("Pull request sections"),
     panel: content,
     onSelect: (id) => {
       if (S.activeSubTab === "files" && id !== "files") disposePrDiff(S);
@@ -1019,9 +1077,9 @@ function buildDetail(ctx: DetailCtx): void {
   main.append(tabs.el, content);
 
   // ── property rail ──
-  const reviewersProp = propSection("Reviewers", {
+  const reviewersProp = propSection(l10n.t("Reviewers"), {
     onEdit: () => void doRequestReviewers(full.number, false, full, reload),
-    editTitle: "Request reviewers",
+    editTitle: l10n.t("Request reviewers"),
   });
   // Who was ASKED but hasn't answered — the single most useful thing a PR rail
   // can tell you, and previously invisible (the section only offered "add").
@@ -1030,12 +1088,12 @@ function buildDetail(ctx: DetailCtx): void {
       const chip = personChip(r.login, r.avatarUrl, () =>
         openPeek(memberCard({ login: r.login, avatarUrl: r.avatarUrl, htmlUrl: `https://github.com/${r.login}` })),
       );
-      chip.title = `@${r.login} — review requested, not yet submitted`;
+      chip.title = l10n.t("@{0} — review requested, not yet submitted", r.login);
       chip.classList.add("is-pending");
       reviewersProp.body.appendChild(chip);
     }
   }
-  const requestBtn = propAddBtn("Request review", () =>
+  const requestBtn = propAddBtn(l10n.t("Request review"), () =>
     void doRequestReviewers(full.number, false, full, reload),
   );
   reviewersProp.body.appendChild(requestBtn);
@@ -1066,7 +1124,9 @@ function buildDetail(ctx: DetailCtx): void {
           openPeek(memberCard({ login, avatarUrl: null, htmlUrl: `https://github.com/${login}` })),
         );
         chip.classList.add(approved ? "is-approved" : "is-blocking");
-        chip.title = `@${login} — ${approved ? "approved" : "requested changes"}`;
+        chip.title = approved
+          ? l10n.t("@{0} — approved", login)
+          : l10n.t("@{0} — requested changes", login);
         chip.append(glyph(approved ? "check" : "request-changes"));
         reviewersProp.body.insertBefore(chip, requestBtn);
       }
@@ -1075,9 +1135,9 @@ function buildDetail(ctx: DetailCtx): void {
       /* offline — the requested reviewers above are still true */
     });
 
-  const assignProp = propSection("Assignees", {
+  const assignProp = propSection(l10n.t("Assignees"), {
     onEdit: () => void doAssignees(full, reload),
-    editTitle: "Edit assignees",
+    editTitle: l10n.t("Edit assignees"),
   });
   if (full.assignees?.length) {
     for (const a of full.assignees) {
@@ -1088,24 +1148,26 @@ function buildDetail(ctx: DetailCtx): void {
       );
     }
   } else {
-    assignProp.body.appendChild(propAddBtn("Assign", () => void doAssignees(full, reload)));
+    assignProp.body.appendChild(propAddBtn(l10n.t("Assign"), () => void doAssignees(full, reload)));
   }
 
-  const labelProp = propSection("Labels", {
+  const labelProp = propSection(l10n.t("Labels"), {
     onEdit: (anchor) => void doLabels(anchor, full, reload),
-    editTitle: "Edit labels",
+    editTitle: l10n.t("Edit labels"),
   });
   if (full.labels.length) {
     for (const l of full.labels) labelProp.body.appendChild(labelChip(l.name, l.color));
   } else {
-    labelProp.body.appendChild(propAddBtn("Add labels", () => void doLabels(labelProp.root, full, reload)));
+    labelProp.body.appendChild(
+      propAddBtn(l10n.t("Add labels"), () => void doLabels(labelProp.root, full, reload)),
+    );
   }
 
-  const branchesProp = propSection("Branches");
+  const branchesProp = propSection(l10n.t("Branches"));
   const branchChip = (ref: string): HTMLElement => {
     const b = el("button", "gh-branch-chip");
     b.append(glyph("git-branch"), span(ref));
-    b.title = `Show ${ref} in Branches`;
+    b.title = l10n.t("Show {0} in Branches", ref);
     b.addEventListener("click", () => nav("branches", { ref }));
     return b;
   };
@@ -1113,11 +1175,11 @@ function buildDetail(ctx: DetailCtx): void {
   flow.append(branchChip(full.head.ref), span("→", "gh-meta-arrow"), branchChip(full.base.ref));
   branchesProp.body.appendChild(flow);
 
-  const checksProp = propSection("Checks");
+  const checksProp = propSection(l10n.t("Checks"));
   const paintChecksPill = (state: string): void => {
     checksProp.body.replaceChildren();
     if (!state) {
-      checksProp.body.appendChild(propNone("No checks"));
+      checksProp.body.appendChild(propNone(l10n.t("No checks")));
       return;
     }
     const c = el("button", "gh-pill det-checks-pill");
@@ -1126,7 +1188,7 @@ function buildDetail(ctx: DetailCtx): void {
     // from a Checks tab that says "Passed"/"Running" and read a raw lowercase
     // `success` / `pending`.
     c.textContent = checkStateLabel(state);
-    c.title = "Open the Checks tab";
+    c.title = l10n.t("Open the Checks tab");
     c.addEventListener("click", () => selectSub("checks"));
     checksProp.body.appendChild(c);
   };
@@ -1141,7 +1203,7 @@ function buildDetail(ctx: DetailCtx): void {
       if (!checksProp.body.isConnected) return;
       if (rows.length) paintChecksPill(rollupChecks(rows));
       const lab = tabs.el.querySelector<HTMLElement>('[data-sub="checks"] span:last-of-type');
-      if (lab) lab.textContent = `Checks (${rows.length})`;
+      if (lab) lab.textContent = l10n.t("Checks ({0})", rows.length);
     })
     .catch(() => {
       /* the combined status stands */
@@ -1149,7 +1211,7 @@ function buildDetail(ctx: DetailCtx): void {
 
   // Who pressed merge — often NOT the author, and the answer to "who shipped
   // this?" that used to require opening github.com.
-  const mergedProp = full.mergedBy ? propSection("Merged by") : undefined;
+  const mergedProp = full.mergedBy ? propSection(l10n.t("Merged by")) : undefined;
   if (mergedProp && full.mergedBy) {
     const mb = full.mergedBy;
     mergedProp.body.appendChild(
@@ -1159,14 +1221,14 @@ function buildDetail(ctx: DetailCtx): void {
     );
   }
 
-  const msProp = full.milestone ? propSection("Milestone") : undefined;
+  const msProp = full.milestone ? propSection(l10n.t("Milestone")) : undefined;
   if (msProp && full.milestone) {
     const chip = el("span", "gh-pill det-milestone-chip");
     chip.append(glyph("milestone"), span(full.milestone.title));
     msProp.body.appendChild(chip);
   }
 
-  const about = propSection("About");
+  const about = propSection(l10n.t("About"));
   about.body.classList.add("det-prop-facts");
   const fact = (k: string, v: string, title?: string): HTMLElement => {
     const row = el("div", "det-fact");
@@ -1181,33 +1243,34 @@ function buildDetail(ctx: DetailCtx): void {
   // `changedFiles` is the PR's own count; fall back only when it is absent.
   about.body.appendChild(
     fact(
-      "Files changed",
+      l10n.t("Files changed"),
       String(full.changedFiles ?? d.files.length),
       full.changedFiles != null && full.changedFiles !== d.files.length
-        ? `${d.files.length} of ${full.changedFiles} loaded`
+        ? l10n.t("{0} of {1} loaded", d.files.length, full.changedFiles)
         : undefined,
     ),
   );
   if (typeof full.additions === "number" || typeof full.deletions === "number") {
-    about.body.appendChild(fact("Lines", `+${full.additions ?? 0} −${full.deletions ?? 0}`));
+    about.body.appendChild(fact(l10n.t("Lines"), `+${full.additions ?? 0} −${full.deletions ?? 0}`));
   }
-  if (typeof full.commits === "number") about.body.appendChild(fact("Commits", String(full.commits)));
+  if (typeof full.commits === "number")
+    about.body.appendChild(fact(l10n.t("Commits"), String(full.commits)));
   if (typeof full.reviewComments === "number" && full.reviewComments > 0) {
-    about.body.appendChild(fact("Review comments", String(full.reviewComments)));
+    about.body.appendChild(fact(l10n.t("Review comments"), String(full.reviewComments)));
   }
   if (full.headRepoFullName) {
     // A PR from a fork runs CI from someone else's branch — worth saying out loud.
-    about.body.appendChild(fact("From fork", full.headRepoFullName, full.headRepoFullName));
+    about.body.appendChild(fact(l10n.t("From fork"), full.headRepoFullName, full.headRepoFullName));
   }
   if (full.authorAssociation && full.authorAssociation !== "NONE") {
-    about.body.appendChild(fact("Author", associationLabel(full.authorAssociation)));
+    about.body.appendChild(fact(l10n.t("Author"), associationLabel(full.authorAssociation)));
   }
-  about.body.appendChild(fact("Created", relTimeISO(full.createdAt), absTimeISO(full.createdAt)));
-  about.body.appendChild(fact("Updated", relTimeISO(full.updatedAt), absTimeISO(full.updatedAt)));
+  about.body.appendChild(fact(l10n.t("Created"), relTimeISO(full.createdAt), absTimeISO(full.createdAt)));
+  about.body.appendChild(fact(l10n.t("Updated"), relTimeISO(full.updatedAt), absTimeISO(full.updatedAt)));
   if (full.mergedAt) {
-    about.body.appendChild(fact("Merged", relTimeISO(full.mergedAt), absTimeISO(full.mergedAt)));
+    about.body.appendChild(fact(l10n.t("Merged"), relTimeISO(full.mergedAt), absTimeISO(full.mergedAt)));
   } else if (full.closedAt) {
-    about.body.appendChild(fact("Closed", relTimeISO(full.closedAt), absTimeISO(full.closedAt)));
+    about.body.appendChild(fact(l10n.t("Closed"), relTimeISO(full.closedAt), absTimeISO(full.closedAt)));
   }
 
   // People → classification → where it lands → how it's doing → the facts.
@@ -1260,7 +1323,7 @@ async function renderSubTab(
     wireProseNav(timeline, nav);
     if (full.body && full.body.trim()) {
       timeline.appendChild(
-        commentCard(full.user?.login ?? "author", "opened this pull request", full.body, undefined, {
+        commentCard(full.user?.login ?? "author", l10n.t("opened this pull request"), full.body, undefined, {
           association: full.authorAssociation,
           reactions: full.reactions,
           createdAt: full.createdAt,
@@ -1277,8 +1340,8 @@ async function renderSubTab(
       // nothing here".
       timeline.appendChild(
         errorState(
-          "Couldn't load the discussion",
-          cleanErr(convFailed) || "GitHub request failed.",
+          l10n.t("Couldn't load the discussion"),
+          cleanErr(convFailed) || l10n.t("GitHub request failed."),
           reload,
         ),
       );
@@ -1305,7 +1368,9 @@ async function renderSubTab(
       );
     }
     if ((!full.body || !full.body.trim()) && conv.length === 0) {
-      timeline.appendChild(emptyState("No conversation yet", "No description or comments on this PR."));
+      timeline.appendChild(
+        emptyState(l10n.t("No conversation yet"), l10n.t("No description or comments on this PR.")),
+      );
     }
     content.appendChild(timeline);
 
@@ -1316,9 +1381,9 @@ async function renderSubTab(
     // was the only one with no preview and no formatting.
     const ed = mdEditor({
       value: commentDrafts.get(draftKey(full.number)) ?? "",
-      placeholder: "Leave a comment…",
+      placeholder: l10n.t("Leave a comment…"),
       rows: 3,
-      label: `Comment on pull request #${full.number}`,
+      label: l10n.t("Comment on pull request #{0}", full.number),
       onInput: (v) => {
         if (v.trim()) commentDrafts.set(draftKey(full.number), v);
         else commentDrafts.delete(draftKey(full.number));
@@ -1332,14 +1397,14 @@ async function renderSubTab(
     reply.box = ed;
     const crow = el("div", "gh-composer-actions");
     const send = el("button", "btn btn-primary") as HTMLButtonElement;
-    send.append(glyph("comment"), span("Comment"));
+    send.append(glyph("comment"), span(l10n.t("Comment")));
     // An empty composer used to leave this button in full accent, and clicking
     // it answered with a toast telling you off. A button that cannot do
     // anything should look like it cannot do anything.
     const syncSend = (): void => {
       const ready = ed.get().trim().length > 0;
       send.disabled = !ready;
-      send.title = ready ? "Post this comment" : "Write something first";
+      send.title = ready ? l10n.t("Post this comment") : l10n.t("Write something first");
     };
     syncSend();
     send.addEventListener("click", () => void doComment(full.number, ta, send, reload));
@@ -1355,14 +1420,14 @@ async function renderSubTab(
       // `reload` is in scope and was simply never passed, so a failed read had
       // no way back short of leaving the pull request and returning.
       content.replaceChildren(
-        errorState("Couldn't load commits", cleanErr(e) || "GitHub request failed.", reload),
+        errorState(l10n.t("Couldn't load commits"), cleanErr(e) || l10n.t("GitHub request failed."), reload),
       );
       return;
     }
     if (S.activeSubTab !== id) return;
     content.replaceChildren();
     if (commits.length === 0) {
-      content.appendChild(emptyState("No commits", "This PR has no commits yet."));
+      content.appendChild(emptyState(l10n.t("No commits"), l10n.t("This PR has no commits yet.")));
       return;
     }
     // The SHARED list — the same rows Compare draws, grouped by day, with the
@@ -1387,7 +1452,7 @@ async function renderSubTab(
           // The COMMIT, not the graph. This used to eject you out of the pull
           // request into a graph row that shows no files at all.
           onOpen: (sha) => nav("commit", { sha }),
-          onCopy: (sha) => void copyText(sha, "Copied the full SHA."),
+          onCopy: (sha) => void copyText(sha, l10n.t("Copied the full SHA.")),
         },
       ),
     );
@@ -1398,14 +1463,16 @@ async function renderSubTab(
     } catch (e) {
       if (S.activeSubTab !== id) return;
       content.replaceChildren(
-        errorState("Couldn't load checks", cleanErr(e) || "GitHub request failed.", reload),
+        errorState(l10n.t("Couldn't load checks"), cleanErr(e) || l10n.t("GitHub request failed."), reload),
       );
       return;
     }
     if (S.activeSubTab !== id) return;
     content.replaceChildren();
     if (checks.length === 0) {
-      content.appendChild(emptyState("No checks", "No CI checks reported for this PR's head commit."));
+      content.appendChild(
+        emptyState(l10n.t("No checks"), l10n.t("No CI checks reported for this PR's head commit.")),
+      );
       return;
     }
     for (const c of checks) {
@@ -1428,7 +1495,7 @@ async function renderSubTab(
         // would make Back mean "Actions" instead of the pull request you left.
         // External CI keeps the browser.
         const gha = /\/actions\/runs\/(\d+)(?:\/jobs?\/(\d+))?/.exec(c.detailsUrl);
-        row.title = gha ? "Open the run's logs in-app" : "Open check details";
+        row.title = gha ? l10n.t("Open the run's logs in-app") : l10n.t("Open check details");
         // ROLE AND TABINDEX, because these rows are the only interactive thing
         // on the Checks tab and they were bare divs: the pointer got a cursor
         // and a hover, the keyboard got nothing, and a failing check's logs
@@ -1437,7 +1504,7 @@ async function renderSubTab(
         // and .gh-check-row is written for a div.
         row.setAttribute("role", "button");
         row.tabIndex = 0;
-        row.setAttribute("aria-label", `${c.name} — ${checkStateLabel(state)}. ${row.title}`);
+        row.setAttribute("aria-label", l10n.t("{0} — {1}. {2}", c.name, checkStateLabel(state), row.title));
         const open = (): void => {
           if (gha) {
             const jobId = gha[2] ? Number(gha[2]) : undefined;
@@ -1462,7 +1529,9 @@ async function renderSubTab(
     content.replaceChildren();
     const files = d.files;
     if (files.length === 0) {
-      content.appendChild(emptyState("No files changed", "This PR doesn't change any files."));
+      content.appendChild(
+        emptyState(l10n.t("No files changed"), l10n.t("This PR doesn't change any files.")),
+      );
       return;
     }
     renderFilesTab(content, full, files, S);
@@ -1535,7 +1604,7 @@ function renderFilesTab(content: HTMLElement, full: PullRequest, files: PrFile[]
   if (shared) {
     const head = el("div", "pr-files-prefix");
     head.append(glyph("folder"), span(shared));
-    head.title = `Every file in this pull request is under ${shared}`;
+    head.title = l10n.t("Every file in this pull request is under {0}", shared);
     list.appendChild(head);
   }
 
@@ -1588,7 +1657,7 @@ async function showFileDiff(
   const surface = el("div", "diff-surface pr-diff-surface");
   const threadsSlot = el("div", "pr-threads");
   detail.replaceChildren(surface, threadsSlot);
-  threadsSlot.replaceChildren(loadingState("Loading diff…"));
+  threadsSlot.replaceChildren(loadingState(l10n.t("Loading diff…")));
 
   disposePrDiff(S);
   const panel = new DiffPanel(surface);
@@ -1598,12 +1667,12 @@ async function showFileDiff(
   // bare `if (S.diffPanel !== panel) return`, so anything that superseded this
   // open left the blank there permanently, with no message. Say what is
   // happening from the first frame.
-  panel.showEmpty(`Loading ${f.filename}…`, { title: "Reading the diff", kind: "waiting" });
+  panel.showEmpty(l10n.t("Loading {0}…", f.filename), { title: l10n.t("Reading the diff"), kind: "waiting" });
   watchDiffDetach(S, surface, panel);
 
   const refreshThreads = async (): Promise<void> => {
     if (S.diffPanel !== panel) return; // the file/view changed under us
-    threadsSlot.replaceChildren(loadingState("Refreshing comments…"));
+    threadsSlot.replaceChildren(loadingState(l10n.t("Refreshing comments…")));
     const next = await loadThreads();
     if (S.diffPanel !== panel) return;
     renderThreadsPanel(threadsSlot, full, f, next.threads, () => void refreshThreads(), next.error, next.unreadable);
@@ -1616,13 +1685,13 @@ async function showFileDiff(
     diff = await host.invoke("pr:fileDiff", { number: full.number, path: f.filename });
   } catch (e) {
     if (S.diffPanel !== panel) return; // superseded by another open
-    panel.showEmpty(cleanErr(e) || "GitHub did not return this file's diff.", { kind: "error" });
+    panel.showEmpty(cleanErr(e) || l10n.t("GitHub did not return this file's diff."), { kind: "error" });
     threadsSlot.replaceChildren();
     return;
   }
   if (S.diffPanel !== panel) return; // a newer file was opened mid-fetch
   if (!diff) {
-    panel.showEmpty("GitHub reports no textual changes in this file.", { kind: "none" });
+    panel.showEmpty(l10n.t("GitHub reports no textual changes in this file."), { kind: "none" });
   } else {
     panel.showDiff(diff);
   }
@@ -1679,30 +1748,30 @@ function renderThreadsPanel(
   // The head must COUNT the pending remarks, not just make room for them. With
   // no posted threads it read "No comments on this file" directly above the
   // comments you had just queued on that very file.
-  const pendingSuffix = pendingHere.length
-    ? ` · ${pendingHere.length} pending`
-    : "";
+  const pendingSuffix = pendingHere.length ? l10n.t(" · {0} pending", pendingHere.length) : "";
   const title = span(
     mine.length === 0
       ? loadError
-        ? "Couldn't load the review comments"
+        ? l10n.t("Couldn't load the review comments")
         : pendingHere.length
-          ? `${pendingHere.length} pending comment${pendingHere.length === 1 ? "" : "s"} on this file`
-          : "No comments on this file"
+          ? pendingHere.length === 1
+            ? l10n.t("1 pending comment on this file")
+            : l10n.t("{0} pending comments on this file", pendingHere.length)
+          : l10n.t("No comments on this file")
       : unresolved
-        ? `Review comments (${unresolved} open of ${mine.length})${pendingSuffix}`
-        : `Review comments (${mine.length}, all resolved)${pendingSuffix}`,
+        ? l10n.t("Review comments ({0} open of {1}){2}", unresolved, mine.length, pendingSuffix)
+        : l10n.t("Review comments ({0}, all resolved){1}", mine.length, pendingSuffix),
     "pr-threads-title",
   );
   if (foldable) head.appendChild(chevron);
   head.append(glyph("comment-discussion"), title);
   head.title = loadError
-    ? cleanErr(loadError) || "GitHub did not answer. The comments on this file are unknown."
+    ? cleanErr(loadError) || l10n.t("GitHub did not answer. The comments on this file are unknown.")
     : !foldable
       ? ""
       : open
-        ? "Hide the review comments"
-        : "Show the review comments";
+        ? l10n.t("Hide the review comments")
+        : l10n.t("Show the review comments");
   head.disabled = !foldable; // nothing to fold — a plain status line, not a dead toggle
   const headRow = el("div", "pr-threads-headrow");
   headRow.appendChild(head);
@@ -1711,21 +1780,21 @@ function renderThreadsPanel(
   const bodyEl = el("div", "pr-threads-body");
   bodyEl.hidden = !open;
   const addBtn = el("button", "mini-btn pr-threads-add");
-  addBtn.append(glyph("comment"), span("Add a comment"));
-  addBtn.title = "Comment on a line of this file";
+  addBtn.append(glyph("comment"), span(l10n.t("Add a comment")));
+  addBtn.title = l10n.t("Comment on a line of this file");
   addBtn.setAttribute("aria-haspopup", "menu");
   addBtn.addEventListener("click", () =>
     openMenu(addBtn, [
       {
-        label: "Add to your review",
-        sub: "Queues it — one submit posts everything",
+        label: l10n.t("Add to your review"),
+        sub: l10n.t("Queues it — one submit posts everything"),
         icon: "checklist",
         onClick: () =>
           void addInlineComment(full.number, f.filename, addBtn, reloadFile, "queue", sideFor(f)),
       },
       {
-        label: "Add single comment",
-        sub: "Posts immediately, on its own",
+        label: l10n.t("Add single comment"),
+        sub: l10n.t("Posts immediately, on its own"),
         icon: "comment",
         onClick: () =>
           void addInlineComment(full.number, f.filename, addBtn, reloadFile, "single", sideFor(f)),
@@ -1736,7 +1805,11 @@ function renderThreadsPanel(
   // comment used to be hidden inside a panel that is folded on precisely the
   // files that have no comments yet.
   headRow.appendChild(addBtn);
-  const missing = unreadableNotice(unreadable, "review thread on this pull request", "review threads on this pull request");
+  const missing = unreadableNotice(
+    unreadable,
+    l10n.t("review thread on this pull request"),
+    l10n.t("review threads on this pull request"),
+  );
   if (missing) slot.appendChild(missing);
 
   // The PENDING remarks on this file — visible, editable, deletable, and
@@ -1745,11 +1818,11 @@ function renderThreadsPanel(
     const card = el("div", "pr-thread pr-thread-pending");
     const hd = el("div", "pr-thread-head");
     const at = c.startLine && c.startLine !== c.line ? `${c.startLine}–${c.line}` : `${c.line}`;
-    hd.append(glyph("checklist"), span(`${f.filename}:${at}`, "pr-thread-anchor"), pill("pending"));
+    hd.append(glyph("checklist"), span(`${f.filename}:${at}`, "pr-thread-anchor"), pill(l10n.t("pending")));
     const drop = el("button", "mini-btn gh-icon-btn");
     drop.appendChild(glyph("trash"));
-    drop.title = "Remove from your review";
-    drop.setAttribute("aria-label", `Remove the pending comment on line ${at}`);
+    drop.title = l10n.t("Remove from your review");
+    drop.setAttribute("aria-label", l10n.t("Remove the pending comment on line {0}", at));
     drop.addEventListener("click", () => {
       // By IDENTITY, not by the index captured at render — a double-click
       // before the panel repaints would splice a NEIGHBOUR out by stale index.
@@ -1771,7 +1844,7 @@ function renderThreadsPanel(
     bodyEl.hidden = !now;
     slot.classList.toggle("is-open", now);
     head.setAttribute("aria-expanded", String(now));
-    head.title = now ? "Hide the review comments" : "Show the review comments";
+    head.title = now ? l10n.t("Hide the review comments") : l10n.t("Show the review comments");
     head.replaceChildren(glyph(now ? "chevron-down" : "chevron-right"), glyph("comment-discussion"), title);
   });
 
@@ -1785,15 +1858,21 @@ function threadCard(prNumber: number, t: PrReviewThread, reloadFile: () => void)
 
   const hd = el("div", "gh-comment-head pr-thread-head");
   const anchor = el("span", "pr-thread-anchor");
-  anchor.append(glyph("git-commit"), span(t.line != null ? `Line ${t.line}` : "File", "pr-thread-line"));
+  anchor.append(
+    glyph("git-commit"),
+    span(t.line != null ? l10n.t("Line {0}", t.line) : l10n.t("File"), "pr-thread-line"),
+  );
   hd.appendChild(anchor);
-  if (t.isOutdated) hd.appendChild(pill("outdated"));
-  const statusPill = pill(t.isResolved ? "resolved" : "open");
+  if (t.isOutdated) hd.appendChild(pill(l10n.t("outdated")));
+  const statusPill = pill(t.isResolved ? l10n.t("resolved") : l10n.t("open"));
   statusPill.classList.add(t.isResolved ? "gh-review-approved" : "gh-thread-open");
   hd.appendChild(statusPill);
 
   const resolveBtn = el("button", "mini-btn gh-inline-edit pr-thread-resolve");
-  resolveBtn.append(glyph(t.isResolved ? "issue-reopened" : "check"), span(t.isResolved ? "Unresolve" : "Resolve"));
+  resolveBtn.append(
+    glyph(t.isResolved ? "issue-reopened" : "check"),
+    span(t.isResolved ? l10n.t("Unresolve") : l10n.t("Resolve")),
+  );
   resolveBtn.addEventListener("click", () =>
     void toggleResolve(t.id, !t.isResolved, resolveBtn, reloadFile),
   );
@@ -1820,7 +1899,7 @@ function threadCard(prNumber: number, t: PrReviewThread, reloadFile: () => void)
       }
     } else {
       bd.classList.add("gh-empty-body");
-      bd.textContent = "(no body)";
+      bd.textContent = l10n.t("(no body)");
     }
     cm.appendChild(bd);
     card.appendChild(cm);
@@ -1830,7 +1909,7 @@ function threadCard(prNumber: number, t: PrReviewThread, reloadFile: () => void)
   const replyRow = el("div", "pr-thread-reply");
   const ta = document.createElement("textarea");
   ta.className = "gh-composer-input pr-reply-input";
-  ta.placeholder = "Reply…";
+  ta.placeholder = l10n.t("Reply…");
   ta.rows = 2;
   ta.value = replyDrafts.get(t.id) ?? "";
   ta.addEventListener("input", () => {
@@ -1838,7 +1917,7 @@ function threadCard(prNumber: number, t: PrReviewThread, reloadFile: () => void)
     else replyDrafts.delete(t.id);
   });
   const replyBtn = el("button", "btn btn-primary");
-  replyBtn.append(span("Reply"));
+  replyBtn.append(span(l10n.t("Reply")));
   replyBtn.addEventListener("click", () => void replyToThread(prNumber, t.id, ta, replyBtn, reloadFile));
   ta.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -1854,8 +1933,8 @@ function threadCard(prNumber: number, t: PrReviewThread, reloadFile: () => void)
 /** "fork" marker naming the head repo — hover for the full owner/repo. */
 function forkChip(headRepo: string): HTMLElement {
   const c = el("span", "gh-fork-chip");
-  c.append(glyph("repo-forked"), span("fork"));
-  c.title = `Head branch lives in ${headRepo}`;
+  c.append(glyph("repo-forked"), span(l10n.t("fork")));
+  c.title = l10n.t("Head branch lives in {0}", headRepo);
   return c;
 }
 
@@ -1900,34 +1979,39 @@ function commentCard(
   // A comment edited after posting is a different artifact from what people
   // replied to. The issue thread has said so for a while; this one did not.
   if (extra.updatedAt && extra.createdAt && extra.updatedAt !== extra.createdAt) {
-    const ed = span("edited", "gh-comment-edited");
-    ed.title = `Edited ${absTimeISO(extra.updatedAt)}`;
+    const ed = span(l10n.t("edited"), "gh-comment-edited");
+    ed.title = l10n.t("Edited {0}", absTimeISO(extra.updatedAt));
     hd.appendChild(ed);
   }
   if (extra.comment || extra.onQuote) {
     hd.appendChild(el("span", "gh-comment-spring"));
     const more = el("button", "mini-btn gh-icon-btn gh-comment-menu");
     more.setAttribute("aria-haspopup", "menu");
-    more.setAttribute("aria-label", `Actions for ${author}'s comment`);
+    more.setAttribute("aria-label", l10n.t("Actions for {0}'s comment", author));
     more.appendChild(glyph("ellipsis"));
     more.addEventListener("click", () => {
       const items: Array<{ label: string; icon?: string; danger?: boolean; onClick: () => void }> = [];
-      if (extra.onQuote) items.push({ label: "Quote reply", icon: "quote", onClick: () => extra.onQuote?.(body) });
+      if (extra.onQuote)
+        items.push({ label: l10n.t("Quote reply"), icon: "quote", onClick: () => extra.onQuote?.(body) });
       const c = extra.comment;
       if (c?.htmlUrl) {
         items.push({
-          label: "Copy link",
+          label: l10n.t("Copy link"),
           icon: "link",
-          onClick: () => void copyText(c.htmlUrl!, "Link copied."),
+          onClick: () => void copyText(c.htmlUrl!, l10n.t("Link copied.")),
         });
       }
       // Yours only — see the note on the issue side. Offering Edit on somebody
       // else's comment buys a 403 at Save and a confirm dialog for a delete
       // that cannot happen.
       if (c && c.mine) {
-        items.push({ label: "Edit", icon: "edit", onClick: () => void editPrComment(c.id, body, card, c.reload) });
         items.push({
-          label: "Delete…",
+          label: l10n.t("Edit"),
+          icon: "edit",
+          onClick: () => void editPrComment(c.id, body, card, c.reload),
+        });
+        items.push({
+          label: l10n.t("Delete…"),
           icon: "trash",
           danger: true,
           onClick: () => void deletePrComment(c.id, c.reload),
@@ -1957,7 +2041,7 @@ function quoteIntoPr(livePrComposer: ReplyBox | undefined, body: string, author?
     .split("\n")
     .map((l) => `> ${l}`)
     .join("\n");
-  const prefix = author ? `@${author} said:\n` : "";
+  const prefix = author ? `${l10n.t("@{0} said:", author)}\n` : "";
   const existing = livePrComposer.get().trim();
   livePrComposer.set(`${existing ? `${existing}\n\n` : ""}${prefix}${quoted}\n\n`);
   livePrComposer.focus();
@@ -1968,12 +2052,12 @@ async function editPrComment(id: number, body: string, card: HTMLElement, reload
   const bd = card.querySelector<HTMLElement>(".gh-body-md");
   if (!bd) return;
   const was = bd.innerHTML;
-  const ed = mdEditor({ value: body, rows: 6, label: "Edit comment" });
+  const ed = mdEditor({ value: body, rows: 6, label: l10n.t("Edit comment") });
   const row = el("div", "gh-composer-actions");
   const save = el("button", "btn btn-primary") as HTMLButtonElement;
-  save.textContent = "Save";
+  save.textContent = l10n.t("Save");
   const cancel = el("button", "mini-btn");
-  cancel.textContent = "Cancel";
+  cancel.textContent = l10n.t("Cancel");
   row.append(save, cancel);
   const wrap = el("div", "gh-comment-edit");
   wrap.append(ed.root, row);
@@ -1985,21 +2069,21 @@ async function editPrComment(id: number, body: string, card: HTMLElement, reload
   save.addEventListener("click", async () => {
     const next = ed.get().trim();
     if (!next) {
-      toast("A comment cannot be empty — delete it instead.", "info");
+      toast(l10n.t("A comment cannot be empty — delete it instead."), "info");
       return;
     }
     save.disabled = true;
     try {
       const r = await host.invoke("issue:editComment", { id, body: next });
       if (!r.ok) {
-        toast(r.message ?? "Couldn’t save the edit.", "error");
+        toast(r.message ?? l10n.t("Couldn’t save the edit."), "error");
         save.disabled = false;
         return;
       }
-      toast("Comment updated.", "success");
+      toast(l10n.t("Comment updated."), "success");
       reload();
     } catch (e) {
-      toast(cleanErr(e) || "Couldn’t save the edit.", "error");
+      toast(cleanErr(e) || l10n.t("Couldn’t save the edit."), "error");
       save.disabled = false;
     }
   });
@@ -2007,22 +2091,22 @@ async function editPrComment(id: number, body: string, card: HTMLElement, reload
 
 async function deletePrComment(id: number, reload: () => void): Promise<void> {
   const ok = await confirmDialog({
-    title: "Delete this comment?",
-    message: "It will be removed from the pull request on GitHub. This cannot be undone.",
-    confirmLabel: "Delete comment",
+    title: l10n.t("Delete this comment?"),
+    message: l10n.t("It will be removed from the pull request on GitHub. This cannot be undone."),
+    confirmLabel: l10n.t("Delete comment"),
     danger: true,
   });
   if (!ok) return;
   try {
     const r = await host.invoke("issue:deleteComment", id);
     if (!r.ok) {
-      toast(r.message ?? "Couldn’t delete the comment.", "error");
+      toast(r.message ?? l10n.t("Couldn’t delete the comment."), "error");
       return;
     }
-    toast("Comment deleted.", "success");
+    toast(l10n.t("Comment deleted."), "success");
     reload();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn’t delete the comment.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn’t delete the comment."), "error");
   }
 }
 
@@ -2040,12 +2124,12 @@ async function togglePrReaction(
   try {
     const r = await host.invoke("issue:react", { subject, id, content, on });
     if (!r.ok) {
-      toast(r.message ?? "Couldn’t change the reaction.", "error");
+      toast(r.message ?? l10n.t("Couldn’t change the reaction."), "error");
       return false;
     }
     return true;
   } catch (e) {
-    toast(cleanErr(e) || "Couldn’t change the reaction.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn’t change the reaction."), "error");
     return false;
   }
 }
@@ -2060,12 +2144,12 @@ async function doCheckout(n: number, btn: HTMLElement): Promise<void> {
     // or Cancel — bridge.ts), and the user cancelled: nothing ran.
     if (r.cancelled) return;
     if (!r.ok) {
-      toast(r.message ?? "Couldn't check out the PR.", r.expected ? "info" : "error");
+      toast(r.message ?? l10n.t("Couldn't check out the PR."), r.expected ? "info" : "error");
       return;
     }
-    toast(`Checked out PR #${n} as pr/${n}.`, "success");
+    toast(l10n.t("Checked out PR #{0} as pr/{1}.", n, n), "success");
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't check out the PR.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't check out the PR."), "error");
   } finally {
     (btn as HTMLButtonElement).disabled = false;
   }
@@ -2115,16 +2199,18 @@ async function doReview(
             ...(queued.length > 0 ? { comments: queued.map((c) => ({ ...c })) } : {}),
             ...(headSha ? { commitId: headSha } : {}),
           });
-          if (!r.ok) return r.message ?? "Couldn't submit the review.";
+          if (!r.ok) return r.message ?? l10n.t("Couldn't submit the review.");
         } catch (e) {
-          return cleanErr(e) || "Couldn't submit the review.";
+          return cleanErr(e) || l10n.t("Couldn't submit the review.");
         }
         pendingReviews.delete(pendingKey(n));
         prsTab().syncPendingUi?.();
         toast(
           queued.length > 0
-            ? `Review submitted on PR #${n} — ${queued.length} comment${queued.length === 1 ? "" : "s"} posted with it.`
-            : `Review submitted on PR #${n}.`,
+            ? queued.length === 1
+              ? l10n.t("Review submitted on PR #{0} — 1 comment posted with it.", n)
+              : l10n.t("Review submitted on PR #{0} — {1} comments posted with it.", n, queued.length)
+            : l10n.t("Review submitted on PR #{0}.", n),
           "success",
         );
         reload();
@@ -2157,7 +2243,7 @@ function reviewModal(
 
       const card = el("div", "modal-card gh-pr-form review-modal");
       const h = el("div", "modal-title");
-      h.textContent = `Review pull request #${n}`;
+      h.textContent = l10n.t("Review pull request #{0}", n);
       card.appendChild(h);
 
       // The queue, IN the composer — visible, removable, and honest about
@@ -2179,7 +2265,9 @@ function reviewModal(
           head.append(
             glyph("checklist"),
             span(
-              `${queue.length} pending comment${queue.length === 1 ? "" : "s"} will post with this review.`,
+              queue.length === 1
+                ? l10n.t("1 pending comment will post with this review.")
+                : l10n.t("{0} pending comments will post with this review.", queue.length),
             ),
           );
           box.appendChild(head);
@@ -2190,15 +2278,16 @@ function reviewModal(
             anchor.title = c.body;
             row.appendChild(anchor);
             if (knownFiles.size > 0 && !knownFiles.has(c.path)) {
-              const warn = span("no longer in the diff", "review-pending-orphan");
-              warn.title =
-                "This file left the diff (a force-push or a rename). GitHub refuses the whole review while this remains — remove it to submit.";
+              const warn = span(l10n.t("no longer in the diff"), "review-pending-orphan");
+              warn.title = l10n.t(
+                "This file left the diff (a force-push or a rename). GitHub refuses the whole review while this remains — remove it to submit.",
+              );
               row.appendChild(warn);
             }
             const rm = el("button", "mini-btn gh-icon-btn");
             rm.appendChild(glyph("trash"));
-            rm.title = "Remove from your review";
-            rm.setAttribute("aria-label", `Remove the comment on ${c.path}:${at}`);
+            rm.title = l10n.t("Remove from your review");
+            rm.setAttribute("aria-label", l10n.t("Remove the comment on {0}:{1}", c.path, at));
             rm.addEventListener("click", () => {
               const idx = queue.indexOf(c);
               if (idx >= 0) queue.splice(idx, 1);
@@ -2219,7 +2308,11 @@ function reviewModal(
       const syncVerdicts = (): void => {
         verdictRows.forEach((r) => r.classList.toggle("is-selected", r.dataset.event === selected));
         submitLabel.textContent =
-          selected === "APPROVE" ? "Approve" : selected === "REQUEST_CHANGES" ? "Request changes" : "Submit review";
+          selected === "APPROVE"
+            ? l10n.t("Approve")
+            : selected === "REQUEST_CHANGES"
+              ? l10n.t("Request changes")
+              : l10n.t("Submit review");
       };
       for (const v of REVIEW_VERDICTS) {
         const row = el("button", "review-verdict");
@@ -2245,7 +2338,7 @@ function reviewModal(
 
       const ta = document.createElement("textarea");
       ta.className = "gh-form-textarea";
-      ta.placeholder = "Sum up your review… (optional only when approving)";
+      ta.placeholder = l10n.t("Sum up your review… (optional only when approving)");
       ta.rows = 5;
       ta.value = initialBody;
       card.appendChild(ta);
@@ -2259,9 +2352,9 @@ function reviewModal(
 
       const actions = el("div", "modal-actions");
       const cancel = el("button", "mini-btn");
-      cancel.textContent = "Cancel";
+      cancel.textContent = l10n.t("Cancel");
       const ok = el("button", "btn btn-primary modal-ok");
-      const submitLabel = span("Submit review");
+      const submitLabel = span(l10n.t("Submit review"));
       ok.appendChild(submitLabel);
       actions.append(cancel, ok);
       card.appendChild(actions);
@@ -2273,8 +2366,8 @@ function reviewModal(
           ta.focus();
           toast(
             selected === "COMMENT"
-              ? "Write a summary — GitHub requires one to comment."
-              : "A comment is required to request changes.",
+              ? l10n.t("Write a summary — GitHub requires one to comment.")
+              : l10n.t("A comment is required to request changes."),
             "error",
           );
           return;
@@ -2293,7 +2386,7 @@ function reviewModal(
       return {
         card,
         focusEl: ta,
-        label: `Review pull request #${n}`,
+        label: l10n.t("Review pull request #{0}", n),
         // A route change (a window focus counts) must not take a written
         // review. On a RETRY the seed IS the failed text — comparing against
         // it reported "nothing unsaved" and a background refocus destroyed
@@ -2317,7 +2410,7 @@ async function doComment(
 ): Promise<void> {
   const body = ta.value.trim();
   if (!body) {
-    toast("Write a comment first.", "info");
+    toast(l10n.t("Write a comment first."), "info");
     return;
   }
   (btn as HTMLButtonElement).disabled = true;
@@ -2325,15 +2418,15 @@ async function doComment(
   try {
     const r = await host.invoke("pr:comment", { number: n, body });
     if (!r.ok) {
-      toast(r.message ?? "Couldn't post the comment.", "error");
+      toast(r.message ?? l10n.t("Couldn't post the comment."), "error");
       return;
     }
-    toast(`Commented on PR #${n}.`, "success");
+    toast(l10n.t("Commented on PR #{0}.", n), "success");
     commentDrafts.delete(draftKey(n));
     prsTab().activeSubTab = "conversation";
     reload();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't post the comment.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't post the comment."), "error");
   } finally {
     (btn as HTMLButtonElement).disabled = false;
     ta.disabled = false;
@@ -2343,9 +2436,9 @@ async function doComment(
 async function doSetState(n: number, state: "open" | "closed", reload: () => void): Promise<void> {
   if (state === "closed") {
     const ok = await confirmDialog({
-      title: `Close pull request #${n}?`,
-      message: "This closes the PR on GitHub. You can reopen it afterwards.",
-      confirmLabel: "Close PR",
+      title: l10n.t("Close pull request #{0}?", n),
+      message: l10n.t("This closes the PR on GitHub. You can reopen it afterwards."),
+      confirmLabel: l10n.t("Close PR"),
       danger: true,
     });
     if (!ok) return;
@@ -2353,13 +2446,16 @@ async function doSetState(n: number, state: "open" | "closed", reload: () => voi
   try {
     const r = await host.invoke("pr:setState", { number: n, state });
     if (!r.ok) {
-      toast(r.message ?? "Couldn't update the pull request.", "error");
+      toast(r.message ?? l10n.t("Couldn't update the pull request."), "error");
       return;
     }
-    toast(state === "closed" ? `Closed PR #${n}.` : `Reopened PR #${n}.`, "success");
+    toast(
+      state === "closed" ? l10n.t("Closed PR #{0}.", n) : l10n.t("Reopened PR #{0}.", n),
+      "success",
+    );
     reload();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't update the pull request.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't update the pull request."), "error");
   }
 }
 
@@ -2368,35 +2464,37 @@ async function doMarkReady(n: number, btn: HTMLElement, reload: () => void): Pro
   try {
     const r = await host.invoke("pr:markReady", n);
     if (!r.ok) {
-      toast(r.message ?? "Couldn't mark the PR ready.", "error");
+      toast(r.message ?? l10n.t("Couldn't mark the PR ready."), "error");
       return;
     }
-    toast(`PR #${n} is ready for review.`, "success");
+    toast(l10n.t("PR #{0} is ready for review.", n), "success");
     reload();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't mark the PR ready.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't mark the PR ready."), "error");
   } finally {
     (btn as HTMLButtonElement).disabled = false;
   }
 }
 
 async function doMerge(n: number, method: "merge" | "squash" | "rebase", reload: () => void): Promise<void> {
+  const methodWord =
+    method === "merge" ? l10n.t("merge") : method === "squash" ? l10n.t("squash") : l10n.t("rebase");
   const ok = await confirmDialog({
-    title: `Merge pull request #${n}?`,
-    message: `This performs a ${method} merge on GitHub and can't be undone here.`,
-    confirmLabel: "Merge",
+    title: l10n.t("Merge pull request #{0}?", n),
+    message: l10n.t("This performs a {0} merge on GitHub and can't be undone here.", methodWord),
+    confirmLabel: l10n.t("Merge"),
   });
   if (!ok) return;
   try {
     const r = await host.invoke("pr:merge", { number: n, method });
     if (!r.ok) {
-      toast(r.message ?? "Merge failed.", "error");
+      toast(r.message ?? l10n.t("Merge failed."), "error");
       return;
     }
-    toast(`Merged pull request #${n}.`, "success");
+    toast(l10n.t("Merged pull request #{0}.", n), "success");
     reload();
   } catch (e) {
-    toast(cleanErr(e) || "Merge failed.", "error");
+    toast(cleanErr(e) || l10n.t("Merge failed."), "error");
   }
 }
 
@@ -2428,12 +2526,12 @@ async function doRequestReviewers(
   const author = pr?.user?.login;
   const pending = (pr?.requestedReviewers ?? []).map((r) => r.login);
   if (author) people = people.filter((p) => p.login !== author);
-  const verb = reRequest ? "Re-request review" : "Request reviewers";
+  const verb = reRequest ? l10n.t("Re-request review") : l10n.t("Request reviewers");
   let chosen: string[] | null;
   if (people.length) {
     chosen = await peoplePickerModal({
       title: verb,
-      okLabel: reRequest ? "Re-request" : "Request",
+      okLabel: reRequest ? l10n.t("Re-request") : l10n.t("Request"),
       people,
       selected: [],
       locked: reRequest ? [] : pending,
@@ -2442,15 +2540,15 @@ async function doRequestReviewers(
     // no-op GitHub still counts as a notification.
     if (chosen && !reRequest) chosen = chosen.filter((c) => !pending.includes(c));
     if (chosen && chosen.length === 0 && !reRequest) {
-      toast("Everyone you picked has already been asked.", "info");
+      toast(l10n.t("Everyone you picked has already been asked."), "info");
       return;
     }
   } else {
     const raw = await promptInline(
       verb,
-      "comma-separated logins, e.g. alice, bob",
+      l10n.t("comma-separated logins, e.g. alice, bob"),
       "",
-      reRequest ? "Re-request" : "Request",
+      reRequest ? l10n.t("Re-request") : l10n.t("Request"),
     );
     chosen = raw ? raw.split(",").map((s) => s.trim()).filter(Boolean) : null;
   }
@@ -2458,18 +2556,22 @@ async function doRequestReviewers(
   try {
     const r = await host.invoke("pr:requestReviewers", { number: n, reviewers: chosen });
     if (!r.ok) {
-      toast(r.message ?? "Couldn't request reviewers.", "error");
+      toast(r.message ?? l10n.t("Couldn't request reviewers."), "error");
       return;
     }
     toast(
       reRequest
-        ? `Re-requested review from ${chosen.length} reviewer${chosen.length === 1 ? "" : "s"} on PR #${n}.`
-        : `Requested ${chosen.length} reviewer${chosen.length === 1 ? "" : "s"} on PR #${n}.`,
+        ? chosen.length === 1
+          ? l10n.t("Re-requested review from 1 reviewer on PR #{0}.", n)
+          : l10n.t("Re-requested review from {0} reviewers on PR #{1}.", chosen.length, n)
+        : chosen.length === 1
+          ? l10n.t("Requested 1 reviewer on PR #{0}.", n)
+          : l10n.t("Requested {0} reviewers on PR #{1}.", chosen.length, n),
       "success",
     );
     reload?.();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't request reviewers.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't request reviewers."), "error");
   }
 }
 
@@ -2486,7 +2588,7 @@ async function doLabels(anchor: HTMLElement, pr: PullRequest, reload: () => void
   try {
     repoLabels = await gget("pr:labels", undefined, 60000);
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't load labels.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't load labels."), "error");
     return;
   }
   // Optional-chained, but only as belt and braces: in the app `pr:labels` goes
@@ -2497,7 +2599,7 @@ async function doLabels(anchor: HTMLElement, pr: PullRequest, reload: () => void
   // a test at all. Which is why the real defect below — a request fired per
   // tick — had never been checked.
   if (!repoLabels?.length) {
-    toast("This repo has no labels defined.", "info");
+    toast(l10n.t("This repo has no labels defined."), "info");
     return;
   }
   // The SAME control as the issue's, which it was not: because these items were
@@ -2535,13 +2637,13 @@ async function applyLabels(pr: PullRequest, labelsList: string[], reload: () => 
   try {
     const r = await host.invoke("pr:setLabels", { number: pr.number, labels: labelsList });
     if (!r.ok) {
-      toast(r.message ?? "Couldn't update labels.", "error");
+      toast(r.message ?? l10n.t("Couldn't update labels."), "error");
       return;
     }
-    toast("Labels updated.", "success");
+    toast(l10n.t("Labels updated."), "success");
     reload();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't update labels.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't update labels."), "error");
   }
 }
 
@@ -2556,9 +2658,19 @@ async function doAssignees(pr: PullRequest, reload: () => void): Promise<void> {
   const current = (pr.assignees ?? []).map((a) => a.login);
   let assignees: string[] | null;
   if (people.length) {
-    assignees = await peoplePickerModal({ title: "Assignees", okLabel: "Save", people, selected: current });
+    assignees = await peoplePickerModal({
+      title: l10n.t("Assignees"),
+      okLabel: l10n.t("Save"),
+      people,
+      selected: current,
+    });
   } else {
-    const csv = await promptInline("Assignees", "comma-separated logins, e.g. octocat, hubot", current.join(", "), "Save");
+    const csv = await promptInline(
+      l10n.t("Assignees"),
+      l10n.t("comma-separated logins, e.g. octocat, hubot"),
+      current.join(", "),
+      l10n.t("Save"),
+    );
     assignees =
       csv === null ? null : csv.split(",").map((s) => s.trim().replace(/^@/, "")).filter(Boolean);
   }
@@ -2566,13 +2678,13 @@ async function doAssignees(pr: PullRequest, reload: () => void): Promise<void> {
   try {
     const r = await host.invoke("pr:setAssignees", { number: pr.number, assignees });
     if (!r.ok) {
-      toast(r.message ?? "Couldn't update assignees.", "error");
+      toast(r.message ?? l10n.t("Couldn't update assignees."), "error");
       return;
     }
-    toast("Assignees updated.", "success");
+    toast(l10n.t("Assignees updated."), "success");
     reload();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't update assignees.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't update assignees."), "error");
   }
 }
 
@@ -2582,13 +2694,13 @@ async function doUpdateBranch(n: number, reload: () => void, btn?: HTMLElement):
   try {
     const r = await host.invoke("pr:updateBranch", n);
     if (!r.ok) {
-      toast(r.message ?? "Couldn't update the branch.", "error");
+      toast(r.message ?? l10n.t("Couldn't update the branch."), "error");
       return;
     }
-    toast(`Updated PR #${n} with the base branch.`, "success");
+    toast(l10n.t("Updated PR #{0} with the base branch.", n), "success");
     reload(); // the head SHA moved — refetch the detail (files / checks change)
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't update the branch.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't update the branch."), "error");
   } finally {
     if (btn) (btn as HTMLButtonElement).disabled = false;
   }
@@ -2610,15 +2722,17 @@ async function addInlineComment(
   side?: "LEFT" | "RIGHT",
 ): Promise<void> {
   const lineRaw = await promptInline(
-    `Comment on ${path}`,
-    side === "LEFT" ? "Line, or a range like 12-18 (in the removed file)" : "Line, or a range like 12-18 (head side)",
+    l10n.t("Comment on {0}", path),
+    side === "LEFT"
+      ? l10n.t("Line, or a range like 12-18 (in the removed file)")
+      : l10n.t("Line, or a range like 12-18 (head side)"),
     "",
-    "Next",
+    l10n.t("Next"),
   );
   if (lineRaw === null) return;
   const m = /^\s*(\d+)(?:\s*-\s*(\d+))?\s*$/.exec(lineRaw);
   if (!m) {
-    toast("Enter a line number, or a range like 12-18.", "error");
+    toast(l10n.t("Enter a line number, or a range like 12-18."), "error");
     return;
   }
   const a1 = Number(m[1]);
@@ -2626,7 +2740,12 @@ async function addInlineComment(
   const startLine = Math.min(a1, a2);
   const line = Math.max(a1, a2);
   const at = startLine === line ? `${line}` : `${startLine}–${line}`;
-  const body = await promptInline(`Comment on ${path}:${at}`, "Leave a review comment…", "", "Comment");
+  const body = await promptInline(
+    l10n.t("Comment on {0}:{1}", path, at),
+    l10n.t("Leave a review comment…"),
+    "",
+    l10n.t("Comment"),
+  );
   if (!body) return;
 
   const chosen = mode ?? (pendingFor(n).length > 0 ? "queue" : "single");
@@ -2640,7 +2759,10 @@ async function addInlineComment(
     });
     prsTab().syncPendingUi?.();
     toast(
-      `Added to your review — ${pendingFor(n).length} pending. Nothing posts until you submit.`,
+      l10n.t(
+        "Added to your review — {0} pending. Nothing posts until you submit.",
+        pendingFor(n).length,
+      ),
       "success",
     );
     reloadFile(); // the pending card renders where the thread will land
@@ -2651,13 +2773,13 @@ async function addInlineComment(
   try {
     const r = await host.invoke("pr:addReviewComment", { number: n, path, line, side: side ?? "RIGHT", body });
     if (!r.ok) {
-      toast(r.message ?? "Couldn't add the comment.", "error");
+      toast(r.message ?? l10n.t("Couldn't add the comment."), "error");
       return;
     }
-    toast("Review comment added.", "success");
+    toast(l10n.t("Review comment added."), "success");
     reloadFile(); // re-fetch threads so the new comment shows
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't add the comment.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't add the comment."), "error");
   } finally {
     (btn as HTMLButtonElement).disabled = false;
   }
@@ -2673,7 +2795,7 @@ async function replyToThread(
 ): Promise<void> {
   const body = ta.value.trim();
   if (!body) {
-    toast("Write a reply first.", "info");
+    toast(l10n.t("Write a reply first."), "info");
     return;
   }
   (btn as HTMLButtonElement).disabled = true;
@@ -2681,15 +2803,15 @@ async function replyToThread(
   try {
     const r = await host.invoke("pr:replyThread", { number: n, threadId, body });
     if (!r.ok) {
-      toast(r.message ?? "Couldn't post the reply.", "error");
+      toast(r.message ?? l10n.t("Couldn't post the reply."), "error");
       return;
     }
-    toast("Reply posted.", "success");
+    toast(l10n.t("Reply posted."), "success");
     // Spent, and only now — a failed post keeps the text for the retry.
     replyDrafts.delete(threadId);
     reloadFile();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't post the reply.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't post the reply."), "error");
   } finally {
     (btn as HTMLButtonElement).disabled = false;
     ta.disabled = false;
@@ -2707,13 +2829,13 @@ async function toggleResolve(
   try {
     const r = await host.invoke("pr:resolveThread", { threadId, resolved });
     if (!r.ok) {
-      toast(r.message ?? "Couldn't update the thread.", "error");
+      toast(r.message ?? l10n.t("Couldn't update the thread."), "error");
       return;
     }
-    toast(resolved ? "Thread resolved." : "Thread reopened.", "success");
+    toast(resolved ? l10n.t("Thread resolved.") : l10n.t("Thread reopened."), "success");
     reloadFile();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't update the thread.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't update the thread."), "error");
   } finally {
     (btn as HTMLButtonElement).disabled = false;
   }
@@ -2729,11 +2851,11 @@ export async function openCreatePr(
   try {
     branches = await host.invoke("pr:branches", undefined);
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't load branches.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't load branches."), "error");
     return;
   }
   if (branches.length < 2) {
-    toast("Need at least two branches to open a pull request.", "error");
+    toast(l10n.t("Need at least two branches to open a pull request."), "error");
     return;
   }
   const base =
@@ -2759,14 +2881,14 @@ export async function openCreatePr(
       draft: res.draft,
     });
     if (!r.ok) {
-      toast(r.message ?? "Couldn't create the pull request.", "error");
+      toast(r.message ?? l10n.t("Couldn't create the pull request."), "error");
       return;
     }
-    toast(`Created pull request ${r.message ?? ""}.`.trim(), "success");
+    toast(r.message ? l10n.t("Created pull request {0}.", r.message) : l10n.t("Created pull request."), "success");
     bust("pr");
     refresh();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't create the pull request.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't create the pull request."), "error");
   }
 }
 
@@ -2790,7 +2912,7 @@ function createPrModal(opts: {
     openModal((close) => {
       const card = el("div", "modal-card gh-pr-form");
       const h = el("div", "modal-title");
-      h.textContent = "New pull request";
+      h.textContent = l10n.t("New pull request");
 
       const mkSelect = (label: string, selected: string): { row: HTMLElement; sel: HTMLSelectElement } => {
         const row = el("label", "gh-form-row");
@@ -2800,41 +2922,41 @@ function createPrModal(opts: {
         for (const b of opts.branches) {
           const o = document.createElement("option");
           o.value = b.name;
-          o.textContent = b.name + (b.isDefault ? "  (default)" : "");
+          o.textContent = b.isDefault ? l10n.t("{0}  (default)", b.name) : b.name;
           if (b.name === selected) o.selected = true;
           sel.appendChild(o);
         }
         row.appendChild(sel);
         return { row, sel };
       };
-      const head = mkSelect("Compare (head)", opts.defaultHead);
-      const base = mkSelect("Into (base)", opts.defaultBase);
+      const head = mkSelect(l10n.t("Compare (head)"), opts.defaultHead);
+      const base = mkSelect(l10n.t("Into (base)"), opts.defaultBase);
 
       const titleRow = el("label", "gh-form-row");
-      titleRow.append(span("Title", "gh-form-label"));
+      titleRow.append(span(l10n.t("Title"), "gh-form-label"));
       const title = document.createElement("input");
       title.className = "modal-input";
-      title.placeholder = "Pull request title";
+      title.placeholder = l10n.t("Pull request title");
       titleRow.appendChild(title);
 
       const bodyRow = el("label", "gh-form-row");
-      bodyRow.append(span("Description", "gh-form-label"));
+      bodyRow.append(span(l10n.t("Description"), "gh-form-label"));
       const body = document.createElement("textarea");
       body.className = "gh-form-textarea";
-      body.placeholder = "Describe the change… (optional)";
+      body.placeholder = l10n.t("Describe the change… (optional)");
       body.rows = 5;
       bodyRow.appendChild(body);
 
       const draftRow = el("label", "gh-form-check");
       const draft = document.createElement("input");
       draft.type = "checkbox";
-      draftRow.append(draft, span("Create as draft"));
+      draftRow.append(draft, span(l10n.t("Create as draft")));
 
       const actions = el("div", "modal-actions");
       const cancel = el("button", "mini-btn");
-      cancel.textContent = "Cancel";
+      cancel.textContent = l10n.t("Cancel");
       const ok = el("button", "btn btn-primary modal-ok");
-      ok.append(span("Create pull request"));
+      ok.append(span(l10n.t("Create pull request")));
       actions.append(cancel, ok);
       card.append(h, head.row, base.row, titleRow, bodyRow, draftRow, actions);
 
@@ -2847,12 +2969,12 @@ function createPrModal(opts: {
       const submit = (): void => {
         if (!title.value.trim()) {
           title.focus();
-          toast("A title is required.", "error");
+          toast(l10n.t("A title is required."), "error");
           return;
         }
         if (head.sel.value === base.sel.value) {
           head.sel.focus();
-          toast("Head and base must differ.", "error");
+          toast(l10n.t("Head and base must differ."), "error");
           return;
         }
         settled = true;
@@ -2876,7 +2998,7 @@ function createPrModal(opts: {
       return {
         card,
         focusEl: title,
-        label: "New pull request",
+        label: l10n.t("New pull request"),
         // A background route change must not take a written description with
         // it — the same veto the issue composer carries.
         hasUnsavedWork: () => title.value.trim() !== "" || body.value.trim() !== "",

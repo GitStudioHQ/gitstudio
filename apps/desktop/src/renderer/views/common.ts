@@ -4,6 +4,7 @@
 // the same gate, header, two-pane layout, and not-connected prompt so the whole
 // app feels like one product.
 
+import * as l10n from "@vscode/l10n";
 import { host } from "../bridge";
 import { gget } from "../cache";
 import { openModal } from "../dialogs";
@@ -144,7 +145,7 @@ export async function ghGate(
     // masquerade as "not connected" (misleading) or, before the client got
     // request timeouts, hang the section on its skeleton forever.
     wrap.replaceChildren(
-      errorState("Couldn't reach GitHub", cleanErr(e) || "The request timed out.", retry),
+      errorState(l10n.t("Couldn't reach GitHub"), cleanErr(e) || l10n.t("The request timed out."), retry),
     );
     return null;
   }
@@ -159,9 +160,11 @@ export async function ghGate(
     // genuinely means no remote points at github.com.)
     wrap.replaceChildren(
       emptyState(
-        "No GitHub remote found",
-        "None of this repository's remotes point at github.com, so pull requests, issues, and CI can't attach here. Add one (git remote add origin …) and this section lights up on the next visit.",
-        { icon: "github", hint: "origin, upstream, and SSH aliases like git@github.com-work:… are all recognized." },
+        l10n.t("No GitHub remote found"),
+        l10n.t(
+          "None of this repository's remotes point at github.com, so pull requests, issues, and CI can't attach here. Add one (git remote add origin …) and this section lights up on the next visit.",
+        ),
+        { icon: "github", hint: l10n.t("origin, upstream, and SSH aliases like git@github.com-work:… are all recognized.") },
       ),
     );
     return null;
@@ -175,12 +178,13 @@ export function connectPrompt(nav: (view: string) => void): HTMLElement {
   const badge = el("div", "list-empty-badge");
   badge.appendChild(glyph("github"));
   const t = el("div", "list-empty-title");
-  t.textContent = "Connect GitHub";
+  t.textContent = l10n.t("Connect GitHub");
   const d = el("div", "list-empty-desc");
-  d.textContent =
-    "Sign in to review and manage pull requests, issues, releases and Actions — without leaving GitStudio.";
+  d.textContent = l10n.t(
+    "Sign in to review and manage pull requests, issues, releases and Actions — without leaving GitStudio.",
+  );
   const go = el("button", "btn btn-primary list-empty-action");
-  go.append(glyph("github"), span("Sign in with GitHub"));
+  go.append(glyph("github"), span(l10n.t("Sign in with GitHub")));
   go.addEventListener("click", () => nav("settings"));
   wrap.append(badge, t, d, go);
   return wrap;
@@ -217,10 +221,12 @@ export function ghHeader(
   // narrowing the list, say so: "2 of 8".
   headRow.setCount = (shown: number, total?: number): void => {
     const narrowed = typeof total === "number" && total !== shown;
-    countPill.textContent = narrowed ? `${shown} of ${total}` : String(shown);
+    countPill.textContent = narrowed ? l10n.t("{0} of {1}", shown, total) : String(shown);
     countPill.title = narrowed
-      ? `${shown} shown of ${total} loaded`
-      : `${shown} ${shown === 1 ? "item" : "items"}`;
+      ? l10n.t("{0} shown of {1} loaded", shown, total)
+      : shown === 1
+        ? l10n.t("1 item")
+        : l10n.t("{0} items", shown);
     countPill.classList.toggle("is-narrowed", narrowed);
     countPill.hidden = false;
   };
@@ -233,8 +239,8 @@ export function ghHeader(
   void login;
   const right = el("div", "gh-acct");
   const refreshBtn = el("button", "icon-btn gh-refresh") as HTMLButtonElement;
-  refreshBtn.title = "Refresh";
-  refreshBtn.setAttribute("aria-label", "Refresh this view");
+  refreshBtn.title = l10n.t("Refresh");
+  refreshBtn.setAttribute("aria-label", l10n.t("Refresh this view"));
   refreshBtn.appendChild(glyph("refresh"));
   // Say that it is working. This was `() => onRefresh()` — fire and forget, no
   // feedback of any kind — in twelve views. Clicking it looked like nothing had
@@ -349,7 +355,7 @@ export function searchField(opts: {
   input.spellcheck = false;
   if (opts.initial) input.value = opts.initial;
   const clear = el("button", "gh-search-clear");
-  clear.setAttribute("aria-label", "Clear search");
+  clear.setAttribute("aria-label", l10n.t("Clear search"));
   clear.appendChild(glyph("close"));
   clear.hidden = !input.value;
   let timer = 0;
@@ -601,8 +607,8 @@ export function peoplePickerModal(opts: {
 
       const search = document.createElement("input");
       search.className = "modal-input";
-      search.placeholder = "Filter people…";
-      search.setAttribute("aria-label", "Filter people");
+      search.placeholder = l10n.t("Filter people…");
+      search.setAttribute("aria-label", l10n.t("Filter people"));
 
       const list = el("div", "people-list");
       const boxes: { login: string; cb: HTMLInputElement; row: HTMLElement }[] = [];
@@ -614,14 +620,14 @@ export function peoplePickerModal(opts: {
         if (locked.has(p.login)) {
           cb.disabled = true;
           row.classList.add("is-locked");
-          row.title = "Already requested";
+          row.title = l10n.t("Already requested");
         }
         row.append(cb, avatar(p.login, p.avatarUrl ?? null, 22), span(p.login, "people-login"));
         list.appendChild(row);
         boxes.push({ login: p.login, cb, row });
       }
       const empty = el("div", "people-empty");
-      empty.textContent = "No people match.";
+      empty.textContent = l10n.t("No people match.");
       empty.hidden = true;
       list.appendChild(empty);
       const filter = (): void => {
@@ -638,7 +644,7 @@ export function peoplePickerModal(opts: {
 
       const actions = el("div", "modal-actions");
       const cancel = el("button", "mini-btn");
-      cancel.textContent = "Cancel";
+      cancel.textContent = l10n.t("Cancel");
       const ok = el("button", "btn btn-primary modal-ok");
       ok.append(span(opts.okLabel));
       actions.append(cancel, ok);
@@ -1183,8 +1189,8 @@ export function detailPage(o: DetailPageOpts): {
     // sentence that contradicted itself: with the panel hidden a reader heard
     // "Show the details panel, toggle button, pressed", which says showing is
     // in force over a panel that is not there.
-    railBtn.title = shown ? "Hide the details panel" : "Show the details panel";
-    railBtn.setAttribute("aria-label", "Details panel");
+    railBtn.title = shown ? l10n.t("Hide the details panel") : l10n.t("Show the details panel");
+    railBtn.setAttribute("aria-label", l10n.t("Details panel"));
     railBtn.setAttribute("aria-pressed", String(shown));
     railBtn.replaceChildren(glyph(shown ? "layout-sidebar-right" : "layout-sidebar-right-off"));
   };
@@ -1247,7 +1253,7 @@ function dayKey(epochSec: number): string {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
 function dayLabel(epochSec: number): string {
-  if (!epochSec) return "Undated";
+  if (!epochSec) return l10n.t("Undated");
   return new Date(epochSec * 1000).toLocaleDateString(undefined, {
     day: "numeric",
     month: "short",
@@ -1296,7 +1302,7 @@ export function commitList(
     if (key !== openDay) {
       openDay = key;
       const head = el("div", "clist-day");
-      head.append(glyph("git-commit"), span(`Commits on ${dayLabel(c.date)}`));
+      head.append(glyph("git-commit"), span(l10n.t("Commits on {0}", dayLabel(c.date))));
       root.appendChild(head);
       group = el("div", "clist-group");
       root.appendChild(group);
@@ -1316,13 +1322,13 @@ export function commitList(
     // what the ellipsis clips never survived, and a truncated subject had no
     // way to be read at all. One edit here fixes Compare, the pull request's
     // Commits tab and the ref page's history together.
-    subject.title = `${c.subject}\nOpen commit ${c.shortSha}`;
+    subject.title = `${c.subject}\n${l10n.t("Open commit {0}", c.shortSha)}`;
     subject.addEventListener("click", () => o.onOpen(c.sha));
     const subjRow = el("div", "clist-subjrow");
     subjRow.appendChild(subject);
     if (c.isMerge) {
-      const chip = span("Merge", "clist-chip");
-      chip.title = "This commit has more than one parent";
+      const chip = span(l10n.t("Merge"), "clist-chip");
+      chip.title = l10n.t("This commit has more than one parent");
       subjRow.appendChild(chip);
     }
 
@@ -1332,7 +1338,7 @@ export function commitList(
     if (c.body && c.body.trim()) {
       const more = el("button", "clist-more") as HTMLButtonElement;
       more.append(glyph("ellipsis"));
-      more.title = "Show this commit's full message";
+      more.title = l10n.t("Show this commit's full message");
       more.setAttribute("aria-label", more.title);
       more.setAttribute("aria-expanded", "false");
       bodyEl = el("pre", "clist-body");
@@ -1342,7 +1348,7 @@ export function commitList(
         const showing = bodyEl!.hidden;
         bodyEl!.hidden = !showing;
         more.setAttribute("aria-expanded", String(showing));
-        more.title = showing ? "Hide the full message" : "Show this commit's full message";
+        more.title = showing ? l10n.t("Hide the full message") : l10n.t("Show this commit's full message");
         more.setAttribute("aria-label", more.title);
       });
       subjRow.appendChild(more);
@@ -1353,7 +1359,7 @@ export function commitList(
     meta.appendChild(span(c.author, "clist-author"));
     const when = c.date ? relTime(c.date) : "";
     if (when) {
-      const t = span(`committed ${when}`, "clist-when");
+      const t = span(l10n.t("committed {0}", when), "clist-when");
       t.title = absTime(c.date);
       meta.appendChild(t);
     }
@@ -1362,19 +1368,19 @@ export function commitList(
 
     const right = el("div", "clist-right");
     if (c.verified) {
-      const v = span("Verified", "clist-verified");
-      v.title = "GitHub verified this commit's signature";
+      const v = span(l10n.t("Verified"), "clist-verified");
+      v.title = l10n.t("GitHub verified this commit's signature");
       right.appendChild(v);
     }
     const sha = el("button", "clist-sha") as HTMLButtonElement;
     sha.textContent = c.shortSha;
-    sha.title = `${c.sha}\nCopy the full SHA`;
-    sha.setAttribute("aria-label", `Copy the full SHA ${c.sha}`);
+    sha.title = `${c.sha}\n${l10n.t("Copy the full SHA")}`;
+    sha.setAttribute("aria-label", l10n.t("Copy the full SHA {0}", c.sha));
     sha.addEventListener("click", () => o.onCopy?.(c.sha));
     right.appendChild(sha);
     const openBtn = el("button", "clist-open") as HTMLButtonElement;
     openBtn.append(glyph("diff"));
-    openBtn.title = `Open ${c.shortSha} and what it changed`;
+    openBtn.title = l10n.t("Open {0} and what it changed", c.shortSha);
     openBtn.setAttribute("aria-label", openBtn.title);
     openBtn.addEventListener("click", () => o.onOpen(c.sha));
     right.appendChild(openBtn);
@@ -1402,7 +1408,7 @@ export function whereChip(where: "local" | "remote"): HTMLElement {
   const c = el("span", `gs-where is-${where}`);
   c.append(
     glyph(where === "local" ? "folder" : "globe"),
-    span(where === "local" ? "on this machine" : "on GitHub"),
+    span(where === "local" ? l10n.t("on this machine") : l10n.t("on GitHub")),
   );
   return c;
 }
@@ -1417,7 +1423,7 @@ export function propSection(
   if (opts.onEdit) {
     const b = el("button", "det-prop-edit");
     b.appendChild(glyph("edit"));
-    b.title = opts.editTitle ?? `Edit ${label.toLowerCase()}`;
+    b.title = opts.editTitle ?? l10n.t("Edit {0}", label.toLowerCase());
     b.setAttribute("aria-label", b.title);
     b.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -1439,7 +1445,7 @@ export function personChip(
   const chip = el(onClick ? "button" : "span", "det-person");
   chip.append(avatar(login, avatarUrl ?? null, 20), span(login));
   if (onClick) {
-    chip.title = `View @${login}'s profile`;
+    chip.title = l10n.t("View @{0}'s profile", login);
     chip.addEventListener("click", onClick);
   }
   return chip;
@@ -1452,13 +1458,13 @@ export function personChip(
  *  you to be welcoming. Both are signal the app used to throw away. */
 export function associationLabel(a: string): string {
   switch (a) {
-    case "OWNER": return "Owner";
-    case "MEMBER": return "Member";
-    case "COLLABORATOR": return "Collaborator";
-    case "CONTRIBUTOR": return "Contributor";
-    case "FIRST_TIME_CONTRIBUTOR": return "First-time contributor";
-    case "FIRST_TIMER": return "First-time on GitHub";
-    case "MANNEQUIN": return "Mannequin";
+    case "OWNER": return l10n.t("Owner");
+    case "MEMBER": return l10n.t("Member");
+    case "COLLABORATOR": return l10n.t("Collaborator");
+    case "CONTRIBUTOR": return l10n.t("Contributor");
+    case "FIRST_TIME_CONTRIBUTOR": return l10n.t("First-time contributor");
+    case "FIRST_TIMER": return l10n.t("First-time on GitHub");
+    case "MANNEQUIN": return l10n.t("Mannequin");
     default: return a.toLowerCase().replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
   }
 }
@@ -1469,7 +1475,7 @@ export function associationLabel(a: string): string {
 export function associationBadge(a: string | undefined): HTMLElement | undefined {
   if (!a || a === "NONE" || a === "CONTRIBUTOR") return undefined;
   const b = span(associationLabel(a), "gh-assoc-badge");
-  b.title = `This person is a repository ${associationLabel(a).toLowerCase()}`;
+  b.title = l10n.t("This person is a repository {0}", associationLabel(a).toLowerCase());
   return b;
 }
 
@@ -1552,14 +1558,14 @@ export function reactionRow(
       if (!onToggle) {
         const chip = span("", "gh-reaction");
         chip.append(span(emoji, "gh-reaction-emoji"), span(String(n), "gh-reaction-n"));
-        chip.title = `${n} ${name}`;
+        chip.title = l10n.t("{0} {1}", n, name);
         row.appendChild(chip);
         continue;
       }
       const chip = el("button", "gh-reaction" + (on ? " is-mine" : "")) as HTMLButtonElement;
       chip.dataset.reaction = content;
       chip.append(span(emoji, "gh-reaction-emoji"), span(String(n), "gh-reaction-n"));
-      chip.title = on ? `Remove your ${name}` : `React with ${name}`;
+      chip.title = on ? l10n.t("Remove your {0}", name) : l10n.t("React with {0}", name);
       chip.setAttribute("aria-pressed", String(on));
       chip.addEventListener("click", () => void toggle(content, !on));
       row.appendChild(chip);
@@ -1568,8 +1574,8 @@ export function reactionRow(
       const add = el("button", "gh-reaction gh-reaction-add") as HTMLButtonElement;
       add.dataset.reaction = "add";
       add.appendChild(glyph("smiley"));
-      add.title = "Add a reaction";
-      add.setAttribute("aria-label", "Add a reaction");
+      add.title = l10n.t("Add a reaction");
+      add.setAttribute("aria-label", l10n.t("Add a reaction"));
       add.setAttribute("aria-haspopup", "menu");
       add.addEventListener("click", () => {
         openMenu(
@@ -1635,7 +1641,7 @@ export function propAddBtn(label: string, onClick: () => void, icon = "add"): HT
 }
 
 /** A muted placeholder value for an empty rail property ("None"). */
-export function propNone(text = "None"): HTMLElement {
+export function propNone(text = l10n.t("None")): HTMLElement {
   return span(text, "det-prop-none");
 }
 
@@ -1667,8 +1673,11 @@ export function capNotice(
     glyph("info"),
     span(
       mode === "server"
-        ? `Showing the ${cap} most recent from GitHub — narrow with the filters above to see further back.`
-        : `Showing the ${cap} most recently updated — search to narrow the list.`,
+        ? l10n.t(
+            "Showing the {0} most recent from GitHub — narrow with the filters above to see further back.",
+            cap,
+          )
+        : l10n.t("Showing the {0} most recently updated — search to narrow the list.", cap),
     ),
   );
   return note;
@@ -1686,10 +1695,18 @@ export function capNotice(
 export function unreadableNotice(n: number, one: string, many = `${one}s`): HTMLElement | null {
   if (!n) return null;
   const note = el("div", "sec-cap-note gh-unreadable-note");
-  note.append(glyph("warning"), span(`${n} ${n === 1 ? one : many} could not be read from GitHub.`));
+  note.append(
+    glyph("warning"),
+    span(l10n.t("{0} {1} could not be read from GitHub.", n, n === 1 ? one : many)),
+  );
   note.title =
-    `GitHub listed ${n === 1 ? "it" : "them"} but did not return ${n === 1 ? "it" : "them"} — ` +
-    "usually because it lives in a repository your account can no longer see.";
+    n === 1
+      ? l10n.t(
+          "GitHub listed it but did not return it — usually because it lives in a repository your account can no longer see.",
+        )
+      : l10n.t(
+          "GitHub listed them but did not return them — usually because it lives in a repository your account can no longer see.",
+        );
   return note;
 }
 
@@ -1774,7 +1791,7 @@ export function facetBar<T>(o: {
       const current = o.state[spec.key];
       const items_: MenuItem[] = [
         {
-          label: spec.anyLabel ?? `Any ${spec.label.toLowerCase()}`,
+          label: spec.anyLabel ?? l10n.t("Any {0}", spec.label.toLowerCase()),
           icon: current == null ? "check" : "blank",
           onClick: () => {
             delete o.state[spec.key];
@@ -1803,7 +1820,7 @@ export function facetBar<T>(o: {
         });
       }
       if (!opts.length) {
-        items_.push({ label: `No ${spec.label.toLowerCase()} to filter by`, disabled: true });
+        items_.push({ label: l10n.t("No {0} to filter by", spec.label.toLowerCase()), disabled: true });
       }
       // Long option lists get the menu's own filter box — scrolling 40 branches
       // to find one is not filtering, it's searching by hand.
@@ -1861,16 +1878,16 @@ export function facetBar<T>(o: {
       btn.append(glyph(spec.icon), span(spec.label), mark, glyph("chevron-down"));
       btn.title =
         shown != null
-          ? `Filtering by ${spec.label.toLowerCase()} “${shown}” — click to change`
-          : `Filter by ${spec.label.toLowerCase()}`;
+          ? l10n.t("Filtering by {0} “{1}” — click to change", spec.label.toLowerCase(), shown)
+          : l10n.t("Filter by {0}", spec.label.toLowerCase());
       btn.setAttribute("aria-label", btn.title);
       btn.addEventListener("click", () => openFacetMenu(spec, btn));
       bar.appendChild(btn);
     }
     if (activeCount() > 0) {
       const clearBtn = el("button", "mini-btn gh-facet-clear") as HTMLButtonElement;
-      clearBtn.append(glyph("clear-all"), span("Clear"));
-      clearBtn.title = "Clear every filter";
+      clearBtn.append(glyph("clear-all"), span(l10n.t("Clear")));
+      clearBtn.title = l10n.t("Clear every filter");
       clearBtn.addEventListener("click", () => api.clear());
       bar.appendChild(clearBtn);
     }
@@ -2155,22 +2172,22 @@ export function wireListNav(container: HTMLElement, selector = ".gh-row"): void 
  */
 export function checkStateLabel(state: string): string {
   const map: Record<string, string> = {
-    success: "Passed",
-    failure: "Failed",
-    neutral: "Neutral",
-    cancelled: "Cancelled",
-    canceled: "Cancelled",
-    skipped: "Skipped",
-    stale: "Stale",
-    timed_out: "Timed out",
-    action_required: "Action required",
-    startup_failure: "Startup failure",
-    queued: "Queued",
-    waiting: "Waiting",
-    pending: "Pending",
-    requested: "Requested",
-    in_progress: "Running",
-    completed: "Completed",
+    success: l10n.t("Passed"),
+    failure: l10n.t("Failed"),
+    neutral: l10n.t("Neutral"),
+    cancelled: l10n.t("Cancelled"),
+    canceled: l10n.t("Cancelled"),
+    skipped: l10n.t("Skipped"),
+    stale: l10n.t("Stale"),
+    timed_out: l10n.t("Timed out"),
+    action_required: l10n.t("Action required"),
+    startup_failure: l10n.t("Startup failure"),
+    queued: l10n.t("Queued"),
+    waiting: l10n.t("Waiting"),
+    pending: l10n.t("Pending"),
+    requested: l10n.t("Requested"),
+    in_progress: l10n.t("Running"),
+    completed: l10n.t("Completed"),
   };
   return map[state] ?? state.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 }

@@ -15,6 +15,7 @@
 // the changelog it would have written, "Set as the latest release" is finally
 // askable, and publish-vs-draft is two named buttons rather than a checkbox.
 
+import * as l10n from "@vscode/l10n";
 import { host } from "../bridge";
 import { isRemoteHead } from "../branchRequests";
 import { el, span, glyph, cleanErr, errorState, skeletonList } from "../ui";
@@ -71,9 +72,9 @@ export async function renderReleaseCompose(
 ): Promise<void> {
   const editId = target?.number;
   const { view, main, rail, topActions } = detailPage({
-    backLabel: "Releases",
-    crumb: editId ? "Edit release" : "New release",
-    pageLabel: editId ? "Edit release" : "New release",
+    backLabel: l10n.t("Releases"),
+    crumb: editId ? l10n.t("Edit release") : l10n.t("New release"),
+    pageLabel: editId ? l10n.t("Edit release") : l10n.t("New release"),
     onBack: () => nav("releases", { list: true }),
   });
   view.classList.add("relc-view");
@@ -89,8 +90,10 @@ export async function renderReleaseCompose(
     } catch (e) {
       if (!view.isConnected) return;
       main.replaceChildren(
-        errorState("Couldn't load this release", cleanErr(e) || "GitHub request failed.", () =>
-          void renderReleaseCompose(wrap, nav, target),
+        errorState(
+          l10n.t("Couldn't load this release"),
+          cleanErr(e) || l10n.t("GitHub request failed."),
+          () => void renderReleaseCompose(wrap, nav, target),
         ),
       );
       return;
@@ -98,7 +101,10 @@ export async function renderReleaseCompose(
     if (!view.isConnected) return;
     if (!existing) {
       main.replaceChildren(
-        errorState("Release unavailable", "This release couldn't be read from GitHub."),
+        errorState(
+          l10n.t("Release unavailable"),
+          l10n.t("This release couldn't be read from GitHub."),
+        ),
       );
       return;
     }
@@ -156,7 +162,7 @@ export async function renderReleaseCompose(
   // ── the two refs ──────────────────────────────────────────────────────────
   const refRow = el("div", "relc-refs");
   const tagField = comboField({
-    label: "Tag",
+    label: l10n.t("Tag"),
     placeholder: "v1.0.0",
     value: init.tagName,
     options: tagOptions,
@@ -165,7 +171,7 @@ export async function renderReleaseCompose(
     inputClass: "relc-input",
   });
   const targetField = comboField({
-    label: "Target",
+    label: l10n.t("Target"),
     placeholder: headBranch || "main",
     value: init.targetCommitish ?? "",
     options: branches,
@@ -191,14 +197,14 @@ export async function renderReleaseCompose(
     }
     if (existing && t === existing.tagName) {
       tagNote.className = "relc-note is-known";
-      tagNote.textContent = `This release points at ${t}.`;
+      tagNote.textContent = l10n.t("This release points at {0}.", t);
     } else if (knownTags.has(t)) {
       tagNote.className = "relc-note is-known";
-      tagNote.textContent = `Existing tag — this release will point at ${t}.`;
+      tagNote.textContent = l10n.t("Existing tag — this release will point at {0}.", t);
     } else {
       tagNote.className = "relc-note is-new";
-      const at = targetField.input.value.trim() || headBranch || "the default branch";
-      tagNote.textContent = `New tag — GitHub will create ${t} from ${at} when you publish.`;
+      const at = targetField.input.value.trim() || headBranch || l10n.t("the default branch");
+      tagNote.textContent = l10n.t("New tag — GitHub will create {0} from {1} when you publish.", t, at);
     }
   };
   tagField.input.addEventListener("input", syncTagNote);
@@ -208,10 +214,10 @@ export async function renderReleaseCompose(
   // ── title ─────────────────────────────────────────────────────────────────
   const titleField = el("div", "relc-field relc-field-wide");
   const titleLabel = el("label", "relc-label");
-  titleLabel.textContent = "Title";
+  titleLabel.textContent = l10n.t("Title");
   const title = document.createElement("input");
   title.className = "relc-input relc-title";
-  title.placeholder = "Release title";
+  title.placeholder = l10n.t("Release title");
   title.value = init.name ?? "";
   title.id = "relc-title";
   (titleLabel as HTMLLabelElement).htmlFor = title.id;
@@ -221,10 +227,10 @@ export async function renderReleaseCompose(
   // ── notes ─────────────────────────────────────────────────────────────────
   const notesHead = el("div", "relc-notes-head");
   const notesLabel = el("span", "relc-label");
-  notesLabel.textContent = "Notes";
+  notesLabel.textContent = l10n.t("Notes");
   const genBtn = el("button", "mini-btn relc-gen") as HTMLButtonElement;
-  genBtn.append(glyph("sparkle"), span("Generate release notes"));
-  genBtn.title = "Ask GitHub for the changelog it would write from the merged pull requests";
+  genBtn.append(glyph("sparkle"), span(l10n.t("Generate release notes")));
+  genBtn.title = l10n.t("Ask GitHub for the changelog it would write from the merged pull requests");
   notesHead.append(notesLabel, genBtn);
   form.appendChild(notesHead);
 
@@ -249,9 +255,11 @@ export async function renderReleaseCompose(
 
   const notes = mdEditor({
     value: init.body ?? "",
-    placeholder: "Describe this release. Markdown is supported — and “Generate release notes” writes a first draft from the merged pull requests.",
+    placeholder: l10n.t(
+      "Describe this release. Markdown is supported — and “Generate release notes” writes a first draft from the merged pull requests.",
+    ),
     fill: true,
-    label: "Release notes",
+    label: l10n.t("Release notes"),
     onInput: (v) => notesDraft.save(v),
     onSubmit: () => publishBtn.click(),
   });
@@ -266,14 +274,14 @@ export async function renderReleaseCompose(
   genBtn.addEventListener("click", () => {
     const tagName = tagField.input.value.trim();
     if (!tagName) {
-      showError("A tag is needed first — the notes are the changes since the previous one.");
+      showError(l10n.t("A tag is needed first — the notes are the changes since the previous one."));
       tagField.input.focus();
       return;
     }
     const had = notes.get().trim();
     genBtn.disabled = true;
     const label = genBtn.querySelector("span");
-    if (label) label.textContent = "Asking GitHub…";
+    if (label) label.textContent = l10n.t("Asking GitHub…");
     void host
       .invoke("release:generateNotes", {
         tagName,
@@ -285,14 +293,14 @@ export async function renderReleaseCompose(
         notes.set(had ? `${had}\n\n${g.body}` : g.body);
         if (!title.value.trim() && g.name) title.value = g.name;
         notesDraft.save(notes.get());
-        toast("Release notes generated from GitHub.", "success");
+        toast(l10n.t("Release notes generated from GitHub."), "success");
       })
       .catch((e) => {
-        showError(cleanErr(e) || "GitHub couldn't generate notes for this tag.");
+        showError(cleanErr(e) || l10n.t("GitHub couldn't generate notes for this tag."));
       })
       .finally(() => {
         genBtn.disabled = false;
-        if (label) label.textContent = "Generate release notes";
+        if (label) label.textContent = l10n.t("Generate release notes");
       });
   });
 
@@ -310,8 +318,8 @@ export async function renderReleaseCompose(
     return { row, input };
   };
   const pre = check(
-    "Set as a pre-release",
-    "Marked as not production-ready. It never becomes the latest release.",
+    l10n.t("Set as a pre-release"),
+    l10n.t("Marked as not production-ready. It never becomes the latest release."),
     !!init.prerelease,
   );
   // NOT `!init.prerelease`. That pre-ticked the box for every published
@@ -323,8 +331,8 @@ export async function renderReleaseCompose(
   // The rule is github.com's own, and the same one the list uses: the newest
   // published, non-pre-release release holds it.
   const latest = check(
-    "Set as the latest release",
-    "Moves the repository's “Latest” badge onto this release.",
+    l10n.t("Set as the latest release"),
+    l10n.t("Moves the repository's “Latest” badge onto this release."),
     init.id === undefined ? !init.prerelease : isCurrentlyLatest,
   );
   attrs.append(pre.row, latest.row);
@@ -335,7 +343,7 @@ export async function renderReleaseCompose(
     latest.input.disabled = pre.input.checked;
     if (pre.input.checked) latest.input.checked = false;
     latest.row.classList.toggle("is-off", pre.input.checked);
-    latest.row.title = pre.input.checked ? "A pre-release is never the latest release" : "";
+    latest.row.title = pre.input.checked ? l10n.t("A pre-release is never the latest release") : "";
   };
   pre.input.addEventListener("change", syncLatest);
   syncLatest();
@@ -353,7 +361,7 @@ export async function renderReleaseCompose(
 
   const bar = el("div", "relc-actions");
   const cancel = el("button", "mini-btn") as HTMLButtonElement;
-  cancel.textContent = "Cancel";
+  cancel.textContent = l10n.t("Cancel");
   // Back to the release you were editing, not to the list — which is where the
   // ← button and Escape both go, and where Save lands you. Three exits from one
   // page were doing two different things, and the visible one was the odd one
@@ -368,14 +376,14 @@ export async function renderReleaseCompose(
   // a destructive act behind an innocuous label. That release gets one button.
   const alreadyPublished = init.id !== undefined && !init.draft;
   const draftBtn = el("button", "mini-btn") as HTMLButtonElement;
-  draftBtn.append(glyph("save"), span("Save draft"));
-  draftBtn.title = "Keep this private — nobody is notified and it stays off the releases page";
+  draftBtn.append(glyph("save"), span(l10n.t("Save draft")));
+  draftBtn.title = l10n.t("Keep this private — nobody is notified and it stays off the releases page");
   const publishBtn = el("button", "btn btn-primary") as HTMLButtonElement;
-  const publishLabel = span(alreadyPublished ? "Save changes" : "Publish release");
+  const publishLabel = span(alreadyPublished ? l10n.t("Save changes") : l10n.t("Publish release"));
   publishBtn.append(glyph(alreadyPublished ? "save" : "rocket"), publishLabel);
   publishBtn.title = alreadyPublished
-    ? "Save your changes to this published release"
-    : "Publish now — everyone watching this repository is notified";
+    ? l10n.t("Save your changes to this published release")
+    : l10n.t("Publish now — everyone watching this repository is notified");
   bar.append(cancel, el("span", "relc-spring"));
   if (!alreadyPublished) bar.appendChild(draftBtn);
   bar.appendChild(publishBtn);
@@ -386,7 +394,7 @@ export async function renderReleaseCompose(
     if (busy) return;
     const tagName = tagField.input.value.trim();
     if (!tagName) {
-      showError("A tag is required — it is what the release points at.");
+      showError(l10n.t("A tag is required — it is what the release points at."));
       tagField.input.setAttribute("aria-invalid", "true");
       tagField.input.focus();
       return;
@@ -394,7 +402,8 @@ export async function renderReleaseCompose(
     note.hidden = true;
     busy = true;
     for (const b of [publishBtn, draftBtn, cancel]) b.disabled = true;
-    publishLabel.textContent = asDraft ? "Saving…" : alreadyPublished ? "Saving…" : "Publishing…";
+    publishLabel.textContent =
+      asDraft || alreadyPublished ? l10n.t("Saving…") : l10n.t("Publishing…");
     const input: ReleaseInput = {
       id: init.id,
       tagName,
@@ -410,7 +419,7 @@ export async function renderReleaseCompose(
     try {
       const r = await host.invoke(init.id === undefined ? "release:create" : "release:update", input);
       if (!r.ok) {
-        showError(r.message ?? "GitHub rejected the release.");
+        showError(r.message ?? l10n.t("GitHub rejected the release."));
         return;
       }
       // The text is on its way to GitHub, so the local draft has done its job.
@@ -422,9 +431,9 @@ export async function renderReleaseCompose(
       toast(
         init.id === undefined
           ? asDraft
-            ? `Saved ${tagName} as a draft.`
-            : `Published ${tagName}.`
-          : `Updated ${tagName}.`,
+            ? l10n.t("Saved {0} as a draft.", tagName)
+            : l10n.t("Published {0}.", tagName)
+          : l10n.t("Updated {0}.", tagName),
         "success",
       );
       // Land ON the release, not on a list of every release with the new one
@@ -433,11 +442,11 @@ export async function renderReleaseCompose(
       const landOn = init.id ?? ("id" in r ? r.id : undefined);
       nav("releases", landOn !== undefined && !asDraft ? { number: landOn } : { list: true });
     } catch (e) {
-      showError(cleanErr(e) || "Couldn't reach GitHub.");
+      showError(cleanErr(e) || l10n.t("Couldn't reach GitHub."));
     } finally {
       busy = false;
       for (const b of [publishBtn, draftBtn, cancel]) b.disabled = false;
-      publishLabel.textContent = alreadyPublished ? "Save changes" : "Publish release";
+      publishLabel.textContent = alreadyPublished ? l10n.t("Save changes") : l10n.t("Publish release");
     }
   };
   publishBtn.addEventListener("click", () => void submit(false));
@@ -456,6 +465,6 @@ export async function renderReleaseCompose(
     }
   });
 
-  setPageLabel(editId ? `Edit ${init.tagName || "release"}` : "New release");
+  setPageLabel(editId ? l10n.t("Edit {0}", init.tagName || l10n.t("release")) : l10n.t("New release"));
   (init.tagName ? title : tagField.input).focus();
 }

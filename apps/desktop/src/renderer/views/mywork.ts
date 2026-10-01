@@ -4,6 +4,7 @@
 // Rows navigate straight into the full PR / issue pages. This is the answer to
 // "where do I start?" that a pile of GitHub tabs never gives.
 
+import * as l10n from "@vscode/l10n";
 import {
   cleanErr,
   el,
@@ -57,10 +58,10 @@ interface MyWorkTabState {
 const myWorkTab = perTab<MyWorkTabState>(() => ({ query: "", scope: "all", myWorkFacets: {} }));
 
 const GROUPS: ReadonlyArray<{ kind: MyWorkItem["kind"]; label: string; icon: string }> = [
-  { kind: "review-requested", label: "Review requested", icon: "eye" },
-  { kind: "assigned", label: "Assigned to you", icon: "person" },
-  { kind: "my-prs", label: "Your pull requests", icon: "git-pull-request" },
-  { kind: "mentions", label: "Mentions", icon: "mention" },
+  { kind: "review-requested", label: l10n.t("Review requested"), icon: "eye" },
+  { kind: "assigned", label: l10n.t("Assigned to you"), icon: "person" },
+  { kind: "my-prs", label: l10n.t("Your pull requests"), icon: "git-pull-request" },
+  { kind: "mentions", label: l10n.t("Mentions"), icon: "mention" },
 ];
 
 export const renderMyWork: SectionRender = (wrap, nav) => {
@@ -82,10 +83,10 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   const gate = await ghGate(wrap, nav, S.scope === "repo", refresh);
   if (!gate) return;
   const { view, listEl } = sectionList();
-  const header = ghHeader("My Work", gate.login, refresh);
+  const header = ghHeader(l10n.t("My Work"), gate.login, refresh);
   header.querySelector(".gh-head-titlewrap")?.appendChild(
     searchField({
-      placeholder: "Filter my work…",
+      placeholder: l10n.t("Filter my work…"),
       initial: S.query,
       onInput: (q) => {
         S.query = q;
@@ -97,11 +98,11 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   tools.appendChild(
     segmented<"all" | "repo">({
       options: [
-        { value: "all", label: "Everywhere", icon: "globe" },
-        { value: "repo", label: "This repository", icon: "repo" },
+        { value: "all", label: l10n.t("Everywhere"), icon: "globe" },
+        { value: "repo", label: l10n.t("This repository"), icon: "repo" },
       ],
       value: S.scope,
-      ariaLabel: "Where to look for your work",
+      ariaLabel: l10n.t("Where to look for your work"),
       onChange: (v) => {
         S.scope = v;
         renderMyWork(wrap, nav);
@@ -120,20 +121,20 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
     specs: [
       {
         key: "kind",
-        label: "Why it's here",
+        label: l10n.t("Why it's here"),
         icon: "list-filter",
-        anyLabel: "Any reason",
+        anyLabel: l10n.t("Any reason"),
         options: GROUPS.map((g) => ({ value: g.kind, label: g.label, icon: g.icon })),
         predicate: (it, v) => it.kind === v,
       },
       {
         key: "type",
-        label: "Kind",
+        label: l10n.t("Kind"),
         icon: "git-pull-request",
-        anyLabel: "Issues and PRs",
+        anyLabel: l10n.t("Issues and PRs"),
         options: [
-          { value: "pr", label: "Pull requests", icon: "git-pull-request" },
-          { value: "issue", label: "Issues", icon: "issues" },
+          { value: "pr", label: l10n.t("Pull requests"), icon: "git-pull-request" },
+          { value: "issue", label: l10n.t("Issues"), icon: "issues" },
         ],
         predicate: (it, v) => it.type === v,
       },
@@ -152,10 +153,10 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
     // Same meta contract as Issues and PRs — this list showed the author as
     // bare text while its siblings showed an avatar in the same slot.
     const meta: HTMLElement[] = [];
-    if (it.author) meta.push(avatarStack([{ login: it.author }], 1, 18, "Author"));
+    if (it.author) meta.push(avatarStack([{ login: it.author }], 1, 18, l10n.t("Author")));
     // The assignee slot Issues and PRs reserve — blank here, but reserved, so
     // the author avatar lands in the AUTHOR column rather than one slot right.
-    meta.push(blankable(avatarStack([], 3, 18, "Assignee"), false));
+    meta.push(blankable(avatarStack([], 3, 18, l10n.t("Assignee")), false));
     meta.push(blankable(statBit("comment", it.comments), it.comments > 0));
     // Owner AND name — the gate knows which GitHub repo is open. A fork or a
     // same-named repo under another owner must never open the local page
@@ -167,11 +168,14 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
       lead: stateLead(kind),
       num: `#${it.number}`,
       title: it.title,
-      titleSuffix: it.draft ? [statePill("Draft", "draft")] : [],
+      titleSuffix: it.draft ? [statePill(l10n.t("Draft"), "draft")] : [],
       meta,
       time: relTimeISO(it.updatedAt),
-      timeTitle: it.updatedAt ? `Updated ${absTimeISO(it.updatedAt)}` : undefined,
-      ariaLabel: `${it.type === "pr" ? "Pull request" : "Issue"} #${it.number}: ${it.title}`,
+      timeTitle: it.updatedAt ? l10n.t("Updated {0}", absTimeISO(it.updatedAt)) : undefined,
+      ariaLabel:
+        it.type === "pr"
+          ? l10n.t("Pull request #{0}: {1}", it.number, it.title)
+          : l10n.t("Issue #{0}: {1}", it.number, it.title),
       // `from` so the detail's back button and Escape return to My Work rather
       // than dumping you in the Issues or Pull Requests list, which is a
       // grouped view you were never in.
@@ -182,7 +186,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
         if (here) {
           nav(it.type === "pr" ? "prs" : "issues", {
             number: it.number,
-            from: { view: "mywork", label: "My Work" },
+            from: { view: "mywork", label: l10n.t("My Work") },
           });
         } else if (it.repo) {
           openExternalItem({
@@ -230,10 +234,10 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
     if (items.length === 0) {
       listEl.appendChild(
         emptyState(
-          "All clear",
+          l10n.t("All clear"),
           S.scope === "all"
-            ? "Nothing anywhere needs you right now — no review requests, assignments, or mentions."
-            : "Nothing in this repository needs you right now — no review requests, assignments, or mentions.",
+            ? l10n.t("Nothing anywhere needs you right now — no review requests, assignments, or mentions.")
+            : l10n.t("Nothing in this repository needs you right now — no review requests, assignments, or mentions."),
           { icon: "pass" },
         ),
       );
@@ -242,13 +246,13 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
     if (shown.length === 0) {
       listEl.appendChild(
         emptyState(
-          "No matches",
-          S.query.trim() ? `Nothing matches “${S.query.trim()}”.` : "Nothing matches these filters.",
+          l10n.t("No matches"),
+          S.query.trim() ? l10n.t("Nothing matches “{0}”.", S.query.trim()) : l10n.t("Nothing matches these filters."),
           {
             icon: "search",
           anchor: "inline",
           secondary: facets.activeCount() > 0
-            ? { label: "Clear filters", icon: "clear-all", onClick: () => facets.clear() }
+            ? { label: l10n.t("Clear filters"), icon: "clear-all", onClick: () => facets.clear() }
             : undefined,
           },
         ),
@@ -276,7 +280,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
     if (!view.isConnected) return;
     if (!items) {
       listEl.replaceChildren(
-        errorState("Couldn't load your work", cleanErr(e) || "GitHub request failed.", refresh),
+        errorState(l10n.t("Couldn't load your work"), cleanErr(e) || l10n.t("GitHub request failed."), refresh),
       );
     }
   }

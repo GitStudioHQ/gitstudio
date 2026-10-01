@@ -10,6 +10,7 @@
 // revalidate); MUTATIONS return `{ ok, message }`, toast, bust("actions") and
 // re-render.
 
+import * as l10n from "@vscode/l10n";
 import { host } from "../bridge";
 import { isRemoteHead } from "../branchRequests";
 import { peek as cachePeek, gget, bust } from "../cache";
@@ -196,16 +197,16 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     if (v.status) f.status = v.status;
     return Object.keys(f).length ? f : undefined;
   };
-  const header = ghHeader("Actions", gate.login, refresh);
+  const header = ghHeader(l10n.t("Actions"), gate.login, refresh);
 
   const tools = el("div", "gh-head-tools");
   const seg = segmented<"runs" | "workflows">({
     options: [
-      { value: "runs", label: "Runs" },
-      { value: "workflows", label: "Workflows" },
+      { value: "runs", label: l10n.t("Runs") },
+      { value: "workflows", label: l10n.t("Workflows") },
     ],
     value: S.actionsTab,
-    ariaLabel: "Actions view",
+    ariaLabel: l10n.t("Actions view"),
     onChange: (v) => {
       S.actionsTab = v;
       renderActions(wrap, nav);
@@ -213,13 +214,13 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   });
 
   const secretsBtn = el("button", "mini-btn");
-  secretsBtn.append(glyph("lock"), span("Secrets"));
-  secretsBtn.title = "Manage this repo's Actions secrets and variables";
+  secretsBtn.append(glyph("lock"), span(l10n.t("Secrets")));
+  secretsBtn.title = l10n.t("Manage this repo's Actions secrets and variables");
   secretsBtn.addEventListener("click", () => openSecretsManager());
 
   const runBtn = el("button", "btn btn-primary gh-run-btn");
-  runBtn.append(glyph("play"), span("Run workflow"));
-  runBtn.title = "Manually trigger a workflow_dispatch";
+  runBtn.append(glyph("play"), span(l10n.t("Run workflow")));
+  runBtn.title = l10n.t("Manually trigger a workflow_dispatch");
   runBtn.addEventListener("click", () => void openDispatch(runBtn, refresh));
 
   // The facet slot is ALWAYS in the row, empty on Workflows. It is what holds
@@ -240,7 +241,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
 
   header.querySelector(".gh-head-titlewrap")?.appendChild(
     searchField({
-      placeholder: S.actionsTab === "runs" ? "Search runs…" : "Search workflows…",
+      placeholder: S.actionsTab === "runs" ? l10n.t("Search runs…") : l10n.t("Search workflows…"),
       initial: S.query,
       onInput: (q) => {
         S.query = q;
@@ -265,7 +266,11 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     } catch (e) {
       if (!view.isConnected) return;
       listEl.replaceChildren(
-        errorState("Couldn't load workflow runs", cleanErr(e) || "GitHub request failed.", () => void reloadRuns()),
+        errorState(
+          l10n.t("Couldn't load workflow runs"),
+          cleanErr(e) || l10n.t("GitHub request failed."),
+          () => void reloadRuns(),
+        ),
       );
     }
   };
@@ -285,7 +290,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       specs: [
         {
           key: "workflowId",
-          label: "Workflow",
+          label: l10n.t("Workflow"),
           icon: "play-circle",
           // The rows carry a workflow NAME but the API wants its id, and a
           // filtered list can't name workflows it excluded — so load them.
@@ -294,11 +299,21 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
             return list.map((w) => ({ value: String(w.id), label: w.name }));
           },
         },
-        { key: "branch", label: "Branch", icon: "git-branch", harvest: harvestValues<WorkflowRun>((r) => r.branch) },
-        { key: "actor", label: "Actor", icon: "person", harvest: harvestValues<WorkflowRun>((r) => r.actor?.login) },
+        {
+          key: "branch",
+          label: l10n.t("Branch"),
+          icon: "git-branch",
+          harvest: harvestValues<WorkflowRun>((r) => r.branch),
+        },
+        {
+          key: "actor",
+          label: l10n.t("Actor"),
+          icon: "person",
+          harvest: harvestValues<WorkflowRun>((r) => r.actor?.login),
+        },
         {
           key: "event",
-          label: "Event",
+          label: l10n.t("Event"),
           icon: "zap",
           // "pull_request" in the menu beside "pull request" on the row was the
           // same mismatch the Inbox had.
@@ -306,18 +321,18 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
         },
         {
           key: "status",
-          label: "Status",
+          label: l10n.t("Status"),
           icon: "pulse",
           // The five states are drawn with a colour and a glyph on every run
           // row, every job card and every step; in this menu they were plain
           // text, so the one place you PICK a state was the one place it had
           // no shape. Same lead icon the rows use.
           options: [
-            { value: "success", label: "Success", iconEl: () => runLead("success") },
-            { value: "failure", label: "Failure", iconEl: () => runLead("failure") },
-            { value: "in_progress", label: "In progress", iconEl: () => runLead("in_progress") },
-            { value: "queued", label: "Queued", iconEl: () => runLead("queued") },
-            { value: "cancelled", label: "Cancelled", iconEl: () => runLead("cancelled") },
+            { value: "success", label: l10n.t("Success"), iconEl: () => runLead("success") },
+            { value: "failure", label: l10n.t("Failure"), iconEl: () => runLead("failure") },
+            { value: "in_progress", label: l10n.t("In progress"), iconEl: () => runLead("in_progress") },
+            { value: "queued", label: l10n.t("Queued"), iconEl: () => runLead("queued") },
+            { value: "cancelled", label: l10n.t("Cancelled"), iconEl: () => runLead("cancelled") },
           ],
         },
       ],
@@ -348,8 +363,8 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     const suffix: HTMLElement[] = r.name && r.name !== r.displayTitle ? [span(r.name, "sec-run-wf")] : [];
     if (r.runAttempt > 1) {
       const att = el("span", "gh-pill sec-attempt");
-      att.textContent = `attempt ${r.runAttempt}`;
-      att.title = "This run was re-run";
+      att.textContent = l10n.t("attempt {0}", r.runAttempt);
+      att.title = l10n.t("This run was re-run");
       suffix.push(att);
     }
     // Same column contract as the other lists: every optional slot is
@@ -361,7 +376,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     // the column moved the ACTOR AVATAR to its left by the difference, so the
     // avatars zig-zagged down the list.
     const branchEl = blankable(
-      subLink(r.branch || "—", `Show ${r.branch} in Branches`, () =>
+      subLink(r.branch || "—", l10n.t("Show {0} in Branches", r.branch), () =>
         nav("branches", { ref: r.branch }),
       ),
       !!r.branch,
@@ -375,14 +390,19 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     // it carried a 72px min-width that pushed everything else out of line. The
     // icon and the row's aria-label keep it available to a screen reader.
     const row = secRow({
-      lead: runLead(state, prettyState(state) || "unknown"),
+      lead: runLead(state, prettyState(state) || l10n.t("unknown")),
       num: `#${r.runNumber || r.id}`,
       title: r.displayTitle,
       titleSuffix: suffix,
       meta,
       time: relTimeISO(r.createdAt),
-      timeTitle: r.createdAt ? `Created ${absTimeISO(r.createdAt)}` : undefined,
-      ariaLabel: `Workflow run ${r.name} #${r.runNumber}: ${prettyState(state) || "unknown"}`,
+      timeTitle: r.createdAt ? l10n.t("Created {0}", absTimeISO(r.createdAt)) : undefined,
+      ariaLabel: l10n.t(
+        "Workflow run {0} #{1}: {2}",
+        r.name,
+        r.runNumber,
+        prettyState(state) || l10n.t("unknown"),
+      ),
       onOpen: () => nav("actions", { number: r.id }),
     });
     row.dataset.num = String(r.id);
@@ -400,7 +420,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       meta.push(runLead(last.conclusion || last.status || "", prettyState(last.conclusion || last.status || "")));
       meta.push(span(`#${last.runNumber || last.id}`, "sec-run-dur"));
     } else if (runs) {
-      meta.push(span("never run"));
+      meta.push(span(l10n.t("never run")));
     }
     if (disabled) meta.push(span(w.state.replace(/_/g, " "), "gh-pill"));
     return secRow({
@@ -416,10 +436,10 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       titleSuffix: [span(w.path.split("/").pop() ?? w.path, "sec-run-wf")],
       meta,
       time: last ? relTimeISO(last.createdAt) : undefined,
-      ariaLabel: `Workflow ${w.name}${disabled ? " (disabled)" : ""}`,
+      ariaLabel: disabled ? l10n.t("Workflow {0} (disabled)", w.name) : l10n.t("Workflow {0}", w.name),
       onOpen: () => {
         if (disabled) {
-          toast("This workflow is disabled on GitHub.", "info");
+          toast(l10n.t("This workflow is disabled on GitHub."), "info");
           return;
         }
         void showDispatchModal(w, refresh);
@@ -435,10 +455,18 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       if (!runs) return;
       if (runs.length === 0) {
         listEl.appendChild(
-          emptyState("No workflow runs", "No GitHub Actions runs found for this repository.", {
-            icon: "play",
-            action: { label: "Run workflow", icon: "play", onClick: () => void openDispatch(runBtn, refresh) },
-          }),
+          emptyState(
+            l10n.t("No workflow runs"),
+            l10n.t("No GitHub Actions runs found for this repository."),
+            {
+              icon: "play",
+              action: {
+                label: l10n.t("Run workflow"),
+                icon: "play",
+                onClick: () => void openDispatch(runBtn, refresh),
+              },
+            },
+          ),
         );
         return;
       }
@@ -447,7 +475,12 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       // the unfiltered total directly above a "No matching …" empty state.
       header.setCount?.(items.length, runs.length);
       if (items.length === 0) {
-        listEl.appendChild(emptyState("No matching runs", `Nothing matches “${S.query}”.`, { icon: "search", anchor: "inline" }));
+        listEl.appendChild(
+          emptyState(l10n.t("No matching runs"), l10n.t("Nothing matches “{0}”.", S.query), {
+            icon: "search",
+            anchor: "inline",
+          }),
+        );
         return;
       }
       for (const r of items) listEl.appendChild(buildRunRow(r));
@@ -460,7 +493,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       if (!workflows) return;
       if (workflows.length === 0) {
         listEl.appendChild(
-          emptyState("No workflows", "This repo has no .github/workflows files.", { icon: "play" }),
+          emptyState(l10n.t("No workflows"), l10n.t("This repo has no .github/workflows files."), {
+            icon: "play",
+          }),
         );
         return;
       }
@@ -469,7 +504,12 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       // the unfiltered total directly above a "No matching …" empty state.
       header.setCount?.(items.length, workflows.length);
       if (items.length === 0) {
-        listEl.appendChild(emptyState("No matching workflows", `Nothing matches “${S.query}”.`, { icon: "search", anchor: "inline" }));
+        listEl.appendChild(
+          emptyState(l10n.t("No matching workflows"), l10n.t("Nothing matches “{0}”.", S.query), {
+            icon: "search",
+            anchor: "inline",
+          }),
+        );
         return;
       }
       for (const w of items) listEl.appendChild(buildWfRow(w));
@@ -533,8 +573,8 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     if (!runs && !workflows) {
       listEl.replaceChildren(
         errorState(
-          S.actionsTab === "runs" ? "Couldn't load workflow runs" : "Couldn't load workflows",
-          cleanErr(e) || "GitHub request failed.",
+          S.actionsTab === "runs" ? l10n.t("Couldn't load workflow runs") : l10n.t("Couldn't load workflows"),
+          cleanErr(e) || l10n.t("GitHub request failed."),
           refresh,
         ),
       );
@@ -613,11 +653,11 @@ function showRunDetailPage(wrap: HTMLElement, nav: SectionNav, id: number): void
   };
 
   const { view, main, rail, topActions } = detailPage({
-    backLabel: "Actions",
+    backLabel: l10n.t("Actions"),
     // The run NUMBER is the run's identity — the crumb used to show the
     // internal id ("#9100") while the title showed "#411", giving one run two
     // numbers on one screen. Set once the run loads (see paint()).
-    crumb: "Run",
+    crumb: l10n.t("Run"),
     onBack: back,
   });
   main.appendChild(skeletonList(4, false));
@@ -659,13 +699,15 @@ function showRunDetailPage(wrap: HTMLElement, nav: SectionNav, id: number): void
     } catch (e) {
       if (!view.isConnected) return;
       main.replaceChildren(
-        errorState("Couldn't load the run", cleanErr(e) || "GitHub request failed.", reload),
+        errorState(l10n.t("Couldn't load the run"), cleanErr(e) || l10n.t("GitHub request failed."), reload),
       );
       return;
     }
     if (!view.isConnected) return;
     if (!d) {
-      main.replaceChildren(emptyState("Run unavailable", "This workflow run couldn't be loaded."));
+      main.replaceChildren(
+        emptyState(l10n.t("Run unavailable"), l10n.t("This workflow run couldn't be loaded.")),
+      );
       return;
     }
     lastSig = JSON.stringify(d);
@@ -702,7 +744,7 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   // The run's identity is only known once it loads, so the page names itself
   // here rather than at construction. A page opened FROM this one then says
   // "← Run #411" instead of "← Actions".
-  setPageLabel(`Run #${runNum}`);
+  setPageLabel(l10n.t("Run #{0}", runNum));
   const state = full.conclusion || full.status || "";
   const live = isLive(full.status);
   // A re-run attempt REPLACES the logs — every pane restarts from zero.
@@ -712,30 +754,30 @@ function buildRunDetail(ctx: RunDetailCtx): void {
 
   // ── top-bar actions ──
   const rerunBtn = btn("mini-btn");
-  rerunBtn.append(glyph("refresh"), span("Re-run"));
+  rerunBtn.append(glyph("refresh"), span(l10n.t("Re-run")));
   // A disabled button that still promises what it would do is a button you
   // keep clicking. When it can't act, its tooltip says why instead.
   rerunBtn.disabled = live;
   rerunBtn.title = live
-    ? "This run is still going — you can't re-run it until it finishes"
-    : "Re-run all jobs in this run";
+    ? l10n.t("This run is still going — you can't re-run it until it finishes")
+    : l10n.t("Re-run all jobs in this run");
   rerunBtn.addEventListener("click", () => void rerunRun(full.id, runNum, rerunBtn, reload));
 
   const rerunFailedBtn = btn("mini-btn");
-  rerunFailedBtn.append(glyph("debug-restart"), span("Re-run failed"));
+  rerunFailedBtn.append(glyph("debug-restart"), span(l10n.t("Re-run failed")));
   // Nothing failed, so there is nothing to re-run: don't show a dead control.
   rerunFailedBtn.hidden = full.conclusion === "success" || live;
   rerunFailedBtn.disabled = rerunFailedBtn.hidden;
   rerunFailedBtn.title = rerunFailedBtn.disabled
-    ? "Nothing has failed in this run"
-    : "Re-run only the failed jobs";
+    ? l10n.t("Nothing has failed in this run")
+    : l10n.t("Re-run only the failed jobs");
   rerunFailedBtn.addEventListener("click", () =>
     void rerunFailed(full.id, runNum, rerunFailedBtn, reload),
   );
 
   const cancelBtn = btn("mini-btn danger");
-  cancelBtn.append(glyph("circle-slash"), span("Cancel"));
-  cancelBtn.title = "Cancel this in-progress run";
+  cancelBtn.append(glyph("circle-slash"), span(l10n.t("Cancel")));
+  cancelBtn.title = l10n.t("Cancel this in-progress run");
   // A run that finished an hour ago cannot be cancelled; a greyed-out Cancel
   // sitting there permanently is just noise.
   cancelBtn.hidden = !live;
@@ -748,21 +790,24 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   // to put the same card in different states.
   const logsBtn = btn("btn btn-primary");
   const failedJobs = d.jobs.filter((j) => j.conclusion === "failure" || j.conclusion === "timed_out");
-  logsBtn.append(glyph("output"), span(failedJobs.length ? "Read the failing log" : "Read the logs"));
+  logsBtn.append(
+    glyph("output"),
+    span(failedJobs.length ? l10n.t("Read the failing log") : l10n.t("Read the logs")),
+  );
   logsBtn.title = failedJobs.length
-    ? "Open the failing job's log full-window"
-    : "Open this run's logs full-window";
+    ? l10n.t("Open the failing job's log full-window")
+    : l10n.t("Open this run's logs full-window");
   logsBtn.disabled = d.jobs.length === 0;
-  if (logsBtn.disabled) logsBtn.title = "This run has no jobs yet";
+  if (logsBtn.disabled) logsBtn.title = l10n.t("This run has no jobs yet");
   logsBtn.addEventListener("click", () =>
     nav("joblog", { number: full.id, jobId: (failedJobs[0] ?? d.jobs[0])?.id }),
   );
 
   const openBtn = btn("mini-btn gh-icon-btn");
   openBtn.append(glyph("link-external"));
-  openBtn.title = "Open this run on GitHub";
+  openBtn.title = l10n.t("Open this run on GitHub");
   openBtn.disabled = !full.htmlUrl;
-  if (openBtn.disabled) openBtn.title = "GitHub didn't give this run a link";
+  if (openBtn.disabled) openBtn.title = l10n.t("GitHub didn't give this run a link");
   openBtn.setAttribute("aria-label", openBtn.title);
   openBtn.addEventListener("click", () => full.htmlUrl && window.open(full.htmlUrl, "_blank"));
 
@@ -776,7 +821,7 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   titleRow.appendChild(h);
   if (full.runAttempt > 1) {
     const att = el("span", "gh-pill sec-attempt det-attempt");
-    att.textContent = `attempt ${full.runAttempt}`;
+    att.textContent = l10n.t("attempt {0}", full.runAttempt);
     titleRow.appendChild(att);
   }
   main.appendChild(titleRow);
@@ -785,7 +830,7 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   if (full.branch) {
     const chip = el("button", "gh-branch-chip");
     chip.append(glyph("git-branch"), span(full.branch));
-    chip.title = `Show ${full.branch} in Branches`;
+    chip.title = l10n.t("Show {0} in Branches", full.branch);
     chip.addEventListener("click", () => nav("branches", { ref: full.branch }));
     sub.appendChild(chip);
   }
@@ -802,12 +847,14 @@ function buildRunDetail(ctx: RunDetailCtx): void {
     // releases, notifications, ref detail. This one was missed, so the
     // complaint was still one click away from the run page. The commit page
     // carries a "View in Commits" item, so that view stays reachable.
-    commit.title = subject ? `${subject} — open this commit` : "Open this commit";
+    commit.title = subject ? l10n.t("{0} — open this commit", subject) : l10n.t("Open this commit");
     commit.addEventListener("click", () => nav("commit", { sha: full.headSha }));
     sub.appendChild(commit);
   }
   const subText = el("span");
-  subText.textContent = `${full.event ? `${full.event} · ` : ""}started ${relTimeISO(full.runStartedAt || full.createdAt)}`;
+  subText.textContent = full.event
+    ? l10n.t("{0} · started {1}", full.event, relTimeISO(full.runStartedAt || full.createdAt))
+    : l10n.t("started {0}", relTimeISO(full.runStartedAt || full.createdAt));
   subText.title = absTimeISO(full.runStartedAt || full.createdAt);
   sub.appendChild(subText);
   main.appendChild(sub);
@@ -815,7 +862,7 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   // ── jobs ──
   const jobs = d.jobs;
   if (jobs.length === 0) {
-    main.appendChild(emptyState("No jobs", "This run reported no jobs yet."));
+    main.appendChild(emptyState(l10n.t("No jobs"), l10n.t("This run reported no jobs yet.")));
   } else {
     // Open by default — the steps ARE the page, and a run detail whose cards
     // are all shut is two hollow rows. Seeding says that once, as a fact about
@@ -843,13 +890,17 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   // title cannot say is HOW LONG, and on a run you are watching that is the
   // only number you actually want.
   const elapsed = runDuration(full);
-  const statusProp = live ? propSection("Running for") : undefined;
+  const statusProp = live ? propSection(l10n.t("Running for")) : undefined;
   if (statusProp) {
-    statusProp.body.appendChild(span(elapsed || "just started", "det-prop-value"));
+    statusProp.body.appendChild(span(elapsed || l10n.t("just started"), "det-prop-value"));
   }
 
   // WHO: the run's actor — and the re-runner, when someone else re-ran it.
-  const whoProp = propSection(full.triggeringActor && full.actor && full.triggeringActor.login !== full.actor.login ? "Actor · re-run by" : "Actor");
+  const whoProp = propSection(
+    full.triggeringActor && full.actor && full.triggeringActor.login !== full.actor.login
+      ? l10n.t("Actor · re-run by")
+      : l10n.t("Actor"),
+  );
   if (full.actor) {
     whoProp.body.appendChild(
       personChip(full.actor.login, full.actor.avatarUrl),
@@ -861,7 +912,7 @@ function buildRunDetail(ctx: RunDetailCtx): void {
     whoProp.body.appendChild(personChip(full.triggeringActor.login, full.triggeringActor.avatarUrl));
   }
 
-  const aboutProp = propSection("About");
+  const aboutProp = propSection(l10n.t("About"));
   aboutProp.body.classList.add("det-prop-facts");
   const fact = (k: string, v: string, title?: string): HTMLElement => {
     const row = el("div", "det-fact");
@@ -871,36 +922,38 @@ function buildRunDetail(ctx: RunDetailCtx): void {
     row.append(span(k, "det-fact-k"), val);
     return row;
   };
-  if (full.name) aboutProp.body.appendChild(fact("Workflow", full.name, full.workflowPath || undefined));
+  if (full.name) aboutProp.body.appendChild(fact(l10n.t("Workflow"), full.name, full.workflowPath || undefined));
   // (Branch and Trigger are the chips under the title — printing them again
   //  here made the rail read as an echo of the header.)
-  if (full.runAttempt > 1) aboutProp.body.appendChild(fact("Attempt", String(full.runAttempt)));
-  aboutProp.body.appendChild(fact("Jobs", String(jobs.length)));
+  if (full.runAttempt > 1) aboutProp.body.appendChild(fact(l10n.t("Attempt"), String(full.runAttempt)));
+  aboutProp.body.appendChild(fact(l10n.t("Jobs"), String(jobs.length)));
   const dur = runDuration(full);
-  if (dur) aboutProp.body.appendChild(fact("Duration", dur));
-  aboutProp.body.appendChild(fact("Queued", relTimeISO(full.createdAt), absTimeISO(full.createdAt)));
+  if (dur) aboutProp.body.appendChild(fact(l10n.t("Duration"), dur));
+  aboutProp.body.appendChild(fact(l10n.t("Queued"), relTimeISO(full.createdAt), absTimeISO(full.createdAt)));
   if (full.runStartedAt) {
-    aboutProp.body.appendChild(fact("Started", relTimeISO(full.runStartedAt), absTimeISO(full.runStartedAt)));
+    aboutProp.body.appendChild(
+      fact(l10n.t("Started"), relTimeISO(full.runStartedAt), absTimeISO(full.runStartedAt)),
+    );
   }
 
   // Linked PRs — each one click from its full workspace.
   let prsProp: { root: HTMLElement; body: HTMLElement } | undefined;
   if (full.pullRequests.length) {
-    prsProp = propSection("Pull requests");
+    prsProp = propSection(l10n.t("Pull requests"));
     for (const pr of full.pullRequests) {
       const b = btn("det-mono-btn");
       b.append(glyph("git-pull-request"), span(`#${pr.number}`));
-      b.title = `Open pull request #${pr.number}`;
+      b.title = l10n.t("Open pull request #{0}", pr.number);
       b.addEventListener("click", () => nav("prs", { number: pr.number }));
       prsProp.body.appendChild(b);
     }
   }
 
-  const idProp = propSection("Run ID");
+  const idProp = propSection(l10n.t("Run ID"));
   const idBtn = btn("det-mono-btn");
   idBtn.append(glyph("copy"), span(String(full.id)));
-  idBtn.title = "Copy the run id";
-  idBtn.addEventListener("click", () => void copyText(String(full.id), "Run id copied."));
+  idBtn.title = l10n.t("Copy the run id");
+  idBtn.addEventListener("click", () => void copyText(String(full.id), l10n.t("Run id copied.")));
   idProp.body.appendChild(idBtn);
 
   rail.append(...(statusProp ? [statusProp.root] : []), whoProp.root, aboutProp.root, ...(prsProp ? [prsProp.root] : []), idProp.root);
@@ -908,7 +961,7 @@ function buildRunDetail(ctx: RunDetailCtx): void {
 
 /** A run's status as a tinted state pill (success/failure/running/neutral). */
 function runStatePill(state: string): HTMLElement {
-  const label = prettyState(state) || "unknown";
+  const label = prettyState(state) || l10n.t("unknown");
   const p = el("span", `gh-state-pill gh-checks-${state}`);
   p.textContent = label;
   return p;
@@ -968,20 +1021,20 @@ function jobCard(j: WorkflowJob, runId: number, S: ActionsTabState, nav: Section
     if (runnerBits.length) {
       const r = el("span", "gh-job-runner");
       r.append(glyph("vm"), span(runnerBits.join(" · ")));
-      r.title = j.labels.length ? `Requested labels: ${j.labels.join(", ")}` : "Runner";
+      r.title = j.labels.length ? l10n.t("Requested labels: {0}", j.labels.join(", ")) : l10n.t("Runner");
       metaLine.appendChild(r);
     }
     if (queue) {
       const q = el("span", "gh-job-queue");
-      q.textContent = `queued ${queue}`;
-      q.title = "Time between queueing and the runner picking the job up";
+      q.textContent = l10n.t("queued {0}", queue);
+      q.title = l10n.t("Time between queueing and the runner picking the job up");
       metaLine.appendChild(q);
     }
     steps.appendChild(metaLine);
   }
   if (j.steps.length === 0) {
     const none = el("div", "gh-step-row gh-step-empty");
-    none.textContent = "No steps reported.";
+    none.textContent = l10n.t("No steps reported.");
     steps.appendChild(none);
   }
   // Per-step durations + a proportional timeline bar (widths relative to the
@@ -1034,8 +1087,8 @@ function jobCard(j: WorkflowJob, runId: number, S: ActionsTabState, nav: Section
   });
 
   const log = el("button", "row-btn gh-job-log") as HTMLButtonElement;
-  log.textContent = "Logs";
-  log.title = `Read ${j.name}'s log full-window`;
+  log.textContent = l10n.t("Logs");
+  log.title = l10n.t("Read {0}'s log full-window", j.name);
   log.addEventListener("click", (e) => {
     e.stopPropagation();
     nav("joblog", { number: runId, jobId: j.id });
@@ -1068,7 +1121,7 @@ async function showArtifacts(container: HTMLElement, runId: number): Promise<voi
 
   const section = el("div", "gh-artifacts");
   const label = el("div", "gh-artifacts-head");
-  label.append(glyph("package"), span(`Artifacts · ${items.length}`));
+  label.append(glyph("package"), span(l10n.t("Artifacts · {0}", items.length)));
   section.appendChild(label);
 
   for (const a of items) {
@@ -1078,16 +1131,16 @@ async function showArtifacts(container: HTMLElement, runId: number): Promise<voi
     t.textContent = a.name;
     const sub = el("div", "row-meta-sub");
     const size = formatBytes(a.sizeBytes) || "—";
-    sub.textContent = a.expired ? `${size} · expired` : size;
+    sub.textContent = a.expired ? l10n.t("{0} · expired", size) : size;
     info.append(t, sub);
 
     const dl = btn("mini-btn");
-    dl.append(glyph("cloud-download"), span("Download"));
+    dl.append(glyph("cloud-download"), span(l10n.t("Download")));
     if (a.expired) {
       dl.disabled = true;
-      dl.title = "This artifact has expired and is no longer downloadable";
+      dl.title = l10n.t("This artifact has expired and is no longer downloadable");
     } else {
-      dl.title = "Download this artifact's .zip to your Downloads folder";
+      dl.title = l10n.t("Download this artifact's .zip to your Downloads folder");
       dl.addEventListener("click", () => void downloadArtifactZip(a, dl));
     }
 
@@ -1103,14 +1156,14 @@ async function downloadArtifactZip(a: ArtifactInfo, btnEl: HTMLButtonElement): P
   try {
     const r = await host.invoke("actions:downloadArtifact", { id: a.id, name: a.name });
     if (!r.ok) {
-      toast(r.message ?? "Couldn't download the artifact.", "error");
+      toast(r.message ?? l10n.t("Couldn't download the artifact."), "error");
       btnEl.disabled = false;
       return;
     }
-    toast(r.message ?? `Downloaded ${a.name}.`, "success");
+    toast(r.message ?? l10n.t("Downloaded {0}.", a.name), "success");
     btnEl.disabled = false;
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't download the artifact.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't download the artifact."), "error");
     btnEl.disabled = false;
   }
 }
@@ -1134,11 +1187,11 @@ function openSecretsManager(): void {
   const card = el("div", "modal-card actions-secrets-card");
   const head = el("div", "actions-secrets-head");
   const h = el("div", "modal-title");
-  h.textContent = "Secrets & variables";
+  h.textContent = l10n.t("Secrets & variables");
   const closeBtn = el("button", "icon-btn");
   closeBtn.appendChild(glyph("close"));
-  closeBtn.title = "Close (Esc)";
-  closeBtn.setAttribute("aria-label", "Close");
+  closeBtn.title = l10n.t("Close (Esc)");
+  closeBtn.setAttribute("aria-label", l10n.t("Close"));
   head.append(h, closeBtn);
 
   const secretsSection = el("div", "actions-secrets-section");
@@ -1150,7 +1203,7 @@ function openSecretsManager(): void {
     return {
       card,
       focusEl: closeBtn,
-      label: "Secrets and variables",
+      label: l10n.t("Secrets and variables"),
       onClose: () => {
         settled = true;
       },
@@ -1172,15 +1225,15 @@ async function renderSecretsSection(section: HTMLElement, alive: () => boolean):
   // operation that was never going to run. Say it before, on the control.
   section.replaceChildren(
     sectionHeader(
-      "Secrets",
+      l10n.t("Secrets"),
       "lock",
-      "Add secret",
+      l10n.t("Add secret"),
       () => void addSecret(reload),
       CAN_SET_SECRETS ? undefined : SECRETS_UNAVAILABLE,
     ),
   );
   const listWrap = el("div", "actions-kv-list");
-  listWrap.appendChild(loadingState("Loading secrets…"));
+  listWrap.appendChild(loadingState(l10n.t("Loading secrets…")));
   section.appendChild(listWrap);
 
   let items: RepoSecretInfo[];
@@ -1189,22 +1242,22 @@ async function renderSecretsSection(section: HTMLElement, alive: () => boolean):
   } catch (e) {
     if (!alive()) return;
     listWrap.replaceChildren(
-      errorState("Couldn't load secrets", cleanErr(e) || "GitHub request failed.", reload),
+      errorState(l10n.t("Couldn't load secrets"), cleanErr(e) || l10n.t("GitHub request failed."), reload),
     );
     return;
   }
   if (!alive()) return;
   listWrap.replaceChildren();
   if (items.length === 0) {
-    listWrap.appendChild(kvEmpty("No secrets defined for this repository."));
+    listWrap.appendChild(kvEmpty(l10n.t("No secrets defined for this repository.")));
     return;
   }
   for (const s of items) {
     const updated = relTimeISO(s.updatedAt);
-    const row = kvRow(s.name, updated ? `Updated ${updated}` : "", s.updatedAt);
+    const row = kvRow(s.name, updated ? l10n.t("Updated {0}", updated) : "", s.updatedAt);
     const del = btn("row-btn danger");
-    del.textContent = "Delete";
-    del.title = `Delete the secret “${s.name}”`;
+    del.textContent = l10n.t("Delete");
+    del.title = l10n.t("Delete the secret “{0}”", s.name);
     del.addEventListener("click", () => void deleteSecret(s.name, del, reload));
     row.appendChild(del);
     listWrap.appendChild(row);
@@ -1215,10 +1268,15 @@ async function renderSecretsSection(section: HTMLElement, alive: () => boolean):
 async function renderVariablesSection(section: HTMLElement, alive: () => boolean): Promise<void> {
   const reload = (): void => void renderVariablesSection(section, alive);
   section.replaceChildren(
-    sectionHeader("Variables", "symbol-variable", "Add variable", () => void addVariable(reload)),
+    sectionHeader(
+      l10n.t("Variables"),
+      "symbol-variable",
+      l10n.t("Add variable"),
+      () => void addVariable(reload),
+    ),
   );
   const listWrap = el("div", "actions-kv-list");
-  listWrap.appendChild(loadingState("Loading variables…"));
+  listWrap.appendChild(loadingState(l10n.t("Loading variables…")));
   section.appendChild(listWrap);
 
   let items: RepoVariableInfo[];
@@ -1227,25 +1285,25 @@ async function renderVariablesSection(section: HTMLElement, alive: () => boolean
   } catch (e) {
     if (!alive()) return;
     listWrap.replaceChildren(
-      errorState("Couldn't load variables", cleanErr(e) || "GitHub request failed.", reload),
+      errorState(l10n.t("Couldn't load variables"), cleanErr(e) || l10n.t("GitHub request failed."), reload),
     );
     return;
   }
   if (!alive()) return;
   listWrap.replaceChildren();
   if (items.length === 0) {
-    listWrap.appendChild(kvEmpty("No variables defined for this repository."));
+    listWrap.appendChild(kvEmpty(l10n.t("No variables defined for this repository.")));
     return;
   }
   for (const v of items) {
     const row = kvRow(v.name, v.value, v.updatedAt);
     const edit = btn("row-btn");
-    edit.textContent = "Edit";
-    edit.title = `Edit the variable “${v.name}”`;
+    edit.textContent = l10n.t("Edit");
+    edit.title = l10n.t("Edit the variable “{0}”", v.name);
     edit.addEventListener("click", () => void editVariable(v, edit, reload));
     const del = btn("row-btn danger");
-    del.textContent = "Delete";
-    del.title = `Delete the variable “${v.name}”`;
+    del.textContent = l10n.t("Delete");
+    del.title = l10n.t("Delete the variable “{0}”", v.name);
     del.addEventListener("click", () => void deleteVariable(v.name, del, reload));
     row.append(edit, del);
     listWrap.appendChild(row);
@@ -1270,7 +1328,7 @@ function sectionHeader(
   if (unavailable) {
     (add as HTMLButtonElement).disabled = true;
     add.title = unavailable;
-    add.setAttribute("aria-label", `${addLabel} — ${unavailable}`);
+    add.setAttribute("aria-label", l10n.t("{0} — {1}", addLabel, unavailable));
   } else {
     add.addEventListener("click", onAdd);
   }
@@ -1305,9 +1363,9 @@ function kvEmpty(text: string): HTMLElement {
 const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 function invalidName(name: string): string | null {
   if (!NAME_RE.test(name)) {
-    return "Names may use only letters, digits, and underscores, and can't start with a digit.";
+    return l10n.t("Names may use only letters, digits, and underscores, and can't start with a digit.");
   }
-  if (/^github_/i.test(name)) return "Names can't start with the reserved “GITHUB_” prefix.";
+  if (/^github_/i.test(name)) return l10n.t("Names can't start with the reserved “GITHUB_” prefix.");
   return null;
 }
 
@@ -1322,8 +1380,9 @@ function invalidName(name: string): string | null {
 const CAN_SET_SECRETS: boolean = false;
 /** Why, in one sentence — used on the disabled control AND in the guard, so
  *  the button and the flow can never tell different stories. */
-const SECRETS_UNAVAILABLE =
-  "Adding secrets needs the libsodium encryption library, which isn't bundled in this build. Add one on github.com; deleting works here.";
+const SECRETS_UNAVAILABLE = l10n.t(
+  "Adding secrets needs the libsodium encryption library, which isn't bundled in this build. Add one on github.com; deleting works here.",
+);
 
 async function addSecret(reload: () => void): Promise<void> {
   // Before the first prompt, not after the second. The flow used to ask for the
@@ -1333,25 +1392,31 @@ async function addSecret(reload: () => void): Promise<void> {
     toast(SECRETS_UNAVAILABLE, "info");
     return;
   }
-  const name = await promptInline("New secret", "SECRET_NAME", "", "Next");
+  const name = await promptInline(l10n.t("New secret"), "SECRET_NAME", "", l10n.t("Next"));
   if (name == null) return;
   const bad = invalidName(name);
   if (bad) {
     toast(bad, "error");
     return;
   }
-  const value = await promptInline(`Value for ${name}`, "Secret value", "", "Save secret", true);
+  const value = await promptInline(
+    l10n.t("Value for {0}", name),
+    l10n.t("Secret value"),
+    "",
+    l10n.t("Save secret"),
+    true,
+  );
   if (value == null) return;
   try {
     const r = await host.invoke("actions:setSecret", { name, value });
     if (!r.ok) {
-      toast(r.message ?? "Couldn't save the secret.", "error");
+      toast(r.message ?? l10n.t("Couldn't save the secret."), "error");
       return;
     }
-    toast(`Saved secret ${name}.`, "success");
+    toast(l10n.t("Saved secret {0}.", name), "success");
     reload();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't save the secret.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't save the secret."), "error");
   }
 }
 
@@ -1361,9 +1426,9 @@ async function deleteSecret(
   reload: () => void,
 ): Promise<void> {
   const confirmed = await confirmDialog({
-    title: `Delete secret ${name}?`,
-    message: "Workflows that reference this secret will lose access to it.",
-    confirmLabel: "Delete secret",
+    title: l10n.t("Delete secret {0}?", name),
+    message: l10n.t("Workflows that reference this secret will lose access to it."),
+    confirmLabel: l10n.t("Delete secret"),
     danger: true,
   });
   if (!confirmed) return;
@@ -1371,27 +1436,33 @@ async function deleteSecret(
   try {
     const r = await host.invoke("actions:deleteSecret", name);
     if (!r.ok) {
-      toast(r.message ?? "Couldn't delete the secret.", "error");
+      toast(r.message ?? l10n.t("Couldn't delete the secret."), "error");
       btnEl.disabled = false;
       return;
     }
-    toast(`Deleted secret ${name}.`, "success");
+    toast(l10n.t("Deleted secret {0}.", name), "success");
     reload();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't delete the secret.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't delete the secret."), "error");
     btnEl.disabled = false;
   }
 }
 
 async function addVariable(reload: () => void): Promise<void> {
-  const name = await promptInline("New variable", "VARIABLE_NAME", "", "Next");
+  const name = await promptInline(l10n.t("New variable"), "VARIABLE_NAME", "", l10n.t("Next"));
   if (name == null) return;
   const bad = invalidName(name);
   if (bad) {
     toast(bad, "error");
     return;
   }
-  const value = await promptInline(`Value for ${name}`, "Variable value", "", "Save variable", true);
+  const value = await promptInline(
+    l10n.t("Value for {0}", name),
+    l10n.t("Variable value"),
+    "",
+    l10n.t("Save variable"),
+    true,
+  );
   if (value == null) return;
   await saveVariable(name, value, reload);
 }
@@ -1401,7 +1472,13 @@ async function editVariable(
   btnEl: HTMLButtonElement,
   reload: () => void,
 ): Promise<void> {
-  const value = await promptInline(`Edit ${v.name}`, "Variable value", v.value, "Save", true);
+  const value = await promptInline(
+    l10n.t("Edit {0}", v.name),
+    l10n.t("Variable value"),
+    v.value,
+    l10n.t("Save"),
+    true,
+  );
   if (value == null) return;
   btnEl.disabled = true;
   await saveVariable(v.name, value, reload);
@@ -1412,13 +1489,13 @@ async function saveVariable(name: string, value: string, reload: () => void): Pr
   try {
     const r = await host.invoke("actions:setVariable", { name, value });
     if (!r.ok) {
-      toast(r.message ?? "Couldn't save the variable.", "error");
+      toast(r.message ?? l10n.t("Couldn't save the variable."), "error");
       return;
     }
-    toast(`Saved variable ${name}.`, "success");
+    toast(l10n.t("Saved variable {0}.", name), "success");
     reload();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't save the variable.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't save the variable."), "error");
   }
 }
 
@@ -1428,9 +1505,9 @@ async function deleteVariable(
   reload: () => void,
 ): Promise<void> {
   const confirmed = await confirmDialog({
-    title: `Delete variable ${name}?`,
-    message: "Workflows that reference this variable will lose its value.",
-    confirmLabel: "Delete variable",
+    title: l10n.t("Delete variable {0}?", name),
+    message: l10n.t("Workflows that reference this variable will lose its value."),
+    confirmLabel: l10n.t("Delete variable"),
     danger: true,
   });
   if (!confirmed) return;
@@ -1438,14 +1515,14 @@ async function deleteVariable(
   try {
     const r = await host.invoke("actions:deleteVariable", name);
     if (!r.ok) {
-      toast(r.message ?? "Couldn't delete the variable.", "error");
+      toast(r.message ?? l10n.t("Couldn't delete the variable."), "error");
       btnEl.disabled = false;
       return;
     }
-    toast(`Deleted variable ${name}.`, "success");
+    toast(l10n.t("Deleted variable {0}.", name), "success");
     reload();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't delete the variable.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't delete the variable."), "error");
     btnEl.disabled = false;
   }
 }
@@ -1466,14 +1543,14 @@ async function rerunRun(
   try {
     const r = await host.invoke("actions:rerun", id);
     if (!r.ok) {
-      toast(r.message ?? "Couldn't re-run.", "error");
+      toast(r.message ?? l10n.t("Couldn't re-run."), "error");
       btn.disabled = false;
       return;
     }
-    toast(`Re-running run #${num}.`, "success");
+    toast(l10n.t("Re-running run #{0}.", num), "success");
     reload();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't re-run.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't re-run."), "error");
     btn.disabled = false;
   }
 }
@@ -1488,14 +1565,14 @@ async function rerunFailed(
   try {
     const r = await host.invoke("actions:rerunFailed", id);
     if (!r.ok) {
-      toast(r.message ?? "Couldn't re-run failed jobs.", "error");
+      toast(r.message ?? l10n.t("Couldn't re-run failed jobs."), "error");
       btn.disabled = false;
       return;
     }
-    toast(`Re-running failed jobs for run #${num}.`, "success");
+    toast(l10n.t("Re-running failed jobs for run #{0}.", num), "success");
     reload();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't re-run failed jobs.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't re-run failed jobs."), "error");
     btn.disabled = false;
   }
 }
@@ -1507,9 +1584,9 @@ async function cancelRun(
   reload: () => void,
 ): Promise<void> {
   const confirmed = await confirmDialog({
-    title: `Cancel run #${num}?`,
-    message: "This stops the in-progress run on GitHub.",
-    confirmLabel: "Cancel run",
+    title: l10n.t("Cancel run #{0}?", num),
+    message: l10n.t("This stops the in-progress run on GitHub."),
+    confirmLabel: l10n.t("Cancel run"),
     danger: true,
   });
   if (!confirmed) return;
@@ -1517,14 +1594,14 @@ async function cancelRun(
   try {
     const r = await host.invoke("actions:cancel", id);
     if (!r.ok) {
-      toast(r.message ?? "Couldn't cancel the run.", "error");
+      toast(r.message ?? l10n.t("Couldn't cancel the run."), "error");
       btn.disabled = false;
       return;
     }
-    toast(`Cancelled run #${num}.`, "success");
+    toast(l10n.t("Cancelled run #{0}.", num), "success");
     reload();
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't cancel the run.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't cancel the run."), "error");
     btn.disabled = false;
   }
 }
@@ -1540,12 +1617,12 @@ async function openDispatch(anchor: HTMLElement, refresh: () => void): Promise<v
   try {
     wfs = await gget("actions:workflows", undefined, 60000);
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't load workflows.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't load workflows."), "error");
     return;
   }
   const active = wfs.filter((w) => w.state === "active");
   if (active.length === 0) {
-    toast("No runnable workflows in this repo.", "info");
+    toast(l10n.t("No runnable workflows in this repo."), "info");
     return;
   }
   if (active.length === 1) {
@@ -1572,7 +1649,7 @@ async function showDispatchModal(w: WorkflowInfo, refresh: () => void): Promise<
   try {
     inputs = await host.invoke("actions:dispatchInputs", w.id);
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't read the workflow's inputs.", "error");
+    toast(cleanErr(e) || l10n.t("Couldn't read the workflow's inputs."), "error");
     return;
   }
   const [refOptions, currentRef] = await Promise.all([loadRefOptions(), currentBranchName()]);
@@ -1580,14 +1657,14 @@ async function showDispatchModal(w: WorkflowInfo, refresh: () => void): Promise<
   openModal((close) => {
     const card = el("div", "modal-card gh-pr-form actions-dispatch-card");
     const h = el("div", "modal-title");
-    h.textContent = `Run “${w.name}”`;
+    h.textContent = l10n.t("Run “{0}”", w.name);
     const sub = el("div", "actions-dispatch-path");
     sub.textContent = w.path;
     card.append(h, sub);
 
     const refField = comboField({
-      label: "Branch or tag (ref)",
-      placeholder: "Search branches and tags…",
+      label: l10n.t("Branch or tag (ref)"),
+      placeholder: l10n.t("Search branches and tags…"),
       value: currentRef,
       options: refOptions,
       rowClass: "gh-form-row",
@@ -1621,7 +1698,7 @@ async function showDispatchModal(w: WorkflowInfo, refresh: () => void): Promise<
         const input = document.createElement("input");
         input.className = "modal-input";
         input.placeholder =
-          inp.type === "boolean" ? "true / false" : inp.description || inp.name;
+          inp.type === "boolean" ? l10n.t("true / false") : inp.description || inp.name;
         input.value = inp.default ?? "";
         if (inp.description) input.title = inp.description;
         row.appendChild(input);
@@ -1631,21 +1708,23 @@ async function showDispatchModal(w: WorkflowInfo, refresh: () => void): Promise<
     }
     if (inputs.length === 0) {
       const note = el("div", "gh-dispatch-note");
-      note.textContent = "This workflow declares no inputs. It will run on the ref you choose above.";
+      note.textContent = l10n.t(
+        "This workflow declares no inputs. It will run on the ref you choose above.",
+      );
       card.appendChild(note);
     }
 
     const actions = el("div", "modal-actions");
     const cancel = btn("mini-btn");
-    cancel.append(span("Cancel"));
+    cancel.append(span(l10n.t("Cancel")));
     cancel.addEventListener("click", close);
     const submit = btn("btn btn-primary modal-ok");
-    submit.append(glyph("play"), span("Run workflow"));
+    submit.append(glyph("play"), span(l10n.t("Run workflow")));
     submit.addEventListener("click", () => {
       const ref = refField.input.value.trim();
       if (!ref) {
         refField.input.focus();
-        toast("A ref (branch or tag) is required.", "error");
+        toast(l10n.t("A ref (branch or tag) is required."), "error");
         return;
       }
       const map: Record<string, string> = {};
@@ -1658,17 +1737,17 @@ async function showDispatchModal(w: WorkflowInfo, refresh: () => void): Promise<
         try {
           const r = await host.invoke("actions:dispatch", { workflowId: w.id, ref, inputs: map });
           if (!r.ok) {
-            toast(r.message ?? "Couldn't start the workflow.", "error");
+            toast(r.message ?? l10n.t("Couldn't start the workflow."), "error");
             submit.disabled = false;
             return;
           }
-          toast(`Dispatched “${w.name}” on ${ref}.`, "success");
+          toast(l10n.t("Dispatched “{0}” on {1}.", w.name, ref), "success");
           close();
           bust("actions");
           actionsTabState().actionsTab = "runs";
           refresh();
         } catch (e) {
-          toast(cleanErr(e) || "Couldn't start the workflow.", "error");
+          toast(cleanErr(e) || l10n.t("Couldn't start the workflow."), "error");
           submit.disabled = false;
         }
       })();
@@ -1676,7 +1755,12 @@ async function showDispatchModal(w: WorkflowInfo, refresh: () => void): Promise<
     actions.append(cancel, submit);
     card.appendChild(actions);
 
-    return { card, focusEl: refField.input, label: `Run workflow ${w.name}`, onClose: () => {} };
+    return {
+      card,
+      focusEl: refField.input,
+      label: l10n.t("Run workflow {0}", w.name),
+      onClose: () => {},
+    };
   });
 }
 
@@ -1719,5 +1803,24 @@ async function loadRefOptions(): Promise<string[]> {
 
 /** Humanize a raw status/conclusion token ("in_progress" → "in progress"). */
 function prettyState(state: string): string {
-  return state ? state.replace(/_/g, " ") : "";
+  if (!state) return "";
+  const map: Record<string, string> = {
+    success: l10n.t("success"),
+    failure: l10n.t("failure"),
+    in_progress: l10n.t("in progress"),
+    queued: l10n.t("queued"),
+    cancelled: l10n.t("cancelled"),
+    canceled: l10n.t("cancelled"),
+    skipped: l10n.t("skipped"),
+    timed_out: l10n.t("timed out"),
+    action_required: l10n.t("action required"),
+    neutral: l10n.t("neutral"),
+    startup_failure: l10n.t("startup failure"),
+    stale: l10n.t("stale"),
+    waiting: l10n.t("waiting"),
+    requested: l10n.t("requested"),
+    pending: l10n.t("pending"),
+    completed: l10n.t("completed"),
+  };
+  return map[state] ?? state.replace(/_/g, " ");
 }
