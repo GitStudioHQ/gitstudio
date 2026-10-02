@@ -61,7 +61,10 @@ function sources() {
 
 /** "file:line: code" for the first line that asks for `key`. */
 function whereOf(files, key) {
-  const quoted = [JSON.stringify(key), `'${key.replace(/'/g, "\\'")}'`];
+  // The message as a double- or single-quoted literal: backslashes first, then
+  // the quote, so a message holding either is written as the source writes it.
+  const single = key.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const quoted = [JSON.stringify(key), `'${single}'`];
   for (const f of files) {
     const at = f.lines.findIndex((line) => quoted.some((q) => line.includes(q)));
     if (at >= 0) return `${f.path}:${at + 1}: ${f.lines[at].trim().slice(0, 200)}`;
