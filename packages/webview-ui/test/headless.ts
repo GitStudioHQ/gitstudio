@@ -25,11 +25,12 @@
 
 import { build } from "esbuild";
 import { execFile } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { headlessChromeArgs } from "../../../scripts/test/no-network-chrome.mjs";
 import { chromeCandidates } from "./findChrome.mjs";
+import { removeTempDir } from "../../../scripts/test/removeTempDir.mjs";
 
 const DESKTOP_CHROME = /Google Chrome\.app/;
 
@@ -197,7 +198,7 @@ window.addEventListener("message", (e) => {
       (err, stdout) => {
         // The page is read; its directory goes now, whatever the verdict. It
         // used to stay — hundreds a night in $TMPDIR on a nearly full disk.
-        rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+        removeTempDir(dir);
         if (err && !stdout) return res({ fails: [`chrome failed: ${err.message}`] });
         const m = /<title>CHECK ([\s\S]*?)<\/title>/.exec(stdout);
         if (!m) {

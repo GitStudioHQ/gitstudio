@@ -10,13 +10,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { execFile } from "node:child_process";
-import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { decodeVerdictTitle, findChrome } from "../../../packages/webview-ui/test/headless";
 import { headlessChromeArgs } from "../../../scripts/test/no-network-chrome.mjs";
 import { prPageCsp, prPageHtml } from "../src/pr/prPageHtml";
 import { pageScenes } from "../../../packages/webview-ui/test/fixtures/prPageFixtures";
+import { removeTempDir } from "../../../scripts/test/removeTempDir.mjs";
 
 const CHROME = findChrome();
 const ROOT = join(__dirname, "..", "..", "..");
@@ -96,6 +97,6 @@ test("the page's own policy lets it paint: no refusal, labels and the merge meth
     assert.ok(m, `a verdict (title: ${/<title>([\s\S]*?)<\/title>/.exec(stdout)?.[1]})`);
     assert.deepEqual(JSON.parse(decodeVerdictTitle(m[1])).fails, []);
   } finally {
-    rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+    removeTempDir(dir);
   }
 });

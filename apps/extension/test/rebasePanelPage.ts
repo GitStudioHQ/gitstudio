@@ -16,7 +16,7 @@
 // headless-tests-never-drive-users-chrome). A machine with none skips.
 
 import { build } from "esbuild";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -27,6 +27,7 @@ import { findChrome } from "../../../packages/webview-ui/test/headless";
 import { Browser, type Page } from "../../../scripts/merge-e2e/cdp";
 import { BODY_CLASS, VSCODE_THEMES, type VsCodeTheme } from "../../../scripts/merge-e2e/themes";
 import { describeRebaseBase } from "../src/rebase/rebaseBase";
+import { removeTempDir } from "../../../scripts/test/removeTempDir.mjs";
 
 export type { VsCodeTheme };
 
@@ -352,7 +353,7 @@ export class RebasePanelPage {
   async close(): Promise<void> {
     await this.browser.close();
     try {
-      rmSync(this.dir, { recursive: true, force: true });
+      removeTempDir(this.dir);
     } catch {
       /* the OS tmpdir is swept anyway */
     }

@@ -1,0 +1,16 @@
+# What graphify leaves out of the code graph (gitignore syntax; .gitignore applies too).
+# Built bundles and generated pages: copies of the source, not more of it.
+**/dist/
+**/out/
+apps/desktop/release/
+apps/desktop/harness/page*/
+apps/desktop/harness/checks.js
+apps/desktop/harness/requirements.js
+coverage/
+# Translation catalogs and bundles: data, ~90k lines of it.
+l10n/
+**/l10n/*.json
+**/package.nls*.json
+# Vendored and fixture trees.
+**/vendor/
+**/test-fixtures/

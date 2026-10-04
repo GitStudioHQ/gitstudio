@@ -1234,7 +1234,9 @@ test("the page tells the host which rows are in view — and again as they scrol
   opened.push(page);
   const many = Array.from({ length: 20 }, (_, i) => row({ path: `/code/wt-${i}`, name: `wt-${String(i).padStart(2, "0")}` }));
   await page.send({ type: "rows", rows: many, state: "ok", labels: LABELS });
-  await page.settle(120);
+  // The report is debounced: wait for it, never for a fixed time — a slow
+  // runner posted it after 120 ms and the test read the list before it.
+  await page.page.waitFor(`window.__posted.some(function (m) { return m.type === "visible" && m.paths.indexOf("/code/wt-0") >= 0; })`);
   const lastVisible = async () => {
     const posted = await page.posted();
     const v = posted.filter((m) => m.type === "visible").pop();
@@ -1244,7 +1246,7 @@ test("the page tells the host which rows are in view — and again as they scrol
   assert.ok(first.includes("/code/wt-0"));
   assert.ok(!first.includes("/code/wt-19"), "not the rows out of view");
   await page.eval(`document.querySelector('.wt-row[data-path="/code/wt-19"]').scrollIntoView()`);
-  await page.settle(120);
+  await page.page.waitFor(`window.__posted.some(function (m) { return m.type === "visible" && m.paths.indexOf("/code/wt-19") >= 0; })`);
   const second = await lastVisible();
   assert.ok(second.includes("/code/wt-19"));
   assert.ok(!second.includes("/code/wt-0"));
