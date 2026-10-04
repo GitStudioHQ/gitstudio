@@ -17,7 +17,7 @@ jobs:
   # failure there yields a half-published release instead of a red PR.
   #
   # Windows runs the suite three times slower than the others (about 75 min in
-  # one job), so it is split by workspace into three jobs that run side by side
+  # one job), so it is split by workspace into four jobs that run side by side
   # (scripts/test/shard.mjs; "all" runs everything).
   test:
     name: test (${{ matrix.os }}${{ matrix.shard != 'all' && format(', {0}', matrix.label) || '' }})
@@ -29,6 +29,7 @@ jobs:
           - { os: macos-14, shard: all, label: all }
           - { os: windows-latest, shard: extension, label: extension }
           - { os: windows-latest, shard: desktop, label: desktop }
+          - { os: windows-latest, shard: git, label: git-service }
           - { os: windows-latest, shard: rest, label: packages }
     runs-on: ${{ matrix.os }}
     steps:

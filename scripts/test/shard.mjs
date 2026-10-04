@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Run one shard of the test suite: `extension`, `desktop`, or `rest` (every
-// other workspace with tests, found from package.json — so a new workspace is
-// never left out of CI by a hand-kept list).
+// Run one shard of the test suite: `extension`, `desktop`, `git` (git-service),
+// or `rest` (every other workspace with tests, found from package.json — so a
+// new workspace is never left out of CI by a hand-kept list).
 //
 //   node scripts/test/shard.mjs rest
 import { spawnSync } from "node:child_process";
@@ -9,10 +9,10 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dirname, "../..");
-const OWN = { extension: "apps/extension", desktop: "apps/desktop" };
+const OWN = { extension: "apps/extension", desktop: "apps/desktop", git: "packages/git-service" };
 const shard = process.argv[2];
 if (!shard || !(shard in OWN || shard === "rest")) {
-  console.error("usage: node scripts/test/shard.mjs extension|desktop|rest");
+  console.error("usage: node scripts/test/shard.mjs extension|desktop|git|rest");
   process.exit(2);
 }
 const all = [];
