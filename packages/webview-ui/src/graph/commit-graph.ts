@@ -3398,7 +3398,8 @@ export class CommitGraph extends LitElement {
       // The id is what `aria-activedescendant` on the grid points at. Selection
       // lived in a class alone, so a screen reader on this grid heard nothing
       // as you arrowed through history — every row carries a good aria-label
-      // and none of them was ever announced.
+      // and none of them was ever announced. A row must hold cells, so each
+      // column below is a gridcell.
       `<div class="${cls}" role="row" id="gs-row-${row.sha}" data-sha="${row.sha}" ` +
       (canReorder ? `title="${l10n.t("Drag to reorder")}" ` : "") +
       (this.chainShas.length > 0 && this.isFirstInert(row.sha)
@@ -3406,8 +3407,8 @@ export class CommitGraph extends LitElement {
         : "") +
       `aria-selected="${selected ? "true" : "false"}" aria-label="${label}" ` +
       `style="transform:translateY(${item.start}px)">` +
-      `<div class="gutter">${gutter}${avatar}</div>` +
-      `<div class="content">` +
+      `<div class="gutter" role="gridcell">${gutter}${avatar}</div>` +
+      `<div class="content" role="gridcell">` +
         `<div class="refs">${refs}</div>` +
         // data-text drives the same hover card the ref chips use, and it opens
         // ONLY when the subject is actually clipped (see shouldOpen in
@@ -3416,12 +3417,12 @@ export class CommitGraph extends LitElement {
         // had to cut off is not a way to read commit messages.
         `<div class="subject" data-text="${esc(row.subject)}">${esc(row.subject)}</div>` +
       `</div>` +
-      `<div class="changes">${isWip ? "" : this.changesHtml(row.sha)}</div>` +
+      `<div class="changes" role="gridcell">${isWip ? "" : this.changesHtml(row.sha)}</div>` +
       (isWip
-        ? `<div class="meta author"></div>`
-        : `<div class="meta author" data-author="${esc(this.authorTipData(row))}"` +
+        ? `<div class="meta author" role="gridcell"></div>`
+        : `<div class="meta author" role="gridcell" data-author="${esc(this.authorTipData(row))}"` +
           ` aria-label="${esc(row.author)} <${esc(row.authorEmail)}>">${esc(row.author)}</div>`) +
-      `<div class="meta date" title="${esc(absTime(row.authorDate))}">${isWip ? "now" : esc(dateLabel(row.authorDate))}</div>` +
+      `<div class="meta date" role="gridcell" title="${esc(absTime(row.authorDate))}">${isWip ? "now" : esc(dateLabel(row.authorDate))}</div>` +
       shaCellHtml(row.sha, row.shortSha, isWip) +
       `</div>`
     );
@@ -4868,11 +4869,11 @@ function chipHtml(entry: ChipEntry): string {
  */
 function shaCellHtml(fullSha: string, shortSha: string, isWip: boolean): string {
   if (isWip) {
-    return `<div class="meta sha" data-wip="1"></div>`;
+    return `<div class="meta sha" role="gridcell" data-wip="1"></div>`;
   }
   const short = esc(shortSha);
   return (
-    `<div class="meta sha" data-sha-cell="1" data-label="${short}" ` +
+    `<div class="meta sha" role="gridcell" data-sha-cell="1" data-label="${short}" ` +
     `title="${l10n.t("Click to copy {0}", esc(fullSha))}">` +
     `${short}<span class="codicon codicon-copy" aria-hidden="true"></span>` +
     `</div>`
