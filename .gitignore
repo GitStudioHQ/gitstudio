@@ -35,3 +35,6 @@ coverage/
 
 # Translation work batches (scripts/i18n/todo.mjs)
 l10n/.todo/
+
+# graphify: the code graph is built locally (see CLAUDE.md), never committed
+graphify-out/

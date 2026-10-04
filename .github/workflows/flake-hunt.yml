@@ -1,0 +1,44 @@
+name: Flake hunt
+
+# Runs the whole suite three times on every OS, once a week (and on demand),
+# so a test that passes only sometimes is found on a quiet Sunday — not in the
+# middle of a release, which is where the last few were found. A red run here
+# names the test; fix it to wait for what it checks instead of a fixed time.
+on:
+  schedule:
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hunt:
+    name: hunt (${{ matrix.os }}, ${{ matrix.shard }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, windows-latest]
+        shard: [extension, desktop, rest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Headless Chrome for the webview checks (macOS)
+        if: runner.os == 'macOS'
+        run: npx --yes playwright@1.63.0 install chromium-headless-shell
+      - name: Three runs
+        shell: bash
+        run: |
+          failed=0
+          for i in 1 2 3; do
+            echo "::group::run $i"
+            node scripts/test/shard.mjs ${{ matrix.shard }} || { failed=$((failed + 1)); echo "::error::run $i failed"; }
+            echo "::endgroup::"
+          done
+          [ "$failed" = 0 ] || { echo "::error::$failed of 3 runs failed — a flaky test (see the run's ::error:: lines)"; exit 1; }

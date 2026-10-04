@@ -17,7 +17,7 @@
 // chrome-headless-shell — and never the desktop Chrome on a Mac (memory:
 // headless-tests-never-drive-users-chrome). A machine with none skips.
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -28,6 +28,7 @@ import { fillHole, l10nHoles } from "./pageHoles";
 import { findChrome } from "../../../packages/webview-ui/test/headless";
 import { Browser, type Page } from "../../../scripts/merge-e2e/cdp";
 import { BODY_CLASS, VSCODE_THEMES, type VsCodeTheme } from "../../../scripts/merge-e2e/themes";
+import { removeTempDir } from "../../../scripts/test/removeTempDir.mjs";
 
 export type { VsCodeTheme };
 
@@ -413,7 +414,7 @@ export class ChangesPage {
   async close(): Promise<void> {
     await this.browser.close();
     try {
-      rmSync(this.dir, { recursive: true, force: true });
+      removeTempDir(this.dir);
     } catch {
       /* the OS tmpdir is swept anyway */
     }

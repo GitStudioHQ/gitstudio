@@ -15,11 +15,21 @@ jobs:
   # Tests run on every OS the release workflows build on — otherwise a tagged
   # release is the FIRST time the suite ever executes on windows/mac, and a
   # failure there yields a half-published release instead of a red PR.
+  #
+  # Windows runs the suite three times slower than the others (about 75 min in
+  # one job), so it is split by workspace into three jobs that run side by side
+  # (scripts/test/shard.mjs; "all" runs everything).
   test:
+    name: test (${{ matrix.os }}${{ matrix.shard != 'all' && format(', {0}', matrix.label) || '' }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-14, windows-latest]
+        include:
+          - { os: ubuntu-latest, shard: all, label: all }
+          - { os: macos-14, shard: all, label: all }
+          - { os: windows-latest, shard: extension, label: extension }
+          - { os: windows-latest, shard: desktop, label: desktop }
+          - { os: windows-latest, shard: rest, label: packages }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -48,8 +58,12 @@ jobs:
       # c8 run per workspace, merged by line (scripts/test/coverage.mjs says
       # why a single run over the whole repo reported shared files wrong).
       - name: Test
-        if: matrix.os != 'ubuntu-latest'
+        if: matrix.os != 'ubuntu-latest' && matrix.shard == 'all'
         run: npm test
+
+      - name: Test (${{ matrix.label }})
+        if: matrix.shard != 'all'
+        run: node scripts/test/shard.mjs ${{ matrix.shard }}
 
       - name: Test (with coverage)
         if: matrix.os == 'ubuntu-latest'

@@ -12,7 +12,7 @@
 // never the desktop Chrome on a Mac.
 
 import { execFile } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -20,6 +20,7 @@ import { headlessChromeArgs } from "../../../scripts/test/no-network-chrome.mjs"
 import { decodeVerdictTitle, findChrome } from "../../../packages/webview-ui/test/headless";
 import { changeRowsScript } from "./changesPage";
 import { filledTemplate, l10nHoles } from "./pageHoles";
+import { removeTempDir } from "../../../scripts/test/removeTempDir.mjs";
 
 export { findChrome };
 
@@ -230,7 +231,7 @@ export async function runChangesView(
     }
     return JSON.parse(decodeVerdictTitle(m[1]));
   } finally {
-    rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+    removeTempDir(dir);
   }
 }
 
@@ -245,6 +246,6 @@ export async function screenshotChangesView(
   try {
     await run([`--screenshot=${out}`]);
   } finally {
-    rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+    removeTempDir(dir);
   }
 }

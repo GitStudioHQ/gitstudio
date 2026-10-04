@@ -26,6 +26,7 @@ on:
 
 permissions:
   contents: write
+  checks: read
   # finalize-release opens the Homebrew cask PR (main's ruleset forbids a direct
   # push). Without this the branch pushes and `gh pr create` fails with
   # "Resource not accessible by integration".
@@ -48,6 +49,14 @@ jobs:
               console.error(`Tag app-v${tag} != package.json version ${v}`);
               process.exit(1);
             }'
+
+      # CI already tested this exact commit on every OS; the release waits for
+      # that verdict instead of running the suite again (scripts/release/ci-passed.mjs).
+      - name: "Guard: CI passed on this commit"
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release/ci-passed.mjs "$GITHUB_SHA"
 
       - name: Create the GitHub Release (once, before the matrix)
         if: startsWith(github.ref, 'refs/tags/')
@@ -135,18 +144,8 @@ jobs:
       - name: Install (workspace root)
         run: npm ci
 
-      # As in ci.yml: the macOS runners' own Chrome hangs on exit in headless
-      # mode, and the webview checks time out at random. They run in the
-      # windowless headless shell instead, which findChrome prefers.
-      - name: Headless Chrome for the webview checks (macOS)
-        if: startsWith(matrix.os, 'macos')
-        run: npx --yes playwright@1.63.0 install chromium-headless-shell
-
-      - name: Type-check
-        run: npm run check-types --workspaces --if-present
-
-      - name: Test
-        run: npm test
+      # No test run here: create-release refused to start unless CI passed on
+      # this commit, on every OS (scripts/release/ci-passed.mjs).
 
       - name: Build bundles (main / preload / renderer)
         run: npm run build --workspace apps/desktop
