@@ -36,6 +36,9 @@ class EventEmitter {
     };
   }
   fire(value) {
+    if (this === stub.onDidChangeTabs && value === undefined) {
+      value = { opened: [], changed: stub.tabGroupsAll.flatMap((group) => group.tabs), closed: [] };
+    }
     for (const l of [...this._listeners]) l(value);
   }
   dispose() {
@@ -72,6 +75,12 @@ class Uri {
 class ThemeColor {
   constructor(id) {
     this.id = id;
+  }
+}
+class TabInputTextDiff {
+  constructor(original, modified) {
+    this.original = original;
+    this.modified = modified;
   }
 }
 class RelativePattern {
@@ -145,7 +154,9 @@ const stub = {
   onDidChangeExtensions: new EventEmitter(),
   /** Every WorkspaceEdit handed to workspace.applyEdit, in order. */
   applied: [],
+  shownDocuments: [],
   reset() {
+    this.shownDocuments.length = 0;
     this.applied.length = 0;
     this.panels.length = 0;
     this.messages.length = 0;
@@ -183,6 +194,7 @@ function createWebviewPanel(viewType, title, showOptions, options) {
     viewType,
     title,
     showOptions,
+    viewColumn: typeof showOptions === "number" ? showOptions : showOptions.viewColumn,
     options,
     posted: [],
     revealed: [],
@@ -233,6 +245,10 @@ function createWebviewPanel(viewType, title, showOptions, options) {
 const window = {
   activeTextEditor: undefined,
   createWebviewPanel,
+  showTextDocument: async (document, options) => {
+    stub.shownDocuments.push({ document, options });
+    return { document };
+  },
   showInformationMessage: toast("info"),
   showWarningMessage: toast("warn"),
   showErrorMessage: toast("error"),
@@ -325,6 +341,7 @@ const workspace = {
     return doc;
   },
   fs: {
+    isWritableFileSystem: (scheme) => scheme === "file" || scheme === "vscode-remote",
     readFile: async () => new Uint8Array(),
   },
 };
@@ -334,6 +351,7 @@ module.exports = {
   Disposable,
   EventEmitter,
   Uri,
+  TabInputTextDiff,
   ThemeColor,
   RelativePattern,
   Position,

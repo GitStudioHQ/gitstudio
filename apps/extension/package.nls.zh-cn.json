@@ -1,4 +1,5 @@
 {
+  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "自动在 GitStudio 中打开 VS Code 文本差异，包括源代码管理、文件比较和修订比较。独立于 `#gitstudio.merge.autoOpen#`。二进制差异和自定义编辑器保持不变。关闭后，后续比较将使用 VS Code。如果两个扩展均启用此设置，则由 GitStudio 处理差异。",
   "capabilities.virtualWorkspaces.description": "GitStudio 需要磁盘上的本地 git 仓库。",
   "command.gitstudio.abortRebase.title": "中止变基",
   "command.gitstudio.addRemote.title": "添加远程仓库…",

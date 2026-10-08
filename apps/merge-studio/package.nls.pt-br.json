@@ -1,4 +1,5 @@
 {
+  "config.jbMerge.useAsDefaultDiffViewer.markdownDescription": "Abrir automaticamente diferenças de texto do VS Code no Merge Studio, incluindo controle de código-fonte e comparações de arquivos e revisões. Independente de `#jbMerge.autoOpen#`. Diferenças binárias e editores personalizados permanecem inalterados. Desative para usar o VS Code nas próximas comparações. Se ambas as extensões ativarem esta opção, o GitStudio cuidará das diferenças.",
   "capabilities.untrustedWorkspaces.description": "O Merge Studio funciona através da extensão Git integrada do VS Code, que o Modo Restrito desativa. Confie nesta pasta para usar o Merge Studio.",
   "capabilities.virtualWorkspaces.description": "O Merge Studio exige um repositório git local em disco.",
   "command.jbMerge.compare.title": "Comparar no Merge Studio",

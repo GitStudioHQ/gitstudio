@@ -56,6 +56,18 @@ code   --install-extension gitstudio.gitstudio    # VS Code
 cursor --install-extension gitstudio.gitstudio    # Cursor
 ```
 
+To use GitStudio's compare viewer for VS Code text diffs (Source Control,
+Explorer comparisons, history and `vscode.diff`), enable
+`gitstudio.merge.useAsDefaultDiffViewer` in Settings. It is off by default and
+independent of conflict auto-open. With the standalone Merge Studio extension,
+use `jbMerge.useAsDefaultDiffViewer` instead. If both are enabled, GitStudio
+handles diffs. Binary/custom-editor diffs stay native, and a comparison that
+cannot be loaded keeps its original tab. This uses VS Code's stable tab API,
+so the native diff may briefly appear before the comparison opens. Unsaved
+source tabs are kept; editing the comparison opens the writable document in
+a background text tab for normal saving and close prompts. Disable the setting
+to restore VS Code for future diffs.
+
 ### Desktop app
 
 **One line:**

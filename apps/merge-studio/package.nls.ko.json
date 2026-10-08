@@ -1,4 +1,5 @@
 {
+  "config.jbMerge.useAsDefaultDiffViewer.markdownDescription": "소스 제어, 파일 비교 및 리비전 비교를 포함한 VS Code 텍스트 차이를 Merge Studio에서 자동으로 엽니다. `#jbMerge.autoOpen#`과 독립적입니다. 바이너리 차이와 사용자 지정 편집기는 그대로 유지됩니다. 끄면 이후 비교에 VS Code를 사용합니다. 두 확장 모두 이 설정을 켜면 GitStudio가 차이를 처리합니다.",
   "capabilities.untrustedWorkspaces.description": "Merge Studio는 VS Code 내장 Git 확장을 통해 작동하며, 제한 모드에서는 이 확장이 꺼집니다. Merge Studio를 사용하려면 이 폴더를 신뢰하세요.",
   "capabilities.virtualWorkspaces.description": "Merge Studio는 디스크의 로컬 Git 리포지토리가 필요합니다.",
   "command.jbMerge.compare.title": "Merge Studio에서 비교",
