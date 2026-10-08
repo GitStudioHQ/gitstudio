@@ -95,6 +95,7 @@ Run **Merge Studio: Open Sample Merge** from the Command Palette. A rebase stop 
 | --- | --- |
 | F7 / Shift+F7 | Next / previous change |
 | Cmd+Z / Shift+Cmd+Z (Ctrl on Windows and Linux) | Undo / redo a merge action |
+| Cmd+C / Cmd+V / Cmd+X (Ctrl on Windows and Linux) | Copy / paste / cut in the center result editor. Side panes support copy only. |
 | Enter or Space on a focused gutter button | Take that change (» or «), or ignore it (✕) |
 
 ## Settings
