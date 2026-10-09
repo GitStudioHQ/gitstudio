@@ -320,6 +320,7 @@ export class DiffPanel {
         preserveFocus: true,
         preview: false,
       });
+      this.panel.reveal(this.panel.viewColumn, true);
     }
     // The webview already shows this text; do not bounce it back as a refresh.
     this.applyingEdit = true;
