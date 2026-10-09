@@ -1233,6 +1233,13 @@
             "markdownDescription": "%config.gitstudio.merge.autoOpen.markdownDescription%",
             "order": 1
           },
+          "gitstudio.merge.useAsDefaultDiffViewer": {
+            "type": "boolean",
+            "default": false,
+            "scope": "window",
+            "order": 3,
+            "markdownDescription": "%config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription%"
+          },
           "gitstudio.merge.autoApplyNonConflicting": {
             "type": "boolean",
             "default": false,

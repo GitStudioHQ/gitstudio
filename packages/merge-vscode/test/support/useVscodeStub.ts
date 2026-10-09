@@ -39,6 +39,7 @@ export interface StubPanel {
   visible: boolean;
   /** How many times the page's HTML was set — each set reloads the page. */
   htmlSets: number;
+  showOptions: unknown;
   /** Also what VS Code does when the user closes the tab. */
   dispose(): void;
   /** The page posting a message to the host. */
@@ -67,6 +68,8 @@ export interface VscodeStub {
   onDidChangeExtensions: { fire(event?: unknown): void };
   /** window.onDidChangeActiveTextEditor's emitter. */
   onDidChangeActiveTextEditor: { fire(editor: unknown): void };
+  onDidChangeTabs: { fire(event?: unknown): void };
+  shownDocuments: { document: unknown; options: unknown }[];
   /** Every WorkspaceEdit handed to workspace.applyEdit, in order. */
   applied: { edits: { text?: string; newEol?: number }[] }[];
   /** workspace.onDidChangeTextDocument's emitter: fire({ document, contentChanges }). */

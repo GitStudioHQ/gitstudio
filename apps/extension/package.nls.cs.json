@@ -1,4 +1,5 @@
 {
+  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "Automaticky otevírat textové rozdíly VS Code v GitStudiu: správa zdrojového kódu, porovnání souborů a revizí. Nezávislé na `#gitstudio.merge.autoOpen#`. Binární rozdíly a vlastní editory zůstávají ve VS Code. Vypnutím se budoucí rozdíly otevřou ve VS Code. Pokud tuto volbu zapnou obě rozšíření, rozdíly zpracuje GitStudio.",
   "capabilities.virtualWorkspaces.description": "GitStudio vyžaduje místní repozitář gitu na disku.",
   "command.gitstudio.abortRebase.title": "Zrušit rebase",
   "command.gitstudio.addRemote.title": "Přidat vzdálený repozitář…",

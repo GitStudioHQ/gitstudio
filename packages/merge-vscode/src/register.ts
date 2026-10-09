@@ -17,6 +17,7 @@ import type { OperationOutcome, OperationView } from "@gitstudio/host-bridge/con
 import { locate, targetUri } from "./args";
 import { decideExplicitOpen } from "./autoRoute";
 import { registerAutoRoute } from "./autoRouteHost";
+import { registerDiffAutoRoute } from "./diffAutoRoute";
 import {
   maybeOfferCoexistence,
   maybeSayDeferred,
@@ -218,6 +219,7 @@ export function registerMergeExperience(
     sample.disposable,
     MergeEditorProvider.register(host),
     DiffPanel.register(host),
+    registerDiffAutoRoute(host),
     dashboard,
     status,
     registerAutoRoute(host, openEmbedded),
