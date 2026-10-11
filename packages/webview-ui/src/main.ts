@@ -143,7 +143,12 @@ function startDiff(root: HTMLElement, first: DiffInitPayload & { type: "diffInit
   };
 
   let syncTimer = 0;
+  let editedSent = false;
   view.onRightChanged = () => {
+    if (!editedSent) {
+      editedSent = true;
+      vscodeApi.postMessage({ type: "diffEdited" });
+    }
     if (syncTimer) {
       window.clearTimeout(syncTimer);
     }

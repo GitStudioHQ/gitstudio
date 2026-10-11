@@ -122,6 +122,12 @@ export interface MergePeerApi {
   coexistenceAnswered(): boolean;
   /** This product opened its own walkthrough in this window's session. */
   walkthroughOpenedThisSession?(): boolean;
+  /**
+   * The diff of these two sides (URI strings) was just opened by this
+   * product's own views, for VS Code's diff editor: the other product's
+   * default-diff-viewer routing leaves it alone.
+   */
+  ownsDiff?(original: string, modified: string): boolean;
 }
 
 /** MergeProduct.sidesTip: an upgrader who saw the sides the other way round. */

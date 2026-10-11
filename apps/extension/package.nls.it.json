@@ -1,5 +1,4 @@
 {
-  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "Apri automaticamente le differenze di testo di VS Code in GitStudio, inclusi il controllo del codice sorgente e i confronti di file e revisioni. Indipendente da `#gitstudio.merge.autoOpen#`. Le differenze binarie e gli editor personalizzati restano invariati. Disattiva per usare VS Code nei confronti futuri. Se entrambe le estensioni attivano questa opzione, se ne occupa GitStudio.",
   "capabilities.virtualWorkspaces.description": "GitStudio richiede un repository git locale su disco.",
   "command.gitstudio.abortRebase.title": "Interrompi rebase",
   "command.gitstudio.addRemote.title": "Aggiungi remoto…",
@@ -200,6 +199,7 @@
   "config.gitstudio.merge.autoApplyNonConflicting.description": "Apri l'editor di merge con ogni modifica senza conflitti già applicata (il \"applica modifiche senza conflitti\" all'apertura di JetBrains). Disattivato: aspettano te, un clic ciascuna o tutte insieme dalla barra degli strumenti.",
   "config.gitstudio.merge.autoOpen.markdownDescription": "Quando un merge, rebase, cherry-pick, revert, git am o pop dello stash si ferma per conflitti: mostra la dashboard **Conflitti**, apri un file in conflitto nell'editor di merge di GitStudio non appena ci passi sopra, e sostituisci la scheda integrata dell'editor di merge di VS Code. Disattivato: niente si apre da solo — usa **GitStudio: Resolve Conflicts…**. (Prima questo apriva ogni file in conflitto come una propria scheda.) Se è installato anche Merge Studio, questo lo lascia a GitStudio; disattivalo per lasciare che sia Merge Studio ad aprire i conflitti.",
   "config.gitstudio.merge.title": "Merge e diff",
+  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "Apri automaticamente le differenze di testo di VS Code in GitStudio, inclusi il controllo del codice sorgente e i confronti di file e revisioni. Indipendente da `#gitstudio.merge.autoOpen#`. Le differenze binarie e gli editor personalizzati restano invariati. Disattiva per usare VS Code nei confronti futuri. Se entrambe le estensioni attivano questa opzione, se ne occupa GitStudio. Le differenze che GitStudio apre dalle proprie viste (Modifiche, Grafico dei commit, cronologia, confronto) restano nell'editor delle differenze di VS Code.",
   "config.gitstudio.pr.defaultMergeMethod.description": "Metodo predefinito offerto per primo quando si unisce una pull request.",
   "config.gitstudio.pr.defaultMergeMethod.enumDescriptions.0": "Crea un commit di merge.",
   "config.gitstudio.pr.defaultMergeMethod.enumDescriptions.1": "Esegui lo squash dei commit della PR in uno e unisci.",

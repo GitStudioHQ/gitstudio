@@ -1,5 +1,4 @@
 {
-  "config.jbMerge.useAsDefaultDiffViewer.markdownDescription": "Автоматически открывать текстовые сравнения VS Code в Merge Studio, включая управление исходным кодом, сравнение файлов и ревизий. Независимо от `#jbMerge.autoOpen#`. Двоичные сравнения и пользовательские редакторы не меняются. Выключите, чтобы будущие сравнения открывались в VS Code. Если обе расширения включают эту настройку, сравнения обрабатывает GitStudio.",
   "capabilities.untrustedWorkspaces.description": "Merge Studio работает через встроенное расширение Git VS Code, которое отключается в ограниченном режиме. Доверьте этой папке, чтобы использовать Merge Studio.",
   "capabilities.virtualWorkspaces.description": "Для работы Merge Studio требуется локальный git-репозиторий на диске.",
   "command.jbMerge.compare.title": "Сравнить в Merge Studio",
@@ -18,6 +17,7 @@
   "command.jbMerge.support.title": "Поддержать Merge Studio…",
   "config.jbMerge.autoApplyNonConflicting.description": "При открытии файла применять каждое изменение, сделанное только одной стороной, и каждое изменение, сделанное обеими сторонами одинаково. Конфликты никогда не применяются автоматически. «Сбросить» возвращает к этой начальной точке.",
   "config.jbMerge.autoOpen.markdownDescription": "Открывать конфликтующие файлы в Merge Studio и показывать панель конфликтов, когда слияние, перебазирование, cherry-pick, обращение коммита, git am или извлечение тайника останавливаются на конфликтах. Если также установлен GitStudio с той же панелью конфликтов и включённым `#gitstudio.merge.autoOpen#`, вместо этого делает это GitStudio.",
+  "config.jbMerge.useAsDefaultDiffViewer.markdownDescription": "Автоматически открывать текстовые сравнения VS Code в Merge Studio, включая управление исходным кодом, сравнение файлов и ревизий. Независимо от `#jbMerge.autoOpen#`. Двоичные сравнения и пользовательские редакторы не меняются. Выключите, чтобы будущие сравнения открывались в VS Code. Если оба расширения включают эту настройку, сравнения обрабатывает GitStudio. Сравнения, которые GitStudio открывает из своих представлений, остаются в редакторе сравнений VS Code.",
   "config.undefined.title": "Merge Studio",
   "customEditor.jbMerge.mergeEditor.displayName": "Merge Studio (трёхстороннее слияние)",
   "description": "Разрешайте конфликты слияния и перебазирования Git в трёхпанельном редакторе в стиле JetBrains, с панелью конфликтов, цветовой кодировкой изменений, полной отменой и параллельными различиями.",

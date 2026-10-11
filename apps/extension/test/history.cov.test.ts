@@ -324,7 +324,8 @@ test("the Timeline pages a file's commits newest first, each opening that commit
   assert.match(top.detail?.value ?? "", /a body with \\<b\\>html\\<\/b\\>/, "the body is shown, markdown-escaped");
   assert.match(second.detail?.value ?? "", /\*\*v2 \\\[with\\\] \\\*markdown\\\*\*\*/, "the subject is bold and escaped");
   assert.match(second.detail?.value ?? "", /\nT <t@example\\\.com>\n/, "author and email");
-  assert.equal(second.command?.command, "vscode.diff");
+  // vscode.diff's arguments, through the command that keeps it in VS Code's diff editor (ownDiffs).
+  assert.equal(second.command?.command, "gitstudio.openNativeDiff");
   const [left, right, title] = second.command!.arguments as [FakeUri, FakeUri, string];
   assert.deepEqual(side(left), { root: f.dir, rev: `${s2}~1`, relPath: "f.txt", readPath: "f.txt" });
   assert.deepEqual(side(right), { root: f.dir, rev: s2, relPath: "f.txt", readPath: "f.txt" });

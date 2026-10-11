@@ -1,5 +1,4 @@
 {
-  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "Abrir automáticamente las diferencias de texto de VS Code en GitStudio, incluidos el control de código fuente y las comparaciones de archivos y revisiones. Independiente de `#gitstudio.merge.autoOpen#`. Las diferencias binarias y los editores personalizados no cambian. Desactiva para usar VS Code en futuras comparaciones. Si ambas extensiones activan esta opción, GitStudio se encarga.",
   "capabilities.virtualWorkspaces.description": "GitStudio necesita un repositorio Git local en disco.",
   "command.gitstudio.abortRebase.title": "Abortar rebase",
   "command.gitstudio.addRemote.title": "Agregar remoto…",
@@ -200,6 +199,7 @@
   "config.gitstudio.merge.autoApplyNonConflicting.description": "Abre el editor de fusión con todos los cambios sin conflicto ya aplicados (el \"aplicar cambios sin conflicto\" al abrir de JetBrains). Desactivado: esperan a que los apliques, uno a uno o todos a la vez desde la barra de herramientas.",
   "config.gitstudio.merge.autoOpen.markdownDescription": "Cuando una fusión, rebase, cherry-pick, reversión, git am o pop de stash se detiene por conflictos: muestra el panel de **Conflictos**, abre un archivo en conflicto en el editor de fusión de GitStudio en cuanto cambias a él, y toma el control de la pestaña del editor de fusión integrado de VS Code. Desactivado: nada se abre por sí solo — usa **GitStudio: Resolve Conflicts…**. (Esto antes abría cada archivo en conflicto en su propia pestaña.) Si Merge Studio también está instalado, GitStudio le deja esto a él; desactiva esto para que Merge Studio abra los conflictos en su lugar.",
   "config.gitstudio.merge.title": "Fusión y diff",
+  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "Abrir automáticamente las diferencias de texto de VS Code en GitStudio, incluidos el control de código fuente y las comparaciones de archivos y revisiones. Independiente de `#gitstudio.merge.autoOpen#`. Las diferencias binarias y los editores personalizados no cambian. Desactiva para usar VS Code en futuras comparaciones. Si ambas extensiones activan esta opción, GitStudio se encarga. Las diferencias que GitStudio abre desde sus propias vistas (Cambios, Grafo de commits, historial, comparación) se quedan en el editor de diferencias de VS Code.",
   "config.gitstudio.pr.defaultMergeMethod.description": "Método predeterminado ofrecido primero al fusionar un pull request.",
   "config.gitstudio.pr.defaultMergeMethod.enumDescriptions.0": "Crear un commit de fusión.",
   "config.gitstudio.pr.defaultMergeMethod.enumDescriptions.1": "Hacer squash de los commits del PR en uno y fusionar.",

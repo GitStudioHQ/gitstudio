@@ -6,6 +6,7 @@ import type { FileHistoryEntry } from "@gitstudio/git-service/index";
 import { HistoryProvider } from "@gitstudio/git-service/HistoryProvider";
 import { sameFolder } from "@gitstudio/git-service/WorktreeProvider";
 import * as l10n from "@vscode/l10n";
+import { openWithoutRouting } from "@gitstudio/merge-vscode/ownDiffs";
 
 /** The URI scheme our historical file contents are served under. */
 export const REVISION_SCHEME = "gitstudio-rev";
@@ -136,6 +137,14 @@ export function blameChangeSides(
   };
 }
 
+/**
+ * An internal command (not in the palette) that opens `vscode.diff`'s
+ * arguments in VS Code's diff editor, for an item whose click VS Code runs
+ * (a Timeline entry): GitStudio's own diffs stay out of the default diff
+ * viewer's routing (merge-vscode's ownDiffs.ts).
+ */
+export const OPEN_NATIVE_DIFF_COMMAND = "gitstudio.openNativeDiff";
+
 /** Open a diff of `rel` between two sides. */
 export async function openSidesDiff(
   root: string,
@@ -143,8 +152,7 @@ export async function openSidesDiff(
   sides: { left: RevisionSide; right: RevisionSide },
   title: string,
 ): Promise<void> {
-  await vscode.commands.executeCommand(
-    "vscode.diff",
+  await openWithoutRouting(
     revisionSideUri(root, rel, sides.left),
     revisionSideUri(root, rel, sides.right),
     title,
@@ -251,8 +259,7 @@ export async function openRevisionDiff(
   const computedTitle =
     title ?? `${fileName} (${shortRev(rev)} ↔ ${rightLabel})`;
 
-  await vscode.commands.executeCommand(
-    "vscode.diff",
+  await openWithoutRouting(
     leftUri,
     rightUri,
     computedTitle,

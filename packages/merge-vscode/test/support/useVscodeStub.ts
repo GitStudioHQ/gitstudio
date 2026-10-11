@@ -70,6 +70,8 @@ export interface VscodeStub {
   onDidChangeActiveTextEditor: { fire(editor: unknown): void };
   onDidChangeTabs: { fire(event?: unknown): void };
   shownDocuments: { document: unknown; options: unknown }[];
+  /** Dirty tabs whose close VS Code would have confirmed (Save / Don't Save / Cancel). */
+  closePrompts: unknown[];
   /** Every WorkspaceEdit handed to workspace.applyEdit, in order. */
   applied: { edits: { text?: string; newEol?: number }[] }[];
   /** workspace.onDidChangeTextDocument's emitter: fire({ document, contentChanges }). */

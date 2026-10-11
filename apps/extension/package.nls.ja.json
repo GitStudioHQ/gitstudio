@@ -1,5 +1,4 @@
 {
-  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "ソース管理、ファイル比較、リビジョン比較など、VS Code のテキスト差分を GitStudio で自動的に開きます。`#gitstudio.merge.autoOpen#` とは独立しています。バイナリ差分とカスタムエディターは変更しません。オフにすると、今後の差分は VS Code で開きます。両方の拡張機能で有効にした場合は GitStudio が差分を処理します。",
   "capabilities.virtualWorkspaces.description": "GitStudioにはディスク上のローカルGitリポジトリが必要です。",
   "command.gitstudio.abortRebase.title": "リベースを中止",
   "command.gitstudio.addRemote.title": "リモートを追加…",
@@ -200,6 +199,7 @@
   "config.gitstudio.merge.autoApplyNonConflicting.description": "すべての非コンフリクトの変更が既に適用された状態でマージエディターを開きます（JetBrainsの「適用：非コンフリクトの変更」を開いたときの動作）。オフの場合: それらはそのまま残り、1つずつクリックするか、ツールバーから一括で適用できます。",
   "config.gitstudio.merge.autoOpen.markdownDescription": "マージ、リベース、チェリーピック、リバート、git am、またはスタッシュのポップがコンフリクトで停止したとき: **コンフリクト** ダッシュボードを表示し、切り替えた時点でコンフリクトのあるファイルをGitStudioのマージエディターで開き、VS Code組み込みのマージエディタータブを引き継ぎます。オフの場合: 何も自動的には開きません — **GitStudio: コンフリクトを解決…** を使用してください。（以前はコンフリクトのあるファイルをそれぞれ別タブで開いていました。）Merge Studioも同時にインストールされている場合、これはGitStudioに任されます。Merge Studioの方でコンフリクトを開かせたい場合は、これをオフにしてください。",
   "config.gitstudio.merge.title": "マージと差分",
+  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "ソース管理、ファイル比較、リビジョン比較など、VS Code のテキスト差分を GitStudio で自動的に開きます。`#gitstudio.merge.autoOpen#` とは独立しています。バイナリ差分とカスタムエディターは変更しません。オフにすると、今後の差分は VS Code で開きます。両方の拡張機能で有効にした場合は GitStudio が差分を処理します。GitStudio が自身のビュー (変更、コミットグラフ、履歴、比較) から開く差分は、VS Code の差分エディターで開きます。",
   "config.gitstudio.pr.defaultMergeMethod.description": "プルリクエストをマージする際に最初に提示される既定の方法。",
   "config.gitstudio.pr.defaultMergeMethod.enumDescriptions.0": "マージコミットを作成します。",
   "config.gitstudio.pr.defaultMergeMethod.enumDescriptions.1": "PRのコミットを1つにsquashしてマージします。",

@@ -1,5 +1,4 @@
 {
-  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "Automaticky otevírat textové rozdíly VS Code v GitStudiu: správa zdrojového kódu, porovnání souborů a revizí. Nezávislé na `#gitstudio.merge.autoOpen#`. Binární rozdíly a vlastní editory zůstávají ve VS Code. Vypnutím se budoucí rozdíly otevřou ve VS Code. Pokud tuto volbu zapnou obě rozšíření, rozdíly zpracuje GitStudio.",
   "capabilities.virtualWorkspaces.description": "GitStudio vyžaduje místní repozitář gitu na disku.",
   "command.gitstudio.abortRebase.title": "Zrušit rebase",
   "command.gitstudio.addRemote.title": "Přidat vzdálený repozitář…",
@@ -200,6 +199,7 @@
   "config.gitstudio.merge.autoApplyNonConflicting.description": "Otevřít editor sloučení s již použitými všemi nekonfliktními změnami (obdoba „apply non-conflicting changes“ z JetBrains při otevření). Vypnuto: čekají na vás, jednotlivě po kliknutí nebo všechny najednou z panelu nástrojů.",
   "config.gitstudio.merge.autoOpen.markdownDescription": "Když se sloučení, rebase, cherry-pick, revert, git am nebo stash pop zastaví na konfliktech: zobrazit přehled **Conflicts**, otevřít konfliktní soubor v editoru sloučení GitStudio hned po přepnutí na něj a převzít vestavěnou záložku editoru sloučení VS Code. Vypnuto: nic se neotevře samo — použijte **GitStudio: Resolve Conflicts…**. (Dříve se takto otevíral každý konfliktní soubor jako samostatná záložka.) Pokud je nainstalováno i Merge Studio, nechá to na GitStudiu; vypnutím umožníte, aby konflikty otevíralo místo toho Merge Studio.",
   "config.gitstudio.merge.title": "Sloučení a diff",
+  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "Automaticky otevírat textové rozdíly VS Code v GitStudiu: správa zdrojového kódu, porovnání souborů a revizí. Nezávislé na `#gitstudio.merge.autoOpen#`. Binární rozdíly a vlastní editory zůstávají ve VS Code. Vypnutím se budoucí rozdíly otevřou ve VS Code. Pokud tuto volbu zapnou obě rozšíření, rozdíly zpracuje GitStudio. Rozdíly, které GitStudio otevírá ze svých zobrazení (Změny, Graf commitů, historie, porovnání), zůstávají v editoru rozdílů VS Code.",
   "config.gitstudio.pr.defaultMergeMethod.description": "Výchozí metoda nabídnutá jako první při slučování pull requestu.",
   "config.gitstudio.pr.defaultMergeMethod.enumDescriptions.0": "Vytvořit merge commit.",
   "config.gitstudio.pr.defaultMergeMethod.enumDescriptions.1": "Squashnout commity PR do jednoho a sloučit.",

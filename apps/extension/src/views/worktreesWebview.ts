@@ -48,6 +48,7 @@ import {
 } from "./worktreesView";
 import * as l10n from "@vscode/l10n";
 import { l10nWebviewScript } from "@gitstudio/l10n/index";
+import { openWithoutRouting } from "@gitstudio/merge-vscode/ownDiffs";
 
 // The Worktrees view — a webview (it was a native tree that could show one
 // line per worktree and nothing else). Its page is packages/webview-ui's
@@ -624,8 +625,7 @@ export class WorktreesWebviewProvider implements vscode.WebviewViewProvider, vsc
     }
     const left = { rev: "", path: f.oldPath ?? f.path };
     const right = f.status === "D" ? { rev: EMPTY_TREE, path: f.path } : { rev: undefined };
-    await vscode.commands.executeCommand(
-      "vscode.diff",
+    await openWithoutRouting(
       revisionSideUri(root, f.path, left),
       revisionSideUri(root, f.path, right),
       title(l10n.t("Index ↔ Working Tree")),

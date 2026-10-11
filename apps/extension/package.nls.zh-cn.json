@@ -1,5 +1,4 @@
 {
-  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "自动在 GitStudio 中打开 VS Code 文本差异，包括源代码管理、文件比较和修订比较。独立于 `#gitstudio.merge.autoOpen#`。二进制差异和自定义编辑器保持不变。关闭后，后续比较将使用 VS Code。如果两个扩展均启用此设置，则由 GitStudio 处理差异。",
   "capabilities.virtualWorkspaces.description": "GitStudio 需要磁盘上的本地 git 仓库。",
   "command.gitstudio.abortRebase.title": "中止变基",
   "command.gitstudio.addRemote.title": "添加远程仓库…",
@@ -200,6 +199,7 @@
   "config.gitstudio.merge.autoApplyNonConflicting.description": "打开合并编辑器时已应用所有不冲突的更改（JetBrains 的“打开时应用不冲突的更改”）。关闭：它们会等你处理，可逐个点击或从工具栏一次性全部应用。",
   "config.gitstudio.merge.autoOpen.markdownDescription": "当合并、变基、拣选、还原、git am 或贮藏弹出因冲突而停止时：显示**冲突**面板，在你切换到某个冲突文件时立即在 GitStudio 合并编辑器中打开它，并接管 VS Code 内置的合并编辑器标签页。关闭：不会自动打开任何东西 — 请使用 **GitStudio：解决冲突…**。（这在过去会把每个冲突文件作为独立标签页打开。）如果同时安装了 Merge Studio，它会把这交给 GitStudio；关闭此项可让 Merge Studio 改为打开冲突。",
   "config.gitstudio.merge.title": "合并与差异",
+  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "自动在 GitStudio 中打开 VS Code 文本差异，包括源代码管理、文件比较和修订比较。独立于 `#gitstudio.merge.autoOpen#`。二进制差异和自定义编辑器保持不变。关闭后，后续比较将使用 VS Code。如果两个扩展均启用此设置，则由 GitStudio 处理差异。GitStudio 从自身视图（更改、提交图、历史记录、比较）打开的差异仍使用 VS Code 的差异编辑器。",
   "config.gitstudio.pr.defaultMergeMethod.description": "合并拉取请求时首先提供的默认方式。",
   "config.gitstudio.pr.defaultMergeMethod.enumDescriptions.0": "创建一个合并提交。",
   "config.gitstudio.pr.defaultMergeMethod.enumDescriptions.1": "将 PR 的提交压缩为一个并合并。",

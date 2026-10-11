@@ -136,6 +136,8 @@ const stub = {
   opened: [],
   watchers: [],
   closedTabs: [],
+  /** Dirty tabs whose close VS Code would confirm ("Save / Don't Save / Cancel"), as tabGroups.close met them. */
+  closePrompts: [],
   config: {},
   extensions: {},
   /** Answer a toast: (kind, message, actions) => chosen action | undefined. */
@@ -166,6 +168,7 @@ const stub = {
     this.opened.length = 0;
     this.watchers.length = 0;
     this.closedTabs.length = 0;
+    this.closePrompts.length = 0;
     this.config = {};
     this.extensions = {};
     this.answer = undefined;
@@ -184,6 +187,30 @@ function toast(kind) {
     stub.messages.push({ kind, message, actions: items });
     return Promise.resolve(stub.answer ? stub.answer(kind, message, items) : undefined);
   };
+}
+
+/**
+ * VS Code's close confirmation (EditorGroupView.doHandleCloseConfirmation),
+ * for duck-typed text and diff tabs: closing a dirty tab asks to save unless
+ * its document stays open on its own in another tab, or the same diff does
+ * (a text tab also counts as staying open in a diff that shows it on the right).
+ */
+function confirmsClose(tab, closing) {
+  if (!tab.isDirty) return false;
+  const input = tab.input || {};
+  const isDiff = (i) => i.original !== undefined || i.modified !== undefined;
+  const doc = String(isDiff(input) ? input.modified : input.uri);
+  const others = stub.tabGroupsAll.flatMap((g) => g.tabs).filter((t) => t !== tab && !closing.includes(t));
+  return !others.some((other) => {
+    const o = other.input || {};
+    if (o.viewType !== undefined || o.notebookType !== undefined) return false;
+    if (isDiff(o)) {
+      return isDiff(input)
+        ? String(o.original) === String(input.original) && String(o.modified) === String(input.modified)
+        : String(o.modified) === doc;
+    }
+    return o.uri !== undefined && String(o.uri) === doc;
+  });
 }
 
 function createWebviewPanel(viewType, title, showOptions, options) {
@@ -284,6 +311,7 @@ const window = {
     },
     close: async (tabs) => {
       const list = Array.isArray(tabs) ? tabs : [tabs];
+      for (const tab of list) if (confirmsClose(tab, list)) stub.closePrompts.push(tab);
       if (stub.onCloseTabs) await stub.onCloseTabs(list);
       stub.closedTabs.push(...list);
       for (const g of stub.tabGroupsAll) g.tabs = g.tabs.filter((t) => !list.includes(t));
