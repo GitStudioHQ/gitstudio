@@ -23,6 +23,8 @@ export interface API {
   readonly onDidOpenRepository: Event<Repository>;
   readonly onDidCloseRepository: Event<Repository>;
   getRepository(uri: Uri): Repository | null;
+  /** vscode.git's own `git:` URI for `uri` at `ref` ("~" index-or-HEAD, "" index, "HEAD"). */
+  toGitUri(uri: Uri, ref: string): Uri;
 }
 
 export enum Status {

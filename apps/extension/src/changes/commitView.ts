@@ -1354,6 +1354,8 @@ export class CommitViewProvider
         const isMerge = pool === state.mergeChanges;
         void openChangeDiff(
           new ChangeFileNode(isMerge ? "merge" : kind, active.root, change),
+          // vscode.git knows this change, so its own URIs can serve the diff.
+          (uri, ref) => this.repos.gitUri(uri, ref),
         );
         return;
       }

@@ -169,6 +169,8 @@ export interface HostOptions {
   others?: string[];
   /** No active repository at all. */
   noRepo?: boolean;
+  /** vscode.git's URI maker (RepoManager.gitUri); none by default, so diffs open on gitstudio-rev:. */
+  gitUri?: (uri: unknown, ref: string) => unknown;
 }
 
 type Provider = InstanceType<typeof CommitViewProvider>;
@@ -207,6 +209,7 @@ export function covHost(root: string, opts: HostOptions = {}): Host {
     getAll: () => (entry ? [entry, ...others] : others),
     getUndoLedger: () => opts.ledger,
     isDiscovering: () => false,
+    gitUri: (uri: unknown, ref: string) => opts.gitUri?.(uri, ref),
   };
   const memento = new Map<string, unknown>();
   const mem = {

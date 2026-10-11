@@ -219,6 +219,37 @@ test("a staged row with vscode.git attached diffs HEAD against the index", async
   assert.equal(d.args[2], "a.txt (Staged)");
 });
 
+test("#87: an unstaged modification vscode.git reported opens on vscode.git's own URIs, so its Stage Selected Ranges works there", async () => {
+  const r = repo("host-diff-native");
+  const asked: string[] = [];
+  const h = host(r.dir, {
+    gitRepo: attached(r.dir, { HEAD: { name: "main" }, workingTreeChanges: [change(r.dir, "a.txt", Status.MODIFIED)] }),
+    gitUri: (uri, ref) => {
+      asked.push(ref);
+      return { scheme: "git", path: (uri as U).fsPath, query: JSON.stringify({ path: (uri as U).fsPath, ref }), fsPath: (uri as U).fsPath };
+    },
+  });
+  await h.send({ type: "openDiff", path: "a.txt", staged: false });
+  await until(() => commandsRun.some((c) => c.id === "vscode.diff"));
+  const d = commandsRun.find((c) => c.id === "vscode.diff")!;
+  assert.deepEqual(asked, ["~"]);
+  assert.equal((d.args[0] as U).scheme, "git", "the index side is vscode.git's");
+  assert.equal((d.args[1] as U).scheme, "file", "the working side is the file");
+  assert.equal(d.args[2], "a.txt (Working Tree)", "the title is the one the gitstudio-rev diff had");
+});
+
+test("#87: without vscode.git's URI maker the same row keeps GitStudio's own diff", async () => {
+  const r = repo("host-diff-native-off");
+  const h = host(r.dir, {
+    gitRepo: attached(r.dir, { HEAD: { name: "main" }, workingTreeChanges: [change(r.dir, "a.txt", Status.MODIFIED)] }),
+  });
+  await h.send({ type: "openDiff", path: "a.txt", staged: false });
+  await until(() => commandsRun.some((c) => c.id === "vscode.diff"));
+  const d = commandsRun.find((c) => c.id === "vscode.diff")!;
+  assert.equal((d.args[0] as U).scheme, "gitstudio-rev");
+  assert.equal(d.args[2], "a.txt (Working Tree)");
+});
+
 test("a conflicted row with vscode.git attached opens in the resolver; without the resolver, as a merge diff", async () => {
   const r = repo("host-diff-merge");
   const state = { HEAD: { name: "main" }, mergeChanges: [change(r.dir, "a.txt", Status.BOTH_MODIFIED)] };
