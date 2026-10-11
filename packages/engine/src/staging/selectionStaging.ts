@@ -3,10 +3,10 @@ import {
   computeHunks,
   isEmptyRange,
   rangesIntersect,
-  selectionTakes,
   type Hunk,
   type LineRange,
 } from "./applyLineChanges";
+import { revertSelectedLines, takeSelectedLines } from "./applySelectedLines";
 
 /**
  * Staging and unstaging what an editor SELECTION touches — the pure half of the
@@ -105,26 +105,21 @@ export function toOriginalSelection(selected: LineRange[], hunks: Hunk[]): LineR
  * touch, leaving the rest of the file's unstaged changes alone — or undefined
  * when the selection touches no unstaged change.
  *
- * A change is staged whole: one selected line of a three-line modified block
- * stages all three lines (see applySelectedChanges).
+ * Only the selected LINES of a change are staged where a line of it can stand
+ * alone — an insertion, or a modification with as many lines on each side —
+ * and the whole change otherwise (see applySelectedLines). The tick beside a
+ * change in a diff stays whole-block on purpose; this is the selection's rule.
+ *
+ * A selection that moves no line is nothing to stage — a caret on the empty
+ * row after a new file's last line used to "stage" an empty file.
  */
 export function stageSelection(
   indexText: string,
   workingText: string,
   selected: LineRange[],
 ): SelectionWrite | undefined {
-  const picked = computeHunks(indexText, workingText).filter((h) =>
-    selected.some((r) => selectionTakes(h.modified, r)),
-  );
-  if (picked.length === 0) return undefined;
-  return {
-    content: applySelectedChanges(
-      indexText,
-      workingText,
-      picked.map((h) => h.modified),
-    ),
-    changes: picked.length,
-  };
+  const staged = takeSelectedLines(indexText, workingText, selected);
+  return staged.changes === 0 ? undefined : staged;
 }
 
 /**
@@ -133,6 +128,11 @@ export function stageSelection(
  *
  * `workingText` is what the selection is numbered against; it is translated
  * into index numbering through the index→working diff before it is matched.
+ *
+ * The same line rule as staging, backwards (see revertSelectedLines): only the
+ * selected lines of a staged insertion or same-length edit leave the index.
+ * A working line inside an UNSTAGED change maps to that change's whole index
+ * span (toOriginalRanges), so there the unit is that span.
  */
 export function unstageSelection(
   headText: string,
@@ -140,20 +140,9 @@ export function unstageSelection(
   workingText: string,
   selected: LineRange[],
 ): SelectionWrite | undefined {
-  const staged = computeHunks(headText, indexText);
   const inIndex = toOriginalSelection(selected, computeHunks(indexText, workingText));
-  const dropped = staged.filter((h) => inIndex.some((r) => selectionTakes(h.modified, r)));
-  if (dropped.length === 0) return undefined;
-  // Rebuild the index from HEAD with every staged change EXCEPT the dropped ones.
-  const kept = staged.filter((h) => !dropped.includes(h));
-  return {
-    content: applySelectedChanges(
-      headText,
-      indexText,
-      kept.map((h) => h.modified),
-    ),
-    changes: dropped.length,
-  };
+  const unstaged = revertSelectedLines(headText, indexText, inIndex);
+  return unstaged.changes === 0 ? undefined : unstaged;
 }
 
 /**

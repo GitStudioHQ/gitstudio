@@ -25,10 +25,16 @@ test("stageSelection stages the change under the selection and leaves the others
   assert.deepEqual(r, { content: lf(["a", "b", "c", "D", "e"]), changes: 1 });
 });
 
-test("stageSelection: one line of a multi-line change stages the whole change", () => {
+test("stageSelection: one line of a same-length change stages only that line", () => {
   const index = lf(["a", "b", "c", "d", "e"]);
   const working = lf(["a", "B", "C", "D", "e"]);
-  assert.equal(stageSelection(index, working, [line(2)])?.content, working);
+  assert.deepEqual(stageSelection(index, working, [line(2)]), { content: lf(["a", "b", "C", "d", "e"]), changes: 1 });
+});
+
+test("stageSelection: one line of a change that alters the line count stages the whole change", () => {
+  const index = lf(["a", "b", "c", "d", "e"]);
+  const working = lf(["a", "B+C+D", "e"]);
+  assert.equal(stageSelection(index, working, [line(1)])?.content, working);
 });
 
 test("stageSelection: a selection on unchanged lines stages nothing", () => {
@@ -173,6 +179,67 @@ test("toOriginalSelection: a boundary under a working-only line maps to the inde
   assert.deepEqual(toOriginalSelection([boundary(1)], computeHunks(index, working)), [boundary(0)]);
   // Non-empty ranges map as toOriginalRanges does.
   assert.deepEqual(toOriginalSelection([{ start: 1, end: 2 }], computeHunks(index, working)), [{ start: 0, end: 1 }]);
+});
+
+// ── option A: no-ops and line-granular unstaging (round 2) ─────────────────
+
+test("a caret on the empty row after a NEW file's last line stages nothing — never an empty file", () => {
+  assert.equal(stageSelection("", "a2\n", [line(1)]), undefined);
+  assert.deepEqual(stageSelection("", "a2\n", [line(0)]), { content: "a2\n", changes: 1 });
+});
+
+test("a caret on the empty last row of an existing file stages nothing", () => {
+  assert.equal(stageSelection(lf(["a"]), lf(["a", "b"]), [line(2)]), undefined);
+  // The index has no final line break and the working file adds lines after it:
+  // the break belongs to the inserted last line, never staged on its own.
+  assert.equal(stageSelection("a", lf(["a", "b", "c"]), [line(3)]), undefined);
+  assert.equal(stageSelection("a", lf(["a", "b", "c"]), [line(2)])?.content, lf(["a", "c"]));
+  assert.equal(stageSelection("a", lf(["a", "b", "c"]), [{ start: 1, end: 2 }])?.content, lf(["a", "b", "c"]));
+});
+
+test("stage x, stage y, unstage y: x stays staged (unstaging is per line too)", () => {
+  const head = lf(["a", "z"]);
+  const working = lf(["a", "x", "y", "z"]);
+  const s1 = stageSelection(head, working, [line(1)])!;
+  assert.equal(s1.content, lf(["a", "x", "z"]));
+  const s2 = stageSelection(s1.content, working, [line(2)])!;
+  assert.equal(s2.content, working);
+  assert.deepEqual(unstageSelection(head, s2.content, working, [line(2)]), { content: lf(["a", "x", "z"]), changes: 1 });
+  assert.deepEqual(unstageSelection(head, s2.content, working, [line(1)]), { content: lf(["a", "y", "z"]), changes: 1 });
+});
+
+test("per-line unstaging when unstaged edits shift the lines (git's MM)", () => {
+  // Staged: x and y inserted after 'a'. Unstaged on top: two lines at the top,
+  // and 'c' edited.
+  const head = lf(["a", "b", "c"]);
+  const index = lf(["a", "x", "y", "b", "c"]);
+  const working = lf(["w1", "w2", "a", "x", "y", "b", "C"]);
+  assert.equal(unstageSelection(head, index, working, [line(4)])?.content, lf(["a", "x", "b", "c"]));
+  assert.equal(unstageSelection(head, index, working, [line(3)])?.content, lf(["a", "y", "b", "c"]));
+  // 'C' is an unstaged edit over an unstaged-from-HEAD line: nothing staged there.
+  assert.equal(unstageSelection(head, index, working, [line(6)]), undefined);
+});
+
+test("per-line unstaging of a same-length staged edit; a working line inside an unstaged edit maps to its whole index span", () => {
+  const head = lf(["a", "b", "c"]);
+  const index = lf(["a", "B", "C"]);
+  const working = lf(["a", "B!", "C"]);
+  assert.equal(unstageSelection(head, index, working, [line(2)])?.content, lf(["a", "B", "c"]));
+  assert.equal(unstageSelection(head, index, working, [line(1)])?.content, lf(["a", "b", "C"]));
+});
+
+test("unstaging lines of a newly added file removes just those; all of them leaves nothing (the caller drops the entry)", () => {
+  const index = lf(["x", "y"]);
+  assert.deepEqual(unstageSelection("", index, index, [line(1)]), { content: "x\n", changes: 1 });
+  assert.deepEqual(unstageSelection("", index, index, [{ start: 0, end: 1 }]), { content: "", changes: 1 });
+  assert.equal(unstageSelection("", index, index, [line(2)]), undefined, "the empty last row unstages nothing");
+});
+
+test("a staged change that altered the line count unstages whole; so does a staged deletion", () => {
+  const head = lf(["a", "b", "c", "d"]);
+  assert.equal(unstageSelection(head, lf(["a", "BC", "d"]), lf(["a", "BC", "d"]), [line(1)])?.content, head);
+  const deleted = lf(["a", "b"]);
+  assert.equal(unstageSelection(lf(["a", "gone", "b"]), deleted, deleted, [line(1)])?.content, lf(["a", "gone", "b"]));
 });
 
 // ── Stage Hunk / Unstage Hunk: whole hunks, whatever a selection does ───────
