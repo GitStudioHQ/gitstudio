@@ -4,6 +4,94 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Files changed as a tree.** In the Commit Graph's commit details, the
+  Files changed header has VS Code's **View as Tree** / **View as List**
+  toggle. The tree groups a commit's files by folder, folders first, with
+  single-child folders compacted into one row (`src/graph`) as the explorer
+  does; each folder shows the lines added and removed under it, opens and
+  closes with a click or the arrow keys, and a file still opens that
+  commit's diff. A renamed file sits under its new path and says where it
+  came from. The choice is remembered, and applies to the working tree's
+  Staged and Unstaged lists too. The list can now be walked with the
+  keyboard as well: ↑ ↓, Home, End, and Enter to open a diff
+  ([#81](https://github.com/GitStudioHQ/gitstudio/issues/81)).
+
+### Changed
+- **Stage and Unstage Selected Lines move the lines you selected.** In an
+  inserted block, or a block of edited lines that kept its line count, only
+  the selected lines are staged — or unstaged — now: the rule VS Code's own
+  *Stage Selected Ranges* follows. A change that also adds or removes lines
+  still moves whole, and so does a change ticked in a diff, *Stage Hunk* and
+  *Unstage Hunk*. A selection with no changed line in it stages nothing
+  ([#87](https://github.com/GitStudioHQ/gitstudio/issues/87)).
+
+### Fixed
+- **Pull requests load for a sign-in that can't see teams.** With a GitHub
+  sign-in that wasn't granted organization access (`read:org`), the Pull
+  Requests view said "Couldn't load pull requests" and told you to change
+  your token's scopes on github.com, which can't help: GitStudio signs in with
+  VS Code's GitHub account and asks it for repository access only. GitHub
+  refused every question that asked for a requested team's name. GitStudio
+  now asks again without team names and remembers that for the sign-in, so the
+  list and each pull request's page load; a team asked to review shows as
+  "A team" (or "2 teams") under Reviewers. If GitHub ever refuses for a
+  permission that asking differently can't fix, the view says so plainly and
+  offers to report it ([#82](https://github.com/GitStudioHQ/gitstudio/issues/82)).
+- **Staging part of a file works in a diff.** In a diff editor — including the
+  one a file in the Changes list opens — right-click ▸ GitStudio had lost
+  *Stage Selected Lines*, *Unstage Selected Lines*, *Stage Hunk* and *Unstage
+  Hunk*, and right-clicking a line number (or the staging mark beside it) had
+  lost *Stage or Unstage the Change at This Line*: they were offered only on a
+  file with changes, and VS Code never says that of a file in a diff. They are
+  on the working side of a diff against the repository again — not of a
+  comparison of two files, where they could not act on what is shown — and
+  all five are listed in the Command Palette, where they never showed
+  ([#87](https://github.com/GitStudioHQ/gitstudio/issues/87)).
+- **Stage or Unstage the Change at This Line acts on the line you
+  right-clicked**, not on whichever editor had focus — with the other side of
+  a diff focused it said the file was not in a repository.
+- **The staging marks keep up with the index.** A change staged or unstaged
+  somewhere else — VS Code's Source Control view, a terminal — kept its old
+  mark until the file was edited, and toggling it then did nothing.
+- **Unstage Selected Lines unstages the change you selected.** On a file with
+  unstaged edits above the selection it could roll back a different staged
+  change. And unstaging the last change of a newly added file takes it out of
+  the index instead of staging an empty file.
+- **A line picked by its line number is one line.** Clicking a line number
+  selects up to the start of the next one, and staging took that next line —
+  and any change starting on it — too. A deletion right at that edge still
+  comes along, and a selection that reaches the end of the file keeps its
+  last row, so *Select All* stages lines deleted at the end of the file and an
+  added (or removed) final line break.
+- **Stage Hunk stages a deletion** with the cursor on the line below it; it
+  never could.
+- **No error in the log at every start.** GitStudio's ✨ entry in VS Code's own
+  commit box used a menu VS Code keeps for its own extensions, so it never
+  showed and logged "scm/inputBox is a proposed menu identifier" instead. It is
+  gone; *Generate Commit Message* is still the ✨ in GitStudio's commit box and
+  in the Command Palette.
+- **The gutter mark's settings say what works.** Clicking the mark itself can
+  never stage — VS Code gives an extension's gutter marks no click — so the
+  settings now point to right-clicking it, and
+  `gitstudio.staging.clickGutterToggles` describes the click it really reacts
+  to: one at the very start of the change's first line.
+- **VS Code's own staging works in GitStudio's diffs.** A modified file opened
+  from the Changes list opens on VS Code's own Git URIs, so the diff's gutter
+  **+** (stage this change) and right-click ▸ *Stage Selected Ranges* work in
+  it. Before, the **+** was missing there and *Stage Selected Ranges* did
+  nothing at all ([#87](https://github.com/GitStudioHQ/gitstudio/issues/87)).
+- **Staging a blank line at the end of a file stages what is on disk.** Adding
+  a blank or whitespace-only line at the end of a file whose last line was
+  blank — on Windows, any blank line added at the end of a CRLF file — could
+  stage the wrong text (a lost final newline, a lone carriage return), and
+  the editor gutter's refresh raised an error in the background.
+- **The graph's Uncommitted changes row offers what applies to it.** Its
+  right-click menu was a commit's, and items such as Branch… or Checkout ran
+  git on a commit that doesn't exist; it now offers Commit… and Stash.
+
 ## [1.18.0] - 2026-10-01
 
 ### Added
