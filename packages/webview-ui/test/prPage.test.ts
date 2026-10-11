@@ -419,6 +419,27 @@ test("the conversation: the body as GitHub draws it, references and people as li
   `);
 });
 
+test("teams the sign-in can't name (#82): one row that counts them, with a team's mark, and the status line waits on them — never a ghost", { skip }, async () => {
+  await check(`
+    show(S.unnamedTeams);
+    const rows = $$(".prp-rail .prp-person.is-reviewer");
+    const labels = rows.map((p) => p.getAttribute("aria-label"));
+    expect(JSON.stringify(labels) === JSON.stringify(["dana-okafor: asked to review", "2 teams: asked to review"]), "reviewers: " + labels);
+    const teams = rows[1];
+    expect(text(teams.querySelector(".prp-person-name")) === "2 teams", "the row's name: " + text(teams.querySelector(".prp-person-name")));
+    expect(teams.querySelector(".prp-avatar.is-team .codicon-organization"), "a team's mark, not a person's initial");
+    expect(/read:org/.test(teams.title), "why it names no team: " + teams.title);
+    expect(text(teams).includes("Awaiting review"), "asked, and not answered: " + text(teams));
+    const status = text($('[data-key="status-reviews"]'));
+    expect(status.includes("Waiting on dana-okafor, 2 teams."), "the status line: " + status);
+    expect(!/ghost|undefined|@\\s/.test(text($(".prp-rail")) + status), "no ghost, no undefined: " + text($(".prp-rail")));
+    show(S.unnamedTeam);
+    const one = $$(".prp-rail .prp-person.is-reviewer").map((p) => p.getAttribute("aria-label"));
+    expect(JSON.stringify(one) === JSON.stringify(["A team: asked to review"]), "one team: " + one);
+    expect(text($('[data-key="status-reviews"]')).includes("Waiting on a team."), "the status line: " + text($('[data-key="status-reviews"]')));
+  `);
+});
+
 test("painted in place: a state from the host touches neither what is typed, where the keyboard is, nor an opened <details>", { skip }, async () => {
   await check(`
     show(S.open);

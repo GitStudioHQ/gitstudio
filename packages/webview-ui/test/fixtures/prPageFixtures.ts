@@ -272,5 +272,16 @@ export function pageScenes(): Record<string, PrPageViewState> {
     files: base({ tab: "files", review: PENDING }),
     filesEmpty: base({ tab: "files", pr: detail({ changedFiles: 0, additions: 0, deletions: 0 }), files: { items: [], truncated: false } }),
     noDescription: base({ pr: detail({ body: "", timeline: [], timelineTotal: 0, threads: [], threadsTotal: 0, reviewers: [], labels: [], assignees: [], reviewDecision: "REVIEW_REQUIRED", ci: { state: "none", total: 0, failed: 0, pending: 0 }, checks: [], checksTotal: 0 }) }),
+    // A sign-in that can't read teams (#82): GitHub says teams were asked, not which.
+    unnamedTeams: base({
+      pr: detail({
+        reviewDecision: "REVIEW_REQUIRED",
+        reviewers: [
+          { login: PEOPLE.dana.login, avatarUrl: PEOPLE.dana.avatarUrl, requested: true },
+          { unnamedTeams: 2, requested: true },
+        ],
+      }),
+    }),
+    unnamedTeam: base({ pr: detail({ reviewDecision: "REVIEW_REQUIRED", reviewers: [{ unnamedTeams: 1, requested: true }] }) }),
   };
 }

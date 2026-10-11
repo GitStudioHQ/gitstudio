@@ -248,6 +248,13 @@ export type PrPermission = "ADMIN" | "MAINTAIN" | "WRITE" | "TRIAGE" | "READ";
 export interface PrReviewer {
   login?: string;
   team?: string;
+  /**
+   * Teams asked whose names this sign-in can't read — how many, on one row
+   * with neither `login` nor `team`. A team's fields take GitHub's read:org,
+   * which the extension's sign-in isn't given; GitHub still says a team was
+   * asked (#82).
+   */
+  unnamedTeams?: number;
   avatarUrl?: string | null;
   /** Their latest verdict, when they gave one. */
   verdict?: PrReviewState;

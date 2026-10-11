@@ -36,7 +36,7 @@ import type {
   PrTimelineItem,
 } from "@gitstudio/host-bridge/prProtocol";
 import { PR_ACTIONS, ciFromRollupState, prKind, reviewDecisionOf, type PrTone } from "./pullRequests";
-import { PrListError, type GraphqlFn } from "./prList";
+import { askWithin, PrListError, requestedReviewerFields, scopeError, type GraphqlFn, type SignInReach } from "./prList";
 import * as l10n from "@vscode/l10n";
 
 export type { PrDetail, PrMergeMethod, PrMergeState, PrCheck, PrCheckState, PrThread, PrTimelineItem, PrPageFile };
@@ -45,8 +45,13 @@ export type { PrDetail, PrMergeMethod, PrMergeState, PrCheck, PrCheckState, PrTh
 
 const PERSON = "login avatarUrl(size: 40)";
 
-/** What the page asks GitHub for one pull request (checked against the live API, read-only). */
-export const PR_PAGE_QUERY = `query($owner: String!, $name: String!, $n: Int!) {
+/**
+ * What the page asks GitHub for one pull request (checked against the live
+ * API, read-only). `teams`: whether a requested team is asked for by name —
+ * in the reviewers and in the timeline's review requests (SignInReach).
+ */
+export function prPageQuery(teams: boolean): string {
+  return `query($owner: String!, $name: String!, $n: Int!) {
   viewer { ${PERSON} }
   repository(owner: $owner, name: $name) {
     nameWithOwner viewerPermission mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed deleteBranchOnMerge viewerDefaultMergeMethod
@@ -62,7 +67,7 @@ export const PR_PAGE_QUERY = `query($owner: String!, $name: String!, $n: Int!) {
       viewerDidAuthor viewerCanUpdate viewerCanUpdateBranch viewerCanDeleteHeadRef
       labels(first: 20) { nodes { name color } }
       assignees(first: 10) { nodes { ${PERSON} } }
-      reviewRequests(first: 20) { nodes { requestedReviewer { __typename ... on User { ${PERSON} } ... on Team { slug } ... on Bot { login } ... on Mannequin { login } } } }
+      reviewRequests(first: 20) { nodes { ${requestedReviewerFields(teams, PERSON)} } }
       latestReviews(first: 30) { nodes { state author { ${PERSON} } } }
       commits(last: 100) { totalCount nodes { commit { oid abbreviatedOid messageHeadline messageBody committedDate author { name user { ${PERSON} } } statusCheckRollup { state } } } }
       checks: commits(last: 1) { nodes { commit { oid statusCheckRollup { state contexts(first: 100) { totalCount nodes { __typename
@@ -79,7 +84,7 @@ export const PR_PAGE_QUERY = `query($owner: String!, $name: String!, $n: Int!) {
           ... on ReadyForReviewEvent { id actor { ${PERSON} } createdAt }
           ... on ConvertToDraftEvent { id actor { ${PERSON} } createdAt }
           ... on HeadRefForcePushedEvent { id actor { ${PERSON} } createdAt beforeCommit { abbreviatedOid } afterCommit { abbreviatedOid } }
-          ... on ReviewRequestedEvent { id actor { ${PERSON} } createdAt requestedReviewer { __typename ... on User { login } ... on Team { slug } ... on Bot { login } ... on Mannequin { login } } }
+          ... on ReviewRequestedEvent { id actor { ${PERSON} } createdAt ${requestedReviewerFields(teams, "login")} }
           ... on ReviewDismissedEvent { id actor { ${PERSON} } createdAt }
         }
       }
@@ -93,16 +98,25 @@ export const PR_PAGE_QUERY = `query($owner: String!, $name: String!, $n: Int!) {
     }
   }
 }`;
+}
+
+/** What the page asks GitHub for one pull request, team names included. */
+export const PR_PAGE_QUERY = prPageQuery(true);
 
 const OWNER_OR_REPO = /^[A-Za-z0-9_.-]+$/;
 
-/** Read a pull request's page: one GraphQL request. */
-export async function fetchPrPage(graphql: GraphqlFn, owner: string, repo: string, n: number): Promise<PrDetail> {
+/**
+ * Read a pull request's page: one GraphQL request, as far as the sign-in
+ * reaches (SignInReach: without one, every read starts from the team
+ * fields).
+ */
+export async function fetchPrPage(graphql: GraphqlFn, owner: string, repo: string, n: number, reach: SignInReach = { teams: true }): Promise<PrDetail> {
   if (!OWNER_OR_REPO.test(owner) || !OWNER_OR_REPO.test(repo)) {
     throw new PrListError(l10n.t("\"{0}/{1}\" isn't a GitHub repository name.", owner, repo), "query");
   }
   if (!Number.isSafeInteger(n) || n <= 0) throw new PrListError(l10n.t("#{0} isn't a pull request number.", n), "query");
-  return parsePrPage(owner, repo, n, await graphql(PR_PAGE_QUERY, { owner, name: repo, n }));
+  const variables = { owner, name: repo, n };
+  return parsePrPage(owner, repo, n, await askWithin(graphql, reach, (teams) => ({ query: prPageQuery(teams), variables })));
 }
 
 // ── The answer ───────────────────────────────────────────────────────────────
@@ -330,10 +344,12 @@ function mapCommits(nodes: Json[]): PrCommit[] {
  * Who reviews it: everyone asked (people and teams) and everyone who has
  * answered, each with their latest verdict. The REST `requested_reviewers`
  * drops a reviewer the moment they answer — an approved pull request showed
- * no approver.
+ * no approver. Teams asked by a question that couldn't read their names are
+ * one row that counts them, last.
  */
 function mapReviewers(requests: Json[], latest: Json[], author: string | undefined): PrReviewer[] {
   const out = new Map<string, PrReviewer>();
+  let unnamedTeams = 0;
   for (const r of latest ?? []) {
     const who = person(r?.author);
     if (!who) continue;
@@ -347,6 +363,8 @@ function mapReviewers(requests: Json[], latest: Json[], author: string | undefin
     if (!who) continue;
     if (who.__typename === "Team" && typeof who.slug === "string") {
       out.set(`t:${who.slug.toLowerCase()}`, { team: who.slug, requested: true });
+    } else if (who.__typename === "Team") {
+      unnamedTeams++;
     } else if (typeof who.login === "string") {
       const key = `u:${who.login.toLowerCase()}`;
       const had = out.get(key);
@@ -354,7 +372,7 @@ function mapReviewers(requests: Json[], latest: Json[], author: string | undefin
       out.set(key, { ...(had ?? {}), login: who.login, avatarUrl: who.avatarUrl ?? had?.avatarUrl ?? null, requested: true });
     }
   }
-  return [...out.values()];
+  return [...out.values(), ...(unnamedTeams > 0 ? [{ unnamedTeams, requested: true }] : [])];
 }
 
 /** GitHub's answer → the page's pull request. */
@@ -366,6 +384,7 @@ export function parsePrPage(owner: string, repo: string, n: number, res: { data?
   const r = data?.repository;
   const where = `${owner}/${repo}`;
   if (!r) {
+    if (errors?.some((e) => e.type === "INSUFFICIENT_SCOPES")) throw scopeError(errors);
     const forbidden = errors?.find((e) => e.type === "FORBIDDEN");
     if (forbidden) throw new PrListError(forbidden.message || l10n.t("GitHub refused to show {0}.", where), "forbidden");
     if (errors?.some((e) => e.type === "NOT_FOUND") || (data && data.repository === null)) {
@@ -855,6 +874,7 @@ function mutated(res: { data?: unknown; errors?: readonly { type?: string; messa
   if (node && !res.errors?.length) return node;
   const e = res.errors?.[0];
   if (e?.type === "RATE_LIMITED") throw new PrListError(e.message || l10n.t("GitHub's rate limit was reached."), "rate-limit");
+  if (e?.type === "INSUFFICIENT_SCOPES") throw scopeError(res.errors);
   if (e?.type === "FORBIDDEN") throw new PrListError(e.message || l10n.t("GitHub refused to {0}.", what), "forbidden");
   if (e?.type === "NOT_FOUND") throw new PrListError(e.message || l10n.t("GitHub couldn't find what to {0}.", what), "not-found");
   if (node) return node;

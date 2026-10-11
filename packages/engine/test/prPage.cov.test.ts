@@ -102,7 +102,7 @@ test("labels, assignees and reviewers skip what isn't a name", () => {
         nodes: [
           null,
           { requestedReviewer: null },
-          { requestedReviewer: { __typename: "Team" } }, // a team without a slug and no login
+          { requestedReviewer: { __typename: "Team" } }, // a team whose name this sign-in can't read (#82)
           { requestedReviewer: { __typename: "Bot", login: "dependabot" } },
           { requestedReviewer: { __typename: "User", login: "Alice" } }, // asked again after answering
         ],
@@ -115,6 +115,7 @@ test("labels, assignees and reviewers skip what isn't a name", () => {
     { login: "Alice", avatarUrl: "a.png", verdict: "APPROVED", requested: true },
     { login: "carl", avatarUrl: null, verdict: "COMMENTED", requested: false },
     { login: "dependabot", avatarUrl: null, requested: true },
+    { unnamedTeams: 1, requested: true },
   ]);
 });
 

@@ -136,6 +136,15 @@ function who(p: PrPerson | null | undefined): string {
   return p?.login ?? "ghost";
 }
 
+/**
+ * A reviewer as a sentence names them: a login, a team's slug — or, for
+ * teams the sign-in can't name (#82), how many.
+ */
+function reviewerWords(r: PrReviewer): string {
+  if (r.unnamedTeams) return r.unnamedTeams === 1 ? l10n.t("a team") : l10n.t("{0} teams", r.unnamedTeams);
+  return r.login ?? r.team ?? "";
+}
+
 function fullDate(iso: string): string {
   const t = Date.parse(iso);
   return Number.isFinite(t) ? new Date(t).toLocaleString() : "";
@@ -668,9 +677,9 @@ export class PullRequestPage {
       return box;
     }
     // Reviews.
-    const approvers = pr.reviewers.filter((r) => r.verdict === "APPROVED").map((r) => r.login ?? r.team ?? "");
-    const blockers = pr.reviewers.filter((r) => r.verdict === "CHANGES_REQUESTED").map((r) => r.login ?? r.team ?? "");
-    const waiting = pr.reviewers.filter((r) => r.requested).map((r) => r.login ?? r.team ?? "");
+    const approvers = pr.reviewers.filter((r) => r.verdict === "APPROVED").map(reviewerWords);
+    const blockers = pr.reviewers.filter((r) => r.verdict === "CHANGES_REQUESTED").map(reviewerWords);
+    const waiting = pr.reviewers.filter((r) => r.requested).map(reviewerWords);
     let reviewLine: { tone: string; icon: string; title: string; detail?: string };
     // GitHub's decision is the word when it has one; a repository that
     // requires no review has none, and the reviewers' own verdicts speak.
@@ -1047,9 +1056,13 @@ export class PullRequestPage {
 
   private reviewerRow(r: PrReviewer): HTMLElement {
     const row = el("div", "prp-person is-reviewer");
-    const name = r.team ? `@${r.team}` : (r.login ?? "ghost");
-    row.dataset.key = `reviewer-${name}`;
-    row.appendChild(avatar(r.team ? null : { login: r.login, avatarUrl: r.avatarUrl }, 18, !!r.team));
+    const unnamed = r.unnamedTeams ?? 0;
+    const team = !!r.team || unnamed > 0;
+    const name = r.team ? `@${r.team}` : unnamed > 0 ? (unnamed === 1 ? l10n.t("A team") : l10n.t("{0} teams", unnamed)) : (r.login ?? "ghost");
+    row.dataset.key = unnamed > 0 ? "reviewer-unnamed-teams" : `reviewer-${name}`;
+    // Which team is GitHub's to say, and it doesn't to this sign-in.
+    if (unnamed > 0) row.title = l10n.t("GitHub doesn't say which: a team's name takes the read:org permission, which GitStudio's sign-in isn't given.");
+    row.appendChild(avatar(team ? null : { login: r.login, avatarUrl: r.avatarUrl }, 18, team));
     // The name, then what they said under it: a 220px rail has no room for
     // "Changes requested" beside a login without cutting one of them.
     const text = el("span", "prp-person-text");

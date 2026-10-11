@@ -139,6 +139,8 @@ export interface FakeRepo {
   ci?: Record<number, string>;
   /** reviewDecision per PR number. */
   review?: Record<number, string>;
+  /** Teams asked to review it (their slugs), per PR number. */
+  teams?: Record<number, string[]>;
   isFork?: boolean;
   parent?: string;
   labels?: { name: string; color: string }[];
@@ -171,9 +173,12 @@ export interface FakePage {
   checks?: Record<string, unknown>[];
 }
 
-/** A REST pull request as the page's GraphQL answer (engine/forge/prPage's PR_PAGE_QUERY). */
-export function gqlPage(p: Record<string, any>, repo: string, world: FakeRepo, viewer: string): Record<string, unknown> {
-  const node = gqlNode(p, repo, world);
+/**
+ * A REST pull request as the page's GraphQL answer (engine/forge/prPage's
+ * PR_PAGE_QUERY). `teamNames`: the question asked for a team's slug.
+ */
+export function gqlPage(p: Record<string, any>, repo: string, world: FakeRepo, viewer: string, teamNames = true): Record<string, unknown> {
+  const node = gqlNode(p, repo, world, teamNames);
   const page = world.page?.[p.number] ?? {};
   const methods = world.methods ?? ["merge", "squash", "rebase"];
   const ci = world.ci?.[p.number];
@@ -232,8 +237,8 @@ export function gqlPage(p: Record<string, any>, repo: string, world: FakeRepo, v
 
 const gqlState = (p: Record<string, any>) => (p.merged_at ? "MERGED" : p.state === "closed" ? "CLOSED" : "OPEN");
 
-/** A REST pull request as GitHub's GraphQL PullRequest node. */
-export function gqlNode(p: Record<string, any>, repo: string, world: FakeRepo): Record<string, unknown> {
+/** A REST pull request as GitHub's GraphQL PullRequest node — a team's slug only where `teamNames` asked for it. */
+export function gqlNode(p: Record<string, any>, repo: string, world: FakeRepo, teamNames = true): Record<string, unknown> {
   const head = p.head ?? {};
   const headRepo = head.repo?.full_name ?? null;
   const ci = world.ci?.[p.number];
@@ -261,7 +266,12 @@ export function gqlNode(p: Record<string, any>, repo: string, world: FakeRepo): 
     comments: { totalCount: p.comments ?? 0 },
     labels: { nodes: p.labels ?? [] },
     assignees: { nodes: (p.assignees ?? []).map((a: any) => ({ login: a.login, avatarUrl: null })) },
-    reviewRequests: { nodes: (p.requested_reviewers ?? []).map((u: any) => ({ requestedReviewer: { __typename: "User", login: u.login } })) },
+    reviewRequests: {
+      nodes: [
+        ...(world.teams?.[p.number] ?? []).map((slug) => ({ requestedReviewer: teamNames ? { __typename: "Team", slug } : { __typename: "Team" } })),
+        ...(p.requested_reviewers ?? []).map((u: any) => ({ requestedReviewer: { __typename: "User", login: u.login } })),
+      ],
+    },
     commits: {
       nodes: [
         {
@@ -297,28 +307,54 @@ function searchMatches(p: Record<string, any>, q: string, viewer: string): boole
   return true;
 }
 
+/** The scopes that let a token read a team's fields. */
+const TEAM_SCOPES = ["read:org", "write:org", "admin:org", "read:discussion", "write:discussion"];
+
+/**
+ * How api.github.com refuses a question that asks a team's fields of a token
+ * without read:org: before it runs it, wherever in the question the fields
+ * are and whatever the answer would have held — `errors` only, no `data`.
+ */
+export function teamScopeRefusal(scopes: readonly string[]): FakeReply {
+  return {
+    body: {
+      errors: [
+        {
+          type: "INSUFFICIENT_SCOPES",
+          locations: [{ line: 13, column: 141 }],
+          message: `Your token has not been granted the required scopes to execute this query. The 'slug' field requires one of the following scopes: ['read:org', 'read:discussion'], but your token has only been granted the: [${scopes.map((s) => `'${s}'`).join(", ")}] scopes. Please modify your token's scopes at: https://github.com/settings/tokens.`,
+        },
+      ],
+    },
+  };
+}
+
 /**
  * POST /graphql for the Pull Requests list: the page queries (list and
  * search shapes, with their counts and the viewer), a repository's fork
  * parent, and the filter menus' labels and people. `repos` is keyed
- * "owner/repo". Anything else falls through to `other`.
+ * "owner/repo". Anything else falls through to `other`. `scopes`: the
+ * token's, when a test says — a question asking a team's fields without
+ * read:org is then refused as GitHub refuses it (#82).
  */
 export function graphqlWorld(
   repos: Record<string, FakeRepo>,
-  opts: { viewer?: string; other?: (req: FakeRequest) => FakeReply } = {},
+  opts: { viewer?: string; other?: (req: FakeRequest) => FakeReply; scopes?: string[] } = {},
 ): (req: FakeRequest) => FakeReply {
   const viewer = opts.viewer ?? "me";
   return (req) => {
     const body = req.body as { query: string; variables: Record<string, any> };
     const q = body.query;
     const v = body.variables ?? {};
+    const teamNames = /\.\.\. on Team \{/.test(q);
+    if (teamNames && opts.scopes && !opts.scopes.some((s) => TEAM_SCOPES.includes(s))) return teamScopeRefusal(opts.scopes);
     const byUpdate = (a: any, b: any) => (a.updated_at < b.updated_at ? 1 : a.updated_at > b.updated_at ? -1 : b.number - a.number);
     const page = (all: Record<string, any>[], repo: string, world: FakeRepo) => {
       const start = v.after ? Number(v.after) : 0;
       const slice = all.slice(start, start + v.first);
       const end = start + slice.length;
       return {
-        nodes: slice.map((p) => gqlNode(p, repo, world)),
+        nodes: slice.map((p) => gqlNode(p, repo, world, teamNames)),
         pageInfo: { hasNextPage: end < all.length, endCursor: String(end) },
       };
     };
@@ -366,7 +402,7 @@ export function graphqlWorld(
       if (!world) return { body: { data: { repository: null }, errors: [{ type: "NOT_FOUND", message: `Could not resolve to a Repository with the name '${repo}'.` }] } };
       const p = world.pulls().find((x) => x.number === v.n);
       if (!p) return { body: { data: { viewer: { login: viewer }, repository: { nameWithOwner: repo, pullRequest: null } }, errors: [{ type: "NOT_FOUND", message: `Could not resolve to a PullRequest with the number of ${v.n}.` }] } };
-      return { body: { data: gqlPage(p, repo, world, viewer) } };
+      return { body: { data: gqlPage(p, repo, world, viewer, teamNames) } };
     }
     if (/isFork/.test(q)) {
       const repo = `${v.owner}/${v.name}`;

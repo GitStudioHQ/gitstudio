@@ -16,7 +16,7 @@
 // else the commits as a list (GitStudio's addition: GitHub leaves it empty).
 
 import type { PrCreateLabel, PrPermission, PrPerson } from "@gitstudio/host-bridge/prProtocol";
-import { PrListError, type GraphqlFn } from "./prList";
+import { PrListError, scopeError, type GraphqlFn } from "./prList";
 import * as l10n from "@vscode/l10n";
 
 // ── The question ─────────────────────────────────────────────────────────────
@@ -71,6 +71,7 @@ export async function fetchCreateData(graphql: GraphqlFn, owner: string, repo: s
   if (limited) throw new PrListError(limited.message || l10n.t("GitHub's rate limit was reached."), "rate-limit");
   const data = res.data as Json;
   const r = data?.repository;
+  if (!r && res.errors?.some((e) => e.type === "INSUFFICIENT_SCOPES")) throw scopeError(res.errors);
   if (!r) throw new PrListError(res.errors?.[0]?.message || l10n.t("GitHub has no repository {0}/{1}.", owner, repo), "not-found");
   const labels: PrCreateLabel[] = (r.labels?.nodes ?? [])
     .filter((l: Json) => l && typeof l.name === "string")

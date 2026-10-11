@@ -29,6 +29,7 @@ import { compareRefsData, type CompareResult } from "../compare/refCompare";
 import { toRevisionUri } from "../history/revisionContentProvider";
 import { getNonce } from "../webview/html";
 import { GitHubApi, GitHubApiError, type PullRequest } from "./githubApi";
+import { scopeRefusalMessage } from "./githubAuth";
 import { prCreateHtml } from "./prCreateHtml";
 import { contextFor, resolvePrTargets, type PrTarget } from "./prTargets";
 import { listGitHubRemotes, type GitHubRemote, type GitHubRepoContext } from "./repoContext";
@@ -89,11 +90,13 @@ interface Described {
   kind: string;
   status?: number;
   helpUrl?: string;
+  /** For `scope`: the scopes GitHub named. */
+  scopes?: readonly string[];
 }
 
 function describe(err: unknown): Described {
   if (err instanceof GitHubApiError) return { message: err.message, kind: err.kind, status: err.status, helpUrl: err.helpUrl };
-  if (err instanceof PrListError) return { message: err.message, kind: err.kind };
+  if (err instanceof PrListError) return { message: err.message, kind: err.kind, scopes: err.scopes };
   return { message: err instanceof Error && err.message ? err.message : l10n.t("GitHub didn't answer."), kind: "unknown" };
 }
 
@@ -127,6 +130,7 @@ function readFailure(err: Described, repo: string): PrListMessage {
     return { icon: "warning", tone: "warning", title: l10n.t("GitHub has no repository {0}", repo), detail: l10n.t("Or this GitHub sign-in can't see it."), buttons: [retry] };
   }
   if (err.kind === "rate-limit") return { icon: "clock", tone: "warning", title: l10n.t("GitHub's rate limit was reached"), detail: err.message, buttons: [retry] };
+  if (err.kind === "scope") return scopeRefusalMessage(err.scopes ?? [], `https://github.com/${repo}`);
   if (err.kind === "network") return { icon: "error", tone: "error", title: l10n.t("Couldn't reach GitHub"), detail: l10n.t("Check your network connection."), buttons: [{ ...retry, primary: true }] };
   return { icon: "error", tone: "error", title: l10n.t("Couldn't read {0}", repo), detail: err.message, buttons: [{ ...retry, primary: true }] };
 }
