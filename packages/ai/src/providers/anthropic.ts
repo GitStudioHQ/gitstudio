@@ -156,14 +156,14 @@ export class AnthropicProvider implements Provider {
       throw new AiError(l10n.t("No model configured for this connection."));
     }
     const fetchImpl = this.opts.fetchImpl ?? fetch;
+    // Built before the try, whose catch is for the NETWORK: an exception in
+    // our own key read or request body is ours, not "couldn't reach".
+    const url = this.endpoint();
+    const headers = await this.headers();
+    const body = JSON.stringify(this.body(messages, opts, model, false));
     let res: Response;
     try {
-      res = await fetchImpl(this.endpoint(), {
-        method: "POST",
-        headers: await this.headers(),
-        body: JSON.stringify(this.body(messages, opts, model, false)),
-        signal: opts.signal,
-      });
+      res = await fetchImpl(url, { method: "POST", headers, body, signal: opts.signal });
     } catch (err) {
       if (err instanceof AiError) {
         throw err;
@@ -209,14 +209,14 @@ export class AnthropicProvider implements Provider {
       throw new AiError(l10n.t("No model configured for this connection."));
     }
     const fetchImpl = this.opts.fetchImpl ?? fetch;
+    // Built before the try, whose catch is for the NETWORK: an exception in
+    // our own key read or request body is ours, not "couldn't reach".
+    const url = this.endpoint();
+    const headers = await this.headers();
+    const body = JSON.stringify(this.body(messages, opts, model, true));
     let res: Response;
     try {
-      res = await fetchImpl(this.endpoint(), {
-        method: "POST",
-        headers: await this.headers(),
-        body: JSON.stringify(this.body(messages, opts, model, true)),
-        signal: opts.signal,
-      });
+      res = await fetchImpl(url, { method: "POST", headers, body, signal: opts.signal });
     } catch (err) {
       if (err instanceof AiError) {
         throw err;
@@ -275,14 +275,14 @@ export class AnthropicProvider implements Provider {
       throw new AiError(l10n.t("No model configured for this connection."));
     }
     const fetchImpl = this.opts.fetchImpl ?? fetch;
+    // Built before the try, whose catch is for the NETWORK: an exception in
+    // our own key read or request body is ours, not "couldn't reach".
+    const url = this.endpoint();
+    const headers = await this.headers();
+    const body = JSON.stringify(this.body(messages, opts, model, true));
     let res: Response;
     try {
-      res = await fetchImpl(this.endpoint(), {
-        method: "POST",
-        headers: await this.headers(),
-        body: JSON.stringify(this.body(messages, opts, model, true)),
-        signal: opts.signal,
-      });
+      res = await fetchImpl(url, { method: "POST", headers, body, signal: opts.signal });
     } catch (err) {
       if (err instanceof AiError) throw err;
       if (isAbort(err)) return { text: "", toolCalls: [], stopReason: "stop" };

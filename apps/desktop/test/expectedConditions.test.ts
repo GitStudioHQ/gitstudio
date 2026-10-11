@@ -35,7 +35,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
-import { reportableResultMessage } from "../src/main/expectedError";
+import { remoteOutcome, reportableResultMessage } from "../src/main/expectedError";
 
 const ROOT = fileURLToPath(new URL("../src/main", import.meta.url));
 
@@ -599,6 +599,58 @@ test("an ok:true result, or one with no message, is never reported", () => {
   assert.equal(reportableResultMessage({ ok: false, changed: false, message: "   " }), undefined);
   for (const v of [undefined, null, "nope", 0, true]) {
     assert.equal(reportableResultMessage(v), undefined);
+  }
+});
+
+test("a remote's answer about itself or the user's setup is not filed (reports #22, #24, #25, #30–#33)", () => {
+  // git's own words, as push/pull hand them back — names invented.
+  const answers: Record<string, string> = {
+    "moved on (#24, #25)":
+      "To https://github.com/acme/app.git\n ! [rejected]        main -> main (non-fast-forward)\n" +
+      "error: failed to push some refs to 'https://github.com/acme/app.git'\n" +
+      "hint: Updates were rejected because the tip of your current branch is behind\n",
+    "moved on, fetch first (#33)":
+      "To git.example.com:acme/app.git\n ! [rejected]        main -> main (fetch first)\n" +
+      "error: failed to push some refs to 'git.example.com:acme/app.git'\n",
+    "protected branch (#22)":
+      "remote: error: GH006: Protected branch update failed for refs/heads/main.\n" +
+      "To https://github.com/acme/app.git\n ! [remote rejected] main -> main (protected branch hook declined)\n",
+    "pre-receive hook": " ! [remote rejected] main -> main (pre-receive hook declined)",
+    "ruleset (GH013)": "remote: error: GH013: Repository rule violations found for refs/heads/main.\n ! [remote rejected] main -> main (push declined due to repository rule violations)",
+    "no credentials (#31, #32)": "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+    "wrong credentials": "remote: Invalid username or password.\nfatal: Authentication failed for 'https://github.com/acme/app.git/'",
+    "ssh key": "git@github.com: Permission denied (publickey).\nfatal: Could not read from remote repository.",
+    "no access": "remote: Repository not found.\nfatal: repository 'https://github.com/acme/app.git/' not found",
+    "403": "fatal: unable to access 'https://github.com/acme/app.git/': The requested URL returned error: 403",
+    "no remote (#30)": "fatal: No configured push destination.\nEither specify the URL from the command-line or configure a remote repository using",
+    "offline": "fatal: unable to access 'https://github.com/acme/app.git/': Could not resolve host: github.com",
+    "ssh offline": "ssh: connect to host github.com port 22: Operation timed out\nfatal: Could not read from remote repository.",
+  };
+  for (const [label, message] of Object.entries(answers)) {
+    assert.ok(remoteOutcome(message), label);
+    assert.equal(reportableResultMessage({ ok: false, changed: false, message }), undefined, label);
+  }
+});
+
+test("…and whatever the app itself built for the remote still files", () => {
+  const ours = [
+    // A refspec we wrote that names nothing.
+    "error: src refspec feature does not match any\nerror: failed to push some refs to 'origin'",
+    // A remote we named that is not there (reportingVerdicts files this one too).
+    "fatal: 'origin' does not appear to be a git repository\nfatal: Could not read from remote repository.",
+    // A --force-with-lease refused: the expected sha in the lease is ours (SyncOps.push).
+    " ! [rejected]        topic -> topic (stale info)\nerror: failed to push some refs to 'origin'",
+    // A remote refusing a ref NAME: the app may have spelled it.
+    " ! [remote rejected] heads/x -> heads/x (funny refname)\nerror: failed to push some refs to 'origin'",
+    " ! [remote rejected] main -> refs/pull/1/head (deny updating a hidden ref)",
+    // Pull branch into a branch another worktree has: our door should have asked (#26).
+    "fatal: refusing to fetch into branch 'refs/heads/main' checked out at '/work/other'",
+    "git push failed",
+    "merge conflict",
+  ];
+  for (const message of ours) {
+    assert.equal(remoteOutcome(message), undefined, message);
+    assert.equal(reportableResultMessage({ ok: false, changed: false, message }), message);
   }
 });
 

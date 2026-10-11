@@ -14,6 +14,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupAll, fakeModel, freshUserData, makeBridge, type FakeModel } from "./aiBridge.harness";
+import { reportableResultMessage } from "../src/main/expectedError";
 
 let userData: string;
 let model: FakeModel;
@@ -136,6 +137,28 @@ test("a key makes a keyed connection usable, and is never shown or written in pl
   const cleared = await bridge.setKey(id, "   ");
   assert.equal(cleared.connections[0].hasKey, false, "a blank key removes the stored one");
   assert.equal(cleared.connections[0].usable, false);
+});
+
+test("Test: the provider's answer about the connection is a condition; a request it could not read still reports (#28, #29)", async () => {
+  const { bridge } = await makeBridge();
+  const id = (await bridge.addConnection("openai")).connections[0].id;
+  await bridge.setKey(id, "sk-wrong");
+  // A refused key, a rate limit: the Test button's whole answer.
+  for (const status of [401, 429]) {
+    model.replies.push(new Response("{}", { status }));
+    const r = await bridge.test(id);
+    assert.equal(r.ok, false);
+    assert.equal(r.expected, true, `${status}: ${r.message}`);
+    assert.equal(reportableResultMessage(r), undefined);
+  }
+  // A 400 is the provider saying it could not read what WE sent; a 404 is a
+  // wrong URL, which may be the user's or one our endpoint() joined.
+  for (const status of [400, 404]) {
+    model.replies.push(new Response("{}", { status }));
+    const bad = await bridge.test(id);
+    assert.equal(bad.expected, undefined, `${status}: ${bad.message}`);
+    assert.equal(reportableResultMessage(bad), bad.message);
+  }
 });
 
 test("a pre-1.4 keyring blob is never read, and is deleted on the way", async () => {
