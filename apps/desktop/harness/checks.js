@@ -4782,6 +4782,72 @@
       );
     },
 
+    /**
+     * A key pressed INSIDE an editor belongs to the editor, in every editor
+     * alike: the Split diff, the Unified diff and the Code viewer.
+     *
+     * The page's keys (← and Esc go Back, ? opens the cheat sheet, / jumps to
+     * a filter, Backspace goes up a folder) ask "is the user typing?" by the
+     * focused element: INPUT, TEXTAREA or contentEditable. Monaco 0.55 types
+     * through Chromium's EditContext by default — a DIV that is none of
+     * those — so every editor looked like the page: ← to move the caret in a
+     * diff threw you off the pull request. The merge panes and the Split diff
+     * moved to Monaco's textarea (clipboard, #84) while the Unified diff and
+     * the Code viewer stayed on EditContext, and the same key in the same pane
+     * did different things by view mode. The Code viewer's own / and
+     * Backspace asked nothing at all.
+     *
+     * `__GS_ARG` is "<split|unified|code>:<key>". Each key is its own case: a
+     * key that navigates leaves nothing to press the next one in. Unified is
+     * read before its worker watchdog can swap it for Split (a file:// page
+     * has no diff worker).
+     */
+    "keys-typed-in-an-editor-stay-in-it": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const [kind, key] = (window.__GS_ARG || "split:ArrowLeft").split(":");
+      await settle(1500);
+      let ed = null;
+      if (kind === "code") {
+        ed = $(".code-file-editor .monaco-editor");
+      } else {
+        const mode = kind === "split" ? "split" : "inline";
+        const btn = $(`.diffmode-seg .cmp-mode-btn[data-mode="${mode}"]`);
+        c.ok(!!btn, `the diff offers ${mode}`);
+        if (!btn) return;
+        if (!btn.classList.contains("active")) {
+          btn.click();
+          await settle(300);
+        }
+        ed =
+          kind === "split"
+            ? $$(".jb-diff-grid .monaco-editor")[1]
+            : $$(".monaco-diff-editor .monaco-editor").find((e) => e.closest(".modified") && e.offsetWidth > 0);
+      }
+      c.ok(!!ed, `the ${kind} editor is mounted`);
+      if (!ed) return;
+      const input = ed.querySelector("textarea.inputarea, .native-edit-context");
+      c.ok(!!input, `the ${kind} editor has an input`);
+      if (!input) return;
+      input.focus();
+      await settle(100);
+      c.ok(document.activeElement === input, `the ${kind} editor has the keyboard`);
+      const page = () => [text(".det-title"), !!$(".code-file-surface"), ed.isConnected].join(" | ");
+      const before = page();
+      const codes = { ArrowLeft: ["ArrowLeft", 37], Escape: ["Escape", 27], "?": ["Slash", 191], "/": ["Slash", 191], Backspace: ["Backspace", 8] };
+      const [code, keyCode] = codes[key];
+      document.activeElement.dispatchEvent(
+        new KeyboardEvent("keydown", { key, code, keyCode, which: keyCode, shiftKey: key === "?", bubbles: true, cancelable: true }),
+      );
+      await settle(400);
+      const where = `${key} in the ${kind} editor`;
+      c.eq(page(), before, `${where} leaves the page where it was`);
+      c.ok(!$(".shortcuts-card"), `${where} does not open the shortcut sheet`);
+      c.ok(document.activeElement?.closest?.(".monaco-editor") === ed, `${where} keeps the keyboard in the editor (now on ${document.activeElement?.tagName}.${String(document.activeElement?.className).split(" ")[0]})`);
+      // One input for every editor, so every guard answers alike.
+      c.eq(input.tagName, "TEXTAREA", `the ${kind} editor's input`);
+    },
+
     // The app's own shortcut sheet advertises "Esc or ←" on detail pages. The
     // arrow was implemented nowhere, and Esc unhooked itself on the next KEYDOWN
     // after the page detached — so switching section, typing anything, and
