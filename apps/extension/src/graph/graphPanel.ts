@@ -1018,6 +1018,25 @@ export class CommitGraphPanel {
     // moment; a second right-click in that moment wins, rather than the first
     // menu landing late on top of it.
     const seq = ++this.menuSeq;
+    // The Uncommitted changes row is not a commit. Its menu offered the commit
+    // menu anyway, and every item ran git on the all-zeros sha: Checkout and
+    // Detach said "unable to read tree (0000000)", Create Branch "not a valid
+    // branch point" — crash reports #21 and #23. Its menu is the details
+    // pane's own for that row, and goes where that pane's buttons go.
+    if (sha === UNCOMMITTED_SHA) {
+      this.post({
+        type: "commitMenu",
+        sha,
+        x,
+        y,
+        title: l10n.t("Uncommitted changes"),
+        items: [
+          { id: "commit", label: l10n.t("Commit…"), icon: "git-commit" },
+          { id: "stash", label: l10n.t("Stash"), icon: "archive" },
+        ],
+      });
+      return;
+    }
     const active = this.repos.getActive();
     const items = active ? await commitMenuItemsFor(active.ctx, sha) : commitMenuItems();
     if (seq !== this.menuSeq) {
@@ -1103,6 +1122,13 @@ export class CommitGraphPanel {
   private async runCommitMenuAction(sha: string, id: string): Promise<void> {
     const active = this.repos.getActive();
     if (!active || !id) {
+      return;
+    }
+    // Whatever a page sends for the Uncommitted changes row, no commit action
+    // runs on it (see openCommitMenu): its own menu's items, like the details
+    // pane's, go to the stash command or to Changes.
+    if (sha === UNCOMMITTED_SHA) {
+      await this.doCommitAction(id, sha);
       return;
     }
     // "Start interactive rebase here" is its own flow (spawns a terminal + opens

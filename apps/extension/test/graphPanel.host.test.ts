@@ -506,6 +506,47 @@ test("details toolbar on the Uncommitted row: Stash goes to the stash command, a
   assert.deepEqual(kit.ran.map((c) => c.command), ["gitstudio.stash.save", "gitstudio.commit.focus"]);
 });
 
+test("the Uncommitted row's menu is its own, and no commit action ever runs on it (reports #21, #23)", async () => {
+  const { r, two, entry } = history();
+  const state = {
+    indexChanges: [],
+    workingTreeChanges: [change(r.dir, "two.txt", 5)],
+    untrackedChanges: [],
+    mergeChanges: [],
+  };
+  const g = track(open({ ...entry, repo: { state } }));
+  const init = await g.nth("graphInit", 1);
+  assert.equal(init.rows[0].sha, UNCOMMITTED_SHA);
+
+  // Right-click and the keyboard's menu key: the details pane's two actions
+  // for that row — never Checkout / Create Branch / Reset on the zero sha.
+  g.w.send({ type: "contextMenu", sha: UNCOMMITTED_SHA, x: 3, y: 4 });
+  const menu = await g.nth("commitMenu", 1);
+  assert.equal(menu.title, "Uncommitted changes");
+  assert.deepEqual(menu.items.map((i: { id: string }) => i.id), ["commit", "stash"]);
+  g.w.send({ type: "action", sha: UNCOMMITTED_SHA });
+  assert.deepEqual((await g.nth("commitMenu", 2)).items.map((i: { id: string }) => i.id), ["commit", "stash"]);
+
+  // A page that sends a commit action for it anyway runs no git: those were
+  // "unable to read tree (0000000)" and "not a valid branch point", in red,
+  // and a crash report each.
+  kit.dialog.input = "topic";
+  for (const id of ["checkout", "detach", "branch", "tag", "cherryPick", "revert", "reset"]) {
+    g.w.send({ type: "commitMenuAction", sha: UNCOMMITTED_SHA, id });
+  }
+  g.w.send({ type: "commitMenuAction", sha: UNCOMMITTED_SHA, id: "stash" });
+  await kit.until(() => kit.ran.length >= 8, "every item answered");
+  assert.deepEqual(
+    kit.ran.map((c) => c.command),
+    [...Array(7).fill("gitstudio.commit.focus"), "gitstudio.stash.save"],
+  );
+  assert.deepEqual(kit.asked, [], "nothing was asked for");
+  assert.deepEqual(kit.said.filter((s) => s.kind === "error"), []);
+  assert.equal(r.git("rev-parse", "HEAD"), two);
+  assert.equal(r.git("branch", "--list", "topic"), "");
+  assert.equal(g.count("graphInit"), 1, "nothing changed, nothing reloaded");
+});
+
 test("Open on Remote: said plainly with no remote; the commit's page on GitHub with one", async () => {
   const { r, one, entry } = history();
   const g = track(open(entry));
