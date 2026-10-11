@@ -5,6 +5,10 @@
 // Copilot's identical sparkle, and clicking it only said AI was unavailable.
 // Every menu entry of an action that runs a model is gated on
 // gitstudio.ai.enabled, as the palette's already were.
+//
+// (That scm/inputBox entry is gone since: the menu is a proposed API, so VS Code
+// never showed it from a Marketplace build and logged an error at every start
+// instead — #87. See proposedMenus.test.ts.)
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -32,6 +36,6 @@ test("every menu entry of an AI action is gated on gitstudio.ai.enabled", () => 
       if (!/\bgitstudio\.ai\.enabled\b/.test(e.when ?? "")) ungated.push(`${menu}: ${e.command} (${e.when ?? "always"})`);
     }
   }
-  assert.ok(seen >= 5, `the census found the entries (${seen})`);
+  assert.ok(seen >= 4, `the census found the entries (${seen})`);
   assert.deepEqual(ungated, []);
 });

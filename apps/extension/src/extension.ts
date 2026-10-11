@@ -60,6 +60,7 @@ import { askAndOpenSupport } from "./ui/support";
 import type { MergePeerApi } from "@gitstudio/merge-vscode/product";
 import { setUpSidesTip, SIDES_WHY_URL } from "@gitstudio/merge-vscode/upgradeTip";
 import { StagedGutter } from "./changes/stagedGutter";
+import { lineMenuTarget, type LineMenuArg } from "./changes/lineTargets";
 import { CommitViewProvider } from "./changes/commitView";
 import {
   stageSelectedLines,
@@ -530,16 +531,17 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
       stagedGutter,
       vscode.commands.registerCommand(
         "gitstudio.toggleStageAtLine",
-        (arg?: { lineNumber?: number; uri?: vscode.Uri }) => {
+        async (arg?: LineMenuArg<vscode.Uri>) => {
+          // The line-number menu hands over a 1-BASED lineNumber and the
+          // document it was opened on; a keybinding hands over nothing and
+          // means "where the cursor is". See lineMenuTarget for why the menu's
+          // document wins over the active editor.
           const editor = vscode.window.activeTextEditor;
-          if (!editor) return;
-          // The line-number menu hands over a 1-BASED lineNumber; a keybinding
-          // hands over nothing and means "where the cursor is".
-          const line =
-            typeof arg?.lineNumber === "number"
-              ? arg.lineNumber - 1
-              : editor.selection.active.line;
-          void stagedGutter.toggleAtLine(editor.document, line);
+          const target = lineMenuTarget(
+            arg,
+            editor && { uri: editor.document.uri, line: editor.selection.active.line },
+          );
+          if (target) await stagedGutter.toggleAtUri(target.uri, target.line);
         },
       ),
       vscode.commands.registerCommand("gitstudio.stageSelectedLines", () =>
