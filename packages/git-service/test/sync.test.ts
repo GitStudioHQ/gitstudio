@@ -1,7 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { removeTempRepo } from "./tmpRepo";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -312,6 +312,44 @@ test("pullFastForward refuses a diverged branch and the checked-out one", async 
   const current = await ctx.sync.pullFastForward("main");
   assert.equal(current.ok, false);
   assert.match(current.stderr, /checked out/);
+});
+
+// Report #26: "Pull branch" on a branch another worktree has checked out ran
+// the fetch anyway; git refused with "refusing to fetch into branch … checked
+// out at …", red, and a crash report. It is said first now, and marked as the
+// repository's state.
+test("pullFastForward refuses a branch another worktree has, saying where, before git runs", async () => {
+  await ctx.branches.checkout("main");
+  clik(["branch", "--track", "parked", "origin/main"]);
+  const where = mkdtempSync(join(tmpdir(), "gitstudio-wt-"));
+  removeTempRepo(where);
+  clik(["worktree", "add", "-q", where, "parked"]);
+  try {
+    commitIn(clone, "wt.txt", "advance\n", "advance main past parked");
+    const pushed = await ctx.sync.push();
+    assert.ok(pushed.ok, pushed.stderr);
+    const before = clik(["rev-parse", "parked"]).trim();
+
+    const r = await ctx.sync.pullFastForward("parked");
+    assert.equal(r.ok, false);
+    assert.equal(r.expected, true);
+    assert.match(r.stderr, /^'parked' is checked out in the worktree at .+, so it can only be pulled there\./);
+    assert.doesNotMatch(r.stderr, /refusing to fetch/);
+    assert.equal(clik(["rev-parse", "parked"]).trim(), before, "nothing moved");
+
+    // Its folder deleted: git still keeps the branch for that worktree, and
+    // "pull it in that worktree" would point at nothing.
+    removeTempRepo(where);
+    const gone = await ctx.sync.pullFastForward("parked");
+    assert.equal(gone.ok, false);
+    assert.equal(gone.expected, true);
+    assert.match(gone.stderr, /whose folder is gone .* Forget that worktree in Worktrees, then pull it\.$/);
+    assert.doesNotMatch(gone.stderr, /Pull it in that worktree/);
+    assert.equal(clik(["rev-parse", "parked"]).trim(), before, "nothing moved");
+  } finally {
+    if (existsSync(where)) clik(["worktree", "remove", "--force", where]);
+    else clik(["worktree", "prune"]);
+  }
 });
 
 test("pullFastForward on a branch with no upstream says so", async () => {

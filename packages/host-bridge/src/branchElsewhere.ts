@@ -7,7 +7,7 @@
 // list) and say this instead, before anything runs.
 
 /** The doors a branch checked out elsewhere is refused at. */
-export type ElsewhereDoor = "checkout" | "delete";
+export type ElsewhereDoor = "checkout" | "delete" | "pull";
 
 /**
  * Where the branch is, and what to do instead. `where` as the host shows
@@ -22,7 +22,11 @@ export function checkedOutElsewhereMessage(
 ): string {
   const at = `'${branch}' is checked out in the worktree at ${where}`;
   if (folderGone) {
-    return `${at}, whose folder is gone — git still keeps the branch for it. Forget that worktree in Worktrees, then ${door === "checkout" ? "check it out" : "delete it"}.`;
+    const then = door === "checkout" ? "check it out" : door === "pull" ? "pull it" : "delete it";
+    return `${at}, whose folder is gone — git still keeps the branch for it. Forget that worktree in Worktrees, then ${then}.`;
+  }
+  if (door === "pull") {
+    return `${at}, so it can only be pulled there. Pull it in that worktree.`;
   }
   return door === "checkout"
     ? `${at}, and a branch can be checked out in only one worktree at a time. Work on it there, or create a new branch from it here.`
