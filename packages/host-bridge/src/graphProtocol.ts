@@ -221,6 +221,23 @@ export interface GraphAvatarPrefsMessage {
   gravatar: boolean;
 }
 
+/** A commit's "Files changed" in the details pane: one row per file, or a folder tree (#81). */
+export type GraphFilesLayout = "list" | "tree";
+
+/**
+ * The details pane's View as Tree / View as List choice (#81), which every
+ * graph surface shares: the editor tab and the bottom panel are separate
+ * webviews, each with storage of its own, so the host keeps the one choice
+ * and posts it — before the first graphInit, and to every open graph when
+ * any of them changes it (`setFilesLayout`). A host that never sends it
+ * leaves each page with its own remembered choice (the desktop, which has
+ * no webview between it and the pane).
+ */
+export interface GraphFilesLayoutMessage {
+  type: "filesLayout";
+  layout: GraphFilesLayout;
+}
+
 /** One item in the in-graph commit actions popover (host builds the list). */
 export interface GraphMenuItem {
   /** Action id posted back as `commitMenuAction` (empty for a separator). */
@@ -270,6 +287,7 @@ export type GraphHostMessage =
   | GraphRevealMessage
   | GraphAuthorAvatarsMessage
   | GraphAvatarPrefsMessage
+  | GraphFilesLayoutMessage
   | GraphCommitMenuMessage
   | GraphCommitsSummaryMessage
   | GraphCommitContainsMessage
@@ -381,6 +399,9 @@ export type GraphWebviewMessage =
    * this so it can tell "already showing that commit" from "showing it, but the
    * user closed the details" — only a fresh reveal re-opens a dismissed dock. */
   | { type: "detailsVisibility"; open: boolean }
+  /** The details pane's View as Tree / View as List was clicked (#81): the
+   *  host remembers it and tells every graph (`filesLayout`). */
+  | { type: "setFilesLayout"; layout: GraphFilesLayout }
   /** The details pane's "in N branches" row was expanded. Containment is a
    * history walk (`git branch --all --contains`) that can be slow on large
    * repos, so it is never computed up front — only when the user asks. */

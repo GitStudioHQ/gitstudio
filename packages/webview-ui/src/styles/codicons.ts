@@ -37,6 +37,7 @@ export const codiconStyles = css`
   .codicon-tag::before { content: "\\ea66"; }
   .codicon-repo::before { content: "\\ea62"; }
   .codicon-home::before { content: "\\eb06"; }
+  .codicon-folder::before { content: "\\ea83"; }
   .codicon-folder-opened::before { content: "\\eaf7"; }
   .codicon-chevron-up::before { content: "\\eab7"; }
   .codicon-chevron-down::before { content: "\\eab4"; }
@@ -67,6 +68,8 @@ export const codiconStyles = css`
   .codicon-file::before { content: "\\ea7b"; }
   .codicon-filter::before { content: "\\eaf1"; }
   .codicon-list-flat::before { content: "\\eb84"; }
+  /* Files changed as a tree (#81): View as Tree, beside list-flat's View as List. */
+  .codicon-list-tree::before { content: "\\eb86"; }
   .codicon-warning::before { content: "\\ea6c"; }
   .codicon-target::before { content: "\\ebf8"; }
 `;

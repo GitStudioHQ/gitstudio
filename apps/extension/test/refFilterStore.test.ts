@@ -261,6 +261,14 @@ test("the store is installed before the first graph host is built — global, re
   assert.doesNotMatch(text, /new RefFilterStore\(context\.workspaceState\)/, "no longer per workspace");
 });
 
+test("the files-layout store (#81) is installed in globalState before the first graph host is built", async () => {
+  const text = await readFile(`${SRC}/extension.ts`, "utf8");
+  const installed = text.search(/setFilesLayoutStore\(new FilesLayoutStore\(context\.globalState\)\);/);
+  const firstHost = text.indexOf("new CommitPanelViewProvider(");
+  assert.ok(installed > 0, "one choice for every window and workspace, as the branch filter is");
+  assert.ok(firstHost > installed, "…before any graph host exists to miss it");
+});
+
 // ── One repository, one selection (the follow-up to #30) ────────────────────
 
 test("the same repository reached by two roots is ONE selection — as in the desktop app", async () => {

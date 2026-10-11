@@ -1267,6 +1267,8 @@
  "Use {0}": "Использовать {0}",
  "VS Code's own merge editor and conflict highlights are as they were.": "Встроенный редактор слияния VS Code и подсветка конфликтов остались как были.",
  "VS Code's own merge editor and conflict highlights are off.": "Встроенный редактор слияния VS Code и подсветка конфликтов выключены.",
+ "View as List": "Показать как список",
+ "View as Tree": "Показать как дерево",
  "Waiting": "Ожидание",
  "Waiting on {0}.": "Ожидание {0}.",
  "What is being merged in: {0}": "Что вливается: {0}",

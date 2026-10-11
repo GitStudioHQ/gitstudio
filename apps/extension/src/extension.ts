@@ -39,6 +39,7 @@ import { CommitGraphPanel } from "./graph/graphPanel";
 import { CommitsGraphViewProvider } from "./graph/commitsGraphView";
 import { CommitPanelViewProvider } from "./graph/commitPanelView";
 import { RefFilterStore, realpathRoot, setRefFilterStore } from "./graph/refFilterStore";
+import { FilesLayoutStore, setFilesLayoutStore } from "./graph/filesLayoutStore";
 import {
   GitHubAuthorAvatars,
   setAuthorAvatarResolver,
@@ -227,6 +228,11 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
       new RefFilterStore(context.globalState, { canonical: realpathRoot, legacy: context.workspaceState }),
     );
     context.subscriptions.push({ dispose: () => setRefFilterStore(undefined) });
+    // The details pane's View as Tree / View as List (#81): one choice, kept
+    // here for every graph surface — their webviews each have storage of
+    // their own, so the editor tab and the bottom panel disagreed.
+    setFilesLayoutStore(new FilesLayoutStore(context.globalState));
+    context.subscriptions.push({ dispose: () => setFilesLayoutStore(undefined) });
 
     // Inspecting a commit means revealing it in OUR Commit Graph — hosted in
     // the BOTTOM panel as a graph | details split, so your code stays open

@@ -1267,6 +1267,8 @@
  "Use {0}": "Użyj {0}",
  "VS Code's own merge editor and conflict highlights are as they were.": "Własny edytor scalania VS Code i podświetlenia konfliktów są takie, jak były.",
  "VS Code's own merge editor and conflict highlights are off.": "Własny edytor scalania VS Code i podświetlenia konfliktów są wyłączone.",
+ "View as List": "Widok jako lista",
+ "View as Tree": "Widok jako drzewo",
  "Waiting": "Czekanie",
  "Waiting on {0}.": "Czekanie na {0}.",
  "What is being merged in: {0}": "Co jest scalane: {0}",

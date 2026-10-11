@@ -3650,6 +3650,8 @@
  "Very long log — showing the most recent {0} lines.": "Very long log — showing the most recent {0} lines.",
  "View": "View",
  "View @{0}'s profile": "View @{0}'s profile",
+ "View as List": "View as List",
+ "View as Tree": "View as Tree",
  "View full profile": "View full profile",
  "View in Commits": "View in Commits",
  "View the project on GitHub": "View the project on GitHub",

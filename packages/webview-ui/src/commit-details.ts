@@ -2,7 +2,8 @@
 //
 // The GitLens/GitKraken commit-details surface: who/when, the full message, the
 // ref chips on this commit, and the changed-files list with per-file +/-
-// stat bars — every file openable as a diff — plus a one-click action toolbar
+// stat bars — every file openable as a diff, as a list or a folder tree
+// (filesTree.ts, #81) — plus a one-click action toolbar
 // (checkout, branch, cherry-pick, revert, reset, copy). When `kind === "wip"`
 // it renders the working tree instead (staged/unstaged groups + stage/commit
 // actions), powering the graph's "uncommitted changes" node.
@@ -11,11 +12,23 @@
 // listen for the `gs-file-open` / `gs-action` / `gs-copy` CustomEvents.
 
 import { LitElement, html, css, nothing } from "lit";
+import { repeat } from "lit/directives/repeat.js";
+import { styleMap } from "lit/directives/style-map.js";
 import { codiconStyles } from "./styles/codicons";
 import { hostTokens } from "./styles/hostTokens";
 import { gravatarUrl, avatarHue, authorInitials, onGravatarChange } from "./graph/avatar";
 import { absTime } from "./graph/format";
 import { refLabel } from "@gitstudio/host-bridge/graphRefFilter";
+import {
+  listRows,
+  onFilesLayoutChange,
+  readFilesLayout,
+  saveFilesLayout,
+  treeRows,
+  type FileRow,
+  type FilesLayout,
+  type FolderRow,
+} from "./filesTree";
 import type {
   CommitDetailsPayload,
   CommitDetailsActionId,
@@ -155,6 +168,19 @@ export class CommitDetails extends LitElement {
   private containsTimer: ReturnType<typeof setTimeout> | undefined;
   /** Unsubscribes from the author-picture switch (see graph/avatar.ts). */
   private disposeGravatar: (() => void) | undefined;
+  /**
+   * "Files changed" as a list or as a folder tree (#81) — one choice for
+   * every commit and every pane, remembered (filesTree.ts).
+   */
+  private filesLayout: FilesLayout = "list";
+  private disposeFilesLayout: (() => void) | undefined;
+  /** Folders closed in the tree, by whole path, per list ("files", or the
+   *  working tree's "staged" / "unstaged"). Every folder opens on a new commit. */
+  private closedDirs = new Map<string, Set<string>>();
+  /** The row holding each list's one Tab stop (its roving tabindex), by key. */
+  private filesFocus = new Map<string, string>();
+  /** The commit the two maps above belong to. */
+  private filesSha: string | undefined;
 
   constructor() {
     super();
@@ -165,6 +191,13 @@ export class CommitDetails extends LitElement {
 
   /** Selecting a different commit invalidates the containment answer. */
   willUpdate(changed: Map<string, unknown>): void {
+    // Another commit's files: its folders all open, and its first row is the
+    // Tab stop. The working tree keeps both through its refreshes (same sha).
+    if (changed.has("details") && this.details?.sha !== this.filesSha) {
+      this.filesSha = this.details?.sha;
+      this.closedDirs.clear();
+      this.filesFocus.clear();
+    }
     if (changed.has("details") && this.details?.sha !== this.containsSha) {
       this.containsState = "idle";
       this.containsList = [];
@@ -202,6 +235,7 @@ export class CommitDetails extends LitElement {
    * render path: the row appears when the answer does, and nothing waits on it.
    */
   updated(): void {
+    this.syncFilesTabStops();
     // The summary of several commits asks nothing of the host.
     if (this.showsSelection()) return;
     const d = this.details;
@@ -272,6 +306,8 @@ export class CommitDetails extends LitElement {
     }
     this.disposeGravatar?.();
     this.disposeGravatar = undefined;
+    this.disposeFilesLayout?.();
+    this.disposeFilesLayout = undefined;
   }
 
   connectedCallback(): void {
@@ -286,6 +322,15 @@ export class CommitDetails extends LitElement {
     // flip made while this pane was parked (the desktop keeps views alive
     // detached, and a detached pane hears nothing), so re-render on attach.
     this.disposeGravatar = onGravatarChange(() => this.requestUpdate());
+    // List or tree: the remembered choice, and any change to it made in
+    // another pane (or, on the desktop, another window) while this one is up.
+    this.filesLayout = readFilesLayout();
+    this.disposeFilesLayout?.();
+    this.disposeFilesLayout = onFilesLayoutChange((layout) => {
+      if (layout === this.filesLayout) return;
+      this.filesLayout = layout;
+      this.requestUpdate();
+    });
     this.requestUpdate();
   }
 
@@ -732,9 +777,12 @@ export class CommitDetails extends LitElement {
 
       .file {
         display: flex; align-items: center; gap: 8px; height: 26px;
-        padding: 0 6px; border-radius: 5px; cursor: pointer; user-select: none;
+        /* Indented by its level in the tree (#81); the list is all level 1. */
+        padding: 0 6px 0 calc(6px + var(--depth, 0) * 12px);
+        border-radius: 5px; cursor: pointer; user-select: none;
       }
       .file:hover { background: var(--gs-hover); }
+      .file:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -1px; }
       .fstatus {
         width: 16px; height: 16px; flex: 0 0 auto; border-radius: 4px;
         display: inline-flex; align-items: center; justify-content: center;
@@ -745,6 +793,10 @@ export class CommitDetails extends LitElement {
       }
       .fname { flex: 0 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .file.deleted .fname { text-decoration: line-through; opacity: 0.8; }
+      /* Right-to-left so a long path loses its START to the ellipsis, not
+         the folder it ends in. The path itself sits in a left-to-right
+         isolate (bdi dir=ltr): bare in the rtl run, a leading dot moved to
+         the far end and .github read as "github.". */
       .fdir {
         flex: 1 1 auto; min-width: 0; font-size: 11.5px; color: var(--gs-fg-subtle);
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -767,6 +819,40 @@ export class CommitDetails extends LitElement {
       .bar i { height: 100%; }
       .bar i.a { background: var(--gs-added); }
       .bar i.d { background: var(--gs-deleted); }
+
+      /* ── Files as a folder tree (#81) ───────────────────────────── */
+      /* View as Tree / View as List: VS Code's own toggle, at the header's
+         end. A 24px target (WCAG 2.2's floor); its negative margins keep the
+         header the height it was. None on the right: the files column scrolls,
+         and a box past its edge would scroll it sideways. */
+      .files-layout {
+        width: 24px; height: 24px; margin: -4px 0 -4px auto;
+        border-radius: 5px; flex: 0 0 auto;
+      }
+      .files-stat + .files-layout { margin-left: 0; }
+      .files-layout .codicon { font-size: 14px; }
+      .files-layout:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -1px; }
+      .ftree { display: flex; flex-direction: column; }
+      /* The disclosure chevron; on a file row the same width stays empty, so
+         a file's status sits where its sibling folders' icons do. */
+      .twisty {
+        flex: 0 0 16px; width: 16px; margin-right: -4px;
+        font-size: 14px; color: var(--gs-fg-muted);
+      }
+      .file.dir:hover .twisty { color: var(--gs-fg); }
+      .dicon { flex: 0 0 auto; width: 16px; font-size: 14px; color: var(--gs-fg-muted); }
+      /* Where a renamed file came from takes only the room its name leaves:
+         in a narrow pane the name stays whole and the old path gives way,
+         from its start, while the arrow saying what it is stays. */
+      .fdir.from {
+        flex-basis: 0; display: flex; gap: 4px; direction: ltr;
+        color: var(--gs-fg-muted);
+      }
+      .from-arrow { flex: 0 0 auto; }
+      .from-path {
+        min-width: 0; overflow: hidden; text-overflow: ellipsis;
+        direction: rtl; text-align: left;
+      }
 
       /* ── Several commits selected (issue #32) ─────────────────────── */
       /* Its own scroller: the wide layout above clips .scroll, and this pane
@@ -1310,12 +1396,14 @@ export class CommitDetails extends LitElement {
       if (f.additions > 0) add += f.additions;
       if (f.deletions > 0) del += f.deletions;
     }
+    const title = d.kind === "wip" ? l10n.t("Changes") : l10n.t("Files changed");
     const header = html`<div class="files-head">
-      <span class="files-title">${d.kind === "wip" ? l10n.t("Changes") : l10n.t("Files changed")}</span>
+      <span class="files-title">${title}</span>
       <span class="files-count">${files.length}</span>
       ${add || del
         ? html`<span class="files-stat"><span class="add">+${add}</span><span class="del">−${del}</span></span>`
         : nothing}
+      ${files.length ? this.filesLayoutButton() : nothing}
     </div>`;
 
     if (files.length === 0) {
@@ -1327,26 +1415,234 @@ export class CommitDetails extends LitElement {
       const staged = files.slice(0, d.stagedCount);
       const unstaged = files.slice(d.stagedCount);
       return html`${header}
-        ${staged.length ? html`<div class="group-label">${l10n.t("Staged")}</div>${staged.map((f) => this.fileRow(f, true))}` : nothing}
-        ${unstaged.length ? html`<div class="group-label">${l10n.t("Unstaged")}</div>${unstaged.map((f) => this.fileRow(f, true))}` : nothing}`;
+        ${staged.length ? html`<div class="group-label">${l10n.t("Staged")}</div>${this.filesList("staged", l10n.t("Staged"), staged, true)}` : nothing}
+        ${unstaged.length ? html`<div class="group-label">${l10n.t("Unstaged")}</div>${this.filesList("unstaged", l10n.t("Unstaged"), unstaged, true)}` : nothing}`;
     }
-    return html`${header}${files.map((f) => this.fileRow(f, false))}`;
+    return html`${header}${this.filesList("files", title, files, d.kind === "wip")}`;
   }
 
-  private fileRow(f: CommitFileChange, wip: boolean) {
+  /**
+   * View as Tree / View as List — the toggle VS Code's Source Control view
+   * has: its icon and its name are where it takes you (#81).
+   */
+  private filesLayoutButton() {
+    const tree = this.filesLayout === "tree";
+    const label = tree ? l10n.t("View as List") : l10n.t("View as Tree");
+    return html`<button class="icon-btn files-layout" title=${label} aria-label=${label}
+      @click=${this.toggleFilesLayout}>
+      <span class="codicon codicon-${tree ? "list-flat" : "list-tree"}" aria-hidden="true"></span></button>`;
+  }
+
+  private toggleFilesLayout = (): void => {
+    this.filesLayout = this.filesLayout === "tree" ? "list" : "tree";
+    // Every pane hears it (and repaints); this one already has.
+    saveFilesLayout(this.filesLayout);
+    this.requestUpdate();
+    // A host with other graphs of its own (the extension's editor tab and
+    // bottom panel) passes it on to them; the desktop needs nothing more.
+    this.emit("gs-files-layout", { layout: this.filesLayout });
+  };
+
+  /**
+   * One list of files, as a list or as a tree. Either way it is the tree
+   * widget VS Code's own lists are — one run of treeitems, all at level 1 in
+   * the list — so the keys are the same in both, and a row is the same row.
+   */
+  private filesList(group: string, label: string, files: CommitFileChange[], wip: boolean) {
+    const tree = this.filesLayout === "tree";
+    const rows = tree ? treeRows(files, this.closedDirs.get(group)) : listRows(files);
+    return html`<div class="ftree" role="tree" aria-label=${label} data-group=${group}
+      @keydown=${this.onFilesKey} @focusin=${this.onFilesFocus}>
+      ${repeat(
+        rows,
+        (r) => r.key,
+        (r) => (r.kind === "dir" ? this.dirRow(group, r) : this.fileRow(r.file, wip, r, tree)),
+      )}
+    </div>`;
+  }
+
+  /** A folder: its name, and what everything under it adds up to. A click
+   *  (or Enter, Space, → and ←) opens or closes it. */
+  private dirRow(group: string, r: FolderRow) {
+    const t = r.tally;
+    return html`<div
+      class="file dir"
+      role="treeitem"
+      tabindex="-1"
+      data-key=${r.key}
+      data-dir=${r.path}
+      aria-level=${r.level}
+      aria-setsize=${r.setsize}
+      aria-posinset=${r.posinset}
+      aria-expanded=${r.expanded ? "true" : "false"}
+      style=${styleMap({ "--depth": String(r.level - 1) })}
+      title=${r.path}
+      @click=${() => this.toggleDir(group, r.path)}>
+      <span class="twisty codicon codicon-${r.expanded ? "chevron-down" : "chevron-right"}" aria-hidden="true"></span>
+      <span class="dicon codicon codicon-${r.expanded ? "folder-opened" : "folder"}" aria-hidden="true"></span>
+      <span class="fname">${r.name}</span>
+      <span class="fdir"></span>
+      <span class="fnums">
+        ${t.additions ? html`<span class="add">+${t.additions}</span>` : nothing}
+        ${t.deletions ? html`<span class="del">−${t.deletions}</span>` : nothing}
+      </span>
+    </div>`;
+  }
+
+  /** Open or close a folder; `open` given, only that way. */
+  private toggleDir(group: string, path: string, open?: boolean): void {
+    let closed = this.closedDirs.get(group);
+    if (!closed) {
+      closed = new Set();
+      this.closedDirs.set(group, closed);
+    }
+    const isOpen = !closed.has(path);
+    const next = open ?? !isOpen;
+    if (next === isOpen) return;
+    if (next) closed.delete(path);
+    else closed.add(path);
+    this.requestUpdate();
+  }
+
+  /** The keyboard is on a row: that row is its list's Tab stop from now on. */
+  private onFilesFocus = (e: FocusEvent): void => {
+    const list = e.currentTarget as HTMLElement;
+    const row = (e.target as Element | null)?.closest?.<HTMLElement>('[role="treeitem"]');
+    if (!row?.dataset.key) return;
+    this.filesFocus.set(list.dataset.group ?? "files", row.dataset.key);
+    this.syncFilesTabStops(list);
+  };
+
+  /**
+   * One Tab stop per list (a roving tabindex): the row the keyboard was last
+   * on, else the first. The rows are drawn with tabindex -1 and only this
+   * changes it, so a repaint never fights it.
+   */
+  private syncFilesTabStops(only?: HTMLElement): void {
+    const lists = only ? [only] : [...this.renderRoot.querySelectorAll<HTMLElement>(".ftree")];
+    for (const list of lists) {
+      const rows = [...list.querySelectorAll<HTMLElement>('[role="treeitem"]')];
+      const want = this.filesFocus.get(list.dataset.group ?? "files");
+      const stop = rows.find((r) => r.dataset.key === want) ?? rows[0];
+      for (const r of rows) {
+        const t = r === stop ? 0 : -1;
+        if (r.tabIndex !== t) r.tabIndex = t;
+      }
+    }
+  }
+
+  /**
+   * The keys of the Changes view's own tree: ↑ ↓, Home End and Page Up/Down
+   * move; → opens a folder or steps into it, ← closes one or steps out to the
+   * folder it is in; Enter or Space does what a click does — opens a file's
+   * diff, or opens and closes a folder.
+   */
+  private onFilesKey = (e: KeyboardEvent): void => {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    const list = e.currentTarget as HTMLElement;
+    const row = (e.target as Element | null)?.closest?.<HTMLElement>('[role="treeitem"]');
+    if (!row || !list.contains(row)) return;
+    const rows = [...list.querySelectorAll<HTMLElement>('[role="treeitem"]')];
+    const i = rows.indexOf(row);
+    const level = (r: HTMLElement): number => Number(r.getAttribute("aria-level")) || 1;
+    const go = (j: number): void => {
+      const to = rows[Math.max(0, Math.min(rows.length - 1, j))];
+      if (!to || to === row) return;
+      to.focus({ preventScroll: true });
+      to.scrollIntoView({ block: "nearest" });
+    };
+    const k = e.key;
+    if (k === "ArrowDown" || k === "ArrowUp" || k === "Home" || k === "End" || k === "PageDown" || k === "PageUp") {
+      e.preventDefault();
+      // A page is what the pane shows of the list: measured on the box that
+      // scrolls it. That is the files column only in the wide split; stacked,
+      // the column is as tall as every row and the pane's own box scrolls.
+      const page = Math.max(1, Math.floor(this.filesViewport(list) / (row.offsetHeight || 26)) - 1);
+      go(k === "ArrowDown" ? i + 1 : k === "ArrowUp" ? i - 1
+        : k === "Home" ? 0 : k === "End" ? rows.length - 1
+        : k === "PageDown" ? i + page : i - page);
+      return;
+    }
+    if (e.shiftKey) return;
+    const group = list.dataset.group ?? "files";
+    const expanded = row.getAttribute("aria-expanded");
+    const dir = row.dataset.dir;
+    if (k === "ArrowRight") {
+      e.preventDefault();
+      if (expanded === "false" && dir !== undefined) this.toggleDir(group, dir, true);
+      else if (expanded === "true" && rows[i + 1] && level(rows[i + 1]) > level(row)) go(i + 1);
+      return;
+    }
+    if (k === "ArrowLeft") {
+      e.preventDefault();
+      if (expanded === "true" && dir !== undefined) {
+        this.toggleDir(group, dir, false);
+        return;
+      }
+      for (let j = i - 1; j >= 0; j--) {
+        if (level(rows[j]) < level(row)) {
+          go(j);
+          return;
+        }
+      }
+      return;
+    }
+    if (k === "Enter" || k === " ") {
+      e.preventDefault();
+      row.click();
+    }
+  };
+
+  /** The height of the box that scrolls this list: its nearest ancestor in
+   *  the pane that scrolls on the vertical axis, else the pane. */
+  private filesViewport(list: HTMLElement): number {
+    for (let el = list.parentElement; el; el = el.parentElement) {
+      const y = getComputedStyle(el).overflowY;
+      if (y === "auto" || y === "scroll") return el.clientHeight;
+    }
+    return this.clientHeight;
+  }
+
+  /**
+   * One file's row — the same in the list and in the tree. The list shows the
+   * folder it is in beside its name; the tree already says that, so there the
+   * gray text is where a renamed file came from.
+   */
+  private fileRow(f: CommitFileChange, wip: boolean, place: FileRow, tree: boolean) {
     const st = statusColor(f.status);
     const slash = f.path.lastIndexOf("/");
     const name = slash === -1 ? f.path : f.path.slice(slash + 1);
     const dir = slash === -1 ? "" : f.path.slice(0, slash);
     const binary = f.additions < 0 || f.deletions < 0;
+    // In the tree a rename says where it came from: the old name when it only
+    // changed its name, the whole old path when it moved.
+    const from = f.oldPath
+      ? f.oldPath.slice(0, f.oldPath.lastIndexOf("/") + 1) === f.path.slice(0, slash + 1)
+        ? f.oldPath.slice(f.oldPath.lastIndexOf("/") + 1)
+        : f.oldPath
+      : "";
     return html`<div
       class="file ${f.status === "D" ? "deleted" : ""}"
-      style="--st:${st}"
+      role="treeitem"
+      tabindex="-1"
+      data-key=${place.key}
+      aria-level=${place.level}
+      aria-setsize=${place.setsize}
+      aria-posinset=${place.posinset}
+      style=${styleMap({ "--st": st, "--depth": String(place.level - 1) })}
       title=${f.oldPath ? `${f.oldPath} → ${f.path}` : f.path}
       @click=${() => this.emit("gs-file-open", { path: f.path, oldPath: f.oldPath, status: f.status, wip })}>
+      ${tree ? html`<span class="twisty" aria-hidden="true"></span>` : nothing}
       <span class="fstatus">${f.status}</span>
       <span class="fname">${name}</span>
-      ${dir ? html`<span class="fdir" dir="ltr">${dir}</span>` : html`<span class="fdir"></span>`}
+      ${tree
+        ? from
+          ? html`<span class="fdir from"><span class="from-arrow">←</span><span
+              class="from-path"><bdi dir="ltr">${from}</bdi></span></span>`
+          : html`<span class="fdir"></span>`
+        : dir
+          ? html`<span class="fdir"><bdi dir="ltr">${dir}</bdi></span>`
+          : html`<span class="fdir"></span>`}
       <span class="fnums">
         ${binary
           ? html`<span class="bin">bin</span>`

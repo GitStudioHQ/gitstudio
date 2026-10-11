@@ -11304,6 +11304,58 @@
     },
 
     /**
+     * Files changed as a list or a folder tree (#81), in the details column.
+     * The desktop builds a NEW pane for every commit it shows, so the choice
+     * has to come back from storage each time; and a file in the tree opens
+     * the diff the list opens — the same file:diff request, old path and all.
+     */
+    "the-commit-files-turn-into-a-tree-and-stay-one": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const sr = $("gitstudio-graph")?.shadowRoot;
+      c.ok(!!sr, "the graph is mounted");
+      if (!sr) return;
+      const pick = async (prefix) => {
+        sr.querySelector(`.row[data-sha^="${prefix}"]`)?.click();
+        await settle(900);
+        return $(".graph-details gitstudio-commit-details")?.shadowRoot;
+      };
+      let pr = await pick("a1b2c3d4");
+      c.ok(!!pr, "the details pane is up");
+      if (!pr) return;
+      const toggle = () => pr.querySelector(".files-head .files-layout");
+      const rows = () => [...pr.querySelectorAll('.ftree [role="treeitem"]')];
+      const named = (name) => rows().find((r) => text(r.querySelector(".fname")) === name);
+      const diffs = () => window.__GS_INVOKED.filter((x) => x.channel === "file:diff").map((x) => JSON.stringify(x.payload));
+      c.eq(toggle()?.getAttribute("aria-label"), "View as Tree", "the list offers View as Tree");
+      c.eq(pr.querySelectorAll(".ftree .file.dir").length, 0, "the list has no folders");
+      named("issueDetail.ts")?.click();
+      await settle(500);
+      const fromList = diffs().at(-1);
+      c.ok(!!fromList && fromList.includes("apps/desktop/src/renderer/issueDetail.ts"), `the list's rename asks for its diff with its old path (${fromList})`);
+
+      toggle()?.click();
+      await settle(300);
+      c.eq(toggle()?.getAttribute("aria-label"), "View as List", "the toggle now offers the list back");
+      c.eq([...pr.querySelectorAll(".ftree .file.dir .fname")].map(text).join(" | "), "apps/desktop | assets | harness | src/renderer | styles | views",
+        "folders first, a folder of one folder compacted");
+      c.eq(rows().filter((r) => r.tabIndex === 0).length, 1, "one Tab stop in the tree");
+      named("issueDetail.ts")?.click();
+      await settle(500);
+      c.eq(diffs().at(-1), fromList, "a file in the tree opens the diff the list opens");
+      named("views")?.click();
+      await settle(300);
+      c.eq(named("views")?.getAttribute("aria-expanded"), "false", "a folder closes on a click");
+      c.ok(!named("issues.ts"), "and hides its files");
+
+      pr = await pick("b2c3d4e5");
+      c.ok(!!pr, "another commit's pane is up");
+      if (!pr) return;
+      c.eq(toggle()?.getAttribute("aria-label"), "View as List", "the next commit's new pane opens as a tree");
+      c.eq(named("apps/desktop/src/renderer")?.getAttribute("aria-expanded"), "true", "with its folders open");
+    },
+
+    /**
      * The commit-details pane's ref chips are the graph's chip shortcut too
      * (issue #30: "clicking a ref chip could also be a shortcut: show only
      * this branch / add this branch to the filter"). The pane has no ref list

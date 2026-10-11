@@ -15,6 +15,7 @@ const { CommitGraphPanel } = require("../src/graph/graphPanel") as typeof import
 const { CommitPanelViewProvider } = require("../src/graph/commitPanelView") as typeof import("../src/graph/commitPanelView");
 const { CommitsGraphViewProvider } = require("../src/graph/commitsGraphView") as typeof import("../src/graph/commitsGraphView");
 const { RefFilterStore, setRefFilterStore } = require("../src/graph/refFilterStore") as typeof import("../src/graph/refFilterStore");
+const { FilesLayoutStore, setFilesLayoutStore } = require("../src/graph/filesLayoutStore") as typeof import("../src/graph/filesLayoutStore");
 const { setAuthorAvatarResolver, GitHubAuthorAvatars } = require("../src/graph/authorAvatars") as typeof import("../src/graph/authorAvatars");
 const { UNCOMMITTED_SHA } = require("@gitstudio/git-service/index") as typeof import("@gitstudio/git-service/index");
 const { EMPTY_TREE } = require("../src/history/revisionContentProvider") as typeof import("../src/history/revisionContentProvider");
@@ -83,6 +84,7 @@ afterEach(() => {
   }
   kit.resetRecords();
   setRefFilterStore(undefined);
+  setFilesLayoutStore(undefined);
   setAuthorAvatarResolver(undefined);
 });
 
@@ -664,6 +666,47 @@ test("…and Add <branch> to the filter keeps the selection and adds a branch th
   const init = await g.nth("graphInit", 3);
   assert.deepEqual([...init.refFilter].sort(), ["refs/heads/main", "refs/heads/side"]);
   assert.ok(rowShas(init).includes(s1));
+});
+
+// ── Files changed as a list or a tree (#81) ──────────────────────────────────
+
+test("View as Tree / View as List is one choice for every graph: relayed to each open one, restored for a new one", async () => {
+  const { entry } = history();
+  const mem = new Map<string, unknown>();
+  const store = new FilesLayoutStore({ get: (k: string) => mem.get(k) as never, update: async (k: string, v: unknown) => void mem.set(k, v) });
+  setFilesLayoutStore(store);
+  // The editor tab, the bottom panel and the Commits rail, each its own webview.
+  const tab = track(open(entry));
+  const panel = open(entry, { ready: false });
+  const sidePanel = { ...panel, host: CommitGraphPanel.forView(panel.w as never, panel.repos as never, EXT as never, { layout: "side" }) };
+  track(sidePanel);
+  sidePanel.w.send({ type: "ready" });
+  const rail = track(open(entry, { sidebar: true }));
+  await tab.nth("graphInit", 1);
+  await sidePanel.nth("graphInit", 1);
+  assert.equal(tab.count("filesLayout") + sidePanel.count("filesLayout"), 0, "nothing chosen yet: each page keeps what it had");
+
+  tab.w.send({ type: "setFilesLayout", layout: "tree" });
+  assert.equal((await tab.nth("filesLayout", 1)).layout, "tree", "the graph it was chosen in hears it too (one path)");
+  assert.equal((await sidePanel.nth("filesLayout", 1)).layout, "tree", "the other open graph follows at once");
+  assert.equal(store.get(), "tree");
+  assert.equal(mem.get("gitstudio.graph.filesLayout"), "tree", "remembered in the extension's state");
+
+  // A graph opened now — or a page reloaded — starts with it, before its rows.
+  const fresh = track(open(entry));
+  const first = await fresh.nth("filesLayout", 1);
+  assert.equal(first.layout, "tree");
+  const order = fresh.w.posted.map((m) => m.type);
+  assert.ok(order.indexOf("filesLayout") < order.indexOf("graphInit") || !order.includes("graphInit"), "before the first graphInit: " + order.join(", "));
+
+  sidePanel.w.send({ type: "setFilesLayout", layout: "list" });
+  for (const g of [tab, sidePanel, fresh]) assert.equal((await g.nth("filesLayout", 2)).layout, "list");
+  sidePanel.w.send({ type: "setFilesLayout", layout: "list" });
+  sidePanel.w.send({ type: "setFilesLayout", layout: "sideways" as never });
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(tab.count("filesLayout"), 2, "the same choice again, or one that is not a layout, is no news");
+  assert.equal(store.get(), "list");
+  assert.equal(rail.count("filesLayout"), 0, "the Commits rail has no files list and is told nothing");
 });
 
 // ── Drag to reorder ──────────────────────────────────────────────────────────

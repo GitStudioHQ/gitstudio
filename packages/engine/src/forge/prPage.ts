@@ -17,6 +17,7 @@
 // of the state table — kind × permission × authorship × merge state — is a
 // test of one call, not of a rendered page.
 
+import { fileTree as treeOfFiles, type FileTreeNode } from "../fileTree";
 import type {
   CiRollup,
   CiState,
@@ -765,53 +766,16 @@ export function reviewVerdictsFor(pr: Pick<PrDetail, "viewer">): { event: "COMME
 
 // ── The files, as a tree ─────────────────────────────────────────────────────
 
-export type PrFileNode =
-  | { kind: "dir"; name: string; path: string; children: PrFileNode[] }
-  | { kind: "file"; name: string; file: PrPageFile };
+export type PrFileNode = FileTreeNode<PrPageFile>;
 
 /**
  * The changed files as a tree: folders first, then files, each by name; a
  * folder with nothing but one folder in it is one row ("src/pr"), as VS
- * Code's own compact folders are.
+ * Code's own compact folders are. The builder is shared with the graph's
+ * details pane (../fileTree.ts), so the two trees read the same.
  */
 export function fileTree(files: readonly PrPageFile[]): PrFileNode[] {
-  interface Dir {
-    dirs: Map<string, Dir>;
-    files: PrPageFile[];
-  }
-  const root: Dir = { dirs: new Map(), files: [] };
-  for (const f of files) {
-    const parts = f.path.split("/").filter(Boolean);
-    let d = root;
-    for (const p of parts.slice(0, -1)) {
-      let next = d.dirs.get(p);
-      if (!next) {
-        next = { dirs: new Map(), files: [] };
-        d.dirs.set(p, next);
-      }
-      d = next;
-    }
-    d.files.push(f);
-  }
-  const build = (d: Dir, prefix: string): PrFileNode[] => {
-    const out: PrFileNode[] = [];
-    for (const [name, sub] of [...d.dirs].sort(([a], [b]) => a.localeCompare(b))) {
-      let label = name;
-      let node = sub;
-      while (node.files.length === 0 && node.dirs.size === 1) {
-        const [[n2, s2]] = [...node.dirs];
-        label = `${label}/${n2}`;
-        node = s2;
-      }
-      const path = prefix ? `${prefix}/${label}` : label;
-      out.push({ kind: "dir", name: label, path, children: build(node, path) });
-    }
-    for (const f of [...d.files].sort((a, b) => a.path.localeCompare(b.path))) {
-      out.push({ kind: "file", name: f.path.slice(f.path.lastIndexOf("/") + 1), file: f });
-    }
-    return out;
-  };
-  return build(root, "");
+  return treeOfFiles(files);
 }
 
 /** REST's file status → the page's. */

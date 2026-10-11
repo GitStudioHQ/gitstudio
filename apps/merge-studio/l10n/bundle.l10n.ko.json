@@ -1267,6 +1267,8 @@
  "Use {0}": "{0} 사용",
  "VS Code's own merge editor and conflict highlights are as they were.": "VS Code 자체의 병합 편집기와 충돌 강조는 그대로입니다.",
  "VS Code's own merge editor and conflict highlights are off.": "VS Code 자체의 병합 편집기와 충돌 강조는 꺼져 있습니다.",
+ "View as List": "목록으로 보기",
+ "View as Tree": "트리로 보기",
  "Waiting": "대기 중",
  "Waiting on {0}.": "{0}을 기다리는 중.",
  "What is being merged in: {0}": "병합되는 대상: {0}",
