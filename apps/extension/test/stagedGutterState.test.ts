@@ -94,23 +94,40 @@ function setup(name: string) {
   };
 }
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 600));
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+// A paint runs git; on a Windows runner that can take seconds. Wait for the
+// condition with a deadline, never a fixed sleep then an assert.
+async function until(ok: () => boolean, what: string, ms = 20_000): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (!ok()) {
+    if (Date.now() > deadline) assert.fail(`timed out waiting: ${what}`);
+    await sleep(25);
+  }
+}
+// For "nothing happened": wait until the git reads stop moving.
+async function quiet(reads: () => number): Promise<void> {
+  let last = -1;
+  const deadline = Date.now() + 20_000;
+  while (reads() !== last) {
+    if (Date.now() > deadline) assert.fail("git reads never stopped");
+    last = reads();
+    await sleep(600);
+  }
+}
 
 test("the marks follow the index when something else stages", async () => {
   const t = setup("gutter-follow");
-  await settle();
-  assert.equal(t.painted.get(1), "unstaged", "painted from git at the start");
+  await until(() => t.painted.get(1) === "unstaged", "painted from git at the start");
   t.r.git("add", "f.txt"); // staged from a terminal (or VS Code's own Source Control)
   t.fireRepoChange();
-  await settle();
-  assert.equal(t.painted.get(1), "staged", "repainted when the repository says it changed");
-  assert.equal(t.painted.get(4), "staged");
+  await until(() => t.painted.get(1) === "staged", "repainted when the repository says it changed");
+  await until(() => t.painted.get(4) === "staged", "both changes repainted");
   t.gutter.dispose();
 });
 
 test("the toggle reads git, not the last paint: a change unstaged elsewhere is staged again, not 'unstaged' twice", async () => {
   const t = setup("gutter-toggle");
-  await settle();
+  await until(() => t.painted.get(1) === "unstaged", "painted from git at the start");
   await t.gutter.toggleAtLine(t.document as never, 1);
   assert.equal(t.index(), "a\nB\nc\nd\ne\n", "the first toggle stages line 1's change");
   // Unstaged behind the gutter's back (VS Code's own SCM view, a terminal):
@@ -125,22 +142,20 @@ test("the toggle reads git, not the last paint: a change unstaged elsewhere is s
 test("a status run that left the index alone reads no git; a moved index or HEAD does", async () => {
   // vscode.git reports a working-tree change on every save and window focus.
   const t = setup("gutter-quiet");
-  await settle();
+  await until(() => t.painted.get(1) === "unstaged", "painted from git at the start");
   t.fireRepoChange(); // the first look records the index file
-  await settle();
+  await quiet(t.reads);
   const before = t.reads();
   t.fireRepoChange();
   t.fireRepoChange();
-  await settle();
+  await quiet(t.reads);
   assert.equal(t.reads(), before, "no repaint while the index file is the same file");
   t.r.git("add", "f.txt");
   t.fireRepoChange();
-  await settle();
-  assert.ok(t.reads() > before, "the index moved: repainted");
-  assert.equal(t.painted.get(1), "staged");
+  await until(() => t.reads() > before && t.painted.get(1) === "staged", "the index moved: repainted");
+  await quiet(t.reads);
   const afterAdd = t.reads();
   t.fireRepoChange("refs"); // a commit, a checkout: HEAD moved
-  await settle();
-  assert.ok(t.reads() > afterAdd, "a ref change always repaints");
+  await until(() => t.reads() > afterAdd, "a ref change always repaints");
   t.gutter.dispose();
 });
