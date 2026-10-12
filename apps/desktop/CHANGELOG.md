@@ -9,7 +9,7 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
-## [Unreleased]
+## [2.6.0] - 2026-10-12
 
 ### Added
 - **Files changed as a tree.** A commit's details beside the graph have a
@@ -45,6 +45,16 @@ but they share the same engine, so most Git behaviour lands in both at once.
   diff, ← and Esc left the pull request page and ? opened the keyboard
   shortcuts, while the Split diff kept them; every editor now keeps the keys
   typed in it. Tab out of it first to go back with Esc or ←.
+- **A terminal that went away no longer spins the app.** Started from a
+  terminal that was then closed, the app spun a CPU core trying to log to it
+  and filed crash reports about it.
+- **A folder or a Git GitStudio may not use is named as such.** A repository
+  folder GitStudio isn't allowed to open, or a Git it isn't allowed to run,
+  said "spawn git EACCES".
+- **An Actions job without a log says so.** A job whose log isn't there yet,
+  or any more, said "Not found on GitHub."
+- **Deleting a branch with unmerged commits asks whether to force it, in any
+  language.** The question only came when Git spoke English.
 
 ## [2.5.0] - 2026-10-01
 
