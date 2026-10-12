@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Open diffs in Merge Studio's comparison.** A new setting, `jbMerge.useAsDefaultDiffViewer` (off by default), opens VS Code's diffs of files and Git revisions — Source Control, Compare with Selected, Compare with Saved, history — in Merge Studio's side-by-side comparison instead of VS Code's diff editor. Diffs that belong to other tools (pull request reviews, AI edit reviews), diffs GitStudio opens itself, and binary files stay in VS Code's. If GitStudio is installed with its own `gitstudio.merge.useAsDefaultDiffViewer` on, GitStudio handles them ([#83](https://github.com/GitStudioHQ/gitstudio/issues/83); thanks, @billdwhite).
+
+### Fixed
+
+- **Copy, cut and paste work in the merge editor's Result.** Typing worked, but ⌘X / ⌘V (Ctrl on Windows and Linux) did nothing there, and in the editable side of the comparison either ([#84](https://github.com/GitStudioHQ/gitstudio/issues/84); thanks, @billdwhite).
+
 ## 1.3.0 — 2026-10-01
 
 ### Added

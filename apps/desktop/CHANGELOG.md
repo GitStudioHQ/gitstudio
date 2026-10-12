@@ -9,6 +9,43 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [Unreleased]
+
+### Added
+- **Files changed as a tree.** A commit's details beside the graph have a
+  **View as Tree** / **View as List** toggle on Files changed. The tree
+  groups the files by folder, folders first, with single-child folders
+  compacted into one row (`src/graph`); each folder shows the lines added
+  and removed under it, opens and closes with a click or the arrow keys, and
+  a file still opens its diff. A renamed file sits under its new path and
+  says where it came from. The choice is remembered across commits and
+  restarts, and the list can be walked with the keyboard too
+  ([#81](https://github.com/GitStudioHQ/gitstudio/issues/81)).
+
+### Fixed
+- **A line picked by its line number is one line.** Clicking a line number in
+  a diff selects up to the start of the next one, and *Stage lines* took that
+  next line — and any change starting on it — too. A deletion right at that
+  edge still comes along, and a selection that reaches the end of the file
+  keeps its last row, so *Select All* stages lines deleted at the end of the
+  file and an added (or removed) final line break.
+- **Staging a blank line at the end of a file stages what is on disk.** Adding
+  a blank or whitespace-only line at the end of a file whose last line was
+  blank — on Windows, any blank line added at the end of a CRLF file — could
+  stage the wrong text (a lost final newline, a lone carriage return).
+- **Pull says when another worktree has the branch.** Pulling a branch that
+  is checked out in another worktree failed with git's refusal; it now says
+  which worktree has it.
+- **Typing ? in the merge editor's Result types it.** It opened the keyboard
+  shortcuts instead.
+- **Fewer crash reports for git's ordinary answers.** A rejected push, a
+  missing credential, an unreachable remote or a provider's answer to *Test
+  connection* is no longer sent as a crash report.
+- **Keys typed in a diff or the code viewer stay in it.** In the Unified
+  diff, ← and Esc left the pull request page and ? opened the keyboard
+  shortcuts, while the Split diff kept them; every editor now keeps the keys
+  typed in it. Tab out of it first to go back with Esc or ←.
+
 ## [2.5.0] - 2026-10-01
 
 ### Added
