@@ -29,7 +29,7 @@ import { Language } from "./language";
 import { DockAppearance } from "./dockAppearance";
 import { redactCredentials } from "@gitstudio/host-bridge/scrub";
 import { RepoStore, repoScope } from "./repoStore";
-import { cannotOpenNotice, droppedTabsNotice, gitMissingNotice, tabsFullNotice, missingFolderError, missingFolderResult } from "./repoNotice";
+import { cannotOpenNotice, droppedTabsNotice, gitMissingNotice, tabsFullNotice, missingFolderError, missingFolderResult, spawnDeniedError, spawnDeniedResult } from "./repoNotice";
 import { gitAvailability } from "./gitCheck";
 import { menuDelivery, type MenuCommand } from "./menuDelivery";
 import { supportMenuItems } from "./supportMenu";
@@ -58,6 +58,7 @@ import { editorsView, openEditor, revealRoot, withIcons } from "./editors";
 import type { UpdateManager } from "./autoUpdate";
 import { ErrorReporter } from "./errorReporter";
 import { isExpectedError, reportableResultMessage } from "./expectedError";
+import { quietProcessOutput } from "./quietOutput";
 import { RepoWatcher, gitWatchDirs } from "./repoWatcher";
 import * as issuesApi from "./github/issues";
 import * as myWorkApi from "./github/myWork";
@@ -80,6 +81,10 @@ import type {
   IpcResponse,
   RepoInfo,
 } from "../shared/ipc";
+
+// Before anything logs: a console write to a terminal that has gone away must
+// not become an uncaught exception, let alone a loop of them (quietOutput.ts).
+quietProcessOutput();
 
 // Set the product name BEFORE the app is ready so the macOS app menu, the dock
 // label, and userData path all read "GitStudio" instead of "Electron" (which is
@@ -759,7 +764,10 @@ function handle<C extends IpcChannel>(
         let result = await fn(payload as IpcRequest<C>, event);
         // A repository whose folder is gone fails at spawn with Node's
         // "spawn git ENOENT" — git-is-not-installed words (row 14).
-        result = missingFolderResult(result, repos.scopedRoot()) ?? result;
+        // …and one this account may not enter, or a git it may not run
+        // ("spawn git EACCES"): said as what it is, not filed.
+        result =
+          missingFolderResult(result, repos.scopedRoot()) ?? spawnDeniedResult(result, repos.scopedRoot()) ?? result;
         // A handled failure carrying a message (e.g. a non-zero git command) is
         // the desktop analog of the extension's showGitError — report it too.
         //
@@ -782,7 +790,7 @@ function handle<C extends IpcChannel>(
         // Unless it is an answer rather than a fault: "you have not connected
         // GitHub" is a state the user is allowed to be in, and filing it as a
         // crash produced reports for people who had simply not signed in.
-        const gone = missingFolderError(err, repos.scopedRoot());
+        const gone = missingFolderError(err, repos.scopedRoot()) ?? spawnDeniedError(err, repos.scopedRoot());
         if (gone) throw gone;
         if (!isExpectedError(err)) {
           ErrorReporter.current?.captureError(`ipc:${channel}`, err);

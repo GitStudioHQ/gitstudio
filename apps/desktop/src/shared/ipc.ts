@@ -2425,10 +2425,12 @@ export interface IpcChannels {
   ];
   /** Delete a local branch. `was` is the tip it pointed at and `upstream` what
    *  it tracked, both read BEFORE the delete — git prints the sha and throws
-   *  the tracking config away, and undo needs both. */
+   *  the tracking config away, and undo needs both. `notMerged`: refused
+   *  because the branch has commits its upstream (or HEAD) does not — the
+   *  question to ask is whether to force it, whatever language git spoke. */
   "branch:delete": [
     { fullName: string; force?: boolean },
-    CommitActionResult & { was?: string; upstream?: string },
+    CommitActionResult & { was?: string; upstream?: string; notMerged?: boolean },
   ];
   /** Fast-forward a local branch straight from its upstream WITHOUT checking
    *  it out (`git fetch <remote> <remoteBranch>:<localBranch>`) — by FULL name. */

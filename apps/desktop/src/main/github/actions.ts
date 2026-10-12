@@ -131,6 +131,8 @@ async function fetchSignedRedirect(
   token: string,
   path: string,
   timeoutMs = 30_000,
+  /** What a 404 means for this caller, when it is not "you asked for the wrong thing". */
+  notFound?: () => Error,
 ): Promise<Response> {
   let res: Response;
   try {
@@ -156,6 +158,7 @@ async function fetchSignedRedirect(
       );
     }
   }
+  if (res.status === 404 && notFound) throw notFound();
   if (!res.ok) throw await githubHttpError(res);
   return res;
 }
@@ -262,8 +265,19 @@ export async function jobLog(
   const res = await fetchSignedRedirect(
     bearer(client),
     `/repos/${enc(owner)}/${enc(repo)}/actions/jobs/${req.jobId}/logs`,
+    undefined,
+    // The job id is GitHub's own, from the run's job list, so a 404 here is
+    // GitHub's answer about the log — not there yet, or not any more — and not
+    // a request we built wrong. It was filed as a crash (report 20) by the
+    // live tail, which asks every few seconds while a job runs.
+    () => new ExpectedError(noJobLogMessage()),
   );
   return res.text();
+}
+
+/** What a job with no log to read says. */
+export function noJobLogMessage(): string {
+  return l10n.t("GitHub has no log for this job right now. A job's log appears once the job starts running, and GitHub deletes old logs after a while.");
 }
 
 /**

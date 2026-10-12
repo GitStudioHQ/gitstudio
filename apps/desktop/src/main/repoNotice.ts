@@ -216,6 +216,60 @@ export function missingFolderError(
   return new ExpectedError(missingFolderMessage(root));
 }
 
+/** Node's error for a child it was not allowed to start: `spawn <git> EACCES`. */
+function isSpawnDenied(err: unknown): boolean {
+  const e = err as { code?: unknown; syscall?: unknown; message?: unknown } | undefined;
+  if (!e || typeof e !== "object") return false;
+  if (DENIED.has(String(e.code)) && String(e.syscall ?? "").startsWith("spawn")) return true;
+  return typeof e.message === "string" && /\bspawn\b\S*.*\b(?:EACCES|EPERM)\b/.test(e.message);
+}
+
+/** A repository's folder this account may not enter. */
+export function deniedFolderMessage(root: string): string {
+  return l10n.t("GitStudio isn't allowed to open the folder {0}. Check its permissions, then try again.", root);
+}
+
+/** The git program that was found may not be run. */
+export function gitNotRunnableMessage(): string {
+  return l10n.t("Git couldn't be started: this account isn't allowed to run it. Check your Git installation (or reinstall Git), then try again.");
+}
+
+/**
+ * `spawn git EACCES` (crash report 34): Node could not start git, and it says
+ * so in the same words for two different things, both reproduced. GitProcess
+ * starts git IN the repository's folder, so a folder this account may not
+ * enter — its permissions changed, a drive mounted for another user — fails at
+ * spawn; and so does a `git` that is not allowed to run. Neither is a defect
+ * of the app, and the error named neither. The folder is checked to tell them
+ * apart, and each is said as what it is, as a condition. On macOS, a folder
+ * the system's privacy settings keep from the app says EPERM; it is the same
+ * answer.
+ *
+ * Returns the error to throw instead, or undefined to leave `err` alone.
+ */
+export function spawnDeniedError(
+  err: unknown,
+  root: string | undefined,
+  probe: Partial<Pick<RepoNoticeProbe, "canRead">> = {},
+): ExpectedError | undefined {
+  if (!isSpawnDenied(err)) return undefined;
+  const canRead = probe.canRead ?? FS_PROBE.canRead;
+  return new ExpectedError(root && !canRead(root) ? deniedFolderMessage(root) : gitNotRunnableMessage());
+}
+
+/** The same, for a handler that RETURNS its failure (see missingFolderResult). */
+export function spawnDeniedResult<T>(
+  result: T,
+  root: string | undefined,
+  probe: Partial<Pick<RepoNoticeProbe, "canRead">> = {},
+): T | undefined {
+  if (!result || typeof result !== "object") return undefined;
+  const r = result as { ok?: unknown; message?: unknown };
+  if (r.ok !== false || typeof r.message !== "string") return undefined;
+  const said = spawnDeniedError({ message: r.message }, root, probe);
+  return said ? { ...result, message: said.message, expected: true } : undefined;
+}
+
 /**
  * The same, for a handler that RETURNS its failure (`{ ok: false, message }`)
  * rather than throwing it: the result with its message said plainly and marked

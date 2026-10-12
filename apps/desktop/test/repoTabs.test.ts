@@ -8,12 +8,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MAX_TABS, RepoStore, repoScope } from "../src/main/repoStore";
 import { GitBridge } from "../src/main/gitBridge";
-import { droppedTabsNotice, missingFolderError, missingFolderResult, tabsFullNotice } from "../src/main/repoNotice";
+import {
+  deniedFolderMessage,
+  droppedTabsNotice,
+  gitNotRunnableMessage,
+  missingFolderError,
+  missingFolderResult,
+  spawnDeniedError,
+  spawnDeniedResult,
+  tabsFullNotice,
+} from "../src/main/repoNotice";
 import { isExpectedError } from "../src/main/expectedError";
 import { spawn } from "node:child_process";
 import { tabStatuses, trashRefusal } from "../src/main/localRepos";
@@ -477,4 +487,83 @@ test("row 14: git in a folder that is gone says the folder is gone — not Node'
   assert.deepEqual(r, { ok: false, message: `The folder ${missing} is not there any more — it was moved or deleted.`, expected: true });
   assert.equal(missingFolderResult({ ok: false, message: err.message }, tmpdir()), undefined);
   assert.equal(missingFolderResult({ ok: true }, missing), undefined);
+});
+
+/** Node's error for `git status` started in `cwd`, with `env` — the spawn failure itself. */
+function spawnFailure(cwd: string, env?: NodeJS.ProcessEnv): Promise<Error> {
+  return new Promise<Error>((resolve, reject) => {
+    const child = spawn("git", ["status"], { cwd, env });
+    child.on("error", resolve);
+    child.on("exit", () => reject(new Error("git started — no spawn failure to read")));
+  });
+}
+
+// POSIX permissions, and not as root (root may enter any folder and run any file).
+const posixUser = process.platform !== "win32" && process.getuid?.() !== 0;
+
+test("crash report 34: git in a folder this account may not enter says so — not Node's spawn EACCES", { skip: !posixUser }, async () => {
+  const root = mkdtempSync(join(tmpdir(), "gs-denied-"));
+  execFileSync("git", ["init", "-q", root]);
+  chmodSync(root, 0o000);
+  try {
+    const err = await spawnFailure(root);
+    assert.match(err.message, /^spawn \S*git EACCES$/, "precondition: Node's own error, as in the report");
+    const said = spawnDeniedError(err, root);
+    assert.ok(said && isExpectedError(said), "a state of the user's disk, not a crash to report");
+    assert.equal(said.message, deniedFolderMessage(root));
+    assert.equal(said.message, `GitStudio isn't allowed to open the folder ${root}. Check its permissions, then try again.`);
+    // …and a handler that RETURNS the failure.
+    assert.deepEqual(spawnDeniedResult({ ok: false, message: `Error: ${err.message}` }, root), {
+      ok: false,
+      message: deniedFolderMessage(root),
+      expected: true,
+    });
+  } finally {
+    chmodSync(root, 0o755);
+    removeTempRepo(root);
+  }
+});
+
+test("crash report 34, the other cause: a git this account may not run says that, with the folder fine", { skip: !posixUser }, async () => {
+  const bin = mkdtempSync(join(tmpdir(), "gs-nogit-"));
+  const fakeGit = join(bin, "git");
+  writeFileSync(fakeGit, "#!/bin/sh\nexit 0\n");
+  chmodSync(fakeGit, 0o644); // there, and not executable
+  try {
+    const err = await spawnFailure(tmpdir(), { ...process.env, PATH: bin });
+    assert.match(err.message, /^spawn \S*git EACCES$/, "precondition: the same words from Node");
+    const said = spawnDeniedError(err, tmpdir());
+    assert.equal(said?.message, gitNotRunnableMessage());
+    assert.ok(isExpectedError(said));
+  } finally {
+    rmSync(bin, { recursive: true, force: true });
+  }
+});
+
+test("spawnDeniedError leaves every other failure alone", () => {
+  const denied = Object.assign(new Error("spawn git EACCES"), { code: "EACCES", syscall: "spawn git" });
+  // macOS's privacy settings refuse a folder with EPERM: the same answer.
+  const eperm = Object.assign(new Error("spawn git EPERM"), { code: "EPERM", syscall: "spawn git" });
+  const unreadable = { canRead: () => false };
+  assert.equal(spawnDeniedError(eperm, "/r/x", unreadable)?.message, deniedFolderMessage("/r/x"));
+  assert.equal(spawnDeniedError(denied, undefined)?.message, gitNotRunnableMessage(), "no folder: git itself");
+  for (const other of [
+    new Error("fatal: not a git repository"),
+    Object.assign(new Error("spawn git ENOENT"), { code: "ENOENT", syscall: "spawn git" }),
+    Object.assign(new Error("EACCES: permission denied, open 'x'"), { code: "EACCES", syscall: "open" }),
+    "spawn git EACCES as a string, not an error",
+  ]) {
+    assert.equal(spawnDeniedError(other, "/r/x", unreadable), undefined, String(other));
+  }
+  assert.equal(spawnDeniedResult({ ok: true, message: "spawn git EACCES" }, "/r/x"), undefined);
+  assert.equal(spawnDeniedResult({ ok: false, message: "error: cannot lock ref" }, "/r/x"), undefined);
+});
+
+test("main.ts's IPC wrapper maps both spawn failures before it decides what to file", async () => {
+  const main = readFileSync(fileURLToPath(new URL("../src/main/main.ts", import.meta.url)), "utf8");
+  const start = main.indexOf("function handle<C extends IpcChannel>(");
+  const body = main.slice(start, main.indexOf("\nfunction ", start + 1));
+  assert.match(body, /missingFolderResult\(result, repos\.scopedRoot\(\)\) \?\? spawnDeniedResult\(result, repos\.scopedRoot\(\)\)/);
+  assert.match(body, /missingFolderError\(err, repos\.scopedRoot\(\)\) \?\? spawnDeniedError\(err, repos\.scopedRoot\(\)\)/);
+  assert.ok(body.indexOf("spawnDeniedResult(") < body.indexOf("reportableResultMessage(result)"), "mapped before it is judged");
 });

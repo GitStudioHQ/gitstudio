@@ -4821,7 +4821,9 @@ class App {
       return;
     }
     let r = await host.invoke("branch:delete", { fullName: b.fullName });
-    if (!r.ok && r.message && /not fully merged/i.test(r.message)) {
+    // `notMerged` is main's answer, read from git's history rather than its
+    // words — a git speaking another language never matched the English.
+    if (!r.ok && (r.notMerged || (r.message && /not fully merged/i.test(r.message)))) {
       const force = await confirmDialog({
         title: l10n.t("Force-delete branch?"),
         message: l10n.t("'{0}' isn't fully merged. Force-deleting may discard unmerged commits.", name),

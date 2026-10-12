@@ -2811,7 +2811,7 @@ export class GitBridge {
 
   async branchDelete(
     req: { fullName: string; force?: boolean },
-  ): Promise<CommitActionResult & { was?: string; upstream?: string }> {
+  ): Promise<CommitActionResult & { was?: string; upstream?: string; notMerged?: boolean }> {
     // By FULL name — see the branch ops below. `git branch -d heads/release`
     // (the short name beside a tag "release") finds no branch at all.
     const name = localBranchOf(req.fullName);
@@ -2840,7 +2840,35 @@ export class GitBridge {
       if (up) upstream = `${up.remote}/${up.branch}`;
     }
     const r = await this.staged((c) => c.branches.delete(name, { force: req.force }));
-    return r.ok ? { ...r, was, upstream } : r;
+    if (r.ok) return { ...r, was, upstream };
+    // `git branch -d` refuses a branch with commits its upstream — or HEAD,
+    // when it tracks nothing that still exists — does not have. That is the
+    // question the Branches view asks next ("Force-delete branch?"), not a
+    // failure: it went to the crash tracker as "Delete branch" (crash report
+    // 37), and with a git that does not speak English the question was never
+    // asked, because the view looked for git's English words. Asked of git
+    // the way git decides it, so the answer does not depend on the language.
+    if (!req.force && ctx && was && (await this.notMergedForDelete(ctx, req.fullName, was))) {
+      return { ...r, expected: true, notMerged: true };
+    }
+    return r;
+  }
+
+  /**
+   * Whether `git branch -d` would refuse `fullName` (at `tip`) as not merged:
+   * the tip is not in its upstream's history, or — with no upstream that still
+   * resolves — not in HEAD's. git's own rule (branch_merged in builtin/branch.c).
+   */
+  private async notMergedForDelete(ctx: GitContext, fullName: string, tip: string): Promise<boolean> {
+    const up = await ctx.process.run(["for-each-ref", "--format=%(upstream)", fullName]);
+    const tracked = up.code === 0 ? up.stdout.trim() : "";
+    let reference = "HEAD";
+    if (tracked) {
+      const there = await ctx.process.run(["rev-parse", "--verify", "--quiet", `${tracked}^{commit}`]);
+      if (there.code === 0) reference = tracked;
+    }
+    const merged = await ctx.process.run(["merge-base", "--is-ancestor", tip, reference]);
+    return merged.code === 1;
   }
 
   /**
