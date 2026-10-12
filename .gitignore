@@ -1,7 +1,9 @@
 node_modules/
 dist/
 out/
-release/
+# electron-builder's output (apps/desktop/electron-builder.yml). Anchored: a bare
+# "release/" also hid scripts/release/, which the release workflows run.
+/apps/desktop/release/
 *.vsix
 .DS_Store
 .vscode-test/
