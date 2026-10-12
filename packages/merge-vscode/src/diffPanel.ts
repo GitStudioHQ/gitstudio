@@ -24,6 +24,10 @@ import * as l10n from "@vscode/l10n";
  */
 export interface DiffPanelState {
   fileName: string;
+  /** Preserve the title of a redirected VS Code diff. */
+  title?: string;
+  /** Keep an editable redirected document in a text tab for Save and close prompts. */
+  keepRightDocumentOpen?: boolean;
   leftLabel: string;
   rightLabel: string;
   rightEditable: boolean;
@@ -62,18 +66,22 @@ export class DiffPanel {
   }
 
   /** Open a diff panel for `state`, revealing an existing one with the same identity. */
-  static async create(host: MergeHostCore, state: DiffPanelState): Promise<void> {
+  static async create(
+    host: MergeHostCore,
+    state: DiffPanelState,
+    showOptions?: { viewColumn: vscode.ViewColumn; preserveFocus: boolean },
+  ): Promise<void> {
     const key = panelKey(host.product.viewTypes.diffView, state);
     const existing = key ? DiffPanel.open.get(key) : undefined;
     if (existing && !existing.disposed) {
-      existing.panel.reveal();
+      existing.panel.reveal(showOptions?.viewColumn, showOptions?.preserveFocus);
       await existing.sendInit();
       return;
     }
     const panel = vscode.window.createWebviewPanel(
       host.product.viewTypes.diffView,
       diffTitle(state),
-      vscode.ViewColumn.Active,
+      showOptions ?? vscode.ViewColumn.Active,
       { retainContextWhenHidden: true },
     );
     await new DiffPanel(host, panel, state).init();
@@ -306,6 +314,14 @@ export class DiffPanel {
       new vscode.Range(new vscode.Position(0, 0), new vscode.Position(document.lineCount, 0)),
       text,
     );
+    if (this.state.keepRightDocumentOpen) {
+      await vscode.window.showTextDocument(document, {
+        viewColumn: this.panel.viewColumn,
+        preserveFocus: true,
+        preview: false,
+      });
+      this.panel.reveal(this.panel.viewColumn, true);
+    }
     // The webview already shows this text; do not bounce it back as a refresh.
     this.applyingEdit = true;
     try {
@@ -326,6 +342,9 @@ async function readUriText(uri: vscode.Uri): Promise<string> {
 }
 
 function diffTitle(state: DiffPanelState): string {
+  if (state.title) {
+    return state.title;
+  }
   const base = state.fileName.split(/[\\/]/).pop() ?? state.fileName;
   return l10n.t("Diff: {0}", base);
 }
@@ -342,12 +361,14 @@ function panelKey(viewType: string, state: DiffPanelState): string | undefined {
   return [
     viewType,
     state.fileName,
+    state.title ?? "",
     state.leftSource,
     state.leftUri ?? "",
     state.rightUri,
     state.leftLabel,
     state.rightLabel,
     String(state.rightEditable),
+    String(state.keepRightDocumentOpen ?? false),
   ].join("\u0000");
 }
 

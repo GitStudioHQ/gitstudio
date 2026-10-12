@@ -1,4 +1,5 @@
 {
+  "config.jbMerge.useAsDefaultDiffViewer.markdownDescription": "Automaticky otevírat textové rozdíly VS Code v Merge Studiu: správa zdrojového kódu, porovnání souborů a revizí. Nezávislé na `#jbMerge.autoOpen#`. Binární rozdíly a vlastní editory zůstávají ve VS Code. Vypnutím se budoucí rozdíly otevřou ve VS Code. Pokud tuto volbu zapnou obě rozšíření, rozdíly zpracuje GitStudio.",
   "capabilities.untrustedWorkspaces.description": "Merge Studio funguje přes vestavěné rozšíření Git ve VS Code, které Omezený režim vypíná. Důvěřujte této složce, abyste mohli Merge Studio používat.",
   "capabilities.virtualWorkspaces.description": "Merge Studio vyžaduje místní repozitář gitu na disku.",
   "command.jbMerge.compare.title": "Porovnat v Merge Studiu",

@@ -1,4 +1,5 @@
 {
+  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "Автоматически открывать текстовые сравнения VS Code в GitStudio, включая управление исходным кодом, сравнение файлов и ревизий. Независимо от `#gitstudio.merge.autoOpen#`. Двоичные сравнения и пользовательские редакторы не меняются. Выключите, чтобы будущие сравнения открывались в VS Code. Если обе расширения включают эту настройку, сравнения обрабатывает GitStudio.",
   "capabilities.virtualWorkspaces.description": "Для работы GitStudio требуется локальный git-репозиторий на диске.",
   "command.gitstudio.abortRebase.title": "Прервать перебазирование",
   "command.gitstudio.addRemote.title": "Добавить удалённый репозиторий…",

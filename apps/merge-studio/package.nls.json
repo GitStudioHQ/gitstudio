@@ -17,6 +17,7 @@
   "command.jbMerge.support.title": "Support Merge Studio…",
   "config.jbMerge.autoApplyNonConflicting.description": "When a file opens, apply every change only one side made, and every edit both sides made identically. Conflicts are never applied automatically. Reset returns to this starting point.",
   "config.jbMerge.autoOpen.markdownDescription": "Open conflicted files in Merge Studio and show the conflicts dashboard when a merge, rebase, cherry-pick, revert, git am or stash pop stops on conflicts. If a GitStudio with the same Conflicts dashboard is installed with `#gitstudio.merge.autoOpen#` on, GitStudio does this instead.",
+  "config.jbMerge.useAsDefaultDiffViewer.markdownDescription": "Automatically open VS Code text diffs in Merge Studio, including Source Control, file comparisons and revision diffs. Independent of `#jbMerge.autoOpen#`. Binary and custom-editor diffs stay native. Turn off to use VS Code for future diffs. If both extensions enable this setting, GitStudio handles diffs.",
   "config.undefined.title": "Merge Studio",
   "customEditor.jbMerge.mergeEditor.displayName": "Merge Studio (3-way merge)",
   "description": "Resolve Git merge and rebase conflicts in a JetBrains-style three-pane editor, with a conflicts dashboard, colour-coded changes, full undo and a side-by-side diff.",

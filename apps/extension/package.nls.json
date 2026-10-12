@@ -198,6 +198,7 @@
   "config.gitstudio.general.title": "General",
   "config.gitstudio.merge.autoApplyNonConflicting.description": "Open the merge editor with every non-conflicting change already applied (JetBrains' \"apply non-conflicting changes\" on open). Off: they wait for you, one click each or all at once from the toolbar.",
   "config.gitstudio.merge.autoOpen.markdownDescription": "When a merge, rebase, cherry-pick, revert, git am or stash pop stops on conflicts: show the **Conflicts** dashboard, open a conflicted file in the GitStudio merge editor as soon as you switch to it, and take over VS Code's built-in merge editor tab. Off: nothing opens by itself — use **GitStudio: Resolve Conflicts…**. (This used to open every conflicted file as its own tab.) If Merge Studio is also installed, it leaves this to GitStudio; turn this off to let Merge Studio open conflicts instead.",
+  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "Automatically open VS Code text diffs in GitStudio, including Source Control, file comparisons and revision diffs. Independent of `#gitstudio.merge.autoOpen#`. Binary and custom-editor diffs stay native. Turn off to use VS Code for future diffs. If both extensions enable this setting, GitStudio handles diffs.",
   "config.gitstudio.merge.title": "Merge & Diff",
   "config.gitstudio.pr.defaultMergeMethod.description": "Default method offered first when merging a pull request.",
   "config.gitstudio.pr.defaultMergeMethod.enumDescriptions.0": "Create a merge commit.",

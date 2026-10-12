@@ -1,4 +1,5 @@
 {
+  "config.jbMerge.useAsDefaultDiffViewer.markdownDescription": "自动在 Merge Studio 中打开 VS Code 文本差异，包括源代码管理、文件比较和修订比较。独立于 `#jbMerge.autoOpen#`。二进制差异和自定义编辑器保持不变。关闭后，后续比较将使用 VS Code。如果两个扩展均启用此设置，则由 GitStudio 处理差异。",
   "capabilities.untrustedWorkspaces.description": "Merge Studio 通过 VS Code 内置的 Git 扩展工作，而受限模式会关闭该扩展。请信任此文件夹以使用 Merge Studio。",
   "capabilities.virtualWorkspaces.description": "Merge Studio 需要磁盘上的本地 git 仓库。",
   "command.jbMerge.compare.title": "在 Merge Studio 中比较",

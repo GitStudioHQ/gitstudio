@@ -1,4 +1,5 @@
 {
+  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "Apri automaticamente le differenze di testo di VS Code in GitStudio, inclusi il controllo del codice sorgente e i confronti di file e revisioni. Indipendente da `#gitstudio.merge.autoOpen#`. Le differenze binarie e gli editor personalizzati restano invariati. Disattiva per usare VS Code nei confronti futuri. Se entrambe le estensioni attivano questa opzione, se ne occupa GitStudio.",
   "capabilities.virtualWorkspaces.description": "GitStudio richiede un repository git locale su disco.",
   "command.gitstudio.abortRebase.title": "Interrompi rebase",
   "command.gitstudio.addRemote.title": "Aggiungi remoto…",

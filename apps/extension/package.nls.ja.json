@@ -1,4 +1,5 @@
 {
+  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "ソース管理、ファイル比較、リビジョン比較など、VS Code のテキスト差分を GitStudio で自動的に開きます。`#gitstudio.merge.autoOpen#` とは独立しています。バイナリ差分とカスタムエディターは変更しません。オフにすると、今後の差分は VS Code で開きます。両方の拡張機能で有効にした場合は GitStudio が差分を処理します。",
   "capabilities.virtualWorkspaces.description": "GitStudioにはディスク上のローカルGitリポジトリが必要です。",
   "command.gitstudio.abortRebase.title": "リベースを中止",
   "command.gitstudio.addRemote.title": "リモートを追加…",

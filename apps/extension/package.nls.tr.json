@@ -1,4 +1,5 @@
 {
+  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "Kaynak denetimi, dosya ve revizyon karşılaştırmaları dahil VS Code metin farklarını otomatik olarak GitStudio'da açın. `#gitstudio.merge.autoOpen#` ayarından bağımsızdır. İkili farklar ve özel düzenleyiciler değişmez. Sonraki karşılaştırmalarda VS Code'u kullanmak için kapatın. Her iki uzantı da bu ayarı açarsa farkları GitStudio işler.",
   "capabilities.virtualWorkspaces.description": "GitStudio diskte yerel bir git deposu gerektirir.",
   "command.gitstudio.abortRebase.title": "Yeniden Temellendirmeyi İptal Et",
   "command.gitstudio.addRemote.title": "Uzak Konum Ekle…",

@@ -1,4 +1,5 @@
 {
+  "config.jbMerge.useAsDefaultDiffViewer.markdownDescription": "Kaynak denetimi, dosya ve revizyon karşılaştırmaları dahil VS Code metin farklarını otomatik olarak Merge Studio'da açın. `#jbMerge.autoOpen#` ayarından bağımsızdır. İkili farklar ve özel düzenleyiciler değişmez. Sonraki karşılaştırmalarda VS Code'u kullanmak için kapatın. Her iki uzantı da bu ayarı açarsa farkları GitStudio işler.",
   "capabilities.untrustedWorkspaces.description": "Merge Studio, Kısıtlı Modun kapattığı VS Code'un yerleşik Git uzantısı aracılığıyla çalışır. Merge Studio'yu kullanmak için bu klasöre güvenin.",
   "capabilities.virtualWorkspaces.description": "Merge Studio diskte yerel bir git deposu gerektirir.",
   "command.jbMerge.compare.title": "Merge Studio'da Karşılaştır",
