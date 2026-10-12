@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import type { Change } from "../git/git";
 import { EMPTY_TREE, openSidesDiff } from "../history/revisionContentProvider";
 import { nativeDiffSides, type NativeSide } from "./nativeDiffSides";
+import { openWithoutRouting } from "@gitstudio/merge-vscode/ownDiffs";
 import * as l10n from "@vscode/l10n";
 
 // Change-row helpers shared by the unified Commit webview (commitView.ts) and
@@ -91,7 +92,7 @@ export async function openChangeDiff(
     const right = side(native.right);
     if (left && right && (await existsOnDisk(change.uri))) {
       const label = node.kind === "staged" ? l10n.t("{0} (Staged)", fileName) : `${fileName} (${l10n.t("Working Tree")})`;
-      await vscode.commands.executeCommand("vscode.diff", left, right, label, {
+      await openWithoutRouting(left, right, label, {
         preview: true,
       } satisfies vscode.TextDocumentShowOptions);
       return;
