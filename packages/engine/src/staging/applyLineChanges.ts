@@ -63,6 +63,23 @@ export function rangesIntersect(a: LineRange, b: LineRange): boolean {
 }
 
 /**
+ * Whether the SELECTION range `selection` takes the change whose range is
+ * `change` (both in the same coordinates).
+ *
+ * A non-empty selection takes every change it intersects — a deletion counting
+ * as the line it sits above (rangesIntersect). An EMPTY selection range is a
+ * line BOUNDARY: the edge just before line `selection.start`, where an editor
+ * selection ended at the very start of that line (clicking or dragging line
+ * numbers, Select All in a file that ends in a line break). It takes only a
+ * deletion anchored exactly there — never a change ON that line, which the
+ * selection did not reach.
+ */
+export function selectionTakes(change: LineRange, selection: LineRange): boolean {
+  if (isEmptyRange(selection)) return isEmptyRange(change) && change.start === selection.start;
+  return rangesIntersect(change, selection);
+}
+
+/**
  * Computes the diff hunks between two texts as 0-based inclusive line ranges on
  * each side. A pure list the UI can render ("3 hunks in this file").
  */

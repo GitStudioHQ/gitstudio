@@ -1,11 +1,15 @@
 import * as vscode from "vscode";
+import { computeHunks, type LineRange } from "@gitstudio/engine/staging/applyLineChanges";
 import {
-  applySelectedChanges,
-  computeHunks,
-  type LineRange,
-} from "@gitstudio/engine/staging/applyLineChanges";
+  stageHunks,
+  stageSelection,
+  unstageHunks,
+  unstageSelection,
+  type SelectionWrite,
+} from "@gitstudio/engine/staging/selectionStaging";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { relativePath } from "./changesView";
+import { selectionLines } from "./lineTargets";
 import { failed } from "../ui/notify";
 import * as l10n from "@vscode/l10n";
 
@@ -62,12 +66,16 @@ function repoForFile(repos: RepoManager, fsPath: string): RepoEntry | undefined 
   return best;
 }
 
-/** The editor's selections as 0-based inclusive line ranges (document coords). */
+/** The editor's selections as 0-based inclusive line ranges (document coords), boundaries included. */
 function selectionRanges(editor: vscode.TextEditor): LineRange[] {
-  return editor.selections.map((sel) => ({
-    start: sel.start.line,
-    end: sel.end.line,
-  }));
+  const doc = editor.document;
+  const last = doc.lineCount - 1;
+  return selectionLines(editor.selections, { line: last, character: doc.lineAt(last).text.length });
+}
+
+/** Each cursor's line (document coords). */
+function cursorLines(editor: vscode.TextEditor): number[] {
+  return editor.selections.map((s) => s.active.line);
 }
 
 /**
@@ -89,9 +97,8 @@ export async function stageSelectedLines(
 }
 
 /**
- * Stage the hunk(s) the cursor(s) currently sit in. Computes the hunks between
- * the index baseline and the document, then selects those whose modified span
- * contains a cursor line.
+ * Stage the hunk(s) the cursor(s) currently sit in, whole (stageHunks) — a
+ * deletion counting as the line it sits above.
  */
 export async function stageHunk(
   repos: RepoManager,
@@ -103,24 +110,15 @@ export async function stageHunk(
   }
   const editor = vscode.window.activeTextEditor!;
   const original = await baselineForStaging(target.entry, target.rel);
-  const modified = target.doc.getText();
-  const hunks = computeHunks(original, modified);
-  const cursorLines = editor.selections.map((s) => s.active.line);
-  const picked = hunks
-    .filter((h) =>
-      cursorLines.some((line) => line >= h.modified.start && line <= h.modified.end),
-    )
-    .map((h) => h.modified);
-
-  if (picked.length === 0) {
+  const staged = stageHunks(original, target.doc.getText(), cursorLines(editor));
+  if (!staged) {
     void vscode.window.setStatusBarMessage(
       l10n.t("$(info) GitStudio: no change under the cursor to stage"),
       2500,
     );
     return;
   }
-  const content = applySelectedChanges(original, modified, picked);
-  await commitStage(target.entry, target.rel, content, picked.length, refresh);
+  await commitStage(target.entry, target.rel, staged.content, staged.changes, refresh);
 }
 
 /** Shared: reconstruct `ranges` against the index baseline and stage. */
@@ -132,68 +130,58 @@ async function stageRangesAgainstIndex(
   refresh: StagingRefresh,
 ): Promise<void> {
   const original = await baselineForStaging(entry, rel);
-  const modified = doc.getText();
-  const hunks = computeHunks(original, modified);
-  const selectedHunks = hunks.filter((h) =>
-    ranges.some((r) => rangesOverlap(h.modified, r)),
-  );
-  if (selectedHunks.length === 0) {
+  const staged = stageSelection(original, doc.getText(), ranges);
+  if (!staged) {
     void vscode.window.setStatusBarMessage(
       l10n.t("$(info) GitStudio: nothing to stage in the selection"),
       2500,
     );
     return;
   }
-  const content = applySelectedChanges(
-    original,
-    modified,
-    selectedHunks.map((h) => h.modified),
-  );
-  await commitStage(entry, rel, content, selectedHunks.length, refresh);
+  await commitStage(entry, rel, staged.content, staged.changes, refresh);
 }
 
 /**
  * Unstage the selected lines / hunk under the cursor. We reconstruct the index
  * WITHOUT the selected change: baseline = HEAD, target = current index, and we
  * apply every staged hunk EXCEPT the ones the selection covers. The result
- * becomes the new index content. The selection is interpreted in index
- * coordinates (the staged version), which matches unstaging from the diff
- * editor's "Staged" view or a whole-file mental model.
+ * becomes the new index content.
+ *
+ * The selection is numbered like the document — the working tree — and is
+ * carried into index numbering before it is matched (see unstageSelection). It
+ * used to be matched as if it were already index lines, so on a file with an
+ * unstaged edit above the selection it rolled back a different staged change
+ * than the one selected.
  */
 export async function unstageSelectedLines(
   repos: RepoManager,
   refresh: StagingRefresh,
 ): Promise<void> {
-  await unstageByPredicate(repos, refresh, (hunk, ranges) =>
-    ranges.some((r) => rangesOverlap(hunk.modified, r)),
+  await unstageLines(repos, refresh, (head, index, working, editor) =>
+    unstageSelection(head, index, working, selectionRanges(editor)),
   );
 }
 
-/** Unstage the hunk(s) under the cursor (index-coordinate hunks). */
+/** Unstage the staged change(s) under the cursor(s), whole (unstageHunks). */
 export async function unstageHunk(
   repos: RepoManager,
   refresh: StagingRefresh,
 ): Promise<void> {
-  await unstageByPredicate(repos, refresh, (hunk, _ranges, cursorLines) =>
-    cursorLines.some(
-      (line) => line >= hunk.modified.start && line <= hunk.modified.end,
-    ),
+  await unstageLines(repos, refresh, (head, index, working, editor) =>
+    unstageHunks(head, index, working, cursorLines(editor)),
   );
 }
 
-/**
- * Core unstage: HEAD is the baseline, the index is the "modified" target, and we
- * re-stage every staged hunk that the `shouldDrop` predicate does NOT match —
- * effectively removing the matched change from the index while keeping the rest.
- */
-async function unstageByPredicate(
+/** Core unstage: write what `unstage` makes of HEAD, the index and the document. */
+async function unstageLines(
   repos: RepoManager,
   refresh: StagingRefresh,
-  shouldDrop: (
-    hunk: ReturnType<typeof computeHunks>[number],
-    ranges: LineRange[],
-    cursorLines: number[],
-  ) => boolean,
+  unstage: (
+    head: string,
+    index: string,
+    working: string,
+    editor: vscode.TextEditor,
+  ) => SelectionWrite | undefined,
 ): Promise<void> {
   const target = resolveTarget(repos);
   if (!target) {
@@ -202,30 +190,28 @@ async function unstageByPredicate(
   const editor = vscode.window.activeTextEditor!;
   const head = await target.entry.ctx.staging.headContent(target.rel);
   const index = await target.entry.ctx.staging.indexContent(target.rel);
-  const hunks = computeHunks(head, index);
-  if (hunks.length === 0) {
+  if (computeHunks(head, index).length === 0) {
     void vscode.window.setStatusBarMessage(
       l10n.t("$(info) GitStudio: nothing staged to unstage here"),
       2500,
     );
     return;
   }
-  const ranges = selectionRanges(editor);
-  const cursorLines = editor.selections.map((s) => s.active.line);
-  // Keep every staged hunk the predicate does NOT flag for removal.
-  const keep = hunks.filter((h) => !shouldDrop(h, ranges, cursorLines));
-  if (keep.length === hunks.length) {
+  const unstaged = unstage(head, index, target.doc.getText(), editor);
+  if (!unstaged) {
     void vscode.window.setStatusBarMessage(
       l10n.t("$(info) GitStudio: no staged change selected to unstage"),
       2500,
     );
     return;
   }
-  const newIndex = applySelectedChanges(head, index, keep.map((h) => h.modified));
-  const result = await target.entry.ctx.staging.stageContent(
-    target.rel,
-    newIndex,
-  );
+  // Rolling the last staged change of an ADDED file back to HEAD leaves "" —
+  // and writing that would stage an empty file for addition instead of
+  // removing the entry. Dropping the entry is what `git reset` does here.
+  const result =
+    unstaged.content === "" && head === ""
+      ? await target.entry.ctx.staging.unstageFile(target.rel)
+      : await target.entry.ctx.staging.stageContent(target.rel, unstaged.content);
   finishStaging(result.ok, result.stderr, l10n.t("Unstaged selection"), refresh);
 }
 
@@ -269,11 +255,4 @@ function finishStaging(
   }
   void vscode.window.setStatusBarMessage(l10n.t("$(check) {0}", label), 2500);
   refresh.refresh();
-}
-
-/** True when two 0-based inclusive ranges overlap (insertion points included). */
-function rangesOverlap(a: LineRange, b: LineRange): boolean {
-  const aEnd = a.end < a.start ? a.start : a.end;
-  const bEnd = b.end < b.start ? b.start : b.end;
-  return a.start <= bEnd && b.start <= aEnd;
 }

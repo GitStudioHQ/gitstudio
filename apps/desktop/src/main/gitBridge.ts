@@ -21,7 +21,8 @@ import { tmpdir } from "node:os";
 import { computeGraphLayout } from "@gitstudio/engine/graph/layout";
 import type { GraphInputCommit } from "@gitstudio/engine/graph/layout";
 import { computeHunks, applySelectedChanges } from "@gitstudio/engine/staging/applyLineChanges";
-import type { LineRange, Hunk } from "@gitstudio/engine/staging/applyLineChanges";
+import { selectionTakes, type LineRange } from "@gitstudio/engine/staging/applyLineChanges";
+import { toOriginalSelection } from "@gitstudio/engine/staging/selectionStaging";
 import { buildWireRows, wireRefs } from "@gitstudio/host-bridge/graphWire";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
@@ -3692,7 +3693,7 @@ export class GitBridge {
 
   // ── Hunk / line staging (working ⇄ index) ───────────────────────────────────
 
-  async stageLines(req: { path: string; lines: number[]; reverse?: boolean }): Promise<CommitActionResult> {
+  async stageLines(req: { path: string; lines: number[]; boundaries?: number[]; reverse?: boolean }): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) return { ok: false, changed: false, expected: true, message: l10n.t("No repository open.") };
     // Every other mutating path here proves the path stays inside the repo
@@ -3704,7 +3705,14 @@ export class GitBridge {
     return this.serialize(async () => {
       try {
         const rel = req.path;
-        const ranges = linesToRanges(req.lines);
+        // The lines, and the line boundaries the selection reached (see
+        // selectedBoundaries): a boundary takes only a deletion anchored on it.
+        // Both come from the renderer: anything but an array of line numbers
+        // is no selection, never a TypeError (and a crash report).
+        const ranges = [
+          ...linesToRanges(Array.isArray(req.lines) ? req.lines : []),
+          ...boundariesToRanges(Array.isArray(req.boundaries) ? req.boundaries : undefined),
+        ];
         if (!ranges.length)
           return { ok: false, changed: false, expected: true, message: l10n.t("No lines selected.") };
         // Before reading anything: this path round-trips the file through a
@@ -3761,13 +3769,13 @@ export class GitBridge {
         // index side.
         let selection = ranges;
         if (req.reverse) {
-          selection = toOriginalRanges(ranges, computeHunks(original, (await readWorking(ctx, rel)).text));
+          selection = toOriginalSelection(ranges, computeHunks(original, (await readWorking(ctx, rel)).text));
           if (!selection.length) {
             return { ok: false, changed: false, message: l10n.t("Nothing to apply in the selection.") };
           }
         }
         const sideOf = (h: (typeof hunks)[number]): LineRange => (req.reverse ? h.original : h.modified);
-        const selected = hunks.filter((h) => selection.some((r) => rangesOverlap(sideOf(h), r)));
+        const selected = hunks.filter((h) => selection.some((r) => selectionTakes(sideOf(h), r)));
         if (!selected.length) return { ok: false, changed: false, message: l10n.t("Nothing to apply in the selection.") };
         const content = applySelectedChanges(original, modified, selected.map((h) => h.modified));
         // …and report what actually happened. This discarded stageContent's
@@ -3975,6 +3983,14 @@ export class GitBridge {
   }
 }
 
+/** 1-based line numbers whose preceding EDGE a selection reached, as the empty
+ *  0-based ranges the engine reads as boundaries (selectionTakes). */
+function boundariesToRanges(boundaries: number[] | undefined): LineRange[] {
+  return Array.from(new Set((boundaries ?? []).filter((n) => Number.isInteger(n) && n >= 1)))
+    .sort((a, b) => a - b)
+    .map((n) => ({ start: n - 1, end: n - 2 }));
+}
+
 /** Group a sorted, de-duplicated list of 1-based line numbers into 0-based
  *  inclusive {start,end} ranges (consecutive lines merge into one range). */
 function linesToRanges(lines: number[]): LineRange[] {
@@ -3989,49 +4005,6 @@ function linesToRanges(lines: number[]): LineRange[] {
     else ranges.push({ start: zero, end: zero });
   }
   return ranges;
-}
-
-/**
- * Re-expresses ranges numbered on the MODIFIED side of `hunks` in ORIGINAL-side
- * coordinates.
- *
- * Used to carry a working-tree selection back into index numbering before it is
- * matched against the index→HEAD hunks. Lines outside every hunk shift by the
- * running length difference of the hunks before them; a line inside a hunk maps
- * to that hunk's whole original span. Lines the original does not have at all —
- * a working-only insertion — map to nothing, because there is no staged change
- * under them to pick up.
- */
-function toOriginalRanges(ranges: LineRange[], hunks: Hunk[]): LineRange[] {
-  const len = (r: LineRange): number => (r.end < r.start ? 0 : r.end - r.start + 1);
-  const mapped: LineRange[] = [];
-  // The mapping is monotonic, so folding each result into the previous one keeps
-  // the output the size of the selection's shape rather than its line count.
-  const add = (r: LineRange): void => {
-    const last = mapped[mapped.length - 1];
-    if (last && r.start >= last.start && r.start <= last.end + 1) {
-      last.end = Math.max(last.end, r.end);
-      return;
-    }
-    mapped.push(r);
-  };
-  for (const range of ranges) {
-    for (let line = range.start; line <= range.end; line++) {
-      let delta = 0;
-      let landed = false;
-      for (const h of hunks) {
-        if (len(h.modified) > 0 && line >= h.modified.start && line <= h.modified.end) {
-          if (len(h.original) > 0) add({ ...h.original });
-          landed = true;
-          break;
-        }
-        if (h.modified.start > line) break;
-        delta += len(h.modified) - len(h.original);
-      }
-      if (!landed) add({ start: line - delta, end: line - delta });
-    }
-  }
-  return mapped;
 }
 
 /**
@@ -4128,13 +4101,6 @@ async function headSideName(ctx: GitContext, rel: string): Promise<string | unde
   // Not a rename. Does HEAD have it at all?
   const has = await ctx.process.run(["cat-file", "-e", `HEAD:${rel}`]);
   return has.code === 0 ? rel : undefined;
-}
-
-/** Whether two inclusive line ranges overlap (zero-width spans treated as a point). */
-function rangesOverlap(a: LineRange, b: LineRange): boolean {
-  const aEnd = a.end < a.start ? a.start : a.end;
-  const bEnd = b.end < b.start ? b.start : b.end;
-  return a.start <= bEnd && b.start <= aEnd;
 }
 
 /**

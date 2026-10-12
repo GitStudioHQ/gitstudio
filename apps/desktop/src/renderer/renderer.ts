@@ -7125,9 +7125,11 @@ class App {
         return;
       }
       try {
+        const boundaries = diffPanel.getSelectedBoundaries() ?? undefined;
         const r = await host.invoke("stage:lines", {
           path: openFile.path,
           lines,
+          ...(boundaries ? { boundaries } : {}),
           reverse: openFile.staged,
         });
         if (!r.ok) toast(r.message || l10n.t("Couldn't apply the selected lines."), "error");

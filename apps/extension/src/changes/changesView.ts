@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import type { Change } from "../git/git";
 import { EMPTY_TREE, openSidesDiff } from "../history/revisionContentProvider";
+import { nativeDiffSides, type NativeSide } from "./nativeDiffSides";
 import * as l10n from "@vscode/l10n";
 
 // Change-row helpers shared by the unified Commit webview (commitView.ts) and
@@ -68,11 +69,34 @@ export class ChangeFileNode {
  * unstaged edits, index vs HEAD for staged edits, and working vs HEAD for merge
  * entries. Reuses the `gitstudio-rev` content provider (rev "" = index,
  * "HEAD" = committed) so no extra scheme is needed.
+ *
+ * With `gitUri` (vscode.git's URI maker) and a change vscode.git reported, a
+ * plain modification opens on vscode.git's own URIs instead, so VS Code's own
+ * selective staging works in the diff too — see nativeDiffSides.
  */
-export async function openChangeDiff(node: ChangeFileNode): Promise<void> {
+export async function openChangeDiff(
+  node: ChangeFileNode,
+  gitUri?: (uri: vscode.Uri, ref: string) => vscode.Uri | undefined,
+): Promise<void> {
   const { root, change } = node;
   const rel = relativePath(root, change.uri.fsPath);
   const fileName = baseName(rel);
+
+  // The eager path's synthesized Change has no status, and keeps our own URIs.
+  const native = gitUri && nativeDiffSides(node.kind, change.status);
+  if (native && gitUri) {
+    const side = (s: NativeSide): vscode.Uri | undefined =>
+      s === "file" ? change.uri : gitUri(s.original ? change.originalUri ?? change.uri : change.uri, s.ref);
+    const left = side(native.left);
+    const right = side(native.right);
+    if (left && right && (await existsOnDisk(change.uri))) {
+      const label = node.kind === "staged" ? l10n.t("{0} (Staged)", fileName) : `${fileName} (${l10n.t("Working Tree")})`;
+      await vscode.commands.executeCommand("vscode.diff", left, right, label, {
+        preview: true,
+      } satisfies vscode.TextDocumentShowOptions);
+      return;
+    }
+  }
 
   if (node.kind === "staged") {
     // A staged rename is read from HEAD under its OLD name: HEAD has no file

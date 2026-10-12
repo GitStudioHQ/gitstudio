@@ -188,10 +188,12 @@ async function workingDiff(entry: RepoEntry): Promise<string> {
  * Generate a commit message.
  *
  * Two surfaces, one handler:
- *  - From the NATIVE Source Control input box, VS Code passes a
+ *  - From a NATIVE Source Control menu, VS Code passes a
  *    `vscode.SourceControl` (with `.inputBox.value` and `.rootUri`). We resolve
  *    that repo, draft from its staged diff (falling back to the working diff,
- *    noting it's unstaged), and set the input box value directly.
+ *    noting it's unstaged), and set the input box value directly. No such entry
+ *    ships today: the commit box's own menu (scm/inputBox) is a proposed API a
+ *    Marketplace build cannot contribute to — it only logged an error (#87).
  *  - From the command palette (no arg), we draft for the active repo and offer
  *    to copy the result.
  *

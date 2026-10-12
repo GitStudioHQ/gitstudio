@@ -2778,7 +2778,7 @@ export interface IpcChannels {
   "conflict:takeSide": [{ path: string; side: "ours" | "theirs" }, CommitActionResult];
   "conflict:list": [void, string[]];
   // ── Hunk / line staging (working ⇄ index) ──
-  "stage:lines": [{ path: string; lines: number[]; reverse?: boolean }, CommitActionResult];
+  "stage:lines": [{ path: string; lines: number[]; boundaries?: number[]; reverse?: boolean }, CommitActionResult];
   /**
    * Stage or unstage exactly one change block. The renderer sends the block's
    * content-derived ranges, never its position in a list, so a block that merely

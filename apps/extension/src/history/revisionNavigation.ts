@@ -12,6 +12,8 @@ import {
   REVISION_SCHEME,
 } from "./revisionContentProvider";
 import { resolveActiveFile } from "./historyContext";
+import { fromGitUriQuery, revOfGitRef } from "../changes/nativeDiffSides";
+import { relativeInside } from "../util/repoScope";
 import * as l10n from "@vscode/l10n";
 
 /** A resolved working-tree file, plus the rev when invoked from a diff editor. */
@@ -161,6 +163,17 @@ export class RevisionNavigator implements vscode.Disposable {
       const entry = this.repos.getAll().find((e) => e.root === root);
       if (entry) {
         return { entry, root, rel: relPath, currentRev: rev };
+      }
+    }
+
+    // A side of a diff on vscode.git's own URIs — what the Changes list opens a
+    // plain modification on (nativeDiffSides): the file and ref are in its query.
+    if (uri && uri.scheme === "git") {
+      const side = fromGitUriQuery(uri.query);
+      const entry = side && this.repos.findByPath(side.path);
+      const rel = side && entry ? relativeInside(side.path, entry.root) : undefined;
+      if (side && entry && rel) {
+        return { entry, root: entry.root, rel, currentRev: revOfGitRef(side.ref) };
       }
     }
 

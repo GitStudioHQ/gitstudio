@@ -567,6 +567,14 @@ export class RepoManager implements vscode.Disposable {
     return this.bindings.get(this.activeRoot)?.entry;
   }
 
+  /**
+   * vscode.git's own URI for `uri` at `ref` (see nativeDiffSides), or undefined
+   * while its API is not in hand — vscode.git disabled, or not activated yet.
+   */
+  gitUri(uri: vscode.Uri, ref: string): vscode.Uri | undefined {
+    return typeof this.api?.toGitUri === "function" ? this.api.toGitUri(uri, ref) : undefined;
+  }
+
   /** All open repositories, in insertion order. */
   getAll(): RepoEntry[] {
     return Array.from(this.bindings.values(), (b) => b.entry);

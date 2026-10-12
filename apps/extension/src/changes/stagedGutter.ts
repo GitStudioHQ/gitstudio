@@ -1,9 +1,11 @@
 import * as vscode from "vscode";
+import { stat } from "node:fs/promises";
 import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import type { ChangeBlock } from "@gitstudio/git-service/blockStaging";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { relativePath } from "./changesView";
 import { blockAtLine } from "./blockAtLine";
+import { touches } from "../git/repoChange";
 import * as l10n from "@vscode/l10n";
 
 /**
@@ -21,6 +23,13 @@ import * as l10n from "@vscode/l10n";
  * a keybinding, the line-number context menu, and the Changes list. Anyone who
  * wants the tick itself is one command away from our own diff page, where the
  * gutter is ours and the tick is real.
+ *
+ * The line-number menu is also what a RIGHT-click on the glyph opens (VS Code
+ * opens it for the glyph margin too), so "right-click the mark" works — in a
+ * diff editor as well, which is where the marks are most often seen: #87 found
+ * the menu's item hidden there, because VS Code's scmActiveResourceHasChanges is
+ * false in every diff editor. The menu gates live in package.json and are
+ * pinned in test/editorMenus.test.ts.
  *
  * The point of this half is that a user who never leaves VS Code's diff still
  * SEES what is staged, and keeps their keybindings, their other extensions'
@@ -96,6 +105,19 @@ export class StagedGutter implements vscode.Disposable {
       vscode.window.onDidChangeTextEditorSelection((event) =>
         this.onPossibleGutterClick(event),
       ),
+      // The index moved under us — a stage from VS Code's own Source Control
+      // view or diff gutter, a terminal, another tool. Without this the marks
+      // kept the state they were painted with until the file was edited or
+      // re-focused, and a toggle read that stale state (#87).
+      //
+      // A working-tree event is vscode.git's status run — every save, every
+      // window focus — and mostly the index did not move: repaint only when
+      // the index FILE did (refreshIfIndexMoved). A ref or operation change
+      // moves HEAD, which the marks are measured against, so it always repaints.
+      repos.onDidChange((event) => {
+        if (touches(event, "refs", "operation")) this.refreshAll();
+        else if (touches(event, "workingTree")) void this.refreshIfIndexMoved();
+      }),
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (!event.affectsConfiguration("gitstudio.staging.showGutterState")) return;
         this.enabled = vscode.workspace
@@ -106,6 +128,50 @@ export class StagedGutter implements vscode.Disposable {
     );
 
     this.refreshAll();
+  }
+
+  /** Each repository's index file (`git rev-parse --git-path index`), looked up once. */
+  private readonly indexFiles = new Map<string, Promise<string | undefined>>();
+  /** What each repository's index file was when its marks were last repainted for it. */
+  private readonly indexSeen = new Map<string, string>();
+
+  /**
+   * Repaints the visible editors of every repository whose index file changed
+   * since the last look — one stat per repository, no git process. git rewrites
+   * the index through a lock file, so every write is a new file (inode) as well
+   * as a new time. When the file cannot be found or read, it repaints.
+   */
+  private async refreshIfIndexMoved(): Promise<void> {
+    const byRepo = new Map<string, { entry: RepoEntry; documents: vscode.TextDocument[] }>();
+    for (const editor of vscode.window.visibleTextEditors) {
+      const target = this.resolve(editor.document.uri);
+      if (!target) continue;
+      const group = byRepo.get(target.entry.root) ?? { entry: target.entry, documents: [] };
+      group.documents.push(editor.document);
+      byRepo.set(target.entry.root, group);
+    }
+    for (const [root, { entry, documents }] of byRepo) {
+      const seen = await this.indexIdentity(entry);
+      if (seen !== undefined && seen === this.indexSeen.get(root)) continue;
+      if (seen !== undefined) this.indexSeen.set(root, seen);
+      for (const document of documents) this.schedule(document, 0);
+    }
+  }
+
+  private async indexIdentity(entry: RepoEntry): Promise<string | undefined> {
+    let file = this.indexFiles.get(entry.root);
+    if (!file) {
+      file = entry.ctx.operation.gitPath("index").catch(() => undefined);
+      this.indexFiles.set(entry.root, file);
+    }
+    const path = await file;
+    if (!path) return undefined;
+    try {
+      const st = await stat(path);
+      return `${st.ino}:${st.size}:${st.mtimeMs}`;
+    } catch {
+      return "no index";
+    }
   }
 
   /** Re-reads git for every visible editor — after a commit, stage, or setting change. */
@@ -141,17 +207,7 @@ export class StagedGutter implements vscode.Disposable {
       return;
     }
 
-    let blocks: ChangeBlock[] = [];
-    try {
-      // A conflicted file has no stage-0 index entry, so the tick model would
-      // read every change as unstaged. Say nothing rather than something wrong.
-      const conflicted = await target.entry.ctx.conflict.isConflicted(target.rel);
-      blocks = conflicted
-        ? []
-        : await listChangeBlocks(target.entry.ctx, target.rel, document.getText());
-    } catch {
-      blocks = [];
-    }
+    const blocks = await this.readBlocks(target, document);
     // A newer refresh started while git was answering; its answer wins.
     if (this.generation.get(key) !== gen) return;
 
@@ -186,14 +242,19 @@ export class StagedGutter implements vscode.Disposable {
   }
 
   /**
-   * Toggle by clicking the gutter strip — OFF by default, and deliberately so.
+   * Toggle by clicking the start of a change's line — OFF by default, and
+   * deliberately so.
    *
    * VS Code gives decorations no click event, so this is an inference: a MOUSE
-   * selection change that lands collapsed on column 0 is treated as a click on
-   * the strip our glyph occupies. The same trick blame already ships. It works,
-   * but it cannot be told apart from someone genuinely putting their caret at
-   * the start of a line — which is a thing people do constantly — so staging a
-   * change on that gesture is only defensible when the user has asked for it.
+   * selection change that lands collapsed on column 0. The same trick blame
+   * already ships. Note what it can NOT see: a click on the glyph itself. Monaco
+   * swallows a left click in the glyph margin without moving the caret
+   * (verified in VS Code 1.140 for #87), so no selection event arrives and the
+   * checkbox-looking glyph stays unclickable with this setting on too — the
+   * gesture that works is a click at the very start of the text. It cannot be
+   * told apart from someone genuinely putting their caret at the start of a
+   * line — which is a thing people do constantly — so staging a change on that
+   * gesture is only defensible when the user has asked for it.
    *
    * Two guards beyond the setting: the line must actually carry a change, and
    * blame must not be annotating, since its `before` attachment physically owns
@@ -241,10 +302,12 @@ export class StagedGutter implements vscode.Disposable {
       );
       return;
     }
-    const key = document.uri.toString();
-    const blocks =
-      this.blocksByDoc.get(key) ??
-      (await listChangeBlocks(target.entry.ctx, target.rel, document.getText()));
+    // Read git afresh rather than trusting what was last painted: the index
+    // may have moved since (see the onDidChange subscription), and the cached
+    // state decides the DIRECTION — a change staged elsewhere but still
+    // painted unstaged was "staged" again, which does nothing, and the toggle
+    // looked dead (seen in VS Code for #87).
+    const blocks = await this.readBlocks(target, document);
 
     const block = blockAtLine(blocks, line);
     if (!block) {
@@ -269,6 +332,32 @@ export class StagedGutter implements vscode.Disposable {
       void vscode.window.setStatusBarMessage(l10n.t("$(info) GitStudio: {0}", result.stderr), 4000);
     }
     await this.refresh(document);
+  }
+
+  /** toggleAtLine for the document `uri` names — open already, or opened now. */
+  async toggleAtUri(uri: vscode.Uri, line: number): Promise<void> {
+    let document: vscode.TextDocument;
+    try {
+      document = await vscode.workspace.openTextDocument(uri);
+    } catch {
+      return;
+    }
+    await this.toggleAtLine(document, line);
+  }
+
+  /** The document's change blocks as git has them NOW; none for a conflicted file. */
+  private async readBlocks(
+    target: { entry: RepoEntry; rel: string },
+    document: vscode.TextDocument,
+  ): Promise<ChangeBlock[]> {
+    try {
+      // A conflicted file has no stage-0 index entry, so the tick model would
+      // read every change as unstaged. Say nothing rather than something wrong.
+      const conflicted = await target.entry.ctx.conflict.isConflicted(target.rel);
+      return conflicted ? [] : await listChangeBlocks(target.entry.ctx, target.rel, document.getText());
+    } catch {
+      return [];
+    }
   }
 
   private resolve(uri: vscode.Uri): { entry: RepoEntry; rel: string } | undefined {

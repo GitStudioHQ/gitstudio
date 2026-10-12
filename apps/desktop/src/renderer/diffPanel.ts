@@ -7,7 +7,7 @@
 import * as monaco from "monaco-editor";
 import { DiffView } from "@gitstudio/webview-ui/diffView";
 import type { TickRow } from "@gitstudio/webview-ui/stageTicks";
-import { selectedLineNumbers } from "./selectionLines";
+import { selectedBoundaries, selectedLineNumbers } from "./selectionLines";
 import { MergeView } from "@gitstudio/webview-ui/mergeView";
 import { MergeShell } from "@gitstudio/webview-ui/mergeShell";
 import { languageForFile } from "@gitstudio/webview-ui/language";
@@ -840,7 +840,14 @@ export class DiffPanel {
     // reporting "select some lines first" over a live selection.
     const ed = this.diff?.right ?? this.inline?.getModifiedEditor();
     if (!ed) return null;
-    return selectedLineNumbers(ed.getSelections());
+    return selectedLineNumbers(ed.getSelections(), documentEndOf(ed));
+  }
+
+  /** The line edges the selection reaches (see selectedBoundaries), 1-based. */
+  getSelectedBoundaries(): number[] | null {
+    const ed = this.diff?.right ?? this.inline?.getModifiedEditor();
+    if (!ed) return null;
+    return selectedBoundaries(ed.getSelections(), documentEndOf(ed));
   }
 
   /**
@@ -978,4 +985,12 @@ export class DiffPanel {
 /** The file name as a sentence names it. */
 function baseName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() || path;
+}
+
+/** The end of an editor's document (its last line and that line's max column), when it has one. */
+function documentEndOf(ed: monaco.editor.ICodeEditor): { lineNumber: number; column: number } | undefined {
+  const model = ed.getModel();
+  if (!model) return undefined;
+  const last = model.getLineCount();
+  return { lineNumber: last, column: model.getLineMaxColumn(last) };
 }

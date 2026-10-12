@@ -6,6 +6,7 @@ import { removeTempRepo } from "./tmpRepo";
 import { tmpdir } from "node:os";
 import { RepoStore } from "../src/main/repoStore";
 import { GitBridge } from "../src/main/gitBridge";
+import { selectedBoundaries, selectedLineNumbers } from "../src/renderer/selectionLines";
 
 /**
  * Line-level staging against a real repository.
@@ -262,6 +263,127 @@ test("a purely-unstaged line carries no staged change to unstage", async () => {
     const res = await bridge.stageLines({ path: "f.txt", lines: [4], reverse: true });
     assert.equal(res.ok, false, "there is nothing staged there to unstage");
     assert.equal(git("show", ":f.txt"), "a\nB2\nc\n", "and nothing else is touched");
+  } finally {
+    removeTempRepo(root);
+  }
+});
+
+/**
+ * Line BOUNDARIES (#87, round 2). Select All in a file that ends in a line
+ * break stops at column 1 of the empty last row; "Stage lines" sends that
+ * row's edge, and a deletion anchored there — the file's last lines removed —
+ * is staged with the rest instead of being left out of the commit. An edge
+ * never takes a change on the line below it.
+ */
+test("a boundary stages the end-of-file deletion Select All reaches, and unstages it again", async () => {
+  const { root, git } = repo();
+  try {
+    writeFileSync(`${root}/e.txt`, "a\nb\nc\n");
+    git("add", "e.txt");
+    git("commit", "-qm", "base");
+    writeFileSync(`${root}/e.txt`, "A\nb\n"); // an edit, and 'c' deleted at the end
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const bridge = new GitBridge(repos);
+    // What the renderer sends for Select All: rows 1-2, the edges 3 and 4.
+    const res = await bridge.stageLines({ path: "e.txt", lines: [1, 2], boundaries: [3, 4] });
+    assert.equal(res.ok, true, `staging succeeds (${res.message ?? ""})`);
+    assert.equal(git("show", ":e.txt"), "A\nb\n", "the edit AND the deletion are staged");
+
+    const back = await bridge.stageLines({ path: "e.txt", lines: [1, 2], boundaries: [3, 4], reverse: true });
+    assert.equal(back.ok, true, `unstaging succeeds (${back.message ?? ""})`);
+    assert.equal(git("show", ":e.txt"), "a\nb\nc\n", "both are unstaged again");
+
+    // Without the edges, as before: the deletion is not reached.
+    await bridge.stageLines({ path: "e.txt", lines: [1, 2] });
+    assert.equal(git("show", ":e.txt"), "A\nb\nc\n", "only the edit");
+  } finally {
+    removeTempRepo(root);
+  }
+});
+
+test("a boundary in the middle takes the deletion above it, never the edit on its own line", async () => {
+  const { root, git } = repo();
+  try {
+    writeFileSync(`${root}/m.txt`, "a\nb\nc\nd\ne\n");
+    git("add", "m.txt");
+    git("commit", "-qm", "base");
+    writeFileSync(`${root}/m.txt`, "a\nb\nd\nE\n"); // 'c' deleted above 'd'; 'e' edited
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const bridge = new GitBridge(repos);
+    // Rows a-b dragged by their line numbers: lines 1-2, the edge above row 3.
+    const res = await bridge.stageLines({ path: "m.txt", lines: [1, 2], boundaries: [3] });
+    assert.equal(res.ok, true, `staging succeeds (${res.message ?? ""})`);
+    assert.equal(git("show", ":m.txt"), "a\nb\nd\ne\n", "the deletion of 'c' is staged");
+    // The edge above row 4 ('E') does not take the edit on row 4.
+    const none = await bridge.stageLines({ path: "m.txt", lines: [3], boundaries: [4] });
+    assert.equal(none.ok, false, "nothing to apply: the edit is on the row below the edge");
+  } finally {
+    removeTempRepo(root);
+  }
+});
+
+/**
+ * The final empty row (#87, round 3), through what the renderer sends for
+ * Select All: adding the final line break, an edit plus the final line break,
+ * and emptying the last line are changes on the empty row after the last line
+ * break. Dropping that row answered "Nothing to apply in the selection." or
+ * staged the edit without its line break.
+ */
+for (const [committed, working, what] of [
+  ["foo\nbar", "foo\nbar\n", "adding the final line break"],
+  ["foo\nbar", "FOO\nbar\n", "an edit and the final line break"],
+  ["foo\nbar", "foo\n", "emptying the last line"],
+] as const) {
+  test(`Select All ▸ Stage lines stages ${what}, and unstages it again`, async () => {
+    const { root, git } = repo();
+    try {
+      writeFileSync(`${root}/t.txt`, committed);
+      git("add", "t.txt");
+      git("commit", "-qm", "base");
+      writeFileSync(`${root}/t.txt`, working);
+      // Monaco's Select All over the working text, and its document end.
+      const rows = working.split("\n");
+      const end = { lineNumber: rows.length, column: rows[rows.length - 1].length + 1 };
+      const all = [{ startLineNumber: 1, startColumn: 1, endLineNumber: end.lineNumber, endColumn: end.column }];
+      const lines = selectedLineNumbers(all, end) ?? [];
+      const boundaries = selectedBoundaries(all, end) ?? undefined;
+
+      const repos = new RepoStore([]);
+      await repos.open(root);
+      const bridge = new GitBridge(repos);
+      const res = await bridge.stageLines({ path: "t.txt", lines, boundaries });
+      assert.equal(res.ok, true, `staging succeeds (${res.message ?? ""})`);
+      assert.equal(git("show", ":t.txt"), working, "the whole change is staged");
+      const back = await bridge.stageLines({ path: "t.txt", lines, boundaries, reverse: true });
+      assert.equal(back.ok, true, `unstaging succeeds (${back.message ?? ""})`);
+      assert.equal(git("show", ":t.txt"), committed, "and all of it unstaged");
+    } finally {
+      removeTempRepo(root);
+    }
+  });
+}
+
+test("a malformed selection from the renderer is no selection, never a TypeError", async () => {
+  const { root, git } = repo();
+  try {
+    writeFileSync(`${root}/v.txt`, "a\nb\n");
+    git("add", "v.txt");
+    git("commit", "-qm", "base");
+    writeFileSync(`${root}/v.txt`, "A\nb\n");
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const bridge = new GitBridge(repos);
+    const odd = await bridge.stageLines({ path: "v.txt", lines: [1], boundaries: "x" as never });
+    assert.equal(odd.ok, true, `the boundaries are ignored, the line is staged (${odd.message ?? ""})`);
+    assert.equal(git("show", ":v.txt"), "A\nb\n");
+    const none = await bridge.stageLines({ path: "v.txt", lines: { length: 1 } as never, boundaries: {} as never });
+    assert.equal(none.ok, false);
+    assert.equal(none.expected, true, "an expected refusal, not a crash report");
+    assert.doesNotMatch(none.message ?? "", /TypeError|is not a function/);
   } finally {
     removeTempRepo(root);
   }
