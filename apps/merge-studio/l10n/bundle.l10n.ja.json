@@ -1272,6 +1272,8 @@
  "Use {0}": "{0}を使用",
  "VS Code's own merge editor and conflict highlights are as they were.": "VS Code自身のマージエディターとコンフリクトのハイライトは元のままです。",
  "VS Code's own merge editor and conflict highlights are off.": "VS Code自身のマージエディターとコンフリクトのハイライトはオフです。",
+ "View as List": "リストで表示",
+ "View as Tree": "ツリーで表示",
  "Waiting": "待機中",
  "Waiting on {0}.": "{0} を待っています。",
  "What is being merged in: {0}": "マージされる内容: {0}",

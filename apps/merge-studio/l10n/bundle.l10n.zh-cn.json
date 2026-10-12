@@ -1272,6 +1272,8 @@
  "Use {0}": "使用 {0}",
  "VS Code's own merge editor and conflict highlights are as they were.": "VS Code 自带的合并编辑器和冲突高亮保持原样。",
  "VS Code's own merge editor and conflict highlights are off.": "VS Code 自带的合并编辑器和冲突高亮已关闭。",
+ "View as List": "以列表查看",
+ "View as Tree": "以树形查看",
  "Waiting": "等待中",
  "Waiting on {0}.": "正在等待 {0}。",
  "What is being merged in: {0}": "正在合并进来的内容：{0}",

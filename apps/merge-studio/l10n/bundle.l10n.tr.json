@@ -1272,6 +1272,8 @@
  "Use {0}": "{0}'ı Kullan",
  "VS Code's own merge editor and conflict highlights are as they were.": "VS Code'un kendi birleştirme düzenleyicisi ve çakışma vurguları olduğu gibi.",
  "VS Code's own merge editor and conflict highlights are off.": "VS Code'un kendi birleştirme düzenleyicisi ve çakışma vurguları kapalı.",
+ "View as List": "Liste Olarak Görüntüle",
+ "View as Tree": "Ağaç Olarak Görüntüle",
  "Waiting": "Bekleniyor",
  "Waiting on {0}.": "{0} bekleniyor.",
  "What is being merged in: {0}": "İçine birleştirilen şu: {0}",

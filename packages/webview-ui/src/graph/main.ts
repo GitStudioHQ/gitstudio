@@ -15,7 +15,9 @@ import { setGravatarEnabled } from "./avatar";
 import type { CommitGraph, GraphAction } from "./commit-graph";
 import type { CommitDetails, RefMenuRequest, SelectionActionRequest } from "../commit-details";
 import { summaryCommits } from "./selectionSummary";
+import { saveFilesLayout } from "../filesTree";
 import type {
+  GraphFilesLayout,
   GraphHostMessage,
   GraphWebviewMessage,
   WireRef,
@@ -204,6 +206,12 @@ function start(root: HTMLElement): void {
     vscode.postMessage({ type: "copyText", text: d.text });
   });
   details.addEventListener("gs-close", () => closeDetails());
+  // View as Tree / View as List (#81): one choice for every graph surface,
+  // which the host keeps and relays (filesLayout, below).
+  details.addEventListener("gs-files-layout", (e) => {
+    const d = (e as CustomEvent<{ layout: GraphFilesLayout }>).detail;
+    vscode.postMessage({ type: "setFilesLayout", layout: d.layout });
+  });
   // An action from the "N commits selected" summary: the same item the
   // selection's right-click menu offers, run the same way (issue #32).
   details.addEventListener("gs-selection-action", (e) => {
@@ -374,6 +382,12 @@ function handle(
       graph.authorAvatars = message.avatars;
       // The details pane shows the same person — give it the same photos.
       details.authorAvatars = message.avatars;
+      break;
+    }
+    case "filesLayout": {
+      // The shared choice — made in another graph, or remembered. Stored
+      // here too, so this page's next load starts from it.
+      saveFilesLayout(message.layout);
       break;
     }
     case "avatarPrefs": {

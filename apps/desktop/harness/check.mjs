@@ -671,6 +671,9 @@ const CASES = [
   ["a-commit-the-filter-hides-says-so-and-offers-every-branch", "graph"],
   ["the-branch-picker-clears-the-dock", "graph~click:.dock-chevron", { height: 700 }],
   ["a-details-chip-opens-the-graphs-chip-menu", "graph"],
+  // Files changed as a list or a folder tree (#81).
+  ["the-commit-files-turn-into-a-tree-and-stay-one", "graph"],
+  ["the-commit-files-turn-into-a-tree-and-stay-one", "graph", { theme: "light" }],
   // Drop Commit from the graph's menu (issue #32).
   ["the-graph-menu-offers-drop-only-where-it-can-work", "graph"],
   ["the-graph-menu-offers-drop-only-where-it-can-work", "graph", { theme: "light" }],

@@ -1272,6 +1272,8 @@
  "Use {0}": "Usar {0}",
  "VS Code's own merge editor and conflict highlights are as they were.": "El editor de fusión y los resaltados de conflicto propios de VS Code están como estaban.",
  "VS Code's own merge editor and conflict highlights are off.": "El editor de fusión y los resaltados de conflicto propios de VS Code están desactivados.",
+ "View as List": "Ver como lista",
+ "View as Tree": "Ver como árbol",
  "Waiting": "Esperando",
  "Waiting on {0}.": "Esperando a {0}.",
  "What is being merged in: {0}": "Qué se está fusionando: {0}",

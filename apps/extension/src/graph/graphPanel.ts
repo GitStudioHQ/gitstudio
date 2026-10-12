@@ -34,6 +34,7 @@ import { getGraphHtml, getNonce } from "./graphHtml";
 import { getAuthorAvatarResolver } from "./authorAvatars";
 import { gravatarAllowed, onGravatarSettingChange } from "./avatarPrefs";
 import { getRefFilterStore } from "./refFilterStore";
+import { getFilesLayoutStore } from "./filesLayoutStore";
 import {
   commitMenuItems,
   commitMenuItemsFor,
@@ -269,6 +270,16 @@ export class CommitGraphPanel {
       });
       this.disposables.push({ dispose: off });
     }
+    // View as Tree / View as List (#81) is one choice for every graph with a
+    // details pane: a change made in one reaches the others' open panes. The
+    // Commits rail has no pane, and is told nothing.
+    const layouts = getFilesLayoutStore();
+    if (layouts && !sidebar) {
+      const off = layouts.onDidChange((layout) => {
+        if (this.ready) this.post({ type: "filesLayout", layout });
+      });
+      this.disposables.push({ dispose: off });
+    }
   }
 
   // ── Webview messages ───────────────────────────────────────────────────────
@@ -280,6 +291,9 @@ export class CommitGraphPanel {
         // Before the first rows, so an author is never looked up on a page
         // whose user turned lookups off (`gitstudio.avatars.gravatar`).
         this.postAvatarPrefs();
+        // …and with the shared View as Tree / View as List choice, once one
+        // has been made, so a new graph or a reloaded page starts with it.
+        this.postFilesLayout();
         // A (re)loaded page has no ref list, whatever was sent to the one
         // before it: the next graphInit carries it whole.
         this.refListCourier.forget();
@@ -342,6 +356,10 @@ export class CommitGraphPanel {
       case "setRefFilter":
         void this.setRefFilter(msg.refs);
         break;
+      case "setFilesLayout":
+        // Every graph hears it back through the store, this one included.
+        void getFilesLayoutStore()?.set(msg.layout);
+        break;
       case "checkoutRef":
         // The chip menu's "Checkout <ref>": the same arm, with the same
         // questions, as the commit menu's item of that name — by the full
@@ -359,6 +377,12 @@ export class CommitGraphPanel {
 
   private post(message: GraphHostMessage): void {
     void this.webview.postMessage(message);
+  }
+
+  /** The shared View as Tree / View as List choice, if one has been made (see filesLayoutStore.ts). */
+  private postFilesLayout(): void {
+    const layout = this.sidebar ? undefined : getFilesLayoutStore()?.get();
+    if (layout) this.post({ type: "filesLayout", layout });
   }
 
   /** Tell the page whether it may look authors' pictures up (see avatarPrefs.ts). */

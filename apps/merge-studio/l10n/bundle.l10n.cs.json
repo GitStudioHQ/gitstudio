@@ -1272,6 +1272,8 @@
  "Use {0}": "Použít {0}",
  "VS Code's own merge editor and conflict highlights are as they were.": "Vlastní editor slučování a zvýraznění konfliktů VS Code zůstávají, jak byly.",
  "VS Code's own merge editor and conflict highlights are off.": "Vlastní editor slučování a zvýraznění konfliktů VS Code jsou vypnuté.",
+ "View as List": "Zobrazit jako seznam",
+ "View as Tree": "Zobrazit jako strom",
  "Waiting": "Čeká se",
  "Waiting on {0}.": "Čeká se na {0}.",
  "What is being merged in: {0}": "Co se slučuje: {0}",
