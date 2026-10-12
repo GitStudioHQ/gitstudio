@@ -508,6 +508,12 @@ export class DiffPanel {
     this.inline = monaco.editor.createDiffEditor(body, {
       theme: ensureNativeTheme(),
       ...nativeFontOptions(),
+      // Monaco's textarea, like every editor in the app (the Split diff and
+      // the merge panes use it for the clipboard, #84). On Chromium's
+      // EditContext the focused element is a plain DIV, which no "is the user
+      // typing?" guard recognises: ← in this diff went Back off the page and
+      // ? opened the cheat sheet, while the Split view kept them.
+      editContext: false,
       renderSideBySide: false,
       // The SAME whitespace rule the split view uses. Monaco defaults
       // `ignoreTrimWhitespace` to TRUE; the engine's `buildDiffModel` maps our

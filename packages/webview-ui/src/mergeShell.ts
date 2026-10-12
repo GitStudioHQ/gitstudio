@@ -1547,9 +1547,16 @@ export class MergeShell {
     );
     // Escape answers the question on screen the safe way; with none, it is
     // Close. Not when something inside claimed the key first (Monaco's find
-    // widget, a suggestion list, a selection being cancelled).
+    // widget, a suggestion list, a selection being cancelled): those stop
+    // the event at the editor, so it never gets here. Monaco's textarea input
+    // (the panes use it, for the clipboard: SHARED_OPTIONS in mergeView.ts)
+    // also prevents the default of EVERY Escape typed into it, so from there
+    // defaultPrevented says nothing about a claim.
     on(this.element, "keydown", (event) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (event.key !== "Escape") return;
+      const t = event.target;
+      const monacoInput = t instanceof HTMLTextAreaElement && t.classList.contains("inputarea");
+      if (event.defaultPrevented && !monacoInput) return;
       if (!this.historyPop.hidden) {
         event.stopPropagation();
         this.historyPop.hidden = true;

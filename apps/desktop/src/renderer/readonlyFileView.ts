@@ -32,6 +32,11 @@ export class ReadonlyFileView {
     this.editor = monaco.editor.create(hostEl, {
       model: this.model,
       theme: ensureNativeTheme(),
+      // Monaco's textarea, like every editor in the app: the page's key
+      // guards know a TEXTAREA is being typed in, and an EditContext DIV
+      // looked like the page (? opened the cheat sheet from in here). See
+      // diffPanel.ts's inline editor.
+      editContext: false,
       readOnly: true,
       automaticLayout: true,
       minimap: { enabled: false },

@@ -124,8 +124,8 @@ interface MergeSnapshot {
 }
 
 const SHARED_OPTIONS: monaco.editor.IStandaloneEditorConstructionOptions = {
-  // VS Code forwards native clipboard commands to the focused input;
-  // Chromium's EditContext div does not support those execCommand actions.
+  // VS Code forwards native clipboard commands to the focused input as
+  // execCommand; on Chromium's EditContext div, cut and paste do nothing.
   editContext: false,
   automaticLayout: false,
   minimap: { enabled: false },

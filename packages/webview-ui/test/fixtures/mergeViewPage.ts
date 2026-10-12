@@ -18,7 +18,7 @@ import { execFile } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { headlessChromeArgs } from "../../../../scripts/test/no-network-chrome.mjs";
 import { decodeVerdictTitle, type Verdict } from "../headless";
 
@@ -77,6 +77,35 @@ function bundle(): Promise<string> {
 
 let pageCount = 0;
 
+/** The page up to the entry's script: the theme, Monaco's CSS, an empty #host. */
+function pageStart(opts: PageOptions): string {
+  const theme = opts.theme ?? "dark";
+  const vars = { ...DEFAULT_VARS[theme], ...(opts.vars ?? {}) };
+  const style = Object.entries(vars)
+    .map(([k, v]) => `${k}:${v}`)
+    .join(";");
+  return `<!doctype html><html><head><meta charset="utf-8"><title>PENDING</title>
+<link rel="stylesheet" href="page.css">
+<style>html,body{margin:0;height:100%;overflow:hidden;background:var(--vscode-editor-background);color:var(--vscode-foreground)}
+#host{position:relative;width:1400px;height:600px}${opts.css ?? ""}</style></head>
+<body class="${BODY_CLASS[theme]}" style="${style}"><div id="slot"></div><div id="host"></div>
+<script src="page.js"></script>
+`;
+}
+
+/**
+ * The same page with no script of its own, as a file:// URL, for a test that
+ * drives it over DevTools (scripts/merge-e2e/cdp.ts): `gsMerge` and an empty
+ * #host — what a real keypress or a user-gesture evaluation needs, which the
+ * --dump-dom run below cannot give.
+ */
+export async function mergePageUrl(opts: PageOptions = {}): Promise<string> {
+  const dir = await bundle();
+  const page = join(dir, `page-${process.pid}-${pageCount++}.html`);
+  writeFileSync(page, `${pageStart(opts)}</body></html>`);
+  return pathToFileURL(page).href;
+}
+
 /**
  * Mount the merge-view page and run `script` in it. The script has `gsMerge`
  * (the entry's exports), `expect(cond, what)`, `notes`, `sleep(ms)` and
@@ -88,21 +117,10 @@ export async function runMergePage(
   opts: PageOptions = {},
 ): Promise<Verdict> {
   const dir = await bundle();
-  const theme = opts.theme ?? "dark";
-  const vars = { ...DEFAULT_VARS[theme], ...(opts.vars ?? {}) };
-  const style = Object.entries(vars)
-    .map(([k, v]) => `${k}:${v}`)
-    .join(";");
   const page = join(dir, `page-${process.pid}-${pageCount++}.html`);
   const width = opts.width ?? 1400;
   const height = opts.height ?? 800;
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>PENDING</title>
-<link rel="stylesheet" href="page.css">
-<style>html,body{margin:0;height:100%;overflow:hidden;background:var(--vscode-editor-background);color:var(--vscode-foreground)}
-#host{position:relative;width:1400px;height:600px}${opts.css ?? ""}</style></head>
-<body class="${BODY_CLASS[theme]}" style="${style}"><div id="slot"></div><div id="host"></div>
-<script src="page.js"></script>
-<script>
+  const html = `${pageStart(opts)}<script>
 window.verdict = (v) => { document.title = "CHECK " + JSON.stringify(v); };
 window.addEventListener("error", (e) => window.verdict({ fails: ["page error: " + (e.message || e.error)] }));
 window.addEventListener("unhandledrejection", (e) => {
