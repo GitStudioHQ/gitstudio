@@ -127,6 +127,10 @@ const SHARED_OPTIONS: monaco.editor.IStandaloneEditorConstructionOptions = {
   // VS Code forwards native clipboard commands to the focused input as
   // execCommand; on Chromium's EditContext div, cut and paste do nothing.
   editContext: false,
+  // Paste as plain text, there and then. Monaco's "paste as" path (a widget
+  // to pick a paste format) applies the text later, from a promise, which no
+  // one here needs and which raced every check of what a paste did.
+  pasteAs: { enabled: false },
   automaticLayout: false,
   minimap: { enabled: false },
   scrollBeyondLastLine: false,
