@@ -113,11 +113,114 @@ export type GraphqlFn = (
 export class PrListError extends Error {
   constructor(
     message: string,
-    readonly kind: "not-found" | "forbidden" | "rate-limit" | "query",
+    readonly kind: "not-found" | "forbidden" | "rate-limit" | "scope" | "query",
+    /** For `scope`: the scopes GitHub named, any one of which would do. */
+    readonly scopes: readonly string[] = [],
   ) {
     super(message);
     this.name = "PrListError";
   }
+}
+
+// ── What the sign-in may ask ─────────────────────────────────────────────────
+
+/**
+ * What a sign-in's token lets a question ask GitHub for. A team's fields (a
+ * requested team's slug) take `read:org` — GitHub's refusal names
+ * `read:discussion` as the other way in — and GitHub weighs every field of a
+ * query against the token's scopes BEFORE it runs it: one `... on Team {
+ * slug }` anywhere, even under a fragment no answer ever reaches, refuses the
+ * whole query, `errors` and no `data`. The VS Code sign-in asks for `repo`
+ * alone, so for a token with nothing more, not one pull request was listed
+ * (#82).
+ * A team's `__typename` takes no scope: without its fields a question still
+ * learns that a team was asked, not which.
+ *
+ * Checked read-only against api.github.com, with a token short of
+ * `read:project`: a ProjectV2 field under a fragment on a type the answer
+ * never had was refused the same way, and `__typename` of the same objects
+ * was answered.
+ *
+ * The host keeps one per sign-in and hands it to every read: a question
+ * refused for a team's scope is asked again without the team fields, once,
+ * and the reach remembers it, so the sign-in's next question is asked that
+ * way first. A new sign-in starts from a new one.
+ */
+export interface SignInReach {
+  /** A team's fields may be asked for. */
+  teams: boolean;
+}
+
+/** The scopes that let a token read a team's fields. */
+const TEAM_SCOPES = new Set(["read:org", "write:org", "admin:org", "read:discussion", "write:discussion"]);
+
+/** GitHub's refusals of a question for the token's scopes. */
+function scopeRefusals(errors: readonly GraphqlErrorLike[] | undefined): GraphqlErrorLike[] {
+  return (errors ?? []).filter((e) => e.type === "INSUFFICIENT_SCOPES");
+}
+
+/**
+ * The scopes GitHub's refusals name — "The 'slug' field requires one of the
+ * following scopes: ['read:org', 'read:discussion'], but your token has only
+ * been granted the: ['repo'] scopes." gives read:org and read:discussion.
+ */
+export function scopesNamed(errors: readonly GraphqlErrorLike[] | undefined): string[] {
+  const out = new Set<string>();
+  for (const e of scopeRefusals(errors)) {
+    const list = /requires one of the following scopes: \[([^\]]*)\]/.exec(e.message ?? "")?.[1] ?? "";
+    for (const m of list.matchAll(/'([^']+)'/g)) out.add(m[1]);
+  }
+  return [...out];
+}
+
+/**
+ * Did GitHub refuse the question for a team's scope? A refusal whose scopes
+ * can't be read counts: asking without the team fields is the one thing that
+ * could help, and costs one request.
+ */
+export function refusesTeams(errors: readonly GraphqlErrorLike[] | undefined): boolean {
+  const refusals = scopeRefusals(errors);
+  if (refusals.length === 0) return false;
+  const named = scopesNamed(refusals);
+  return named.length === 0 || named.some((s) => TEAM_SCOPES.has(s));
+}
+
+/**
+ * A question refused for the token's scopes, in words. GitHub's own sentence
+ * ends "Please modify your token's scopes at:
+ * https://github.com/settings/tokens" — and a sign-in through VS Code's
+ * GitHub account has no token there to modify. The scopes it names are the
+ * useful part, and are kept.
+ */
+export function scopeError(errors: readonly GraphqlErrorLike[] | undefined): PrListError {
+  const scopes = scopesNamed(errors);
+  const message =
+    scopes.length === 1
+      ? l10n.t("GitHub won't answer without the {0} permission, which this sign-in wasn't given.", scopes[0])
+      : scopes.length > 1
+        ? l10n.t("GitHub won't answer without one of the permissions {0}, which this sign-in wasn't given.", scopes.join(", "))
+        : l10n.t("GitHub won't answer without a permission this sign-in wasn't given.");
+  return new PrListError(message, "scope", scopes);
+}
+
+/**
+ * Ask a question as far as the sign-in reaches: with the team fields while it
+ * may, and — refused for a team's scope — once more without them, which the
+ * reach then remembers. Whatever the answer is then, refused again included,
+ * is the caller's to read.
+ */
+export async function askWithin(
+  graphql: GraphqlFn,
+  reach: SignInReach,
+  build: (teams: boolean) => { query: string; variables: Record<string, unknown> },
+): Promise<{ data?: unknown; errors?: readonly GraphqlErrorLike[] }> {
+  const teams = reach.teams;
+  const first = build(teams);
+  const res = await graphql(first.query, first.variables);
+  if (!teams || !refusesTeams(res.errors)) return res;
+  reach.teams = false;
+  const lean = build(false);
+  return graphql(lean.query, lean.variables);
 }
 
 // ── The query ────────────────────────────────────────────────────────────────
@@ -208,8 +311,17 @@ function checkRepo(owner: string, repo: string): void {
   }
 }
 
-/** What one row asks GitHub for. */
-export const PR_ROW_FRAGMENT = `fragment PrRow on PullRequest {
+/**
+ * A requested reviewer, as a question asks for one: a team by its slug only
+ * where the sign-in may read a team (SignInReach), else by its `__typename`.
+ */
+export function requestedReviewerFields(teams: boolean, person = "login avatarUrl(size: 40)"): string {
+  return `requestedReviewer { __typename ... on User { ${person} }${teams ? " ... on Team { slug }" : ""} ... on Bot { login } ... on Mannequin { login } }`;
+}
+
+/** What one row asks GitHub for — a requested team's name only where the sign-in may read it. */
+export function prRowFragment(teams: boolean): string {
+  return `fragment PrRow on PullRequest {
   number title url state isDraft mergedAt closedAt createdAt updatedAt
   repository { nameWithOwner }
   author { login avatarUrl(size: 40) }
@@ -220,9 +332,13 @@ export const PR_ROW_FRAGMENT = `fragment PrRow on PullRequest {
   comments { totalCount }
   labels(first: 10) { nodes { name color } }
   assignees(first: 5) { nodes { login avatarUrl(size: 40) } }
-  reviewRequests(first: 10) { nodes { requestedReviewer { __typename ... on User { login avatarUrl(size: 40) } ... on Team { slug } ... on Bot { login } ... on Mannequin { login } } } }
+  reviewRequests(first: 10) { nodes { ${requestedReviewerFields(teams)} } }
   commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: 0) { checkRunCountsByState { state count } statusContextCountsByState { state count } } } } } }
 }`;
+}
+
+/** What one row asks GitHub for, team names included. */
+export const PR_ROW_FRAGMENT = prRowFragment(true);
 
 const GRAPHQL_STATES: Record<PrListState, string[] | null> = {
   open: ["OPEN"],
@@ -231,8 +347,12 @@ const GRAPHQL_STATES: Record<PrListState, string[] | null> = {
   all: null,
 };
 
-/** The query and variables for one page — which shape, and whether the header's counts come with it. */
-export function prListQuery(req: PrListRequest): { query: string; variables: Record<string, unknown>; shape: "list" | "search" } {
+/**
+ * The query and variables for one page — which shape, and whether the
+ * header's counts come with it. `teams`: whether a requested team is asked
+ * for by name (SignInReach).
+ */
+export function prListQuery(req: PrListRequest, teams = true): { query: string; variables: Record<string, unknown>; shape: "list" | "search" } {
   checkRepo(req.owner, req.repo);
   const first = Math.max(1, Math.min(100, Math.floor(req.first)));
   const firstPage = !req.after;
@@ -254,7 +374,7 @@ export function prListQuery(req: PrListRequest): { query: string; variables: Rec
     }
   }
 }
-${PR_ROW_FRAGMENT}`;
+${prRowFragment(teams)}`;
     return {
       query,
       variables: { owner: req.owner, name: req.repo, first, after: req.after ?? null, states: GRAPHQL_STATES[req.state] },
@@ -275,7 +395,7 @@ ${PR_ROW_FRAGMENT}`;
     nodes { ... on PullRequest { ...PrRow } }
   }
 }
-${PR_ROW_FRAGMENT}`;
+${prRowFragment(teams)}`;
   const variables: Record<string, unknown> = {
     q: searchQueryFor(req, req.state),
     first,
@@ -310,6 +430,8 @@ export function mapPrNode(n: Json): PrListItem | null {
   for (const r of n.reviewRequests?.nodes ?? []) {
     const who = r?.requestedReviewer;
     if (!who) continue;
+    // A team asked without its name (a sign-in that can't read teams) is
+    // no one the row can show.
     if (who.__typename === "Team" && typeof who.slug === "string") reviewRequests.push({ team: who.slug });
     else if (typeof who.login === "string") reviewRequests.push({ login: who.login, avatarUrl: who.avatarUrl ?? null });
   }
@@ -357,9 +479,9 @@ function errorOf(errors: readonly GraphqlErrorLike[] | undefined, type: string):
 
 /**
  * GitHub's answer → a page. A repository GitHub doesn't know (or this
- * sign-in can't see) is `not-found`; GraphQL's own rate limit, `rate-limit`.
- * Partial answers are kept: a row GitHub couldn't fill is left out, not the
- * whole list.
+ * sign-in can't see) is `not-found`; GraphQL's own rate limit, `rate-limit`;
+ * a question refused for the token's scopes, `scope`. Partial answers are
+ * kept: a row GitHub couldn't fill is left out, not the whole list.
  */
 export function parsePrListResponse(
   req: PrListRequest,
@@ -374,6 +496,7 @@ export function parsePrListResponse(
   }
   const where = `${req.owner}/${req.repo}`;
   if (shape === "list" && (!data || !data.repository)) {
+    if (errorOf(errors, "INSUFFICIENT_SCOPES")) throw scopeError(errors);
     if (errorOf(errors, "NOT_FOUND") || (data && data.repository === null)) {
       throw new PrListError(
         l10n.t("GitHub has no repository {0} — or this sign-in can't see it.", where),
@@ -385,6 +508,7 @@ export function parsePrListResponse(
     throw new PrListError(errors?.[0]?.message || l10n.t("GitHub couldn't answer the query."), "query");
   }
   if (shape === "search" && (!data || !data.list)) {
+    if (errorOf(errors, "INSUFFICIENT_SCOPES")) throw scopeError(errors);
     const forbidden = errorOf(errors, "FORBIDDEN");
     if (forbidden) throw new PrListError(forbidden.message || l10n.t("GitHub refused to search {0}.", where), "forbidden");
     throw new PrListError(errors?.[0]?.message || l10n.t("GitHub couldn't answer the query."), "query");
@@ -417,10 +541,14 @@ export function parsePrListResponse(
   };
 }
 
-/** Read one page of a repository's pull requests. */
-export async function fetchPrListPage(graphql: GraphqlFn, req: PrListRequest): Promise<PrListPage> {
-  const { query, variables, shape } = prListQuery(req);
-  return parsePrListResponse(req, shape, await graphql(query, variables));
+/**
+ * Read one page of a repository's pull requests, as far as the sign-in
+ * reaches (SignInReach: without one, every read starts from the team
+ * fields).
+ */
+export async function fetchPrListPage(graphql: GraphqlFn, req: PrListRequest, reach: SignInReach = { teams: true }): Promise<PrListPage> {
+  const { shape } = prListQuery(req);
+  return parsePrListResponse(req, shape, await askWithin(graphql, reach, (teams) => prListQuery(req, teams)));
 }
 
 // ── The repository behind the list ───────────────────────────────────────────
@@ -458,6 +586,7 @@ export async function fetchRepoInfo(graphql: GraphqlFn, owner: string, repo: str
   const res = await graphql(REPO_INFO_QUERY, { owner, name: repo });
   const limited = errorOf(res.errors, "RATE_LIMITED");
   if (limited) throw new PrListError(limited.message || l10n.t("GitHub's rate limit was reached."), "rate-limit");
+  if (errorOf(res.errors, "INSUFFICIENT_SCOPES") && !(res.data as Json)?.repository) throw scopeError(res.errors);
   const r = (res.data as Json)?.repository;
   const name = splitName(r?.nameWithOwner);
   if (!r || !name) return undefined;
@@ -494,6 +623,7 @@ export async function fetchFacetOptions(graphql: GraphqlFn, owner: string, repo:
   const res = await graphql(FACET_OPTIONS_QUERY, { owner, name: repo });
   const r = (res.data as Json)?.repository;
   if (!r) {
+    if (errorOf(res.errors, "INSUFFICIENT_SCOPES")) throw scopeError(res.errors);
     throw new PrListError(res.errors?.[0]?.message || l10n.t("GitHub has no repository {0}/{1}.", owner, repo), "not-found");
   }
   const labels = (r.labels?.nodes ?? [])

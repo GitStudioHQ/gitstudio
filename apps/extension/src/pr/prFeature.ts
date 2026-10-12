@@ -89,6 +89,9 @@ export function registerPrFeature(
   const pageDeps = {
     api,
     graphql,
+    // One reach for the list and every page: a sign-in refused team names
+    // once is asked without them from then on.
+    reach: () => auth.reach,
     review,
     extensionUri: context.extensionUri,
     list,

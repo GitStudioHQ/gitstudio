@@ -25,7 +25,7 @@ import type {
 import type { RepoEntry, RepoManager } from "../git/repoManager";
 import { getNonce } from "../webview/html";
 import { relativeTime } from "../util/relativeTime";
-import type { GitHubAuth } from "./githubAuth";
+import { scopeRefusalMessage, type GitHubAuth } from "./githubAuth";
 import { GitHubApi, GitHubApiError, type PullRequest } from "./githubApi";
 import { prListHtml } from "./prListHtml";
 import { contextFor, resolvePrTargets, type PrTarget } from "./prTargets";
@@ -223,11 +223,13 @@ interface Described {
   kind: GitHubApiError["kind"] | PrListError["kind"] | "unknown";
   status?: number;
   helpUrl?: string;
+  /** For `scope`: the scopes GitHub named. */
+  scopes?: readonly string[];
 }
 
 function describe(err: unknown): Described {
   if (err instanceof GitHubApiError) return { message: err.message, kind: err.kind, status: err.status, helpUrl: err.helpUrl };
-  if (err instanceof PrListError) return { message: err.message, kind: err.kind };
+  if (err instanceof PrListError) return { message: err.message, kind: err.kind, scopes: err.scopes };
   return { message: l10n.t("GitHub didn't answer."), kind: "unknown" };
 }
 
@@ -282,6 +284,7 @@ export function failureMessage(err: Described, repo: string): PrListMessage {
   if (err.kind === "rate-limit") {
     return { icon: "clock", tone: "warning", title: l10n.t("GitHub's rate limit was reached"), detail: err.message, buttons: [retry] };
   }
+  if (err.kind === "scope") return scopeRefusalMessage(err.scopes ?? [], `https://github.com/${repo}/pulls`);
   if (err.kind === "network") {
     return { icon: "error", tone: "error", title: l10n.t("Couldn't reach GitHub"), detail: l10n.t("Check your network connection."), buttons: [{ ...retry, primary: true }] };
   }
@@ -700,12 +703,12 @@ export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vsc
     const want = shown ? Math.max(PR_PAGE, shown.items.length) : PR_PAGE;
     const ask = { owner: r.target.owner, repo: r.target.repo, state: this.segment, filters: this.filters };
     try {
-      const page = await fetchPrListPage(this.graphql, { ...ask, first: Math.min(REFRESH_MAX, want) });
+      const page = await fetchPrListPage(this.graphql, { ...ask, first: Math.min(REFRESH_MAX, want) }, this.auth.reach);
       if (this.stopped.signal.aborted || this.queryKeyNow() !== key) return; // closed, or another question's answer
       let items = page.items;
       let { hasMore, cursor } = page;
       while (hasMore && cursor && items.length < want) {
-        const next = await fetchPrListPage(this.graphql, { ...ask, first: Math.min(REFRESH_MAX, want - items.length), after: cursor });
+        const next = await fetchPrListPage(this.graphql, { ...ask, first: Math.min(REFRESH_MAX, want - items.length), after: cursor }, this.auth.reach);
         if (this.stopped.signal.aborted || this.queryKeyNow() !== key) return;
         // Sorted by last update: a row can move to a later page between reads.
         const seen = new Set(items.map((i) => i.number));
@@ -773,7 +776,7 @@ export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vsc
         filters: this.filters,
         first: PR_PAGE,
         after: cur.cursor,
-      });
+      }, this.auth.reach);
       if (this.queryKeyNow() !== key || this.current !== cur) return;
       // Sorted by last update: a row can move to a later page between reads.
       const seen = new Set(cur.items.map((i) => i.number));
