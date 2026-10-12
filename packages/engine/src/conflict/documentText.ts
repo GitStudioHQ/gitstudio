@@ -31,9 +31,8 @@
 // showed the conflict from the start, and the next write put base back over
 // the resolution.
 
-import { linesDiffComputers } from "vscode-diff";
 import { buildMergeModel } from "../mergeModel";
-import { detectEol, eolChars, normalizeEol, splitLines } from "../lineDiff";
+import { computeLineChanges, detectEol, eolChars, normalizeEol, splitLines } from "../lineDiff";
 import { sideBlockSpan, type ChangeBlock, type LineSpan, type MergeModel } from "../types";
 
 /** The three texts of a merge, as the merge view gets them: `ours` is Yours (left), `theirs` Theirs (right). */
@@ -458,9 +457,9 @@ function matchLines(from: readonly string[], to: readonly string[]): Int32Array 
   const at = new Int32Array(from.length).fill(-1);
   // The diff wants a line on each side (a text model always has one).
   if (from.length === 0 || to.length === 0) return at;
-  let diff: ReturnType<ReturnType<typeof linesDiffComputers.getDefault>["computeDiff"]>;
+  let diff: ReturnType<typeof computeLineChanges>;
   try {
-    diff = linesDiffComputers.getDefault().computeDiff(from as string[], to as string[], {
+    diff = computeLineChanges(from, to, {
       ignoreTrimWhitespace: false,
       maxComputationTimeMs: 5000,
       computeMoves: false,

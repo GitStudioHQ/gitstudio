@@ -36,6 +36,211 @@ const BASE_DIFF_OPTIONS = {
   computeMoves: false,
 };
 
+/** One change as vscode-diff reports it — the fields this package reads. */
+export interface LineChange {
+  original: { startLineNumber: number; endLineNumberExclusive: number };
+  modified: { startLineNumber: number; endLineNumberExclusive: number };
+  innerChanges?: ReadonlyArray<{ originalRange: RangeLike; modifiedRange: RangeLike }>;
+}
+
+/**
+ * A line no text has. Appended to both sides by `computeLineChanges`.
+ */
+const END_OF_TEXT = "\u0000gitstudio:end-of-text\u0000";
+
+const isBlank = (line: string): boolean => line.trim() === "";
+
+/**
+ * Whether vscode-diff can get the end of these two texts wrong (see
+ * computeLineChanges): both end in a blank line, and their blank lines are
+ * not all spelled the same — `""` beside `"  "`, or a CRLF file's `"\r"`
+ * beside the empty line after its final newline.
+ *
+ * Checked, not guessed: over every pair of texts of up to four lines built
+ * from empty, space, tab, CR, indented and plain lines (two alphabets, 7.84
+ * million pairs each), every one of vscode-diff's 1,822 failures has this
+ * shape. Narrower guesses miss some: "a whitespace-only line among the
+ * trailing blank lines" misses 72 ("\n" → "\n \na\n"). Plain LF source with
+ * no whitespace-only line never has it; a CRLF file with an empty line in it
+ * nearly always does.
+ */
+export function endIsAtRisk(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length < 2 || b.length < 2 || !isBlank(a[a.length - 1]) || !isBlank(b[b.length - 1])) {
+    return false;
+  }
+  let spelling: string | undefined;
+  for (const lines of [a, b]) {
+    for (const line of lines) {
+      if (!isBlank(line)) continue;
+      if (spelling === undefined) spelling = line;
+      else if (line !== spelling) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * vscode-diff's line diff, minus one defect it has at the end of a text.
+ *
+ * Its line pass compares TRIMMED lines, so a whitespace-only line and the empty
+ * line after a text's final "\n" look the same to it. In the shape
+ * `endIsAtRisk` names it can pair them wrongly, file the left-over line as an
+ * insertion AFTER the last line, and turn that into line numbers one short.
+ * The changes then no longer add up: `"x\n"` → `"x\n \n"` came back as "line
+ * 2 modified" with nothing inserted, and staging every change of it wrote
+ * `"x\n "` to the index; a blank line added to a CRLF file staged a lone "\r"
+ * at its end. vscode-diff notices — its `assertFn` fails — but only reports it
+ * through `setTimeout(() => { throw … })`, an uncaught exception in the host:
+ * crash report #19, six times from Windows, from the editor gutter's refresh.
+ * The same code is upstream in VS Code, unfixed.
+ *
+ * Every other pair of texts goes to vscode-diff untouched, and its answer is
+ * returned as it is. In the risky shape one more line, equal on both sides and
+ * like no other, goes after both texts, so no change can sit after the last
+ * line and the defect has nowhere to happen. The answer then comes back in the
+ * caller's own line numbers (`endOfText`). Where vscode-diff would not have
+ * failed, the answer is the same except, now and then, for which blank lines
+ * near the end belong to which change — on CRLF source edits, never at all
+ * (0 of 19,799); on texts thick with whitespace-only lines, 83 of 19,807,
+ * every one of them about blank lines only.
+ */
+export function computeLineChanges(
+  original: readonly string[],
+  modified: readonly string[],
+  options: typeof BASE_DIFF_OPTIONS,
+): { changes: readonly LineChange[]; hitTimeout: boolean } {
+  const computer = linesDiffComputers.getDefault();
+  if (options.ignoreTrimWhitespace || !endIsAtRisk(original, modified)) {
+    return computer.computeDiff(original as string[], modified as string[], options);
+  }
+  const diff = computer.computeDiff([...original, END_OF_TEXT], [...modified, END_OF_TEXT], options);
+  return { hitTimeout: diff.hitTimeout, changes: endOfText(diff.changes, original, modified) };
+}
+
+/**
+ * Changes computed with END_OF_TEXT after both texts, in the texts' own terms.
+ *
+ * Line numbers and positions are clamped to the real texts: a position on the
+ * added line is the end of the real last line. Then two shapes the added line
+ * produces are put where the user can reach them:
+ *
+ * - A change that runs to the end of BOTH texts gives back the lines it ends
+ *   with that are the same on both sides. A blank line added to a CRLF file is
+ *   that blank line inserted, not a two-line block that also marks the
+ *   untouched last line.
+ * - A pure insertion or deletion anchored AFTER the last line of the side it
+ *   is empty on — which no line of that text can select, so no line action can
+ *   stage or unstage it — slides up through the identical lines above it, as
+ *   far as they go. If the change before it is in the way, the two are one
+ *   change (and lose any equal lines they end with, as above). Deleting the
+ *   last of two blank lines (files.trimFinalNewlines) is the first blank line
+ *   deleted, on a line the working text has — where vscode-diff puts it.
+ *
+ * A change either step moved keeps the character ranges still inside it, and
+ * gets whole-line ones if none are.
+ */
+function endOfText(
+  changes: readonly LineChange[],
+  a: readonly string[],
+  b: readonly string[],
+): LineChange[] {
+  const out: LineChange[] = [];
+  for (const change of changes) {
+    let os = Math.min(change.original.startLineNumber, a.length + 1);
+    let oe = Math.min(change.original.endLineNumberExclusive, a.length + 1);
+    let ms = Math.min(change.modified.startLineNumber, b.length + 1);
+    let me = Math.min(change.modified.endLineNumberExclusive, b.length + 1);
+    let inner = (change.innerChanges ?? []).map((i) => ({
+      originalRange: rangeWithin(i.originalRange, a),
+      modifiedRange: rangeWithin(i.modifiedRange, b),
+    }));
+    let moved = false;
+    const trimAtEnd = (): void => {
+      if (oe !== a.length + 1 || me !== b.length + 1) return;
+      while (oe > os && me > ms && a[oe - 2] === b[me - 2]) {
+        oe--;
+        me--;
+        moved = true;
+      }
+    };
+    trimAtEnd();
+    const pastEnd = (): boolean => (os === oe && ms < me && os > a.length) || (ms === me && os < oe && ms > b.length);
+    if (pastEnd()) {
+      const prev = out[out.length - 1];
+      const floorO = prev ? prev.original.endLineNumberExclusive + 1 : 1;
+      const floorM = prev ? prev.modified.endLineNumberExclusive + 1 : 1;
+      // The lines it is made of, read on the side that has them.
+      const [lines, start, end] = os === oe ? [b, ms, me] : [a, os, oe];
+      let s = start;
+      let e = end;
+      while (os - 1 >= floorO && ms - 1 >= floorM && lines[s - 2] === lines[e - 2] && a[os - 2] === b[ms - 2]) {
+        os--;
+        oe--;
+        ms--;
+        me--;
+        s--;
+        e--;
+        moved = true;
+      }
+      if (pastEnd() && prev && (os - 1 < floorO || ms - 1 < floorM)) {
+        // Wedged against the change before it: they are one change.
+        out.pop();
+        os = prev.original.startLineNumber;
+        ms = prev.modified.startLineNumber;
+        inner = [...(prev.innerChanges ?? []), ...inner];
+        moved = true;
+        trimAtEnd();
+      }
+    }
+    if (os === oe && ms === me) continue;
+    if (moved) {
+      inner = inner.filter(
+        (i) =>
+          linesWithin(i.originalRange, os, oe, a) && linesWithin(i.modifiedRange, ms, me, b),
+      );
+      if (inner.length === 0) {
+        inner = [{ originalRange: wholeLines(a, os, oe), modifiedRange: wholeLines(b, ms, me) }];
+      }
+    }
+    out.push({
+      original: { startLineNumber: os, endLineNumberExclusive: oe },
+      modified: { startLineNumber: ms, endLineNumberExclusive: me },
+      innerChanges: inner,
+    });
+  }
+  return out;
+}
+
+/** `r` with any position past the last line put at the end of the last line. */
+function rangeWithin(r: RangeLike, lines: readonly string[]): RangeLike {
+  const last = lines.length;
+  const end = lines[last - 1].length + 1;
+  const [startLineNumber, startColumn] = r.startLineNumber > last ? [last, end] : [r.startLineNumber, r.startColumn];
+  const [endLineNumber, endColumn] = r.endLineNumber > last ? [last, end] : [r.endLineNumber, r.endColumn];
+  return { startLineNumber, startColumn, endLineNumber, endColumn };
+}
+
+/** Whether `r` starts on or after line `start`, and ends by line `end`, inside `lines`. */
+function linesWithin(r: RangeLike, start: number, end: number, lines: readonly string[]): boolean {
+  return r.startLineNumber >= start && r.endLineNumber <= Math.max(start, end) && r.endLineNumber <= lines.length;
+}
+
+/** The whole lines [start, end) as a character range inside `lines`. */
+function wholeLines(lines: readonly string[], start: number, end: number): RangeLike {
+  const n = lines.length;
+  const endOf = (line: number): number => lines[line - 1].length + 1;
+  if (start === end) {
+    return start <= n
+      ? { startLineNumber: start, startColumn: 1, endLineNumber: start, endColumn: 1 }
+      : { startLineNumber: n, startColumn: endOf(n), endLineNumber: n, endColumn: endOf(n) };
+  }
+  if (end <= n) return { startLineNumber: start, startColumn: 1, endLineNumber: end, endColumn: 1 };
+  if (start > 1) {
+    return { startLineNumber: start - 1, startColumn: endOf(start - 1), endLineNumber: end - 1, endColumn: endOf(end - 1) };
+  }
+  return { startLineNumber: 1, startColumn: 1, endLineNumber: n, endColumn: endOf(n) };
+}
+
 /**
  * Whether a diff run in this mode should ignore leading/trailing whitespace.
  *
@@ -165,9 +370,7 @@ export function diffSide(
     options.innerLineBudget !== undefined &&
     baseLines.length + sideLines.length > options.innerLineBudget;
 
-  const { changes } = linesDiffComputers
-    .getDefault()
-    .computeDiff(compareBase, compareSide, diffOptions);
+  const { changes } = computeLineChanges(compareBase, compareSide, diffOptions);
 
   const result: SideChange[] = changes.map((change) => {
     const baseSpan: LineSpan = {

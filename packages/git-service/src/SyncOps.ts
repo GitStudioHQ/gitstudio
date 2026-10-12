@@ -1,8 +1,10 @@
+import { existsSync } from "node:fs";
 import type { GitProcess, GitRunOptions } from "./GitProcess";
 import { parseUnmergedPaths } from "./ConflictProvider";
 import { rebaseInProgress } from "./rebaseInProgress";
 import { parseV2 } from "./StatusProvider";
 import { operationInTheWayMessage, stoppedIn, type StoppedOperation } from "./stoppedOperation";
+import { checkedOutElsewhere, checkedOutElsewhereMessage } from "./branchElsewhere";
 import * as l10n from "@vscode/l10n";
 
 /** How far the branch is ahead of / behind its upstream. */
@@ -14,6 +16,8 @@ export interface AheadBehind {
 export interface SyncOpResult {
   ok: boolean;
   stderr: string;
+  /** A refusal that is the repository's state, not a failure (see pullFastForward). */
+  expected?: true;
 }
 
 export interface PushOptions extends GitRunOptions {
@@ -1232,6 +1236,17 @@ export class SyncOps {
     const [remote, remoteRef] = up.stdout.trim().split("\t");
     if (up.code !== 0 || !remote || !remoteRef) {
       return { ok: false, stderr: l10n.t("'{0}' has no upstream to pull from.", branch) };
+    }
+    // A branch ANOTHER worktree has checked out cannot be moved from here: git
+    // refuses ("refusing to fetch into branch … checked out at …") and its
+    // words went to the crash tracker as "Pull branch" (report #26). Say where
+    // it is instead, before git runs — the doors that check it out or delete
+    // it already do. A worktree whose folder is gone still holds the branch,
+    // and "pull it in that worktree" would send the user to nothing: then the
+    // way out is forgetting it, as those doors say too.
+    const where = await checkedOutElsewhere(this.proc, `refs/heads/${branch}`, opts);
+    if (where) {
+      return { ok: false, expected: true, stderr: checkedOutElsewhereMessage(branch, where, "pull", !existsSync(where)) };
     }
     const r = await this.proc.run(
       ["fetch", remote, `${remoteRef}:refs/heads/${branch}`],

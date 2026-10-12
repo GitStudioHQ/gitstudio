@@ -41,6 +41,7 @@ import {
   selectTools,
   suggestBranchNames,
   summarizeChanges,
+  AiError,
   type AiSettings,
   type Connection,
   type GitTool,
@@ -438,7 +439,13 @@ export class AiBridge {
       }
       return { ok: false, message: l10n.t("The model returned an empty response.") };
     } catch (err) {
-      return { ok: false, message: err instanceof Error ? err.message : String(err) };
+      const message = err instanceof Error ? err.message : String(err);
+      // What the provider said about THIS connection — a key it refused, an
+      // endpoint it could not reach, no model chosen — is the answer the Test
+      // button exists to give, and it arrived in the crash tracker as
+      // "Ai test" (reports #28, #29). Anything else keeps reporting: a 400 or a
+      // 404 may be a request or a URL we built wrong, and a non-AiError is ours.
+      return connectionAnswer(err) ? { ok: false, expected: true, message } : { ok: false, message };
     }
   }
 
@@ -900,4 +907,22 @@ export function summarizeArgs(tool: GitTool, args: Record<string, unknown>): str
 
 function asList(v: unknown): string {
   return Array.isArray(v) ? v.map(String).join(", ") : String(v ?? "");
+}
+
+/**
+ * Whether a failed connection test is the provider's answer about the
+ * connection itself (see AiBridge.test): an AiError with no status — no model
+ * configured, cancelled, or the network itself (the providers build the key
+ * and the request before the fetch's try, so a failure of ours there is never
+ * "couldn't reach") — a refused key (401/403), a rate limit (429), or the
+ * provider's own trouble (5xx).
+ *
+ * Not 404. It is what a wrong base URL or model id gets, and also what a URL
+ * our endpoint() joined wrong gets (it has, once: "…/gpt//chat/completions"),
+ * and the two cannot be told apart from here.
+ */
+export function connectionAnswer(err: unknown): boolean {
+  if (!(err instanceof AiError)) return false;
+  const s = err.status;
+  return s === undefined || s === 401 || s === 403 || s === 429 || s >= 500;
 }

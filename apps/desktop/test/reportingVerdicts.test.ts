@@ -446,6 +446,30 @@ test("#16: Agent Access in a dev tree with no server bundled files nothing", asy
   assert.equal(msg, undefined);
 });
 
+test("#24/#25/#33: a push the remote refuses because the branch moved on there files nothing — and still says git's words", async () => {
+  const { work } = collidingClone();
+  const bridge = await bridgeOn(work);
+  const pushed = await bridge.syncPush(undefined);
+  assert.equal(pushed.ok, false);
+  // The renderer reads this message to offer Pull first; it is untouched.
+  assert.match(pushed.message ?? "", /\[rejected\]|Updates were rejected/);
+  assert.equal(await filed(async () => pushed), undefined);
+});
+
+test("#30: a push from a repository with no remote at all files nothing", async () => {
+  const root = mkdtempSync(join(scratch, "lonely-"));
+  const git = at(root);
+  git("init", "-q", "-b", "main");
+  identify(git);
+  writeFileSync(join(root, "a.txt"), "a\n");
+  git("add", ".");
+  git("commit", "-qm", "a");
+  const bridge = await bridgeOn(root);
+  const pushed = await bridge.syncPush(undefined);
+  assert.equal(pushed.ok, false, JSON.stringify(pushed));
+  assert.equal(await filed(async () => pushed), undefined, pushed.message);
+});
+
 test("the fixture is real: the clone and its upstream have each moved", async () => {
   const { git } = collidingClone();
   git("fetch", "-q");

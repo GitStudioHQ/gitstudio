@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { OpenAiCompatProvider } from "../src/providers/openaiCompat";
 import { AnthropicProvider } from "../src/providers/anthropic";
-import type { ChatMessage } from "../src/types";
+import { AiError, type ChatMessage } from "../src/types";
 
 /** Build a stub `fetch` that returns one JSON body and records the request. */
 function jsonFetch(body: unknown, capture?: (req: { url: string; init: RequestInit }) => void): typeof fetch {
@@ -204,4 +204,34 @@ test("anthropic streamChat streams text + assembles tool_use from SSE", async ()
   assert.equal(r.stopReason, "tool_calls");
   assert.equal(r.toolCalls[0].name, "git_log");
   assert.deepEqual(r.toolCalls[0].arguments, { limit: 5 });
+});
+
+// Only the NETWORK is "couldn't reach". The desktop's Test button (aiBridge)
+// treats an AiError without a status as the connection's own answer and files
+// no crash report — so our own key read or request body failing inside the
+// fetch's try came back as "Couldn't reach …" and went unreported.
+test("a failure in our own request building is not reported as an unreachable endpoint — in both providers", async () => {
+  const broken = () => {
+    throw new TypeError("secret store exploded");
+  };
+  const unreachable = (async () => {
+    throw new TypeError("fetch failed");
+  }) as unknown as typeof fetch;
+  const openai = (getKey: () => string, fetchImpl: typeof fetch) =>
+    new OpenAiCompatProvider({ baseUrl: "https://api.example.com/v1", resolveModel: () => "gpt-test", getKey, label: "X", fetchImpl });
+  const anthropic = (getKey: () => string, fetchImpl: typeof fetch) =>
+    new AnthropicProvider({ baseUrl: "https://api.anthropic.com", resolveModel: () => "claude-test", getKey, label: "claude", fetchImpl });
+  for (const [name, make] of [["openai-compatible", openai], ["anthropic", anthropic]] as const) {
+    await assert.rejects(make(broken, jsonFetch({})).chat(msgs), (err: unknown) => {
+      assert.ok(err instanceof TypeError, `${name}: ${String(err)}`);
+      assert.equal((err as Error).message, "secret store exploded");
+      return true;
+    });
+    await assert.rejects(make(() => "k", unreachable).chat(msgs), (err: unknown) => {
+      assert.ok(err instanceof AiError, `${name}: ${String(err)}`);
+      assert.equal((err as AiError).status, undefined);
+      assert.match((err as Error).message, /Couldn't reach/);
+      return true;
+    });
+  }
 });

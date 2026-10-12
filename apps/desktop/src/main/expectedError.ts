@@ -52,5 +52,62 @@ export function reportableResultMessage(result: unknown): string | undefined {
   if ((result as { ok?: unknown }).ok !== false) return undefined;
   if (isExpectedError(result)) return undefined;
   const message = (result as { message?: unknown }).message;
-  return typeof message === "string" && message.trim() ? message : undefined;
+  if (typeof message !== "string" || !message.trim()) return undefined;
+  return remoteOutcome(message) ? undefined : message;
+}
+
+/**
+ * What a remote said, when it is an answer about the remote or the user's
+ * setup rather than about anything this app did.
+ *
+ * Push, pull and fetch hand git's own stderr back as the result's message, so
+ * every refusal a remote can give arrived in the crash tracker as "Push" /
+ * "Push branch": the branch moved on the remote (reports #24, #25, #33), a
+ * protected branch (#22), no credentials and no terminal to ask for them in
+ * (#31, #32), a repository with no remote at all (#30). None of them is
+ * something we can fix by reading a report, and the renderer already shows
+ * the user git's words — so they are not filed. What the app DOES build — a
+ * refspec, a remote name, a lease — keeps reporting: "src refspec … does not
+ * match any" and "does not appear to be a git repository" are deliberately
+ * not here (reportingVerdicts.test.ts files the second).
+ *
+ * Matched on git's English, because the reporter only ever sees the words. A
+ * git that speaks another language does not match, and reports as before:
+ * the side to err on.
+ */
+const REMOTE_OUTCOMES: ReadonlyArray<{ name: string; re: RegExp }> = [
+  {
+    // "! [rejected] main -> main (fetch first)" / "(non-fast-forward)", with
+    // git's "Updates were rejected because …" hint. NOT "(stale info)": that is
+    // a --force-with-lease refused, and the lease's expected sha is ours
+    // (SyncOps.push) — a wrong one looks exactly like that, so it reports.
+    name: "the remote branch moved on",
+    re: /\bUpdates were rejected because (?:the tip of your current branch is behind|the remote contains work|a pushed branch tip is behind|the tag already exists)|\[rejected\][^\n]*\((?:fetch first|non-fast-forward|already exists)\)/,
+  },
+  {
+    // The server's own policy: a protected branch (GitHub's GH006, a ruleset's
+    // GH013, GitLab's), a pre-receive or update hook. Not every
+    // "[remote rejected]": "(funny refname)" or "(deny updating a hidden ref)"
+    // is about a ref the app may have spelled, and reports.
+    name: "the remote's own rules refused it",
+    re: /\[remote rejected\][^\n]*\((?:pre-receive|update|protected branch) hook declined\)|\bGH006\b|\bGH013\b|\bProtected branch update failed\b|push declined due to repository rule violations|not allowed to push code to protected branches/i,
+  },
+  {
+    name: "no credentials, or not these ones",
+    re: /could not read (?:Username|Password) for|\bAuthentication failed for\b|Permission denied \(publickey|Host key verification failed|The requested URL returned error: (?:401|403)\b|Invalid username or (?:password|token)|Support for password authentication was removed/i,
+  },
+  {
+    // GitHub's answer for a repository you cannot see, and a repo with no remote.
+    name: "nowhere to push, or no access to it",
+    re: /\bremote: Repository not found\b|\bNo configured push destination\b/i,
+  },
+  {
+    name: "the network",
+    re: /Could not resolve host|Could not resolve hostname|Failed to connect to|Connection (?:timed out|refused|reset)|Operation timed out|Network is unreachable/i,
+  },
+];
+
+/** The kind of remote answer `message` is (see REMOTE_OUTCOMES), or undefined. */
+export function remoteOutcome(message: string): string | undefined {
+  return REMOTE_OUTCOMES.find((c) => c.re.test(message))?.name;
 }
