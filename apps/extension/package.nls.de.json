@@ -1,5 +1,4 @@
 {
-  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "Textvergleiche von VS Code automatisch in GitStudio öffnen, einschließlich Quellcodeverwaltung, Datei- und Revisionsvergleichen. Unabhängig von `#gitstudio.merge.autoOpen#`. Binärvergleiche und benutzerdefinierte Editoren bleiben unverändert. Ausschalten, um zukünftige Vergleiche in VS Code zu öffnen. Aktivieren beide Erweiterungen diese Einstellung, übernimmt GitStudio.",
   "capabilities.virtualWorkspaces.description": "GitStudio erfordert ein lokales Git-Repository auf der Festplatte.",
   "command.gitstudio.abortRebase.title": "Rebase abbrechen",
   "command.gitstudio.addRemote.title": "Remote hinzufügen…",
@@ -200,6 +199,7 @@
   "config.gitstudio.merge.autoApplyNonConflicting.description": "Den Merge-Editor mit bereits angewendeten, nicht konfliktbehafteten Änderungen öffnen (JetBrains' „nicht konfliktbehaftete Änderungen anwenden“ beim Öffnen). Aus: Sie warten, einzeln oder alle auf einmal über die Werkzeugleiste.",
   "config.gitstudio.merge.autoOpen.markdownDescription": "Wenn ein Merge, Rebase, Cherry-Pick, Revert, git am oder Stash-Pop wegen Konflikten anhält: Das **Konflikte**-Dashboard anzeigen, eine konfliktbehaftete Datei im GitStudio-Merge-Editor öffnen, sobald zu ihr gewechselt wird, und VS Codes integrierten Merge-Editor-Tab übernehmen. Aus: Nichts öffnet sich von selbst — **GitStudio: Konflikte lösen…** verwenden. (Dies öffnete früher jede konfliktbehaftete Datei als eigenen Tab.) Ist Merge Studio ebenfalls installiert, überlässt es dies GitStudio; dies deaktivieren, damit Merge Studio stattdessen Konflikte öffnet.",
   "config.gitstudio.merge.title": "Merge & Diff",
+  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "Textvergleiche von VS Code automatisch in GitStudio öffnen, einschließlich Quellcodeverwaltung, Datei- und Revisionsvergleichen. Unabhängig von `#gitstudio.merge.autoOpen#`. Binärvergleiche und benutzerdefinierte Editoren bleiben unverändert. Ausschalten, um zukünftige Vergleiche in VS Code zu öffnen. Aktivieren beide Erweiterungen diese Einstellung, übernimmt GitStudio. Vergleiche, die GitStudio aus seinen eigenen Ansichten öffnet (Changes, Commit-Graph, Verlauf, Vergleich), bleiben im Diff-Editor von VS Code.",
   "config.gitstudio.pr.defaultMergeMethod.description": "Standardmethode, die beim Mergen eines Pull Requests zuerst angeboten wird.",
   "config.gitstudio.pr.defaultMergeMethod.enumDescriptions.0": "Einen Merge-Commit erstellen.",
   "config.gitstudio.pr.defaultMergeMethod.enumDescriptions.1": "Die Commits des PR zu einem zusammenfassen und mergen.",

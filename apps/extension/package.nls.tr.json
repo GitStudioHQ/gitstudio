@@ -1,5 +1,4 @@
 {
-  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "Kaynak denetimi, dosya ve revizyon karşılaştırmaları dahil VS Code metin farklarını otomatik olarak GitStudio'da açın. `#gitstudio.merge.autoOpen#` ayarından bağımsızdır. İkili farklar ve özel düzenleyiciler değişmez. Sonraki karşılaştırmalarda VS Code'u kullanmak için kapatın. Her iki uzantı da bu ayarı açarsa farkları GitStudio işler.",
   "capabilities.virtualWorkspaces.description": "GitStudio diskte yerel bir git deposu gerektirir.",
   "command.gitstudio.abortRebase.title": "Yeniden Temellendirmeyi İptal Et",
   "command.gitstudio.addRemote.title": "Uzak Konum Ekle…",
@@ -200,6 +199,7 @@
   "config.gitstudio.merge.autoApplyNonConflicting.description": "Birleştirme düzenleyicisini her çakışmayan değişiklik zaten uygulanmış olarak aç (JetBrains'in açılışta \"çakışmayan değişiklikleri uygula\"sı). Kapalı: araç çubuğundan her biri tek tıklamayla veya hepsi birden sizi bekler.",
   "config.gitstudio.merge.autoOpen.markdownDescription": "Bir birleştirme, yeniden temellendirme, seç-al, geri alma, git am veya zula çıkarma çakışmalarda durduğunda: **Çakışmalar** panelini göster, ona geçtiğiniz anda çakışan bir dosyayı GitStudio birleştirme düzenleyicisinde aç ve VS Code'un yerleşik birleştirme düzenleyicisi sekmesini devral. Kapalı: hiçbir şey kendiliğinden açılmaz — **GitStudio: Çakışmaları Çöz…**'ü kullanın. (Bu önceden her çakışan dosyayı kendi sekmesi olarak açardı.) Merge Studio da yüklüyse, bunu GitStudio'ya bırakır; Merge Studio'nun çakışmaları onun yerine açmasına izin vermek için bunu kapatın.",
   "config.gitstudio.merge.title": "Birleştirme ve Fark",
+  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "Kaynak denetimi, dosya ve revizyon karşılaştırmaları dahil VS Code metin farklarını otomatik olarak GitStudio'da açın. `#gitstudio.merge.autoOpen#` ayarından bağımsızdır. İkili farklar ve özel düzenleyiciler değişmez. Sonraki karşılaştırmalarda VS Code'u kullanmak için kapatın. Her iki uzantı da bu ayarı açarsa farkları GitStudio işler. GitStudio'nun kendi görünümlerinden (Değişiklikler, İşleme Grafiği, geçmiş, karşılaştırma) açtığı farklar VS Code'un fark düzenleyicisinde kalır.",
   "config.gitstudio.pr.defaultMergeMethod.description": "Bir çekme isteği birleştirilirken önce sunulan varsayılan yöntem.",
   "config.gitstudio.pr.defaultMergeMethod.enumDescriptions.0": "Bir birleştirme işlemesi oluştur.",
   "config.gitstudio.pr.defaultMergeMethod.enumDescriptions.1": "PR'ın işlemelerini bir tekte ez ve birleştir.",

@@ -200,5 +200,10 @@ export type WebviewMessage =
   /** The bottom bar's Undo after an `applied{undoable}`: bring the conflict back. */
   | { type: "undoApply" }
   | { type: "diffChanged"; text: string }
+  /**
+   * The first edit to the right side, sent at once (diffChanged waits for a
+   * pause): the host must not close a comparison holding unsent text.
+   */
+  | { type: "diffEdited" }
   /** The user toggled a staging tick; the host performs the git write. */
   | { type: "toggleTick"; block: StageBlockRef; staged: boolean };

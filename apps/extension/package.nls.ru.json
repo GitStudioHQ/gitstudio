@@ -1,5 +1,4 @@
 {
-  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "Автоматически открывать текстовые сравнения VS Code в GitStudio, включая управление исходным кодом, сравнение файлов и ревизий. Независимо от `#gitstudio.merge.autoOpen#`. Двоичные сравнения и пользовательские редакторы не меняются. Выключите, чтобы будущие сравнения открывались в VS Code. Если обе расширения включают эту настройку, сравнения обрабатывает GitStudio.",
   "capabilities.virtualWorkspaces.description": "Для работы GitStudio требуется локальный git-репозиторий на диске.",
   "command.gitstudio.abortRebase.title": "Прервать перебазирование",
   "command.gitstudio.addRemote.title": "Добавить удалённый репозиторий…",
@@ -200,6 +199,7 @@
   "config.gitstudio.merge.autoApplyNonConflicting.description": "Открывать редактор слияния с уже применёнными всеми неконфликтующими изменениями (аналог «apply non-conflicting changes» в JetBrains при открытии). Выключено: они ждут вас — по одному или все сразу с панели инструментов.",
   "config.gitstudio.merge.autoOpen.markdownDescription": "Когда слияние, перебазирование, cherry-pick, обращение коммита, git am или извлечение тайника останавливаются на конфликтах: показывать панель **Conflicts**, открывать конфликтующий файл в редакторе слияния GitStudio сразу при переключении на него и забирать вкладку встроенного редактора слияния VS Code. Выключено: ничего не открывается само — используйте **GitStudio: Разрешить конфликты…**. (Раньше это открывало каждый конфликтующий файл отдельной вкладкой.) Если также установлен Merge Studio, он оставляет это GitStudio; отключите, чтобы конфликты вместо этого открывал Merge Studio.",
   "config.gitstudio.merge.title": "Слияние и различия",
+  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "Автоматически открывать текстовые сравнения VS Code в GitStudio, включая управление исходным кодом, сравнение файлов и ревизий. Независимо от `#gitstudio.merge.autoOpen#`. Двоичные сравнения и пользовательские редакторы не меняются. Выключите, чтобы будущие сравнения открывались в VS Code. Если оба расширения включают эту настройку, сравнения обрабатывает GitStudio. Сравнения, которые GitStudio открывает из своих представлений (изменения, граф коммитов, история, сравнение), остаются в редакторе сравнений VS Code.",
   "config.gitstudio.pr.defaultMergeMethod.description": "Способ, предлагаемый по умолчанию первым при слиянии pull request.",
   "config.gitstudio.pr.defaultMergeMethod.enumDescriptions.0": "Создать коммит слияния.",
   "config.gitstudio.pr.defaultMergeMethod.enumDescriptions.1": "Объединить коммиты PR в один и слить.",

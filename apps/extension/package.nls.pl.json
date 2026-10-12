@@ -1,5 +1,4 @@
 {
-  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "Automatycznie otwieraj różnice tekstowe VS Code w GitStudio, w tym kontrolę źródła oraz porównania plików i rewizji. Niezależne od `#gitstudio.merge.autoOpen#`. Różnice binarne i niestandardowe edytory pozostają bez zmian. Wyłącz, aby przyszłe porównania otwierać w VS Code. Jeśli obie wtyczki włączą tę opcję, różnice obsłuży GitStudio.",
  "capabilities.virtualWorkspaces.description": "GitStudio wymaga lokalnego repozytorium git na dysku.",
  "command.gitstudio.abortRebase.title": "Przerwij rebase",
  "command.gitstudio.addRemote.title": "Dodaj remote…",
@@ -200,6 +199,7 @@
  "config.gitstudio.merge.autoApplyNonConflicting.description": "Otwiera edytor scalania z każdą niekonfliktową zmianą już zastosowaną (JetBrains „apply non-conflicting changes” przy otwarciu). Wyłączone: czekają na Ciebie, jedno kliknięcie każda albo wszystkie razem z paska narzędzi.",
  "config.gitstudio.merge.autoOpen.markdownDescription": "Gdy scalenie, rebase, cherry-pick, odwrócenie, git am albo stash pop zatrzyma się na konfliktach: pokazuje panel **Konflikty**, otwiera skonfliktowany plik w edytorze scalania GitStudio, gdy tylko się na niego przełączysz, i przejmuje wbudowaną kartę edytora scalania VS Code. Wyłączone: nic nie otwiera się samo — użyj **GitStudio: Resolve Conflicts…**. (Dawniej to otwierało każdy skonfliktowany plik jako własną kartę.) Jeśli Merge Studio jest też zainstalowany, GitStudio przekazuje mu to; wyłącz to, aby Merge Studio otwierało konflikty zamiast.",
  "config.gitstudio.merge.title": "Scalanie i diff",
+  "config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription": "Automatycznie otwieraj różnice tekstowe VS Code w GitStudio, w tym kontrolę źródła oraz porównania plików i rewizji. Niezależne od `#gitstudio.merge.autoOpen#`. Różnice binarne i niestandardowe edytory pozostają bez zmian. Wyłącz, aby przyszłe porównania otwierać w VS Code. Jeśli obie wtyczki włączą tę opcję, różnice obsłuży GitStudio. Różnice, które GitStudio otwiera z własnych widoków (Zmiany, Commit Graph, historia, porównanie), pozostają w edytorze różnic VS Code.",
  "config.gitstudio.pr.defaultMergeMethod.description": "Domyślna metoda proponowana jako pierwsza przy scalaniu pull requesta.",
  "config.gitstudio.pr.defaultMergeMethod.enumDescriptions.0": "Utwórz commit scalający.",
  "config.gitstudio.pr.defaultMergeMethod.enumDescriptions.1": "Zsquashuj commity PR w jeden i scal.",

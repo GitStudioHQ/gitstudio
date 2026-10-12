@@ -47,6 +47,7 @@ import {
 import { GitHubApi } from "./pr/githubApi";
 import { GitHubAuth } from "./pr/githubAuth";
 import {
+  OPEN_NATIVE_DIFF_COMMAND,
   RevisionContentProvider,
   REVISION_SCHEME,
 } from "./history/revisionContentProvider";
@@ -59,6 +60,7 @@ import { registerGitStudioMerge } from "./merge/gitstudioMerge";
 import { GITSTUDIO_COEXISTENCE_PROMPT_KEY, GITSTUDIO_SUPPORT_COMMAND } from "./merge/mergeIds";
 import { askAndOpenSupport } from "./ui/support";
 import type { MergePeerApi } from "@gitstudio/merge-vscode/product";
+import { isOwnDiff, openWithoutRouting } from "@gitstudio/merge-vscode/ownDiffs";
 import { setUpSidesTip, SIDES_WHY_URL } from "@gitstudio/merge-vscode/upgradeTip";
 import { StagedGutter } from "./changes/stagedGutter";
 import { lineMenuTarget, type LineMenuArg } from "./changes/lineTargets";
@@ -191,6 +193,9 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
     mergePeer: {
       coexistenceAnswered: () => context.globalState.get<boolean>(GITSTUDIO_COEXISTENCE_PROMPT_KEY) === true,
       walkthroughOpenedThisSession: () => walkthroughOpened,
+      // Diffs GitStudio's own views open keep VS Code's diff editor under
+      // Merge Studio's default diff viewer too.
+      ownsDiff: isOwnDiff,
     },
   };
 
@@ -311,6 +316,7 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
       vscode.commands.registerCommand("gitstudio.showCommitGraph", () => {
         void commitPanel.show();
       }),
+      vscode.commands.registerCommand(OPEN_NATIVE_DIFF_COMMAND, openWithoutRouting),
       vscode.commands.registerCommand(
         "gitstudio.openCommitInGraph",
         (sha?: string) => {

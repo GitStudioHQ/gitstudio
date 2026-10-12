@@ -84,7 +84,8 @@ The dashboard opens the moment a merge, rebase, cherry-pick, revert, git am or s
 - **Compare in Merge Studio**: select two files in the Explorer, or compare one file with its last commit.
 - Set `jbMerge.useAsDefaultDiffViewer` to `true` to use this viewer automatically
   for VS Code text diffs: Source Control changes, Explorer comparisons, history,
-  and diffs opened by other extensions with `vscode.diff`.
+  and file or Git revision diffs other extensions open with `vscode.diff`.
+  Diffs GitStudio opens from its own views keep VS Code's diff editor.
 - **Open Changes in Merge Studio** from a changed file's title bar, and **Stage Changes with Ticks** to stage it one change at a time.
 - The same ribbons and navigation as the merge editor, re-diffed live as you edit. With no decision to make, a diff colours a change by what it did: blue changed, green added, grey removed.
 
@@ -110,11 +111,15 @@ Run **Merge Studio: Open Sample Merge** from the Command Palette. A rebase stop 
 | `jbMerge.useAsDefaultDiffViewer` | `false` | Redirect VS Code text-diff tabs into Merge Studio, independently of conflict auto-open. |
 
 The default diff viewer uses the exact original and modified revisions, not
-always HEAD versus the working tree. It redirects existing text diffs when
-enabled and new text diffs thereafter, in their original editor group. VS Code
+always HEAD versus the working tree. When enabled, it redirects the text diff
+in front of each editor group (the others when you bring them forward) and new
+text diffs thereafter, in their original editor group. VS Code
 may briefly show its native tab before redirection; its stable extension API
 does not provide a custom diff-editor registration. Binary and custom-editor
-diffs stay native, and a diff that cannot be loaded keeps its native tab.
+diffs stay native, and a diff that cannot be loaded keeps its native tab. So do
+diffs of other extensions' own documents (pull request reviews, AI edits), and
+diffs GitStudio opens from its own views (a GitStudio released together with
+this setting tells Merge Studio which those are).
 Read-only revision documents remain read-only. Unsaved source tabs are kept;
 editing a writable right side opens its text document in a background tab so
 normal Save, Save All and close prompts remain available. Turn the setting off

@@ -70,13 +70,13 @@ export class DiffPanel {
     host: MergeHostCore,
     state: DiffPanelState,
     showOptions?: { viewColumn: vscode.ViewColumn; preserveFocus: boolean },
-  ): Promise<void> {
+  ): Promise<DiffPanel> {
     const key = panelKey(host.product.viewTypes.diffView, state);
     const existing = key ? DiffPanel.open.get(key) : undefined;
     if (existing && !existing.disposed) {
       existing.panel.reveal(showOptions?.viewColumn, showOptions?.preserveFocus);
       await existing.sendInit();
-      return;
+      return existing;
     }
     const panel = vscode.window.createWebviewPanel(
       host.product.viewTypes.diffView,
@@ -84,7 +84,9 @@ export class DiffPanel {
       showOptions ?? vscode.ViewColumn.Active,
       { retainContextWhenHidden: true },
     );
-    await new DiffPanel(host, panel, state).init();
+    const created = new DiffPanel(host, panel, state);
+    await created.init();
+    return created;
   }
 
   private readonly disposables: vscode.Disposable[] = [];
@@ -92,6 +94,11 @@ export class DiffPanel {
   private refreshTimer?: ReturnType<typeof setTimeout>;
   private applyingEdit = false;
   private disposed = false;
+  /**
+   * The right side was edited (the page says so at the first keystroke,
+   * before its debounced text): no longer a stand-in for a preview tab.
+   */
+  private edited = false;
 
   private constructor(
     private readonly host: MergeHostCore,
@@ -120,7 +127,11 @@ export class DiffPanel {
           case "ready":
             void this.sendInit();
             break;
+          case "diffEdited":
+            this.edited = true;
+            break;
           case "diffChanged":
+            this.edited = true;
             void this.syncRight(message.text);
             break;
           case "toggleTick":
@@ -146,6 +157,20 @@ export class DiffPanel {
       }
       this.disposables.length = 0;
     });
+  }
+
+  /** Edited, or closed: no longer something a preview may replace. */
+  get touched(): boolean {
+    return this.edited || this.disposed;
+  }
+
+  /** The editor group this comparison is in. */
+  get viewColumn(): vscode.ViewColumn | undefined {
+    return this.disposed ? undefined : this.panel.viewColumn;
+  }
+
+  close(): void {
+    this.panel.dispose();
   }
 
   /** Keep the diff live: a watched backing document changed → re-diff in place. */
@@ -304,6 +329,7 @@ export class DiffPanel {
       return;
     }
     const uri = vscode.Uri.parse(this.state.rightUri);
+    const viewColumn = this.panel.viewColumn;
     const document = await vscode.workspace.openTextDocument(uri);
     if (document.getText() === text) {
       return;
@@ -314,20 +340,25 @@ export class DiffPanel {
       new vscode.Range(new vscode.Position(0, 0), new vscode.Position(document.lineCount, 0)),
       text,
     );
-    if (this.state.keepRightDocumentOpen) {
-      await vscode.window.showTextDocument(document, {
-        viewColumn: this.panel.viewColumn,
-        preserveFocus: true,
-        preview: false,
-      });
-      this.panel.reveal(this.panel.viewColumn, true);
-    }
     // The webview already shows this text; do not bounce it back as a refresh.
     this.applyingEdit = true;
     try {
       await vscode.workspace.applyEdit(edit);
     } finally {
       this.applyingEdit = false;
+    }
+    // Once, not per edit: showing the document brings its tab to the front,
+    // and the comparison has to be brought back over it. Closed meanwhile,
+    // the edit it had just written still gets a tab.
+    if (this.state.keepRightDocumentOpen && !isShownInTab(uri)) {
+      await vscode.window.showTextDocument(document, {
+        viewColumn: this.disposed ? viewColumn : this.panel.viewColumn,
+        preserveFocus: true,
+        preview: false,
+      });
+      if (!this.disposed) {
+        this.panel.reveal(this.panel.viewColumn, true);
+      }
     }
   }
 }
@@ -339,6 +370,48 @@ async function readUriText(uri: vscode.Uri): Promise<string> {
     return open.getText();
   }
   return (await vscode.workspace.openTextDocument(uri)).getText();
+}
+
+/** A tab's input, duck-typed (as host.ts's closeTextTabs does) so the test stub's plain objects pass. */
+type AnyTabInput = {
+  uri?: vscode.Uri;
+  original?: vscode.Uri;
+  modified?: vscode.Uri;
+  viewType?: unknown;
+  notebookType?: unknown;
+} | undefined;
+
+/** Whether some tab shows `uri` as a text editor or as a diff's modified side: its unsaved state is on screen. */
+export function isShownInTab(uri: vscode.Uri): boolean {
+  const target = uri.toString();
+  return vscode.window.tabGroups.all.some((group) => group.tabs.some((tab) => {
+    const input = tab.input as AnyTabInput;
+    if (!input || input.viewType !== undefined || input.notebookType !== undefined) {
+      return false;
+    }
+    return (input.modified ?? input.uri)?.toString() === target;
+  }));
+}
+
+/**
+ * Whether VS Code closes the dirty diff `tab` without asking to save: only
+ * when its document is also open in a plain text tab, or the same comparison
+ * is open in another tab (VS Code's own close confirmation). Another diff of
+ * the same file does not count: closing would ask, and "Don't Save" reverts.
+ */
+export function closesWithoutPrompt(tab: vscode.Tab, original: vscode.Uri, modified: vscode.Uri): boolean {
+  const left = original.toString();
+  const right = modified.toString();
+  return vscode.window.tabGroups.all.some((group) => group.tabs.some((other) => {
+    const input = other.input as AnyTabInput;
+    if (other === tab || !input || input.viewType !== undefined || input.notebookType !== undefined) {
+      return false;
+    }
+    if (input.original !== undefined || input.modified !== undefined) {
+      return input.original?.toString() === left && input.modified?.toString() === right;
+    }
+    return input.uri?.toString() === right;
+  }));
 }
 
 function diffTitle(state: DiffPanelState): string {

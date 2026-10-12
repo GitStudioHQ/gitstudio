@@ -64,6 +64,8 @@ export const MERGE_SETTINGS_SPEC: ReadonlyArray<{
   { key: "autoOpen", type: "boolean", default: true },
   // D3, orchestrator override: OFF by default, as JetBrains ships it.
   { key: "autoApplyNonConflicting", type: "boolean", default: false },
+  // Off by default: VS Code's own diff editor stays the diff viewer until asked.
+  { key: "useAsDefaultDiffViewer", type: "boolean", default: false },
 ];
 
 /** When-clause pieces the merge menus are gated on. */

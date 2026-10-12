@@ -82,6 +82,7 @@ import {
   type StashOutcome,
 } from "../views/stashesView";
 import { l10nWebviewScript } from "@gitstudio/l10n/index";
+import { openWithoutRouting } from "@gitstudio/merge-vscode/ownDiffs";
 
 // The unified Commit window: ONE WebviewView ("Commit", viewId gitstudio.commit)
 // that renders BOTH the commit message box AND the working-tree changes —
@@ -2484,8 +2485,7 @@ export class CommitViewProvider
     const left = toRevisionUri(entry.root, base, oldPath || path);
     const right = toRevisionUri(entry.root, "HEAD", path);
     const name = path.split("/").pop() ?? path;
-    await vscode.commands.executeCommand(
-      "vscode.diff",
+    await openWithoutRouting(
       left,
       right,
       l10n.t("{0}  (before {1} ↔ after HEAD)", name, pushRefLabel(base)),
