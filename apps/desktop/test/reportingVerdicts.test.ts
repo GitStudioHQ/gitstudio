@@ -30,6 +30,7 @@ import { RepoStore } from "../src/main/repoStore";
 import { GitBridge } from "../src/main/gitBridge";
 import { GitHubClient } from "../src/main/githubClient";
 import { listRepoDir } from "../src/main/github/repoBrowse";
+import { jobLogChunk, noJobLogMessage, saveLog } from "../src/main/github/actions";
 import { getProjectBoard, listProjects } from "../src/main/github/projects";
 import { installMcp, type McpRuntime } from "../src/main/mcpConfig";
 import { openGitHubRepo } from "../src/main/ghRepoOpen";
@@ -407,6 +408,28 @@ test("#13: browsing a repository with no commits files nothing", async () => {
   }
 });
 
+test("crash report 20: a job with no log (yet, or any more) files nothing, and says which", async () => {
+  // The live tail asks for the log every few seconds while a job runs; GitHub
+  // answers 404 until there is one, and again once it has been deleted.
+  let said = "";
+  const msg = await servedBy(404, json({ message: "Not Found" }), (c) =>
+    filed(() =>
+      jobLogChunk(c, "acme", "app", { jobId: 7, offset: 0 }).catch((err: Error) => {
+        said = err.message;
+        throw err;
+      }),
+    ),
+  );
+  assert.equal(msg, undefined);
+  assert.equal(said, noJobLogMessage());
+  // Saving it to a file answers the same, as a result.
+  const saved = await servedBy(404, json({ message: "Not Found" }), (c) => filed(() => saveLog(c, "acme", "app", { jobId: 7, name: "build" })));
+  assert.equal(saved, undefined);
+  // Any other refusal of the same request is still ours to hear about.
+  const other = await servedBy(422, json({ message: "Unprocessable" }), (c) => filed(() => jobLogChunk(c, "acme", "app", { jobId: 7, offset: 0 })));
+  assert.ok(other, "a 422 still files");
+});
+
 test("#14/#17: the projects of a repository GitHub cannot resolve file nothing", async () => {
   const msg = await servedBy(
     200,
@@ -468,6 +491,51 @@ test("#30: a push from a repository with no remote at all files nothing", async 
   const pushed = await bridge.syncPush(undefined);
   assert.equal(pushed.ok, false, JSON.stringify(pushed));
   assert.equal(await filed(async () => pushed), undefined, pushed.message);
+});
+
+test("crash report 37: deleting a branch with commits nothing else has files nothing, and says so in history's terms", async () => {
+  const root = mkdtempSync(join(scratch, "unmerged-"));
+  const git = at(root);
+  git("init", "-q", "-b", "main");
+  identify(git);
+  writeFileSync(join(root, "a.txt"), "a\n");
+  git("add", ".");
+  git("commit", "-qm", "a");
+  git("checkout", "-q", "-b", "topic");
+  writeFileSync(join(root, "b.txt"), "b\n");
+  git("add", ".");
+  git("commit", "-qm", "only on topic");
+  git("checkout", "-q", "main");
+  const bridge = await bridgeOn(root);
+
+  const refused = await bridge.branchDelete({ fullName: "refs/heads/topic" });
+  assert.equal(refused.ok, false);
+  // The Branches view's cue to ask "Force-delete branch?" — read from history,
+  // so it holds whatever language git answered in.
+  assert.equal(refused.notMerged, true);
+  assert.equal(await filed(async () => refused), undefined);
+  assert.match(git("branch", "--list", "topic"), /topic/, "nothing was deleted");
+
+  const forced = await bridge.branchDelete({ fullName: "refs/heads/topic", force: true });
+  assert.equal(forced.ok, true, forced.message);
+  assert.equal(git("branch", "--list", "topic"), "");
+});
+
+test("…and a delete git refuses for any other reason still files", async () => {
+  // The branch checked out right here: merged into HEAD by definition, so the
+  // refusal is not the not-merged one — the app offered a delete it should not.
+  const root = mkdtempSync(join(scratch, "current-"));
+  const git = at(root);
+  git("init", "-q", "-b", "main");
+  identify(git);
+  writeFileSync(join(root, "a.txt"), "a\n");
+  git("add", ".");
+  git("commit", "-qm", "a");
+  const bridge = await bridgeOn(root);
+  const r = await bridge.branchDelete({ fullName: "refs/heads/main" });
+  assert.equal(r.ok, false);
+  assert.equal(r.notMerged, undefined);
+  assert.ok(await filed(async () => r), "filed");
 });
 
 test("the fixture is real: the clone and its upstream have each moved", async () => {
