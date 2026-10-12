@@ -18,6 +18,15 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   Staged and Unstaged lists too. The list can now be walked with the
   keyboard as well: ↑ ↓, Home, End, and Enter to open a diff
   ([#81](https://github.com/GitStudioHQ/gitstudio/issues/81)).
+- **Open diffs in GitStudio's comparison.** A new setting,
+  `gitstudio.merge.useAsDefaultDiffViewer` (off by default), opens VS Code's
+  diffs of files and Git revisions — Source Control, Compare with Selected,
+  Compare with Saved, history — in GitStudio's side-by-side comparison
+  instead of VS Code's diff editor. Diffs GitStudio opens itself, diffs that
+  belong to other tools (pull request reviews, AI edit reviews) and binary
+  files stay in VS Code's
+  ([#83](https://github.com/GitStudioHQ/gitstudio/issues/83); thanks,
+  @billdwhite).
 
 ### Changed
 - **Stage and Unstage Selected Lines move the lines you selected.** In an
@@ -83,6 +92,11 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   **+** (stage this change) and right-click ▸ *Stage Selected Ranges* work in
   it. Before, the **+** was missing there and *Stage Selected Ranges* did
   nothing at all ([#87](https://github.com/GitStudioHQ/gitstudio/issues/87)).
+- **Copy, cut and paste work in the merge editor's Result.** Typing worked,
+  but ⌘X / ⌘V (Ctrl on Windows and Linux) did nothing there, and in the
+  editable side of the comparison either
+  ([#84](https://github.com/GitStudioHQ/gitstudio/issues/84); thanks,
+  @billdwhite).
 - **Staging a blank line at the end of a file stages what is on disk.** Adding
   a blank or whitespace-only line at the end of a file whose last line was
   blank — on Windows, any blank line added at the end of a CRLF file — could

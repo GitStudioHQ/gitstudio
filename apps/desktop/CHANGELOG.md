@@ -36,9 +36,15 @@ but they share the same engine, so most Git behaviour lands in both at once.
 - **Pull says when another worktree has the branch.** Pulling a branch that
   is checked out in another worktree failed with git's refusal; it now says
   which worktree has it.
+- **Typing ? in the merge editor's Result types it.** It opened the keyboard
+  shortcuts instead.
 - **Fewer crash reports for git's ordinary answers.** A rejected push, a
   missing credential, an unreachable remote or a provider's answer to *Test
   connection* is no longer sent as a crash report.
+- **Keys typed in a diff or the code viewer stay in it.** In the Unified
+  diff, ← and Esc left the pull request page and ? opened the keyboard
+  shortcuts, while the Split diff kept them; every editor now keeps the keys
+  typed in it. Tab out of it first to go back with Esc or ←.
 
 ## [2.5.0] - 2026-10-01
 
