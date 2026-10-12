@@ -64,6 +64,14 @@ test("every GitStudio opener marks the diff it opens as its own", async () => {
   assert.deepEqual(unmarked, []);
 });
 
+test("the Changes list opens routable diffs, so the default diff viewer setting applies to it", async () => {
+  const root = "/w/repo";
+  const before = opened.length;
+  await rev.openSidesDiff(root, "a.ts", { left: { rev: "" }, right: { rev: undefined } }, "a.ts (Working Tree)", true);
+  assert.equal(opened.length, before + 1);
+  assert.equal(opened[before].marked, false);
+});
+
 test("the Timeline's GitStudio entries open through the internal command that marks the diff", () => {
   const src = (p: string): string => readFileSync(join(__dirname, "..", "src", p), "utf8");
   assert.equal(rev.OPEN_NATIVE_DIFF_COMMAND, "gitstudio.openNativeDiff");

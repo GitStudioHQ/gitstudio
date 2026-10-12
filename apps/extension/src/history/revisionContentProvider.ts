@@ -6,7 +6,7 @@ import type { FileHistoryEntry } from "@gitstudio/git-service/index";
 import { HistoryProvider } from "@gitstudio/git-service/HistoryProvider";
 import { sameFolder } from "@gitstudio/git-service/WorktreeProvider";
 import * as l10n from "@vscode/l10n";
-import { openWithoutRouting } from "@gitstudio/merge-vscode/ownDiffs";
+import { openRoutable, openWithoutRouting } from "@gitstudio/merge-vscode/ownDiffs";
 
 /** The URI scheme our historical file contents are served under. */
 export const REVISION_SCHEME = "gitstudio-rev";
@@ -151,8 +151,11 @@ export async function openSidesDiff(
   rel: string,
   sides: { left: RevisionSide; right: RevisionSide },
   title: string,
+  routed = false,
 ): Promise<void> {
-  await openWithoutRouting(
+  // `routed`: the default diff viewer setting may send it to GitStudio's comparison.
+  const open = routed ? openRoutable : openWithoutRouting;
+  await open(
     revisionSideUri(root, rel, sides.left),
     revisionSideUri(root, rel, sides.right),
     title,

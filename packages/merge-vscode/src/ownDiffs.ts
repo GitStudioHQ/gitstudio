@@ -42,3 +42,17 @@ export async function openWithoutRouting(
   markOwnDiff(original, modified);
   await vscode.commands.executeCommand("vscode.diff", original, modified, title, options);
 }
+
+/**
+ * `vscode.diff` with no mark: the default diff viewer's router treats it like
+ * any diff and, with the setting on, opens GitStudio's comparison instead. For
+ * the Changes list, whose rows are what the setting is meant to redirect.
+ */
+export async function openRoutable(
+  original: vscode.Uri,
+  modified: vscode.Uri,
+  title?: string,
+  options?: vscode.TextDocumentShowOptions,
+): Promise<void> {
+  await vscode.commands.executeCommand("vscode.diff", original, modified, title, options);
+}
