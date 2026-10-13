@@ -34,7 +34,7 @@ import { prCreateHtml } from "./prCreateHtml";
 import { contextFor, resolvePrTargets, type PrTarget } from "./prTargets";
 import { listGitHubRemotes, type GitHubRemote, type GitHubRepoContext } from "./repoContext";
 import * as l10n from "@vscode/l10n";
-import { openWithoutRouting } from "@gitstudio/merge-vscode/ownDiffs";
+import { openDiff } from "../merge/diffPlaces";
 
 // A new pull request, as ONE form in an editor tab (the shared webview-ui
 // PullRequestCreate) — not a chain of questions in the sidebar. The host
@@ -765,7 +765,7 @@ export class PrCreatePage {
     const left = toRevisionUri(root, refs.left, f.previousPath ?? f.path);
     const right = toRevisionUri(root, refs.right, f.path);
     const name = f.path.slice(f.path.lastIndexOf("/") + 1);
-    await openWithoutRouting(left, right, `${name} (${this.base} ↔ ${this.head?.branch})`, { preview: true });
+    await openDiff(left, right, `${name} (${this.base} ↔ ${this.head?.branch})`, { preview: true }, "pullRequests");
   }
 
   private async draftWithAi(): Promise<void> {

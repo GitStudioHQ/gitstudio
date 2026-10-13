@@ -715,6 +715,11 @@ export class DiffView {
     this.revealBlock(target);
   }
 
+  /** Put the caret in the right side, where it is unless the user moved it. */
+  focusRight(): void {
+    this.right?.focus();
+  }
+
   private revealBlock(block: DiffBlock): void {
     if (!this.right) {
       return;

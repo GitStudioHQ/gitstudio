@@ -142,6 +142,15 @@ function startDiff(root: HTMLElement, first: DiffInitPayload & { type: "diffInit
     nextBtn.disabled = changes === 0;
   };
 
+  // Given focus with nothing in it focused (the host revealed the panel to
+  // take focus: a diff opened from a list), the caret goes to the right side,
+  // as VS Code's diff editor puts it in its modified side.
+  window.addEventListener("focus", () => {
+    if (!document.activeElement || document.activeElement === document.body) {
+      view.focusRight();
+    }
+  });
+
   let syncTimer = 0;
   let editedSent = false;
   view.onRightChanged = () => {

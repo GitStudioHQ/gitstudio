@@ -17,7 +17,7 @@
   "command.jbMerge.support.title": "支持 Merge Studio…",
   "config.jbMerge.autoApplyNonConflicting.description": "打开文件时，自动应用仅一侧做出的所有更改，以及两侧做出的完全相同的编辑。冲突永远不会自动应用。重置可恢复到这个起始状态。",
   "config.jbMerge.autoOpen.markdownDescription": "当合并、变基、拣选、还原、git am 或贮藏弹出因冲突而停止时，在 Merge Studio 中打开有冲突的文件并显示冲突面板。如果同时安装了带有相同冲突面板的 GitStudio，并且 `#gitstudio.merge.autoOpen#` 已开启，则改由 GitStudio 执行此操作。",
-  "config.jbMerge.useAsDefaultDiffViewer.markdownDescription": "自动在 Merge Studio 中打开 VS Code 文本差异，包括源代码管理、文件比较和修订比较。独立于 `#jbMerge.autoOpen#`。二进制差异和自定义编辑器保持不变。关闭后，后续比较将使用 VS Code。如果两个扩展均启用此设置，则由 GitStudio 处理差异。GitStudio 从自身视图打开的差异仍使用 VS Code 的差异编辑器。",
+  "config.jbMerge.useAsDefaultDiffViewer.markdownDescription": "自动在 Merge Studio 中打开 VS Code 文本差异，包括源代码管理、文件比较和修订比较。独立于 `#jbMerge.autoOpen#`。二进制差异和自定义编辑器保持不变。关闭后，后续比较将使用 VS Code。如果两个扩展均启用此设置，则由 GitStudio 处理差异。安装了 GitStudio 时，由其 `gitstudio.diff.comparisonIn` 设置选择哪些视图的差异在这里打开；拉取请求的差异始终使用 VS Code 的差异编辑器。",
   "config.undefined.title": "Merge Studio",
   "customEditor.jbMerge.mergeEditor.displayName": "Merge Studio（三方合并）",
   "description": "在 JetBrains 风格的三栏编辑器中解决 Git 合并和变基冲突，配有冲突面板、按颜色区分的更改、完整的撤销功能和并排差异视图。",

@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import type { GitHubApi, PullRequest, PrFile } from "./githubApi";
 import { toPrContentUri } from "./prContentProvider";
-import { openWithoutRouting } from "@gitstudio/merge-vscode/ownDiffs";
+import { openDiff } from "../merge/diffPlaces";
 
 // Opens a PR's changed file as a side-by-side diff: the base blob on the left
 // (the previous filename for renames), the head blob (at the head sha) on the
@@ -60,7 +60,7 @@ export async function openPrFileDiff(
   const title = file.previousFilename
     ? `${baseName(file.previousFilename)} → ${baseName(file.filename)} (#${pr.number})`
     : `${baseName(file.filename)} (#${pr.number})`;
-  await openWithoutRouting(
+  await openDiff(
     prBaseUri(ref, pr, file.previousFilename ?? file.filename, baseSha),
     prHeadUri(ref, pr, file.filename),
     title,
@@ -68,6 +68,7 @@ export async function openPrFileDiff(
       preview: true,
       ...(line && line > 0 ? { selection: new vscode.Range(line - 1, 0, line - 1, 0) } : {}),
     } satisfies vscode.TextDocumentShowOptions,
+    "pullRequests",
   );
 }
 
@@ -76,7 +77,7 @@ export async function openCommitFileDiff(ref: PrRepoRef, commit: { sha: string; 
   const title = `${baseName(file.filename)} (${commit.short})`;
   const left = toPrContentUri({ owner: ref.owner, repo: ref.repo, sha: parent ?? commit.sha, path: file.previousFilename ?? file.filename });
   const right = toPrContentUri({ owner: ref.owner, repo: ref.repo, sha: commit.sha, path: file.filename });
-  await openWithoutRouting(parent ? left : right, right, title, { preview: true } satisfies vscode.TextDocumentShowOptions);
+  await openDiff(parent ? left : right, right, title, { preview: true } satisfies vscode.TextDocumentShowOptions, "pullRequests");
 }
 
 function baseName(rel: string): string {

@@ -21,6 +21,7 @@ import {
   MERGE_STUDIO_SETTINGS_SECTION,
 } from "./mergeIds";
 import * as l10n from "@vscode/l10n";
+import { comparisonIn } from "./diffPlaces";
 
 // GitStudio's side of the shared merge experience (@gitstudio/merge-vscode):
 // the MergeProduct that says what is GitStudio's — ids, brand, settings under
@@ -105,6 +106,7 @@ export function registerGitStudioMerge(
     openChangesEmbedded: (uri) => hooks.openChangesNative(uri),
     compareSingle: (uri) => compareSingle(uri),
     onRepositoryChanged: () => hooks.refresh(),
+    routeOtherDiffs: () => comparisonIn("vscode"),
   };
   const experience = registerMergeExperience(context, product);
   const byRoot = (root: string) => locator.all().find((r) => r.root === root);

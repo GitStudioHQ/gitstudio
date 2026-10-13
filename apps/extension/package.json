@@ -1240,11 +1240,67 @@
             "order": 3,
             "markdownDescription": "%config.gitstudio.merge.useAsDefaultDiffViewer.markdownDescription%"
           },
+          "gitstudio.diff.comparisonIn": {
+            "type": "object",
+            "scope": "window",
+            "order": 4,
+            "markdownDescription": "%config.gitstudio.diff.comparisonIn.markdownDescription%",
+            "properties": {
+              "vscode": {
+                "type": "boolean",
+                "default": true
+              },
+              "changes": {
+                "type": "boolean",
+                "default": true
+              },
+              "graph": {
+                "type": "boolean",
+                "default": true
+              },
+              "stashes": {
+                "type": "boolean",
+                "default": true
+              },
+              "history": {
+                "type": "boolean",
+                "default": true
+              },
+              "blame": {
+                "type": "boolean",
+                "default": true
+              },
+              "compare": {
+                "type": "boolean",
+                "default": true
+              },
+              "worktrees": {
+                "type": "boolean",
+                "default": true
+              },
+              "push": {
+                "type": "boolean",
+                "default": true
+              }
+            },
+            "additionalProperties": false,
+            "default": {
+              "vscode": true,
+              "changes": true,
+              "graph": true,
+              "stashes": true,
+              "history": true,
+              "blame": true,
+              "compare": true,
+              "worktrees": true,
+              "push": true
+            }
+          },
           "gitstudio.merge.autoApplyNonConflicting": {
             "type": "boolean",
             "default": false,
             "description": "%config.gitstudio.merge.autoApplyNonConflicting.description%",
-            "order": 4
+            "order": 5
           }
         }
       },

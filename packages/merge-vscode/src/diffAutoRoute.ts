@@ -2,11 +2,13 @@ import * as vscode from "vscode";
 import * as l10n from "@vscode/l10n";
 import { closesWithoutPrompt, twoFileState, DiffPanel } from "./diffPanel";
 import type { MergeHostCore } from "./host";
-import { isOwnDiff } from "./ownDiffs";
+import { isOwnDiff, onRoutableOpened, routableIntent, type RoutableIntent } from "./ownDiffs";
 import type { MergePeerApi } from "./product";
 
 const SETTING = "useAsDefaultDiffViewer";
 const GITSTUDIO_SETTING = `gitstudio.merge.${SETTING}`;
+/** GitStudio's per-place reach of the setting (its MergeProduct.routeOtherDiffs reads the `vscode` place). */
+const GITSTUDIO_PLACES_SETTING = "gitstudio.diff.comparisonIn";
 
 /**
  * The schemes a routed diff may have: files, Compare with Saved, and Git's
@@ -35,6 +37,8 @@ export function registerDiffAutoRoute(host: MergeHostCore): vscode.Disposable {
   let visited = new WeakMap<vscode.Tab, string>();
   /** Diff tabs the product opened from its own views (ownDiffs.ts): never routed, even after a settings change. */
   const ownTabs = new WeakMap<vscode.Tab, string>();
+  /** Diff tabs a product view opened routable, with the intent: still routable when brought forward after the mark lapsed. */
+  const routableTabs = new WeakMap<vscode.Tab, { id: string; intent: RoutableIntent }>();
   /**
    * Comparisons standing in for a preview tab, at most one per editor group:
    * the next preview in that group replaces an untouched one, as VS Code's
@@ -83,6 +87,22 @@ export function registerDiffAutoRoute(host: MergeHostCore): vscode.Disposable {
     return api?.mergePeer?.ownsDiff?.(original, modified) === true;
   };
 
+  /**
+   * A routable open of these two sides by this product's views, or, for
+   * Merge Studio, by GitStudio's (asked through its API, like ownsDiff).
+   */
+  const routableOpen = (input: vscode.TabInputTextDiff): RoutableIntent | undefined => {
+    const original = input.original.toString();
+    const modified = input.modified.toString();
+    const intent = routableIntent(original, modified);
+    if (intent || host.product.key !== "merge-studio") {
+      return intent;
+    }
+    const peer = vscode.extensions.getExtension("gitstudio.gitstudio");
+    const api = peer?.isActive ? (peer.exports as { mergePeer?: MergePeerApi } | undefined) : undefined;
+    return api?.mergePeer?.routableDiff?.(original, modified);
+  };
+
   const routable = (input: vscode.TabInputTextDiff): boolean =>
     ROUTABLE_SCHEMES.has(input.original.scheme) && ROUTABLE_RIGHT_SCHEMES.has(input.modified.scheme);
 
@@ -122,7 +142,7 @@ export function registerDiffAutoRoute(host: MergeHostCore): vscode.Disposable {
     standIns.add(panel);
   };
 
-  const route = async (tab: vscode.Tab, input: vscode.TabInputTextDiff): Promise<void> => {
+  const route = async (tab: vscode.Tab, input: vscode.TabInputTextDiff, intent?: RoutableIntent): Promise<void> => {
     const current = (): boolean => present(tab) &&
       tab.input instanceof vscode.TabInputTextDiff && identity(tab.input) === identity(input);
     if (disposed || !enabled() || !current()) {
@@ -151,9 +171,10 @@ export function registerDiffAutoRoute(host: MergeHostCore): vscode.Disposable {
     state.keepRightDocumentOpen = state.rightEditable;
     // Read now, not before loading: a double click pins the tab meanwhile.
     const preview = tab.isPreview;
+    // A routable open said whether it meant to move focus; anything else is guessed.
     const panel = await DiffPanel.create(host, state, {
       viewColumn: tab.group.viewColumn,
-      preserveFocus: keepFocus(tab, input, preview),
+      preserveFocus: intent ? !intent.focus || !tab.isActive || !tab.group.isActive : keepFocus(tab, input, preview),
     });
     settlePreview(panel, preview);
     // A dirty tab owns Save/Discard prompts unless VS Code would close it
@@ -172,12 +193,26 @@ export function registerDiffAutoRoute(host: MergeHostCore): vscode.Disposable {
     // never takes one of them over.
     const on = enabled();
     for (const tab of tabs) {
-      if (!(tab.input instanceof vscode.TabInputTextDiff) || ownTabs.get(tab) === identity(tab.input)) {
+      if (!(tab.input instanceof vscode.TabInputTextDiff)) {
         continue;
       }
-      if (ownDiff(tab.input)) {
-        ownTabs.set(tab, identity(tab.input));
+      // The latest open of these two sides decides (a fresh mark), then what
+      // the last one said of this tab: a routable open takes over a tab an
+      // own opener left open, and the other way round.
+      const id = identity(tab.input);
+      let intent = routableOpen(tab.input);
+      if (intent) {
+        routableTabs.set(tab, { id, intent }); // read before ownTabs below
+      } else if (ownDiff(tab.input)) {
+        ownTabs.set(tab, id);
+        routableTabs.delete(tab);
         continue;
+      } else if (routableTabs.get(tab)?.id === id) {
+        intent = routableTabs.get(tab)?.intent;
+      } else if (ownTabs.get(tab) === id) {
+        continue;
+      } else if (host.product.routeOtherDiffs?.() === false) {
+        continue; // VS Code's and other extensions' diffs: the product keeps them in VS Code's diff editor
       }
       // Only the tab in front of its group: a background tab (restored at
       // startup, or open when the setting is turned on) is routed when it is
@@ -188,7 +223,7 @@ export function registerDiffAutoRoute(host: MergeHostCore): vscode.Disposable {
       }
       const input = tab.input;
       visited.set(tab, identity(input));
-      pending = pending.then(() => route(tab, input)).catch((error: unknown) => {
+      pending = pending.then(() => route(tab, input, intent)).catch((error: unknown) => {
         void host.notify("error", l10n.t("couldn't load the diff — {0}", error instanceof Error ? error.message : String(error)));
       });
     }
@@ -199,12 +234,16 @@ export function registerDiffAutoRoute(host: MergeHostCore): vscode.Disposable {
     vscode.window.tabGroups.onDidChangeTabs((event) => enqueue([...event.opened, ...event.changed])),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration(`${host.product.settingsSection}.${SETTING}`) ||
-          event.affectsConfiguration(GITSTUDIO_SETTING)) {
+          event.affectsConfiguration(GITSTUDIO_SETTING) || event.affectsConfiguration(GITSTUDIO_PLACES_SETTING)) {
         visited = new WeakMap();
         scan();
       }
     }),
     vscode.extensions.onDidChange(scan),
+    // The tab already in front gets no tab event when opened again.
+    onRoutableOpened((original, modified) => enqueue(vscode.window.tabGroups.all.flatMap((group) => group.tabs).filter((tab) =>
+      tab.input instanceof vscode.TabInputTextDiff &&
+      tab.input.original.toString() === original && tab.input.modified.toString() === modified))),
   ];
   scan();
   return new vscode.Disposable(() => {

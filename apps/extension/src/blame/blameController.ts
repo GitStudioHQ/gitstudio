@@ -697,6 +697,7 @@ export class BlameController implements vscode.Disposable {
       rel,
       blameChangeSides(at.commit, rel),
       `${rel.split("/").pop()} (${short(at.commit.sha)})`,
+      "blame",
     );
   }
 

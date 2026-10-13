@@ -43,6 +43,10 @@ const SHIPPED: Record<string, unknown> = {
   "gitstudio.blame.heatmap": true,
   "gitstudio.merge.autoOpen": true,
   "gitstudio.merge.autoApplyNonConflicting": false,
+  "gitstudio.diff.comparisonIn": {
+    vscode: true, changes: true, graph: true, stashes: true, history: true,
+    blame: true, compare: true, worktrees: true, push: true,
+  },
   "gitstudio.commit.signoffByDefault": false,
   "gitstudio.worktrees.prefixWithProjectName": false,
   "gitstudio.ai.provider": "auto",

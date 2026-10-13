@@ -6,7 +6,7 @@ import type { FileHistoryEntry } from "@gitstudio/git-service/index";
 import { HistoryProvider } from "@gitstudio/git-service/HistoryProvider";
 import { sameFolder } from "@gitstudio/git-service/WorktreeProvider";
 import * as l10n from "@vscode/l10n";
-import { openRoutable, openWithoutRouting } from "@gitstudio/merge-vscode/ownDiffs";
+import { openDiff, type DiffPlace } from "../merge/diffPlaces";
 
 /** The URI scheme our historical file contents are served under. */
 export const REVISION_SCHEME = "gitstudio-rev";
@@ -139,11 +139,11 @@ export function blameChangeSides(
 
 /**
  * An internal command (not in the palette) that opens `vscode.diff`'s
- * arguments in VS Code's diff editor, for an item whose click VS Code runs
- * (a Timeline entry): GitStudio's own diffs stay out of the default diff
- * viewer's routing (merge-vscode's ownDiffs.ts).
+ * arguments as a file-history diff, for an item whose click VS Code runs (a
+ * Timeline entry): it goes through openDiff like every other GitStudio diff
+ * (merge/diffPlaces.ts), under the `history` place.
  */
-export const OPEN_NATIVE_DIFF_COMMAND = "gitstudio.openNativeDiff";
+export const OPEN_HISTORY_DIFF_COMMAND = "gitstudio.openHistoryDiff";
 
 /** Open a diff of `rel` between two sides. */
 export async function openSidesDiff(
@@ -151,15 +151,15 @@ export async function openSidesDiff(
   rel: string,
   sides: { left: RevisionSide; right: RevisionSide },
   title: string,
-  routed = false,
+  // Which of GitStudio's places opens it: whether the default diff viewer may send it to the comparison.
+  place: DiffPlace | "pullRequests",
 ): Promise<void> {
-  // `routed`: the default diff viewer setting may send it to GitStudio's comparison.
-  const open = routed ? openRoutable : openWithoutRouting;
-  await open(
+  await openDiff(
     revisionSideUri(root, rel, sides.left),
     revisionSideUri(root, rel, sides.right),
     title,
     { preview: true } satisfies vscode.TextDocumentShowOptions,
+    place,
   );
 }
 
@@ -262,11 +262,12 @@ export async function openRevisionDiff(
   const computedTitle =
     title ?? `${fileName} (${shortRev(rev)} ↔ ${rightLabel})`;
 
-  await openWithoutRouting(
+  await openDiff(
     leftUri,
     rightUri,
     computedTitle,
     { preview: true } satisfies vscode.TextDocumentShowOptions,
+    "history",
   );
 }
 

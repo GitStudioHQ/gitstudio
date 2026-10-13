@@ -82,7 +82,7 @@ import {
   type StashOutcome,
 } from "../views/stashesView";
 import { l10nWebviewScript } from "@gitstudio/l10n/index";
-import { openWithoutRouting } from "@gitstudio/merge-vscode/ownDiffs";
+import { openDiff } from "../merge/diffPlaces";
 
 // The unified Commit window: ONE WebviewView ("Commit", viewId gitstudio.commit)
 // that renders BOTH the commit message box AND the working-tree changes —
@@ -2458,7 +2458,7 @@ export class CommitViewProvider
     const parent = msg.parent && /^[0-9a-f]{40}([0-9a-f]{24})?$/.test(msg.parent) ? msg.parent : COMMIT_EMPTY_TREE;
     const sides = commitChangeSides({ sha, parent, path: msg.path, oldPath: msg.oldPath, status: msg.status });
     const name = msg.path.split("/").pop() ?? msg.path;
-    await openSidesDiff(entry.root, msg.path, sides, `${name} (${sha.slice(0, 7)})`);
+    await openSidesDiff(entry.root, msg.path, sides, `${name} (${sha.slice(0, 7)})`, "push");
   }
 
   /** The base ref of the last push preview (left side of committed file diffs). */
@@ -2485,11 +2485,12 @@ export class CommitViewProvider
     const left = toRevisionUri(entry.root, base, oldPath || path);
     const right = toRevisionUri(entry.root, "HEAD", path);
     const name = path.split("/").pop() ?? path;
-    await openWithoutRouting(
+    await openDiff(
       left,
       right,
       l10n.t("{0}  (before {1} ↔ after HEAD)", name, pushRefLabel(base)),
       { preview: true } satisfies vscode.TextDocumentShowOptions,
+      "push",
     );
   }
 

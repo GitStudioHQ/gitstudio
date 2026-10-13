@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import type { Change } from "../git/git";
 import { EMPTY_TREE, openSidesDiff } from "../history/revisionContentProvider";
 import { nativeDiffSides, type NativeSide } from "./nativeDiffSides";
-import { openRoutable } from "@gitstudio/merge-vscode/ownDiffs";
+import { openDiff } from "../merge/diffPlaces";
 import * as l10n from "@vscode/l10n";
 
 // Change-row helpers shared by the unified Commit webview (commitView.ts) and
@@ -92,9 +92,9 @@ export async function openChangeDiff(
     const right = side(native.right);
     if (left && right && (await existsOnDisk(change.uri))) {
       const label = node.kind === "staged" ? l10n.t("{0} (Staged)", fileName) : `${fileName} (${l10n.t("Working Tree")})`;
-      await openRoutable(left, right, label, {
+      await openDiff(left, right, label, {
         preview: true,
-      } satisfies vscode.TextDocumentShowOptions);
+      } satisfies vscode.TextDocumentShowOptions, "changes");
       return;
     }
   }
@@ -108,7 +108,7 @@ export async function openChangeDiff(
       rel,
       { left: { rev: "HEAD", path: original }, right: { rev: "" } }, // "" = the index
       l10n.t("{0} (Staged)", fileName),
-      true,
+      "changes",
     );
     return;
   }
@@ -124,7 +124,7 @@ export async function openChangeDiff(
     rel,
     { left: { rev: baseRev }, right: gone ? { rev: EMPTY_TREE } : { rev: undefined } },
     `${fileName} (${gone ? l10n.t("Deleted") : label})`,
-    true,
+    "changes",
   );
 }
 

@@ -5,7 +5,7 @@ import type { RepoEntry } from "../git/repoManager";
 import { toRevisionUri } from "../history/revisionContentProvider";
 import { promptPick } from "../ui/dialogs";
 import * as l10n from "@vscode/l10n";
-import { openWithoutRouting } from "@gitstudio/merge-vscode/ownDiffs";
+import { openDiff } from "../merge/diffPlaces";
 
 // The ref-comparison engine, lifted out of the retired Search & Compare view so
 // the branch-compare panel (and any future consumer) can reuse the same
@@ -268,10 +268,12 @@ export async function openCompareFileDiff(arg: {
   const left = toRevisionUri(arg.root, arg.refA, arg.oldPath || arg.path);
   const right = toRevisionUri(arg.root, arg.refB, arg.path);
   const name = arg.path.split("/").pop() ?? arg.path;
-  await openWithoutRouting(
+  await openDiff(
     left,
     right,
     `${name} (${arg.refA} ↔ ${arg.refB})`,
+    undefined,
+    "compare",
   );
 }
 

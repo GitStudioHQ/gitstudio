@@ -77,6 +77,7 @@ export async function showLineHistory(repos: RepoManager): Promise<void> {
       active.rel,
       commitChangeSides({ sha: picked.sha, parent: `${picked.sha}~1`, ...at }),
       `${fileName} (${picked.shortSha})`,
+      "history",
     );
     revealRange(startLine, endLine);
   }

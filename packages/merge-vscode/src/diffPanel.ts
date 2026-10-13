@@ -85,6 +85,9 @@ export class DiffPanel {
       { retainContextWhenHidden: true },
     );
     const created = new DiffPanel(host, panel, state);
+    // Created to take focus, the panel cannot hold it while its page loads:
+    // it takes it again once the page says it is ready.
+    created.focusWhenReady = showOptions?.preserveFocus === false;
     await created.init();
     return created;
   }
@@ -99,6 +102,7 @@ export class DiffPanel {
    * before its debounced text): no longer a stand-in for a preview tab.
    */
   private edited = false;
+  private focusWhenReady = false;
 
   private constructor(
     private readonly host: MergeHostCore,
@@ -125,6 +129,10 @@ export class DiffPanel {
         const message = raw as WebviewMessage | undefined;
         switch (message?.type) {
           case "ready":
+            if (this.focusWhenReady) {
+              this.focusWhenReady = false;
+              this.panel.reveal(this.panel.viewColumn, false);
+            }
             void this.sendInit();
             break;
           case "diffEdited":

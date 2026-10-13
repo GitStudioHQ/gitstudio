@@ -110,6 +110,8 @@ Object.assign(vscode, {
       registeredTimelines.push({ scheme, provider });
       return { dispose() {} };
     },
+    // No settings: every diff place keeps its default (merge/diffPlaces.ts).
+    getConfiguration: () => ({ get: () => undefined }),
   },
 });
 const progress: string[] = [];
@@ -324,8 +326,8 @@ test("the Timeline pages a file's commits newest first, each opening that commit
   assert.match(top.detail?.value ?? "", /a body with \\<b\\>html\\<\/b\\>/, "the body is shown, markdown-escaped");
   assert.match(second.detail?.value ?? "", /\*\*v2 \\\[with\\\] \\\*markdown\\\*\*\*/, "the subject is bold and escaped");
   assert.match(second.detail?.value ?? "", /\nT <t@example\\\.com>\n/, "author and email");
-  // vscode.diff's arguments, through the command that keeps it in VS Code's diff editor (ownDiffs).
-  assert.equal(second.command?.command, "gitstudio.openNativeDiff");
+  // vscode.diff's arguments, through the command that opens it as file history (merge/diffPlaces.ts).
+  assert.equal(second.command?.command, "gitstudio.openHistoryDiff");
   const [left, right, title] = second.command!.arguments as [FakeUri, FakeUri, string];
   assert.deepEqual(side(left), { root: f.dir, rev: `${s2}~1`, relPath: "f.txt", readPath: "f.txt" });
   assert.deepEqual(side(right), { root: f.dir, rev: s2, relPath: "f.txt", readPath: "f.txt" });

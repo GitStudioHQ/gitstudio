@@ -85,6 +85,7 @@ export class RevisionNavigator implements vscode.Disposable {
       rel,
       historyChangeSides(picked.entry),
       `${baseName(rel)} (${picked.entry.shortSha})`,
+      "history",
     );
   }
 
@@ -146,6 +147,7 @@ export class RevisionNavigator implements vscode.Disposable {
       rel,
       historyChangeSides(target),
       `${baseName(rel)} (${target.shortSha})`,
+      "history",
     );
   }
 
