@@ -143,7 +143,12 @@ test("a status run that left the index alone reads no git; a moved index or HEAD
   // vscode.git reports a working-tree change on every save and window focus.
   const t = setup("gutter-quiet");
   await until(() => t.painted.get(1) === "unstaged", "painted from git at the start");
-  t.fireRepoChange(); // the first look records the index file
+  // The first look finds the index file (a git process, slow on Windows),
+  // records it and repaints: wait for that repaint, not for a quiet spell
+  // that can end before it starts.
+  const initial = t.reads();
+  t.fireRepoChange();
+  await until(() => t.reads() > initial, "the first look repaints");
   await quiet(t.reads);
   const before = t.reads();
   t.fireRepoChange();
