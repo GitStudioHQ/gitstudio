@@ -661,6 +661,11 @@ export class MiniDocument extends MiniTarget {
    *  moment it is built), by whatever rule the test likes. */
   sizer: ((el: MiniElement) => { width: number; height: number } | undefined) | undefined;
   private active: MiniElement | null = null;
+  /** The page is shown and has the keyboard, as a window in front has. */
+  visibilityState: "visible" | "hidden" = "visible";
+  hasFocus(): boolean {
+    return true;
+  }
 
   constructor() {
     super();
@@ -728,6 +733,22 @@ export class MiniWindow extends MiniTarget {
   matchMedia(): { matches: boolean; addEventListener: () => void } {
     return { matches: false, addEventListener: () => {} };
   }
+  /** As much of a computed style as this DOM can know: there are no
+   *  stylesheets here, so an element's inline style over the initial values. */
+  getComputedStyle(el: MiniElement): Record<string, string> {
+    const initial: Record<string, string> = {
+      maxHeight: "none",
+      overflowY: "visible",
+      boxSizing: "content-box",
+      paddingTop: "0px",
+      paddingBottom: "0px",
+      borderTopWidth: "0px",
+      borderBottomWidth: "0px",
+    };
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(initial)) out[k] = (el.style[k] as string | undefined) || v;
+    return out;
+  }
 }
 
 export interface MiniDom {
@@ -761,6 +782,7 @@ export function installMiniDom(): MiniDom {
   g.document = document;
   g.CSS = { escape: (s: string) => String(s).replace(/["\\]/g, "\\$&") };
   g.requestAnimationFrame = (f: () => void) => globalThis.setTimeout(f, 0);
+  g.getComputedStyle = (el: MiniElement) => window.getComputedStyle(el);
   Object.defineProperty(globalThis, "navigator", {
     configurable: true,
     writable: true,

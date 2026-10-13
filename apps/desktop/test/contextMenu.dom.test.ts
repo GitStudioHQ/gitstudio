@@ -115,12 +115,17 @@ test("Drop commit… is offered beside Revert only when main said it can work", 
   assert.equal(doc.querySelectorAll(".ctx-menu").length, 1, "re-opening replaces, never stacks");
 });
 
-test("the menu stays on screen with an 8px margin", () => {
+test("the menu stays on screen with an 8px margin, opening up and left from the pointer when it must", () => {
   const { menu } = harness();
   menu.open(SHA, 300, 200);
   assert.deepEqual([px(menuEl()!.style.left), px(menuEl()!.style.top)], [300, 200]);
+  // No room below or right of the pointer (issue #103): it opens UP and LEFT
+  // from it — its corner at the pointer — rather than sliding over it.
   menu.open(SHA, 1150, 780);
-  assert.deepEqual([px(menuEl()!.style.left), px(menuEl()!.style.top)], [1200 - 220 - 8, 800 - 300 - 8]);
+  assert.deepEqual([px(menuEl()!.style.left), px(menuEl()!.style.top)], [1150 - 220, 780 - 300]);
+  // Never taller than the window: capped there, it scrolls.
+  assert.equal(menuEl()!.style.maxHeight, `${800 - 16}px`);
+  assert.equal(menuEl()!.style.overflowY, "auto");
   dom.window.innerWidth = 100;
   dom.window.innerHeight = 100;
   menu.open(SHA, 50, 50);
@@ -226,6 +231,27 @@ test("a route change closes the menu without moving focus", () => {
   assert.equal(menuEl(), null);
   assert.equal(overlays.isMenuOpen(), false);
   assert.notEqual(doc.activeElement, graphRow);
+});
+
+test("the app losing focus closes the menu; a blur while the page keeps focus does not (issue #103)", () => {
+  const { menu } = harness();
+  menu.open(SHA, 10, 10);
+  mock.timers.tick(0);
+  // Focus moving within the window: the page still has it.
+  fire(dom.window, "blur", { bubbles: false });
+  mock.timers.tick(0);
+  assert.notEqual(menuEl(), null, "a blur that leaves the page focused keeps the menu");
+  // Another app clicked: the window's blur, and the page has lost focus.
+  const had = doc.hasFocus;
+  doc.hasFocus = () => false;
+  try {
+    fire(dom.window, "blur", { bubbles: false });
+    mock.timers.tick(0);
+    assert.equal(menuEl(), null, "the menu closed when the app lost focus");
+    assert.equal(overlays.isMenuOpen(), false);
+  } finally {
+    doc.hasFocus = had;
+  }
 });
 
 // ── what a click sends ───────────────────────────────────────────────────────

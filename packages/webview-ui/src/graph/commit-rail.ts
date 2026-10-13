@@ -69,6 +69,7 @@ import {
 } from "./refFilter";
 import { chipRefs, presetRefs, sameRefFilter } from "@gitstudio/host-bridge/graphRefFilter";
 import { chipLabel, foldRefs } from "./refLayout";
+import { atPoint, closeOnFocusLeave, fitMenu, type MenuAnchor } from "../menuFit";
 import {
   NO_SELECTION,
   clickSelect,
@@ -110,10 +111,6 @@ const REVEAL_PAGE_LIMIT = 25;
 const MAX_CHIPS = 2;
 /** The widest a cursor-positioned .pop can render (its CSS max-width). */
 const POP_MAX_W = 240;
-/** …in this window, so a clamp keeps the shell inside a sidebar narrower
- *  than that (headless Chrome floors the window at 500px; a real sidebar
- *  does not). */
-const popMaxWidth = (): number => Math.min(POP_MAX_W, window.innerWidth - 8);
 /** The all-zeros sha marks the synthetic "uncommitted changes" (WIP) row. */
 const ZERO_SHA_RE = /^0{40}$/;
 /** Only commits share a selection of several (issue #32) — as in the graph. */
@@ -153,6 +150,9 @@ interface RailMenu {
   shas?: string[];
   x: number;
   y: number;
+  /** What it opens from when that is more than the point (x, y): the
+   *  focused row, for the menu key — so a flip up lands above the row. */
+  at?: MenuAnchor;
   title: string;
   items: RailMenuItem[];
   /** Opened from the keyboard: its first item takes focus once it renders. */
@@ -826,10 +826,11 @@ export class CommitRail extends LitElement {
       }
 
       /* ── Popovers: search scope + commit actions share the shell ───────── */
-      /* max-width is the W the commit menu and the chip menu clamp their x
-         with (POP_MAX_W), border-box so the rendered shell IS that wide: a
-         "Checkout origin/<long name>" item is a ref name, and unbounded it
-         made the menu 248px in a 240px sidebar, 44px past the edge. */
+      /* max-width (POP_MAX_W) is border-box, so the rendered shell IS that
+         wide: a "Checkout origin/<long name>" item is a ref name, and
+         unbounded it made the menu 248px in a 240px sidebar, 44px past the
+         edge. The commit and chip menus are then fitted inside the view by
+         measure (fitPopMenu). */
       .pop {
         position: fixed;
         z-index: 40;
@@ -1035,6 +1036,8 @@ export class CommitRail extends LitElement {
   /** Which rows are selected, and the Shift-range anchor (issue #32 — see
    *  multiSelect.ts). Its `focus` is `selectedSha`. */
   private sel: Selection = NO_SELECTION;
+  /** Stops closing the popovers when focus leaves the page (closeOnFocusLeave). */
+  private stopFocusLeave?: () => void;
 
   /** Row intents, forwarded to the host by the entry point. */
   onAction: (action: RailAction) => void = () => {};
@@ -1162,10 +1165,16 @@ export class CommitRail extends LitElement {
     // Author pictures turned off (or back on): rebuild the drawn rows, so no
     // <img> is left behind to load.
     this.disposeGravatar = onGravatarChange(() => this.renderRows());
+    // A click in the editor, the Explorer or the terminal never reaches this
+    // view; focus leaving it is the one sign (issue #103). The popovers close
+    // then, as a click anywhere else in the view closes them.
+    this.stopFocusLeave = closeOnFocusLeave(() => this.closePopovers());
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
+    this.stopFocusLeave?.();
+    this.stopFocusLeave = undefined;
     this.disposeTheme?.();
     this.disposeTheme = undefined;
     this.disposeGravatar?.();
@@ -1199,6 +1208,8 @@ export class CommitRail extends LitElement {
       if (this.searchQuery.trim()) this.computeMatches(false);
     }
     this.syncPopoverListener();
+    // A menu at the pointer, inside the view — before focus lands in it.
+    this.fitPopMenu();
     // The Branches picker opens with its filter box focused — typing is how
     // you find one ref among hundreds, and the box is where typing goes.
     if (changed.has("branchesOpen") && this.branchesOpen) {
@@ -1836,20 +1847,19 @@ export class CommitRail extends LitElement {
     this.chipMenu = null;
     let px = x;
     let py = y;
+    let at: MenuAnchor | undefined;
     if (x < 0 || y < 0) {
-      // Under the FOCUSED row — among several selected, the keyboard's one.
+      // Under the FOCUSED row — among several selected, the keyboard's one —
+      // or above it when the view has no room below.
       const row = this.renderRoot.querySelector<HTMLElement>(".row.focused");
       const r = row?.getBoundingClientRect();
       px = r ? r.left + 40 : window.innerWidth / 2;
       py = r ? r.bottom - 4 : window.innerHeight / 2;
+      if (r) at = { left: px, right: px, top: r.top + 4, bottom: py };
     }
-    // Clamp so the menu never clips the (narrow) sidebar viewport — with
-    // the width the shell can really reach, not a guess under it.
-    const estW = popMaxWidth();
-    const estH =
-      items.reduce((n, i) => n + (i.sep ? 9 : 26), 0) + 30;
-    px = Math.max(4, Math.min(px, window.innerWidth - estW - 4));
-    py = Math.max(4, Math.min(py, window.innerHeight - Math.min(estH, 320) - 4));
+    // Where it fits is measured once it renders (fitPopMenu), not guessed
+    // here: an estimated height clamped at 320px slid a long menu up by too
+    // little in a short view, and its foot ran off the view (issue #103).
     // x/y < 0 is the menu key's request coming back (onScrollerKeyDown).
     const focusFirst = x < 0 || y < 0;
     this.commitMenu = {
@@ -1857,10 +1867,25 @@ export class CommitRail extends LitElement {
       ...(shas && shas.length > 1 ? { shas } : {}),
       x: px,
       y: py,
+      ...(at ? { at } : {}),
       title,
       items,
       ...(focusFirst ? { focusFirst } : {}),
     };
+  }
+
+  /**
+   * Put the open commit or chip menu where it fits in the view (issue #103):
+   * down from the pointer, up from it when there is no room below, capped
+   * and scrolling when it is taller than the view. Measured after it renders,
+   * on every update while it is open — a re-render rewrites its style
+   * attribute — and idempotent, so nothing moves twice.
+   */
+  private fitPopMenu(): void {
+    const m = this.commitMenu ?? this.chipMenu;
+    if (!m) return;
+    const el = this.renderRoot.querySelector<HTMLElement>(this.commitMenu ? ".pop.commitmenu" : ".pop.chipmenu");
+    if (el) fitMenu(el, ("at" in m && m.at) || atPoint(m.x, m.y), { pad: 4 });
   }
 
   // ── Popover dismissal ───────────────────────────────────────────────────
@@ -2053,19 +2078,9 @@ export class CommitRail extends LitElement {
     const twins = (chip.dataset.twins ?? "").split(",").filter(Boolean);
     const refs = chipRefs(this.refList, fullName, twins);
     const sha = (chip.closest(".row") as HTMLElement | null)?.dataset.sha ?? "";
-    // Clamped like the commit menu, so it never clips the narrow sidebar.
-    const estW = popMaxWidth();
-    const estH = 30 + 5 * 26;
+    // At the pointer; fitted like the commit menu once it renders.
     this.closePopovers();
-    this.chipMenu = {
-      name,
-      fullName,
-      kind,
-      sha,
-      refs,
-      x: Math.max(4, Math.min(x, window.innerWidth - estW - 4)),
-      y: Math.max(4, Math.min(y, window.innerHeight - estH - 4)),
-    };
+    this.chipMenu = { name, fullName, kind, sha, refs, x, y };
   }
 
   // ── Template ────────────────────────────────────────────────────────────

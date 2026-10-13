@@ -8,6 +8,7 @@ import { confirmDialog, promptInline } from "./dialogs";
 import { refMenuItems, type RefMenuItem, type RowRef } from "./refMenuItems";
 import { registerLayer } from "./overlays";
 import { deepActiveElement } from "./focusReturn";
+import { atPoint, closeOnFocusLeave, fitMenu } from "@gitstudio/webview-ui/menuFit";
 import * as l10n from "@vscode/l10n";
 
 interface MenuItem {
@@ -172,6 +173,8 @@ export class CommitContextMenu {
   /** Registry handle, so a route change closes this menu with everything else. */
   private layer?: { release: () => void };
   private readonly onKey = (e: KeyboardEvent): void => this.handleKey(e);
+  /** Stops closing the menu when the app loses focus. */
+  private stopFocusLeave?: () => void;
 
   constructor(
     /** Dispatches a fully-resolved action request to the host. */
@@ -227,14 +230,17 @@ export class CommitContextMenu {
   /** Mount a built menu at (x, y), kept on screen, first row focused. */
   private place(menu: HTMLElement, x: number, y: number): void {
     document.body.appendChild(menu);
-    const rect = menu.getBoundingClientRect();
-    const left = Math.min(x, window.innerWidth - rect.width - 8);
-    const top = Math.min(y, window.innerHeight - rect.height - 8);
-    menu.style.left = `${Math.max(8, left)}px`;
-    menu.style.top = `${Math.max(8, top)}px`;
+    // Down from the pointer, or up from it with no room below; never taller
+    // than the window — capped, it scrolls (issue #103: the extension's
+    // twin of this menu ran off a short panel). Measured by its layout size:
+    // the entrance animation scales it, and its bounding rect read small.
+    fitMenu(menu, atPoint(x, y), { pad: 8 });
     this.menu = menu;
 
     document.addEventListener("keydown", this.onKey, true);
+    // Another app clicked: the menu goes, as a native one does. A click
+    // anywhere in this window is the document listener's below.
+    this.stopFocusLeave = closeOnFocusLeave(() => this.close(false));
     setTimeout(() => {
       document.addEventListener("click", this.onDocClick);
       this.rows[0]?.focus();
@@ -391,6 +397,8 @@ export class CommitContextMenu {
     this.layer = undefined;
     document.removeEventListener("keydown", this.onKey, true);
     document.removeEventListener("click", this.onDocClick);
+    this.stopFocusLeave?.();
+    this.stopFocusLeave = undefined;
     this.menu?.remove();
     this.menu = undefined;
     this.rows = [];
