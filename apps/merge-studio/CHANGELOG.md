@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **GitStudio's own views reach the comparison too.** With `jbMerge.useAsDefaultDiffViewer` on and GitStudio installed, diffs from GitStudio's Changes list, Commit Graph, stashes, history, blame, compare, worktrees and push review open in Merge Studio's comparison as well; GitStudio's `gitstudio.diff.comparisonIn` setting chooses which. Pull request diffs stay in VS Code's diff editor ([#101](https://github.com/GitStudioHQ/gitstudio/issues/101), [#102](https://github.com/GitStudioHQ/gitstudio/pull/102); thanks, @billdwhite).
+
 ## 1.4.0 — 2026-10-12
 
 ### Added

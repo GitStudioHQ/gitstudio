@@ -61,11 +61,16 @@ Explorer comparisons, history and `vscode.diff`), enable
 `gitstudio.merge.useAsDefaultDiffViewer` in Settings. It is off by default and
 independent of conflict auto-open. With the standalone Merge Studio extension,
 use `jbMerge.useAsDefaultDiffViewer` instead. If both are enabled, GitStudio
-handles diffs. Diffs GitStudio opens from its own views (Changes, Commit
-Graph, history, compare, pull requests) keep VS Code's diff editor, with its
-staging tools. So do binary and custom-editor diffs, diffs of other extensions'
-own documents (pull request reviews, AI edits), and a comparison that cannot
-be loaded. This uses VS Code's stable tab API,
+handles diffs. Once it is on, the comparison opens everywhere: for the diffs
+VS Code and other extensions open, and for GitStudio's own Changes list, Commit
+Graph, stashes, history, blame, compare, worktrees and push review. To use it
+only in some of those places, untick the others in
+`gitstudio.diff.comparisonIn`: for instance untick `changes` to keep VS Code's
+diff editor, with its selective-staging menu, for the Changes list. Pull
+request diffs always open in VS Code's diff editor, where their review threads
+are. So do binary and custom-editor diffs, diffs of other extensions' own
+documents (pull request reviews, AI edits), and a comparison that cannot be
+loaded. This uses VS Code's stable tab API,
 so the native diff may briefly appear before the comparison opens. Unsaved
 source tabs are kept; editing the comparison opens the writable document in
 a background text tab for normal saving and close prompts. Disable the setting
