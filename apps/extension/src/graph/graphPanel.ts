@@ -1483,6 +1483,7 @@ export class CommitGraphPanel {
           right: status === "D" ? { rev: EMPTY_TREE } : { rev: undefined },
         },
         l10n.t("{0} (HEAD ↔ Working Tree)", fileName),
+        true,
       );
       return;
     }
@@ -1495,6 +1496,7 @@ export class CommitGraphPanel {
       path,
       commitChangeSides({ sha, parent, path, oldPath, status }),
       `${fileName} (${sha.slice(0, 7)})`,
+      true,
     );
   }
 
