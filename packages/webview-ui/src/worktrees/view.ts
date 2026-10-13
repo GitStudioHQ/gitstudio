@@ -38,6 +38,7 @@ import {
 import type { ChangeCommit, ChangeFile } from "@gitstudio/host-bridge/changeRows";
 import { commitRow, emptyNote, fileRow, isCommitOpen, moreLine, sectionLabel, setCommitFiles } from "../changeRows/changeRows";
 import * as l10n from "@vscode/l10n";
+import { closeOnFocusLeave, fitMenu } from "../menuFit";
 
 /** What the host says about the platform — how Reveal reads. */
 export interface WorktreesLabels {
@@ -103,6 +104,8 @@ export class WorktreesView {
   private visibleTimer: ReturnType<typeof setTimeout> | undefined;
   private menu: HTMLElement | undefined;
   private menuFor: RowState | undefined;
+  /** Stops closing the open menu when focus leaves the page. */
+  private stopFocusLeave: (() => void) | undefined;
   private readonly tip: HTMLElement;
   private tipTarget: HTMLElement | null = null;
   private tipTimer: ReturnType<typeof setTimeout> | undefined;
@@ -790,16 +793,16 @@ export class WorktreesView {
     this.menu = menu;
     this.menuFor = s;
     s.line.classList.add("has-menu");
-    const PAD = 6;
-    const m = menu.getBoundingClientRect();
-    const a = anchor.getBoundingClientRect();
-    const left = Math.max(PAD, Math.min(a.right - m.width, window.innerWidth - m.width - PAD));
-    let top = a.bottom + 2;
-    if (top + m.height > window.innerHeight - PAD) top = Math.max(PAD, a.top - m.height - 2);
-    menu.style.left = `${Math.round(left)}px`;
-    menu.style.top = `${Math.round(top)}px`;
+    // Under its anchor, right edges lined up — or above it when the view has
+    // no room below, and capped and scrolling when it is taller than the
+    // view: the Worktrees view is often a few rows tall, and the menu's last
+    // items ran off its foot with no way to reach them (issue #103).
+    fitMenu(menu, anchor.getBoundingClientRect(), { gap: 2, align: "end" });
     menu.addEventListener("keydown", (e) => this.onMenuKey(e));
     setTimeout(() => document.addEventListener("mousedown", this.onDocDown, true), 0);
+    // A click in the editor, the Explorer or the terminal never reaches this
+    // view; focus leaving it is the one sign, and the menu goes then too.
+    this.stopFocusLeave = closeOnFocusLeave(() => this.closeMenu());
     menu.querySelector<HTMLElement>(".wt-menu-item")?.focus();
   }
 
@@ -813,6 +816,8 @@ export class WorktreesView {
     this.menu = undefined;
     this.menuFor = undefined;
     document.removeEventListener("mousedown", this.onDocDown, true);
+    this.stopFocusLeave?.();
+    this.stopFocusLeave = undefined;
   }
 
   private onMenuKey(e: KeyboardEvent): void {

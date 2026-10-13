@@ -73,6 +73,7 @@ import {
 } from "./refFilter";
 import { chipRefs, presetRefs, sameRefFilter } from "@gitstudio/host-bridge/graphRefFilter";
 import { COLUMN_DROP_TAIL_AT, INLINE_LIST_BELOW } from "../limits";
+import { atPoint, closeOnFocusLeave, fitMenu, type MenuAnchor } from "../menuFit";
 import {
   NO_SELECTION,
   clickSelect,
@@ -154,8 +155,8 @@ const MAX_GUTTER_COLUMNS = 16;
 /** Trigger a loadMore when within this many rows of the bottom. */
 const LOAD_MORE_THRESHOLD = 60;
 /** The widest a cursor-positioned menu (the commit menu, a chip's menu) can
- *  render — the .gh-ctx max-width, and the W both menus clamp their x with,
- *  so the shell never runs off the right edge under a long ref name. */
+ *  render — the .gh-ctx max-width, so the shell never grows past what
+ *  fitCtxMenu can keep inside the pane under a long ref name. */
 const CTX_MENU_W = 240;
 /**
  * How many ref chips render inline is decided by WIDTH alone — see refsHtml.
@@ -505,9 +506,9 @@ export class CommitGraph extends LitElement {
       .gh-pop { animation: none; }
     }
     /* The commit context popover is positioned at the cursor (fixed), not
-       anchored to a header control. Its max-width is the W the two menus
-       clamp their x with (renderCommitMenu, renderChipMenu), border-box so
-       the rendered shell IS that wide and not that plus padding: a
+       anchored to a header control, and fitted inside the pane by measure
+       (fitCtxMenu). Its max-width is border-box, so the rendered shell IS
+       that wide and not that plus padding: a
        "Checkout origin/<long name>" item is a ref name, and unbounded it
        widened the menu past the clamp and off the pane. The item's label
        ellipsizes instead; the row's tooltip and the chip still say it all. */
@@ -518,6 +519,13 @@ export class CommitGraph extends LitElement {
       box-sizing: border-box;
       min-width: 214px;
       max-width: min(${CTX_MENU_W}px, calc(100vw - 12px));
+      /* Never taller than the view (issue #103): the Commit Graph panel is
+         often shorter than the commit menu, whose last items were cut off
+         with no way to reach them. Past the view's height it scrolls;
+         fitCtxMenu flips it up from the pointer when it fits there. */
+      max-height: calc(100vh - 12px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
     }
     /* The commit menu's title is "<sha7> · <subject>", and a subject can run
        to 120 characters: capped at ${CTX_MENU_W}px the title wrapped into a
@@ -1830,6 +1838,9 @@ export class CommitGraph extends LitElement {
     shas?: string[];
     x: number;
     y: number;
+    /** What it opens from when that is more than the point (x, y): the
+     *  focused row, for the menu key — so a flip up lands above the row. */
+    at?: MenuAnchor;
     title: string;
     items: CommitMenuItem[];
     /** Opened from the keyboard: focus its first item once it renders, so
@@ -1843,6 +1854,8 @@ export class CommitGraph extends LitElement {
    * its own menu there — so the position cannot say which it was.
    */
   private menuByKeyboard = false;
+  /** Stops closing the menus when focus leaves the page (closeOnFocusLeave). */
+  private stopFocusLeave?: () => void;
   /**
    * A ref chip's own menu (right-click or ⌥-click on a chip): the filter
    * shortcuts — show only this branch, add it, remove it — and the checkout
@@ -2053,10 +2066,16 @@ export class CommitGraph extends LitElement {
       if (this.autoRefs.w !== before) this.renderRows(); // re-fold the chips
     });
     this.resizeObs.observe(this);
+    // A click in another editor, the Explorer or the terminal never reaches
+    // this page; focus leaving it is the one sign (issue #103). The menus and
+    // popovers close then, as a click anywhere else in the page closes them.
+    this.stopFocusLeave = closeOnFocusLeave(() => this.dismissForFocusLeave());
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
+    this.stopFocusLeave?.();
+    this.stopFocusLeave = undefined;
     this.teardownVirtualizer();
     this.resizeObs?.disconnect();
     this.resizeObs = undefined;
@@ -2121,6 +2140,8 @@ export class CommitGraph extends LitElement {
     this.applyColumnStyles();
     // A popover being open needs a document-level click-outside/Escape listener.
     this.syncPopoverListener();
+    // A menu at the pointer, inside the view — before focus lands in it.
+    this.fitCtxMenu();
     // The Branches picker opens with its filter box focused: with hundreds of
     // refs, typing is how you find one, and the box is where typing goes.
     if (changed.has("branchesOpen") && this.branchesOpen) {
@@ -2826,6 +2847,14 @@ export class CommitGraph extends LitElement {
     }
   }
 
+  /** Focus left the page (issue #103): every popover and menu goes, and a
+   *  pinned "+N" card, as a click elsewhere in the page dismisses them. The
+   *  keyboard is not handed back — it is somewhere else now. */
+  private dismissForFocusLeave(): void {
+    this.closePopovers();
+    if (this.refTip.isPinned) this.refTip.dismiss();
+  }
+
   private closePopovers(): void {
     if (this.columnsOpen || this.scopeOpen || this.branchesOpen) {
       this.columnsOpen = false;
@@ -2857,6 +2886,7 @@ export class CommitGraph extends LitElement {
     this.chipMenu = null;
     let px = x;
     let py = y;
+    let at: MenuAnchor | undefined;
     if (x < 0 || y < 0) {
       // Under the FOCUSED row: with several selected, every one of them is
       // `.selected`, and the first in the DOM is not the one the keyboard is on.
@@ -2864,6 +2894,8 @@ export class CommitGraph extends LitElement {
       const r = row?.getBoundingClientRect();
       px = r ? r.left + 24 : window.innerWidth / 2;
       py = r ? r.bottom : window.innerHeight / 2;
+      // …or above it, when there is no room below: the row stays in sight.
+      if (r) at = { left: px, right: px, top: r.top, bottom: r.bottom };
     }
     // x < 0 is the host's own keyboard door (its "action" message).
     const focusFirst = this.menuByKeyboard || x < 0 || y < 0;
@@ -2873,10 +2905,33 @@ export class CommitGraph extends LitElement {
       ...(shas && shas.length > 1 ? { shas } : {}),
       x: px,
       y: py,
+      ...(at ? { at } : {}),
       title,
       items,
       ...(focusFirst ? { focusFirst } : {}),
     };
+  }
+
+  /**
+   * Put the open commit or chip menu where it fits (issue #103): down from
+   * the pointer, or up from it when the view has no room below, or — taller
+   * than the view — capped and scrolling. Measured after it renders, on every
+   * update while it is open (a re-render rewrites its style attribute);
+   * idempotent, so nothing moves twice. The menu may cover anything in the
+   * page (the details pane docked under the graph), but not the desktop's
+   * terminal dock, an overlay over the foot of the pane that publishes its
+   * height as --dock-reserve (as fitBranchesPopover reads it).
+   */
+  private fitCtxMenu(): void {
+    const m = this.commitMenu ?? this.chipMenu;
+    if (!m) return;
+    const el = this.renderRoot.querySelector<HTMLElement>(
+      this.commitMenu ? ".gh-commit-menu" : ".gh-chip-menu",
+    );
+    if (!el) return;
+    const dock = parseFloat(getComputedStyle(this).getPropertyValue("--dock-reserve")) || 0;
+    const bottomReserve = dock > 0 ? Math.max(0, window.innerHeight - (this.getBoundingClientRect().bottom - dock)) : 0;
+    fitMenu(el, ("at" in m && m.at) || atPoint(m.x, m.y), { bottomReserve });
   }
 
   /** Attach/detach the document click-outside/Escape listeners as popovers
@@ -4450,10 +4505,9 @@ export class CommitGraph extends LitElement {
   private renderChipMenu() {
     const m = this.chipMenu;
     if (!m) return nothing;
-    const W = CTX_MENU_W;
-    const H = 34 + 5 * 28;
-    const left = Math.max(6, Math.min(m.x, window.innerWidth - W - 6));
-    const top = Math.max(6, Math.min(m.y, window.innerHeight - H - 6));
+    // At the pointer; fitCtxMenu moves it to where it fits, before it paints.
+    const left = m.x;
+    const top = m.y;
     // A chip the ref list has no entry for resolves to nothing (chipRefs):
     // its menu says so and acts on nothing, rather than guess a full name.
     const known = m.refs.length > 0;
@@ -4660,19 +4714,17 @@ export class CommitGraph extends LitElement {
       <div class="authortip reftip" role="tooltip" hidden></div>${this.commitMenu ? this.renderCommitMenu() : nothing}${this.chipMenu ? this.renderChipMenu() : nothing}`;
   }
 
-  /** The in-graph commit actions popover (fixed at the cursor, clamped). */
+  /** The in-graph commit actions popover (fixed at the cursor, fitted). */
   private renderCommitMenu() {
     const m = this.commitMenu;
     if (!m) {
       return nothing;
     }
-    // Clamp to the viewport. W is the shell's CSS max-width, not a guess:
-    // a host-built "Checkout origin/<long name>" item made the menu wider
-    // than the 220 assumed here, and it ran off the pane.
-    const W = CTX_MENU_W;
-    const H = 34 + m.items.length * 28;
-    const left = Math.max(6, Math.min(m.x, window.innerWidth - W - 6));
-    const top = Math.max(6, Math.min(m.y, window.innerHeight - H - 6));
+    // At the pointer; fitCtxMenu then moves it to where it fits — measured,
+    // before it paints. A guessed height (34 + 28 an item) slid it up by too
+    // little or too much, and a menu taller than the panel ran off its foot.
+    const left = m.x;
+    const top = m.y;
     const pick = (id: string) => {
       const sha = m.sha;
       const shas = m.shas;

@@ -62,6 +62,7 @@ import { patchChildren } from "../conflicts/patch";
 import { ageWords } from "./prList";
 import { avatarSrc } from "./avatarSrc";
 import * as l10n from "@vscode/l10n";
+import { fitMenu } from "../menuFit";
 
 export interface PullRequestPageOptions {
   post(message: PrPageMessageToHost): void;
@@ -1820,11 +1821,10 @@ export class PullRequestPage {
       menu.appendChild(b);
     }
     this.layer.replaceChildren(menu);
-    const r = anchor.getBoundingClientRect();
-    const width = 220;
-    menu.style.width = `${width}px`;
-    menu.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - width - 8))}px`;
-    menu.style.top = `${r.bottom + 4}px`;
+    menu.style.width = `${Math.min(220, window.innerWidth - 16)}px`;
+    // Under its button, or above it in a pane too short for it below — and
+    // never past the pane's foot, where the last action was cut off (#103).
+    fitMenu(menu, anchor.getBoundingClientRect(), { gap: 4, pad: 8 });
   }
 
   private onMenuKey(e: KeyboardEvent): void {

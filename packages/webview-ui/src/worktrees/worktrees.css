@@ -452,6 +452,9 @@ body {
   z-index: 60;
   min-width: 210px;
   max-width: min(300px, calc(100vw - 12px));
+  /* Never taller than the view: past that it scrolls (view.ts fits it). */
+  max-height: calc(100vh - 12px);
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   padding: 4px;
@@ -461,6 +464,11 @@ body {
   border-radius: var(--gs-radius);
   box-shadow: var(--gs-shadow-2);
   font-family: var(--gs-font-ui);
+}
+/* A capped menu scrolls its items; none of them gives up height for it (a
+   flex column would squeeze its 1px separators away first). */
+.wt-menu > * {
+  flex: 0 0 auto;
 }
 .wt-menu-item {
   display: flex;
