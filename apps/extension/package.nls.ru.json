@@ -211,6 +211,7 @@
   "config.gitstudio.statusBar.showTerminal.description": "Показывать кнопку в строке состояния, открывающую терминал уже в корне активного репозитория — который не обязательно совпадает с корнем рабочей области.",
   "config.gitstudio.worktrees.prefixWithProjectName.description": "Больше не используется: «Новый рабочий каталог» теперь предлагает папку «<проект>-<ветка>» рядом с основным рабочим каталогом, и вы можете изменить её перед созданием.",
   "customEditor.gitstudio.mergeEditor.displayName": "GitStudio: трёхпанельное слияние",
+  "customEditor.gitstudio.diffEditor.displayName": "GitStudio Diff",
   "customEditor.gitstudio.rebaseTodoEditor.displayName": "GitStudio: интерактивное перебазирование",
   "description": "Бесплатный Git GUI и граф коммитов с открытым исходным кодом для VS Code и Cursor. GitStudio привносит в редактор рабочий процесс Git в стиле JetBrains — встроенный blame, историю файлов, добавление блоков и строк в индекс, трёхпанельное слияние, интерактивное перебазирование с универсальной Отменой, тайники/shelf, рабочие каталоги и GitHub PR прямо в редакторе. Бесплатная альтернатива GitLens, GitKraken и Sourcetree.",
   "displayName": "GitStudio — граф Git, Blame и слияние в стиле JetBrains",

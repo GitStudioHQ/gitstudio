@@ -49,6 +49,8 @@ export interface MergeCommandIds {
 export interface MergeViewTypes {
   /** The custom text editor (package.json `customEditors`). */
   mergeEditor: string;
+  /** The diff editor's editor-type picker entry that opens the comparison (package.json `customEditors`); optional. */
+  diffEditor?: string;
   /** The diff panel (restored after reload by a serializer). */
   diffView: string;
   /** The conflicts dashboard panel. */

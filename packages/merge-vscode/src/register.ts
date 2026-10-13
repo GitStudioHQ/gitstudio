@@ -31,6 +31,7 @@ import { openDemoMerge, SampleFileSystem } from "./demo";
 import { DiffCommands, DiffPanel } from "./diffPanel";
 import { ExitGuard } from "./exitGuard";
 import { closeMergeEditorTabs, createHostCore, type MergeHostCore } from "./host";
+import { DiffEditorProvider } from "./diffEditorProvider";
 import { MergeEditorProvider, saveConflictedDocuments } from "./mergeEditorProvider";
 import { continueRefusal, outcomeLine, verbConfirm, type OperationVerb } from "./outcome";
 import { statusItemLook, type MergePeerApi, type MergeProduct, type MergeRepo } from "./product";
@@ -219,6 +220,9 @@ export function registerMergeExperience(
     sample.disposable,
     MergeEditorProvider.register(host),
     DiffPanel.register(host),
+    ...[DiffEditorProvider.register(host)].filter(
+      (d): d is vscode.Disposable => d !== undefined,
+    ),
     registerDiffAutoRoute(host),
     dashboard,
     status,

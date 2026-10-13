@@ -211,6 +211,7 @@
  "config.gitstudio.statusBar.showTerminal.description": "顯示一個狀態列按鈕，開啟一個已位於活動儲存庫根目錄的終端 — 該目錄不一定是工作區根目錄。",
  "config.gitstudio.worktrees.prefixWithProjectName.description": "已不再使用：新建工作樹現在會在主工作樹旁邊建議資料夾“<project>-<branch>”，你可以在建立前編輯它。",
  "customEditor.gitstudio.mergeEditor.displayName": "GitStudio 三欄合併",
+  "customEditor.gitstudio.diffEditor.displayName": "GitStudio 差異",
  "customEditor.gitstudio.rebaseTodoEditor.displayName": "GitStudio 互動式變基",
  "description": "免費、開源的 VS Code 和 Cursor Git 圖形介面與提交圖。Git Studio 把 JetBrains 風格的 Git 工作流帶入編輯器 — 行內 blame、檔案歷史、區塊與行暫存、三欄合併、帶通用撤銷的互動式變基、儲藏/擱置、工作樹，以及在編輯器內的 GitHub PR。GitLens、GitKraken 與 Sourcetree 的免費替代品。",
  "displayName": "GitStudio — JetBrains 風格的 Git 圖、Blame 與合併",

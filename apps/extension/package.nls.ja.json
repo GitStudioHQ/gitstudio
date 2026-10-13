@@ -211,6 +211,7 @@
   "config.gitstudio.statusBar.showTerminal.description": "アクティブなリポジトリのルート（ワークスペースのルートとは限りません）で開くターミナルを起動するステータスバーのボタンを表示します。",
   "config.gitstudio.worktrees.prefixWithProjectName.description": "現在は使用されていません: 「新しいワークツリー」は、メインのワークツリーの横にフォルダー '<project>-<branch>' を提案するようになり、作成前に編集できます。",
   "customEditor.gitstudio.mergeEditor.displayName": "GitStudio 3ペインマージ",
+  "customEditor.gitstudio.diffEditor.displayName": "GitStudio 差分",
   "customEditor.gitstudio.rebaseTodoEditor.displayName": "GitStudio 対話型リベース",
   "description": "VS CodeとCursor向けの無料でオープンソースのGit GUI & コミットグラフ。GitStudioはJetBrainsスタイルのGitワークフローをエディターに持ち込みます — インラインblame、ファイル履歴、ハンク・行単位のステージ、3ペインマージ、どこでも使える「元に戻す」付きの対話型リベース、スタッシュ/シェルフ、ワークツリー、そしてエディター内のGitHub PR。GitLens、GitKraken、Sourcetreeの無料の代替です。",
   "displayName": "GitStudio — JetBrainsスタイルのGitグラフ、Blame、マージ",

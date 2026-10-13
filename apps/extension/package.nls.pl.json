@@ -211,6 +211,7 @@
  "config.gitstudio.statusBar.showTerminal.description": "Pokazuje przycisk na pasku stanu, który otwiera terminal już w katalogu głównym aktywnego repozytorium — który nie musi być katalogiem głównym obszaru roboczego.",
  "config.gitstudio.worktrees.prefixWithProjectName.description": "Już nieużywane: New Worktree teraz proponuje folder '<project>-<branch>' przy głównym worktree, i możesz go edytować przed utworzeniem.",
  "customEditor.gitstudio.mergeEditor.displayName": "GitStudio - scalanie 3-panelowe",
+  "customEditor.gitstudio.diffEditor.displayName": "GitStudio Diff",
  "customEditor.gitstudio.rebaseTodoEditor.displayName": "GitStudio - rebase interaktywny",
  "description": "Darmowy, open-source GUI do Gita i graf commitów dla VS Code i Cursor. GitStudio wprowadza do edytora workflow Git w stylu JetBrains — blame w linii, historia plików, staging fragmentów i linii, scalanie 3-panelowe, rebase interaktywny z uniwersalnym Undo, stash/shelf, worktree i PR-y GitHub w edytorze. Darmowa alternatywa dla GitLens, GitKraken i Sourcetree.",
  "displayName": "GitStudio — graf Git, blame i scalanie w stylu JetBrains",
