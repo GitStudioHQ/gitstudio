@@ -48,7 +48,7 @@ import {
 } from "./worktreesView";
 import * as l10n from "@vscode/l10n";
 import { l10nWebviewScript } from "@gitstudio/l10n/index";
-import { openWithoutRouting } from "@gitstudio/merge-vscode/ownDiffs";
+import { openDiff } from "../merge/diffPlaces";
 
 // The Worktrees view — a webview (it was a native tree that could show one
 // line per worktree and nothing else). Its page is packages/webview-ui's
@@ -620,16 +620,17 @@ export class WorktreesWebviewProvider implements vscode.WebviewViewProvider, vsc
     if (f.area === "staged") {
       const left = f.status === "A" ? { rev: EMPTY_TREE, path: f.path } : { rev: "HEAD", path: f.oldPath ?? f.path };
       const right = f.status === "D" ? { rev: EMPTY_TREE, path: f.path } : { rev: "", path: f.path };
-      await openSidesDiff(root, f.path, { left, right }, title(l10n.t("HEAD ↔ Index")));
+      await openSidesDiff(root, f.path, { left, right }, title(l10n.t("HEAD ↔ Index")), "worktrees");
       return;
     }
     const left = { rev: "", path: f.oldPath ?? f.path };
     const right = f.status === "D" ? { rev: EMPTY_TREE, path: f.path } : { rev: undefined };
-    await openWithoutRouting(
+    await openDiff(
       revisionSideUri(root, f.path, left),
       revisionSideUri(root, f.path, right),
       title(l10n.t("Index ↔ Working Tree")),
       { preview: true } satisfies vscode.TextDocumentShowOptions,
+      "worktrees",
     );
   }
 
@@ -640,7 +641,7 @@ export class WorktreesWebviewProvider implements vscode.WebviewViewProvider, vsc
     const first = parent && /^[0-9a-f]{40}([0-9a-f]{24})?$/.test(parent) ? parent : EMPTY_TREE;
     const sides = commitChangeSides({ sha, parent: first, path: f.path, oldPath: f.oldPath, status: f.status });
     const name = f.path.split("/").pop() ?? f.path;
-    await openSidesDiff(row.path, f.path, sides, `${name} (${sha.slice(0, 7)}) — ${row.name}`);
+    await openSidesDiff(row.path, f.path, sides, `${name} (${sha.slice(0, 7)}) — ${row.name}`, "worktrees");
   }
 
   // ── The page ──────────────────────────────────────────────────────────────

@@ -46,7 +46,8 @@ class EventEmitter<T> {
   }
 }
 const openDocs: { uri: FakeUri }[] = [];
-Object.assign(vscode, { Uri, EventEmitter, workspace: { textDocuments: openDocs } });
+// No settings: every diff place keeps its default (merge/diffPlaces.ts).
+Object.assign(vscode, { Uri, EventEmitter, workspace: { textDocuments: openDocs, getConfiguration: () => ({ get: () => undefined }) } });
 const diffs: { left: FakeUri; right: FakeUri; title: string; opts: unknown }[] = [];
 vscode.commands.executeCommand = async (id: string, ...a: unknown[]) => {
   assert.equal(id, "vscode.diff");

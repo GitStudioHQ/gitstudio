@@ -4,7 +4,7 @@ import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { touches } from "../git/repoChange";
 import { relativeTime } from "../util/relativeTime";
 import { isSamePathOrInside, relativeInside } from "../util/repoScope";
-import { historyChangeSides, OPEN_NATIVE_DIFF_COMMAND, revisionSideUri } from "./revisionContentProvider";
+import { historyChangeSides, OPEN_HISTORY_DIFF_COMMAND, revisionSideUri } from "./revisionContentProvider";
 import {
   createTimelineItem,
   type Timeline,
@@ -134,7 +134,7 @@ export class FileTimelineProvider implements TimelineProvider {
     const sides = historyChangeSides(e);
     item.command = {
       title: l10n.t("Open Changes"),
-      command: OPEN_NATIVE_DIFF_COMMAND,
+      command: OPEN_HISTORY_DIFF_COMMAND,
       arguments: [
         revisionSideUri(root, rel, sides.left),
         revisionSideUri(root, rel, sides.right),

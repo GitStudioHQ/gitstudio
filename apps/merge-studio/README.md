@@ -85,7 +85,8 @@ The dashboard opens the moment a merge, rebase, cherry-pick, revert, git am or s
 - Set `jbMerge.useAsDefaultDiffViewer` to `true` to use this viewer automatically
   for VS Code text diffs: Source Control changes, Explorer comparisons, history,
   and file or Git revision diffs other extensions open with `vscode.diff`.
-  Diffs GitStudio opens from its own views keep VS Code's diff editor.
+  With GitStudio installed, its `gitstudio.diff.comparisonIn` setting chooses
+  which of its views' diffs are redirected.
 - **Open Changes in Merge Studio** from a changed file's title bar, and **Stage Changes with Ticks** to stage it one change at a time.
 - The same ribbons and navigation as the merge editor, re-diffed live as you edit. With no decision to make, a diff colours a change by what it did: blue changed, green added, grey removed.
 
@@ -118,8 +119,9 @@ may briefly show its native tab before redirection; its stable extension API
 does not provide a custom diff-editor registration. Binary and custom-editor
 diffs stay native, and a diff that cannot be loaded keeps its native tab. So do
 diffs of other extensions' own documents (pull request reviews, AI edits), and
-diffs GitStudio opens from its own views (a GitStudio released together with
-this setting tells Merge Studio which those are).
+the diffs of GitStudio views unticked in its `gitstudio.diff.comparisonIn`
+setting, and of its pull requests; a GitStudio released together with this
+setting tells Merge Studio which those are.
 Read-only revision documents remain read-only. Unsaved source tabs are kept;
 editing a writable right side opens its text document in a background tab so
 normal Save, Save All and close prompts remain available. Turn the setting off

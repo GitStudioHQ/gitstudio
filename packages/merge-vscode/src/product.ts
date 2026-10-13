@@ -128,6 +128,12 @@ export interface MergePeerApi {
    * default-diff-viewer routing leaves it alone.
    */
   ownsDiff?(original: string, modified: string): boolean;
+  /**
+   * The diff of these two sides was just opened by this product's views as
+   * routable (the other product's default diff viewer should redirect it,
+   * over any earlier own open of them), and whether it was to take focus.
+   */
+  routableDiff?(original: string, modified: string): { focus: boolean } | undefined;
 }
 
 /** MergeProduct.sidesTip: an upgrader who saw the sides the other way round. */
@@ -281,6 +287,13 @@ export interface MergeProduct {
   compareSingle?(uri: vscode.Uri): Promise<void>;
   /** A conflict was resolved or an operation moved: refresh the product's own views. */
   onRepositoryChanged?(repo: MergeRepo): void;
+  /**
+   * The default diff viewer's reach over diffs that no product view opened
+   * (VS Code's own: Source Control, Explorer, Compare with Saved, Timeline;
+   * other extensions'). False: they keep VS Code's diff editor. Unset: they
+   * are redirected (Merge Studio). The product's own views mark their diffs.
+   */
+  routeOtherDiffs?(): boolean;
 }
 
 /**

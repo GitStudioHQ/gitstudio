@@ -3,7 +3,7 @@ import { afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import * as vscode from "vscode";
 import { registerDiffAutoRoute } from "../src/diffAutoRoute";
-import { markOwnDiff, openWithoutRouting, OWN_DIFF_MARK_MS } from "../src/ownDiffs";
+import { isOwnDiff, markOwnDiff, markRoutable, openRoutable, openWithoutRouting, OWN_DIFF_MARK_MS, routableIntent } from "../src/ownDiffs";
 import { ExitGuard } from "../src/exitGuard";
 import type { MergeHostCore } from "../src/host";
 import type { MergeProduct } from "../src/product";
@@ -11,7 +11,7 @@ import type { MergeProduct } from "../src/product";
 const subscriptions: vscode.Disposable[] = [];
 const notes: string[] = [];
 
-function host(key: MergeProduct["key"] = "merge-studio"): MergeHostCore {
+function host(key: MergeProduct["key"] = "merge-studio", extra: Partial<MergeProduct> = {}): MergeHostCore {
   const settingsSection = key === "merge-studio" ? "jbMerge" : "gitstudio.merge";
   return {
     context: { extensionUri: vscode.Uri.file("/ext") } as vscode.ExtensionContext,
@@ -19,6 +19,7 @@ function host(key: MergeProduct["key"] = "merge-studio"): MergeHostCore {
       key,
       settingsSection,
       viewTypes: { diffView: `${key}.diff` },
+      ...extra,
     } as MergeProduct,
     exitGuard: new ExitGuard(),
     settings: () => ({ autoOpen: false, autoApplyNonConflicting: false }),
@@ -74,8 +75,8 @@ function enable(key = "jbMerge"): void {
   stub.config[`${key}.useAsDefaultDiffViewer`] = true;
 }
 
-function register(key?: MergeProduct["key"]): void {
-  subscriptions.push(registerDiffAutoRoute(host(key)));
+function register(key?: MergeProduct["key"], extra?: Partial<MergeProduct>): void {
+  subscriptions.push(registerDiffAutoRoute(host(key, extra)));
 }
 
 beforeEach(() => { stub.reset(); notes.length = 0; });
@@ -696,4 +697,254 @@ test("an own tab stays its own after its mark lapses", async () => {
   stub.onDidChangeConfiguration.fire({ affectsConfiguration: () => true });
   await settle();
   assert.equal(stub.panels.length, 0);
+});
+
+// ── Routable opens (openRoutable: the Changes list, the graph, stashes) ──
+
+test("a routable open beats an own open of the same two sides: the own tab VS Code shows again is routed", async () => {
+  enable("gitstudio.merge");
+  register("gitstudio");
+  const original = vscode.Uri.parse("gitstudio-rev:///w/gone.txt?rev=");
+  const modified = vscode.Uri.parse("gitstudio-rev:///w/gone.txt?rev=4b825dc");
+  doc(original, "gone");
+  doc(modified, "");
+  // Worktrees opens it first, for VS Code's diff editor.
+  await openWithoutRouting(original, modified, "gone.txt (Index ↔ Working Tree)");
+  const shared = tab(original, modified, { preview: true });
+  stub.onDidChangeTabs.fire({ opened: [shared], changed: [shared], closed: [] });
+  await settle();
+  assert.equal(stub.panels.length, 0);
+  // Then the Changes list opens the same two sides, routable: VS Code shows that tab again.
+  await openRoutable(original, modified, "gone.txt (Deleted)", { preview: true });
+  stub.onDidChangeTabs.fire({ opened: [], changed: [shared], closed: [] });
+  await settle();
+  assert.equal(stub.panels.length, 1);
+  assert.deepEqual(stub.closedTabs, [shared]);
+});
+
+test("a routable open within an own mark's lifetime is routed (a new tab, the own one closed meanwhile)", async () => {
+  enable("gitstudio.merge");
+  register("gitstudio");
+  const original = vscode.Uri.parse("git:///w/fresh.ts?ref=~");
+  const modified = vscode.Uri.file("/w/fresh.ts");
+  doc(original, "index");
+  doc(modified, "working");
+  await openWithoutRouting(original, modified, "fresh.ts");
+  const first = tab(original, modified);
+  stub.onDidChangeTabs.fire({ opened: [first], changed: [], closed: [] });
+  await settle();
+  stub.tabGroupsAll = [];
+  await openRoutable(original, modified, "fresh.ts (Working Tree)", { preview: true });
+  const second = tab(original, modified, { preview: true });
+  stub.onDidChangeTabs.fire({ opened: [second], changed: [], closed: [] });
+  await settle();
+  assert.equal(stub.panels.length, 1);
+  assert.deepEqual(stub.closedTabs, [second]);
+});
+
+test("a routable open of the tab already in front is routed without a tab event", async () => {
+  enable("gitstudio.merge");
+  register("gitstudio");
+  const original = vscode.Uri.parse("gitstudio-rev:///w/front.ts?rev=HEAD");
+  const modified = vscode.Uri.file("/w/front.ts");
+  doc(original, "head");
+  doc(modified, "working");
+  await openWithoutRouting(original, modified, "front.ts");
+  const front = tab(original, modified);
+  stub.onDidChangeTabs.fire({ opened: [front], changed: [], closed: [] });
+  await settle();
+  await openRoutable(original, modified, "front.ts (HEAD ↔ Working Tree)", { preview: true });
+  await settle();
+  assert.equal(stub.panels.length, 1);
+});
+
+test("a routable open's focus intent decides focus: a click that moves focus hands it to the comparison, preserveFocus keeps it", async () => {
+  enable("gitstudio.merge");
+  register("gitstudio");
+  const open = async (name: string, options: vscode.TextDocumentShowOptions) => {
+    const original = vscode.Uri.parse(`git:///w/${name}?ref=~`);
+    const modified = vscode.Uri.file(`/w/${name}`);
+    doc(original, "index");
+    doc(modified, "working");
+    await openRoutable(original, modified, name, options);
+    const source = tab(original, modified, { preview: options.preview === true });
+    stub.onDidChangeTabs.fire({ opened: [source], changed: [], closed: [] });
+    await settle();
+  };
+  // The Changes list and the graph: a preview tab, focus moved (as VS Code's diff takes it).
+  await open("changes.ts", { preview: true });
+  assert.deepEqual(stub.panels.at(-1)?.showOptions, { viewColumn: 2, preserveFocus: false });
+  // A stash file: opened with preserveFocus, so the list keeps it.
+  await open("stash.ts", { preview: true, preserveFocus: true });
+  assert.deepEqual(stub.panels.at(-1)?.showOptions, { viewColumn: 2, preserveFocus: true });
+});
+
+test("Merge Studio redirects what GitStudio opened routable, over an own mark and an own tab", async () => {
+  enable();
+  const original = vscode.Uri.parse("git:///w/peer.ts?ref=~");
+  const modified = vscode.Uri.file("/w/peer.ts");
+  doc(original, "index");
+  doc(modified, "working");
+  let routableNow = false;
+  stub.extensions["gitstudio.gitstudio"] = {
+    isActive: true,
+    packageJSON: { contributes: { configuration: [{ properties: { "gitstudio.merge.useAsDefaultDiffViewer": {} } }] } },
+    exports: { mergePeer: {
+      ownsDiff: () => !routableNow,
+      routableDiff: () => (routableNow ? { focus: true } : undefined),
+    } },
+  };
+  register("merge-studio");
+  const shared = tab(original, modified, { preview: true });
+  stub.onDidChangeTabs.fire({ opened: [shared], changed: [shared], closed: [] });
+  await settle();
+  assert.equal(stub.panels.length, 0, "GitStudio's own diff stays native");
+  routableNow = true;
+  stub.onDidChangeTabs.fire({ opened: [], changed: [shared], closed: [] });
+  await settle();
+  assert.equal(stub.panels.length, 1);
+  assert.deepEqual(stub.panels[0].showOptions, { viewColumn: 2, preserveFocus: false });
+});
+
+test("the latest open of two sides decides: routable clears an own mark, own clears a routable one", async () => {
+  const original = vscode.Uri.parse("git:///w/latest.ts?ref=~");
+  const modified = vscode.Uri.file("/w/latest.ts");
+  const [o, m] = [original.toString(), modified.toString()];
+  await openWithoutRouting(original, modified);
+  assert.equal(isOwnDiff(o, m), true);
+  await openRoutable(original, modified, undefined, { preview: true });
+  assert.equal(isOwnDiff(o, m), false, "the peer's ownsDiff no longer claims it");
+  assert.deepEqual(routableIntent(o, m), { focus: true });
+  await openWithoutRouting(original, modified);
+  assert.equal(routableIntent(o, m), undefined);
+  assert.equal(isOwnDiff(o, m), true);
+});
+
+// ── Places: the product's reach over diffs no product view opened ──
+
+test("with the `vscode` place unticked, diffs VS Code opens keep its diff editor, while a product view's routable diff is redirected", async () => {
+  enable("gitstudio.merge");
+  let vscodePlace = false;
+  register("gitstudio", { routeOtherDiffs: () => vscodePlace });
+  const scmOriginal = vscode.Uri.parse("git:///w/scm.ts?ref=~");
+  const scmModified = vscode.Uri.file("/w/scm.ts");
+  doc(scmOriginal, "index");
+  doc(scmModified, "working");
+  const scm = tab(scmOriginal, scmModified, { preview: true });
+  stub.onDidChangeTabs.fire({ opened: [scm], changed: [], closed: [] });
+  await settle();
+  assert.equal(stub.panels.length, 0, "Source Control's diff stays in VS Code's diff editor");
+  const gsOriginal = vscode.Uri.parse("gitstudio-rev:///w/graph.ts?rev=HEAD");
+  const gsModified = vscode.Uri.file("/w/graph.ts");
+  doc(gsOriginal, "head");
+  doc(gsModified, "working");
+  stub.tabGroupsAll = [];
+  await openRoutable(gsOriginal, gsModified, "graph.ts (HEAD ↔ Working Tree)", { preview: true });
+  const graph = tab(gsOriginal, gsModified, { preview: true });
+  stub.onDidChangeTabs.fire({ opened: [graph], changed: [], closed: [] });
+  await settle();
+  assert.equal(stub.panels.length, 1, "the graph's diff is redirected");
+  // Ticking the place again redirects the next one (and rescans).
+  vscodePlace = true;
+  stub.tabGroupsAll = [];
+  const again = tab(scmOriginal, scmModified, { preview: true });
+  stub.onDidChangeConfiguration.fire({ affectsConfiguration: (k: string) => k === "gitstudio.diff.comparisonIn" });
+  await settle();
+  assert.equal(stub.panels.length, 2);
+  assert.ok(again);
+});
+
+test("a routable tab opened behind another is still routable when brought forward after its mark lapsed, with its focus intent", async () => {
+  enable("gitstudio.merge");
+  register("gitstudio", { routeOtherDiffs: () => false });
+  const original = vscode.Uri.parse("gitstudio-rev:///w/later.ts?rev=HEAD");
+  const modified = vscode.Uri.file("/w/later.ts");
+  doc(original, "head");
+  doc(modified, "working");
+  markRoutable(original, modified, true, Date.now() - OWN_DIFF_MARK_MS + 40);
+  const behind = tab(original, modified, { active: false, groupActive: true });
+  stub.onDidChangeTabs.fire({ opened: [behind], changed: [], closed: [] });
+  await settle();
+  assert.equal(stub.panels.length, 0, "not in front: not yet");
+  await new Promise((resolve) => setTimeout(resolve, 80)); // the mark lapses
+  behind.isActive = true;
+  stub.onDidChangeTabs.fire({ opened: [], changed: [behind], closed: [] });
+  await settle();
+  assert.equal(stub.panels.length, 1, "not mistaken for a diff VS Code opened (that place is unticked)");
+  assert.deepEqual(stub.panels[0].showOptions, { viewColumn: 2, preserveFocus: false });
+});
+
+test("on a tab both kinds of opener showed, the latest open decides, even after the marks lapsed", async () => {
+  register("gitstudio", { routeOtherDiffs: () => true });
+  const original = vscode.Uri.parse("gitstudio-rev:///w/both.ts?rev=HEAD");
+  const modified = vscode.Uri.file("/w/both.ts");
+  doc(original, "head");
+  doc(modified, "working");
+  // With the setting off: the graph opens it routable, then blame opens the same two sides for VS Code's diff editor.
+  markRoutable(original, modified, true, Date.now() - OWN_DIFF_MARK_MS + 40);
+  const shared = tab(original, modified);
+  stub.onDidChangeTabs.fire({ opened: [shared], changed: [], closed: [] });
+  markOwnDiff(original, modified, Date.now() - OWN_DIFF_MARK_MS + 40);
+  stub.onDidChangeTabs.fire({ opened: [], changed: [shared], closed: [] });
+  await settle();
+  await new Promise((resolve) => setTimeout(resolve, 80)); // both marks lapse
+  enable("gitstudio.merge");
+  stub.onDidChangeConfiguration.fire({ affectsConfiguration: () => true });
+  await settle();
+  assert.equal(stub.panels.length, 0, "blame's open was the last: VS Code's diff editor stays");
+});
+
+test("…and the other way round: an own tab a routable open showed last is routed once the setting is on", async () => {
+  register("gitstudio", { routeOtherDiffs: () => false });
+  const original = vscode.Uri.parse("gitstudio-rev:///w/flip.ts?rev=HEAD");
+  const modified = vscode.Uri.file("/w/flip.ts");
+  doc(original, "head");
+  doc(modified, "working");
+  markOwnDiff(original, modified, Date.now() - OWN_DIFF_MARK_MS + 40);
+  const shared = tab(original, modified);
+  stub.onDidChangeTabs.fire({ opened: [shared], changed: [], closed: [] });
+  markRoutable(original, modified, true, Date.now() - OWN_DIFF_MARK_MS + 40);
+  stub.onDidChangeTabs.fire({ opened: [], changed: [shared], closed: [] });
+  await settle();
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  enable("gitstudio.merge");
+  stub.onDidChangeConfiguration.fire({ affectsConfiguration: () => true });
+  await settle();
+  assert.equal(stub.panels.length, 1);
+});
+
+test("a comparison that is to take focus takes it again once its page is ready (a page still loading cannot hold it)", async () => {
+  enable("gitstudio.merge");
+  register("gitstudio");
+  const original = vscode.Uri.parse("gitstudio-rev:///w/focus.ts?rev=HEAD");
+  const modified = vscode.Uri.file("/w/focus.ts");
+  doc(original, "head");
+  doc(modified, "working");
+  await openRoutable(original, modified, "focus.ts", { preview: true });
+  const source = tab(original, modified, { preview: true });
+  stub.onDidChangeTabs.fire({ opened: [source], changed: [], closed: [] });
+  await settle();
+  assert.deepEqual(stub.panels[0].showOptions, { viewColumn: 2, preserveFocus: false });
+  ready();
+  await settle();
+  assert.deepEqual(stub.panels[0].revealed, [[2, false]]);
+  ready(); // a reload of the page does not pull focus again
+  await settle();
+  assert.equal(stub.panels[0].revealed.length, 1);
+});
+
+test("one that keeps focus where it was does not take it when ready", async () => {
+  enable("gitstudio.merge");
+  register("gitstudio");
+  const original = vscode.Uri.parse("gitstudio-rev:///w/keep.ts?rev=HEAD");
+  const modified = vscode.Uri.file("/w/keep.ts");
+  doc(original, "head");
+  doc(modified, "working");
+  await openRoutable(original, modified, "keep.ts", { preview: true, preserveFocus: true });
+  const source = tab(original, modified, { preview: true });
+  stub.onDidChangeTabs.fire({ opened: [source], changed: [], closed: [] });
+  await settle();
+  ready();
+  await settle();
+  assert.deepEqual(stub.panels[0].revealed, []);
 });

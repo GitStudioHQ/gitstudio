@@ -4,6 +4,32 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Choose where the comparison opens.** With
+  `gitstudio.merge.useAsDefaultDiffViewer` on, the new
+  `gitstudio.diff.comparisonIn` setting (a checkbox per place in Settings)
+  says where GitStudio's comparison replaces VS Code's diff editor: `vscode`
+  (Source Control, Explorer comparisons, Compare with Saved, the Timeline and
+  other extensions' diffs) and each of GitStudio's views: the Changes list,
+  the Commit Graph, stashes, history, blame, compare, worktrees and the push
+  review. Every place is ticked, so turning the setting on still means
+  everywhere; untick `changes`, for instance, to keep VS Code's diff editor
+  and its selective-staging menu for the Changes list. A diff opened from a
+  GitStudio view takes keyboard focus in the comparison as it would in VS
+  Code's diff editor. Pull request diffs always open in VS Code's diff
+  editor, where their review threads are.
+
+### Changed
+- **The default diff viewer reaches GitStudio's own views.** With
+  `gitstudio.merge.useAsDefaultDiffViewer` on, the Changes list, the Commit
+  Graph and stash files open in the comparison too; in 1.19.0 every diff
+  GitStudio opened kept VS Code's diff editor
+  ([#101](https://github.com/GitStudioHQ/gitstudio/issues/101),
+  [#102](https://github.com/GitStudioHQ/gitstudio/pull/102); thanks,
+  @billdwhite).
+
 ## [1.19.0] - 2026-10-12
 
 ### Added

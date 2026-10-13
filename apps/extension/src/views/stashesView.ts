@@ -19,7 +19,7 @@ import { EMPTY_TREE, toRevisionUri } from "../history/revisionContentProvider";
 import { relativeTime } from "../util/relativeTime";
 import { failed, notice, NO_REPOSITORY } from "../ui/notify";
 import * as l10n from "@vscode/l10n";
-import { openRoutable } from "@gitstudio/merge-vscode/ownDiffs";
+import { openDiff } from "../merge/diffPlaces";
 
 // The stash OPERATIONS — save, apply, pop, drop, create branch, copy or move
 // some of a stash's files to Changes, open a file's diff — for the Stashes
@@ -928,11 +928,12 @@ export async function openStashFile(
     return true;
   }
   const { left, right, title } = stashFileSides(entry, file, staged || file.onlyStaged === true);
-  await openRoutable(
+  await openDiff(
     toRevisionUri(a.root, left.rev, path, left.path),
     toRevisionUri(a.root, right.rev, path, right.path),
     `${name} (${title})`,
     { preview: true, preserveFocus: true } satisfies vscode.TextDocumentShowOptions,
+    "stashes",
   );
   return true;
 }
