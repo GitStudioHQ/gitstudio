@@ -14,7 +14,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import "./changesHost";
 
 /* eslint-disable @typescript-eslint/no-require-imports -- the stand-in is in place (changesHost) */
@@ -122,7 +122,8 @@ function sources(): string[] {
     for (const name of readdirSync(dir)) {
       const p = join(dir, name);
       if (statSync(p).isDirectory()) walk(p);
-      else if (p.endsWith(".ts")) files.push(p.slice(srcDir.length + 1));
+      // "/"-separated on every OS: Windows gives "graph\\graphPanel.ts".
+      else if (p.endsWith(".ts")) files.push(p.slice(srcDir.length + 1).split(sep).join("/"));
     }
   };
   walk(srcDir);
