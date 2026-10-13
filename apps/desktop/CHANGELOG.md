@@ -9,6 +9,15 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [2.6.1] - 2026-10-13
+
+### Fixed
+- **The commit menu fits the window.** Near the bottom of a short window, the
+  graph's commit and branch-chip menus ran past the edge with no way to reach
+  their last items. They now open upward when there is no room below, scroll
+  when they are taller than the window, and close when you switch to another
+  app ([#103](https://github.com/GitStudioHQ/gitstudio/issues/103)).
+
 ## [2.6.0] - 2026-10-12
 
 ### Added

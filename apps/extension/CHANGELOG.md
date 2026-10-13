@@ -4,7 +4,7 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.20.0] - 2026-10-13
 
 ### Added
 - **Choose where the comparison opens.** With
@@ -29,6 +29,18 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   ([#101](https://github.com/GitStudioHQ/gitstudio/issues/101),
   [#102](https://github.com/GitStudioHQ/gitstudio/pull/102); thanks,
   @billdwhite).
+
+### Fixed
+- **Right-click menus close when you click elsewhere, and fit the view.** In
+  the Commit Graph, the Commits view and Worktrees, a menu stayed open after a
+  click outside GitStudio, and in a short panel it ran past the bottom with no
+  way to reach its last items. It now closes on a click anywhere else, opens
+  upward when there is no room below, and scrolls when it is taller than the
+  view ([#103](https://github.com/GitStudioHQ/gitstudio/issues/103)).
+- **A diff opened from one view right after another follows the setting.**
+  Opening a file from Worktrees, then the same file from the Changes list,
+  kept VS Code's diff editor for a few seconds even where the comparison was
+  chosen.
 
 ## [1.19.0] - 2026-10-12
 
