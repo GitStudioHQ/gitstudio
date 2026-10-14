@@ -83,6 +83,12 @@ class TabInputTextDiff {
     this.modified = modified;
   }
 }
+class TabInputCustom {
+  constructor(uri, viewType) {
+    this.uri = uri;
+    this.viewType = viewType;
+  }
+}
 class RelativePattern {
   constructor(base, pattern) {
     this.base = base;
@@ -380,6 +386,7 @@ module.exports = {
   EventEmitter,
   Uri,
   TabInputTextDiff,
+  TabInputCustom,
   ThemeColor,
   RelativePattern,
   Position,
