@@ -213,14 +213,64 @@ test("a file outside every repository, or not on disk, or too long to blame, get
 test("a blame git cannot run is logged, and the line is left bare", async () => {
   const s = setup();
   const logged: string[] = [];
-  const e = editor(doc(join(s.r.dir, "never-committed.txt"), { text: "x\n" }), 0);
-  e.document.isDirty = false;
+  const blame = s.r.ctx.blame as unknown as { blameFile: (...a: unknown[]) => Promise<unknown> };
+  blame.blameFile = () => Promise.reject(new Error("git blame failed for f.txt (exit 128): fatal: bad object"));
+  const e = editor(doc(s.file), 0);
   focus(e);
   const ui = start(s, (m) => logged.push(m));
   await kit.until(() => logged.length, "logged");
-  assert.match(logged[0], /^blame failed for never-committed\.txt: /);
+  assert.match(logged[0], /^blame failed for f\.txt: /);
   await kit.until(() => e.painted.has(ui.inline.id), "cleared");
   assert.deepEqual(e.painted.get(ui.inline.id), []);
+});
+
+test("a file not in HEAD is blamed once, quietly — not on every edit — until a commit adds it (#115)", async () => {
+  const s = setup();
+  const logged: string[] = [];
+  const blame = s.r.ctx.blame as unknown as { blameFile: (...a: unknown[]) => Promise<unknown> };
+  const real = blame.blameFile.bind(blame);
+  let asked = 0;
+  blame.blameFile = (...a: unknown[]) => {
+    asked++;
+    return real(...a);
+  };
+  const path = join(s.r.dir, "never-committed.txt");
+  s.r.write("never-committed.txt", "x\n");
+  let d = doc(path, { text: "x\n" });
+  const e = editor(d, 0);
+  focus(e);
+  const ui = start(s, (m) => logged.push(m));
+  await kit.until(() => asked === 1 && e.painted.has(ui.inline.id), "the first look");
+  // Typing: every edit is a new version, and each moves the caret.
+  for (let v = 2; v <= 6; v++) {
+    d = doc(path, { text: "x".repeat(v) + "\n" });
+    d.version = v;
+    e.document = d;
+    kit.editorEvents.docChanged.fire({ document: d });
+    kit.editorEvents.selection.fire({ textEditor: e, kind: 1, selections: [e.selection] });
+    // The hover asks too.
+    await ui.c.getBlame(d as never, s.entry as never);
+  }
+  // Let the caret's debounced re-render run.
+  e.painted.delete(ui.inline.id);
+  e.selection = new kit.Selection(new kit.Position(0, 1), new kit.Position(0, 1));
+  kit.editorEvents.selection.fire({ textEditor: e, kind: 1, selections: [e.selection] });
+  await kit.until(() => e.painted.has(ui.inline.id), "re-rendered");
+  assert.equal(asked, 1, "git blame is not asked again for a file it said is not in HEAD");
+  assert.deepEqual(logged, [], "and nothing is logged: an untracked file is not a failure");
+  assert.deepEqual(e.painted.get(ui.inline.id), []);
+
+  // A commit adds it: the next look blames it.
+  commitAt(s.r, "never-committed.txt", "x\n", "add it", "2022-01-01T00:00:00Z", "Grace Hopper <g@h.i>");
+  s.repos.fire(repoChange(["refs"]));
+  d = doc(path);
+  d.version = 7;
+  e.document = d;
+  e.selection = new kit.Selection(new kit.Position(0, 0), new kit.Position(0, 0));
+  kit.editorEvents.selection.fire({ textEditor: e, kind: 1, selections: [e.selection] });
+  await kit.until(() => /Grace Hopper/.test(ui.bar.text), "blamed after the commit");
+  assert.equal(asked, 2);
+  assert.deepEqual(logged, []);
 });
 
 test("a commit elsewhere drops the cached blame and repaints the line", async () => {
