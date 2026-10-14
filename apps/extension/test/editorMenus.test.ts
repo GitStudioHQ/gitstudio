@@ -228,7 +228,7 @@ test("every submenu a menu names is declared, and every declared one is used", (
   assert.deepEqual([...declared].filter((id) => !used.has(id)), []);
 });
 
-// Issue #111: a revision opened from a file's history — Open File at Revision,
+// Issue #111: a revision opened from a file's history — Show File History,
 // Line History — finds its commit in the Commit Graph from the
 // editor's title bar and its GitStudio menu. Only there: a working file is no commit.
 test("Show Commit in Graph sits on a revision's title bar and GitStudio menu, nowhere else", () => {

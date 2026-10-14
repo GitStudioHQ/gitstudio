@@ -69,7 +69,7 @@
   "command.gitstudio.merge.restoreBuiltInMergeEditor.title": "VS Codeのマージエディターを復元",
   "command.gitstudio.openChanges.title": "変更を開く (vs HEAD)",
   "command.gitstudio.openDiff.title": "埋め込み差分で開く",
-  "command.gitstudio.openFileAtRevision.title": "指定リビジョンのファイルを開く…",
+  "command.gitstudio.openFileAtRevision.title": "ファイルの履歴を表示",
   "command.gitstudio.openTerminal.title": "リポジトリのルートでターミナルを開く",
   "command.gitstudio.openWalkthrough.title": "はじめに",
   "command.gitstudio.operation.abort.title": "操作を中止",

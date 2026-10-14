@@ -8,7 +8,7 @@ import { fromGitUriQuery, revOfGitRef } from "../changes/nativeDiffSides";
 
 /**
  * "Show in Commit Graph" — finding a commit you are looking at from a file's
- * history (issue #111): a row of Open File at Revision or Line History, a
+ * history (issue #111): a row of Show File History or Line History, a
  * revision opened in an editor.
  *
  * Every one of them ends in `gitstudio.revealCommitInGraph` with a FULL sha:
@@ -17,7 +17,7 @@ import { fromGitUriQuery, revOfGitRef } from "../changes/nativeDiffSides";
  * pages down to a commit older than what it has loaded.
  */
 
-/** The row button that reveals the row's commit (Open File at Revision, Line History). */
+/** The row button that reveals the row's commit (Show File History, Line History). */
 export const SHOW_IN_GRAPH_BUTTON = "showInGraph";
 
 export function showInGraphButton(): DialogChoiceButton {

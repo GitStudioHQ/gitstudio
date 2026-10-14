@@ -1,4 +1,4 @@
-// A pick row's own buttons (issue #111): Open File at Revision and Line
+// A pick row's own buttons (issue #111): Show File History and Line
 // History pick a commit to diff it, and each row also carries "Show in Commit
 // Graph". Run in headless Chrome from the shipped template (changesViewPage.ts).
 //
@@ -19,7 +19,7 @@ const skip = !CHROME && "no headless Chrome on this machine (set GS_CHROME)";
 
 const spec = {
   kind: "pick",
-  title: "Open f.txt at Revision",
+  title: "File History — f.txt",
   hint: "Pick a revision to diff against your working tree.",
   filter: false,
   choices: ["v3", "v2", "v1"].map((label, i) => ({

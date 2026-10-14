@@ -69,7 +69,7 @@
   "command.gitstudio.merge.restoreBuiltInMergeEditor.title": "VS Code'un Birleştirme Düzenleyicisini Geri Yükle",
   "command.gitstudio.openChanges.title": "Değişiklikleri Aç (HEAD'e karşı)",
   "command.gitstudio.openDiff.title": "Gömülü Farkta Aç",
-  "command.gitstudio.openFileAtRevision.title": "Dosyayı Revizyonda Aç…",
+  "command.gitstudio.openFileAtRevision.title": "Dosya Geçmişini Göster",
   "command.gitstudio.openTerminal.title": "Depo Kökünde Terminal Aç",
   "command.gitstudio.openWalkthrough.title": "Başlayın",
   "command.gitstudio.operation.abort.title": "İşlemi İptal Et",

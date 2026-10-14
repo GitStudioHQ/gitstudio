@@ -69,7 +69,7 @@
   "command.gitstudio.merge.restoreBuiltInMergeEditor.title": "恢复 VS Code 的合并编辑器",
   "command.gitstudio.openChanges.title": "打开更改（相对 HEAD）",
   "command.gitstudio.openDiff.title": "在内嵌差异中打开",
-  "command.gitstudio.openFileAtRevision.title": "在修订版本处打开文件…",
+  "command.gitstudio.openFileAtRevision.title": "显示文件历史",
   "command.gitstudio.openTerminal.title": "在仓库根目录打开终端",
   "command.gitstudio.openWalkthrough.title": "开始使用",
   "command.gitstudio.operation.abort.title": "中止操作",

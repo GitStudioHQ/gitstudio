@@ -5,7 +5,7 @@
 //  · resolveActiveFile: the active editor's file → its (innermost) repository;
 //  · FileTimelineProvider: the Timeline's pages of a file's commits, a rename
 //    read under the old name, a refresh only when commits can have changed;
-//  · RevisionNavigator: Open Changes, Open File at Revision, Back / Forward
+//  · RevisionNavigator: Open Changes, Show File History, Back / Forward
 //    through a file's history (from the working file or a revision diff);
 //  · showLineHistory: the commits that touched the selected lines;
 //  · showReflog: every position HEAD held, and a branch made at one of them;
@@ -417,7 +417,7 @@ test("Open Changes diffs HEAD against the working file", async () => {
   nav.dispose();
 });
 
-test("Open File at Revision offers the file's history and opens the picked commit's change", async () => {
+test("Show File History offers the file's history and opens the picked commit's change", async () => {
   const f = fixture();
   const [s3, s2] = threeCommits(f);
   const nav = new RevisionNavigator(f.repos);
@@ -426,7 +426,7 @@ test("Open File at Revision offers the file's history and opens the picked commi
   answer = (spec) => (spec.kind === "pick" ? spec.choices[1].id : undefined);
   await nav.openFileAtRevision();
   const pick = asked[0];
-  assert.equal(pick?.title, "Open f.txt at Revision");
+  assert.equal(pick?.title, "File History — f.txt");
   assert.ok(pick.kind === "pick");
   assert.deepEqual(pick.choices.map((c) => c.detail), [s3, s2].map((s) => s.slice(0, 7)).concat(pick.choices[2].detail!));
   assert.equal(diffs.length, 1);
@@ -445,7 +445,7 @@ test("Open File at Revision offers the file's history and opens the picked commi
   assert.equal(diffs.length, 2, "dismissed, or a choice that isn't there: nothing opens");
 });
 
-test("Open File at Revision: a file with no history, or history git can't read, says so", async () => {
+test("Show File History: a file with no history, or history git can't read, says so", async () => {
   const f = fixture();
   threeCommits(f);
   writeFileSync(join(f.dir, "new.txt"), "untracked\n");
@@ -586,7 +586,7 @@ test("Line History: no lines' history, a git error, or no file — each says so 
 
 // ── Show in Commit Graph (issue #111) ────────────────────────────────────────
 
-test("Open File at Revision: each row's Show in Commit Graph reveals that commit, by its full sha, and opens nothing", async () => {
+test("Show File History: each row's Show in Commit Graph reveals that commit, by its full sha, and opens nothing", async () => {
   const f = fixture();
   const [, s2] = threeCommits(f);
   const nav = new RevisionNavigator(f.repos);

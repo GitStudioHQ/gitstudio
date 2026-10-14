@@ -206,7 +206,7 @@ async function pickRevision(
 ): Promise<{ entry: FileHistoryEntry; index: number; button?: string } | undefined> {
   const graph = showInGraphButton();
   const picked = await promptPickWithButtons({
-    title: l10n.t("Open {0} at Revision", fileName),
+    title: l10n.t("File History — {0}", fileName),
     hint: l10n.t("Pick a revision to diff against your working tree."),
     choices: history.map((e, index) => ({
       id: String(index),

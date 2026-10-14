@@ -54,7 +54,7 @@ export function nativeDiffSides(
  *
  * GitStudio's history commands decode a diff side to find the file and the
  * revision on screen; they read only `gitstudio-rev:`, so once the Changes list
- * opened diffs on vscode.git's URIs, Open File at Revision and Previous/Next
+ * opened diffs on vscode.git's URIs, Show File History and Previous/Next
  * Revision answered "Open a file in a Git repository first" there.
  */
 export function fromGitUriQuery(query: string): { path: string; ref: string } | undefined {

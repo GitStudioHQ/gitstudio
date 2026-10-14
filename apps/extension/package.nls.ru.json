@@ -69,7 +69,7 @@
   "command.gitstudio.merge.restoreBuiltInMergeEditor.title": "Восстановить встроенный редактор слияния VS Code",
   "command.gitstudio.openChanges.title": "Открыть изменения (относительно HEAD)",
   "command.gitstudio.openDiff.title": "Открыть во встроенных различиях",
-  "command.gitstudio.openFileAtRevision.title": "Открыть файл в ревизии…",
+  "command.gitstudio.openFileAtRevision.title": "Показать историю файла",
   "command.gitstudio.openTerminal.title": "Открыть терминал в корне репозитория",
   "command.gitstudio.openWalkthrough.title": "Начало работы",
   "command.gitstudio.operation.abort.title": "Прервать операцию",

@@ -90,7 +90,7 @@ The lanes, chips and avatars follow your theme — the same graph in Light Moder
 
 <p align="center"><img src="media/shots/blame.png" alt="Full-file blame on src/build.ts: each line's date and author in a gutter tinted by age, the newest lines warmest, and the current line's inline blame, Priya Raman, 9d, fix(cache): cached pages keep their titles, repeated in the status bar."></p>
 
-**History at three depths.** Per-file history, **line history** (blame-over-time for the code under your cursor, `Ctrl/Cmd+Alt+G H`), and revision navigation that steps a file backward and forward through its versions. Any commit in a file's or a selection's history is one click from its place in the Commit Graph (**Show in Commit Graph**). When something goes truly wrong, **Show Reflog (Time Machine)** lists every place HEAD has been — so lost commits are recoverable, not gone.
+**History at three depths.** Per-file history (**Show File History**), **line history** (blame-over-time for the code under your cursor, `Ctrl/Cmd+Alt+G H`), and revision navigation that steps a file backward and forward through its versions. Any commit in a file's or a selection's history is one click from its place in the Commit Graph (**Show in Commit Graph**). When something goes truly wrong, **Show Reflog (Time Machine)** lists every place HEAD has been — so lost commits are recoverable, not gone.
 
 <p align="center"><img src="media/shots/line-history.png" alt="Line History for lines 19 to 23 of src/build.ts, opened with Cmd+Alt+G H on a selection: the four commits that shaped those lines, newest first, each with its author, age and short SHA, ready to diff against its parent."></p>
 

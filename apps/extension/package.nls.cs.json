@@ -69,7 +69,7 @@
   "command.gitstudio.merge.restoreBuiltInMergeEditor.title": "Obnovit vestavěný editor sloučení VS Code",
   "command.gitstudio.openChanges.title": "Otevřít změny (vs HEAD)",
   "command.gitstudio.openDiff.title": "Otevřít ve vloženém diffu",
-  "command.gitstudio.openFileAtRevision.title": "Otevřít soubor v revizi…",
+  "command.gitstudio.openFileAtRevision.title": "Zobrazit historii souboru",
   "command.gitstudio.openTerminal.title": "Otevřít terminál v kořeni repozitáře",
   "command.gitstudio.openWalkthrough.title": "Začínáme",
   "command.gitstudio.operation.abort.title": "Zrušit operaci",
