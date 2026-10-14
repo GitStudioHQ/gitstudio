@@ -35,6 +35,22 @@ export interface DialogChoice {
   danger?: boolean;
   /** Initial checkbox state (multi-select only). */
   picked?: boolean;
+  /**
+   * Icon buttons at the row's end (single pick only) — a second thing to do
+   * with the row than what picking it does, like "Show in Commit Graph" on a
+   * commit whose pick opens a diff. Pressing one answers the dialog with the
+   * row's id AND the button's id (DialogResult.button).
+   */
+  buttons?: DialogChoiceButton[];
+}
+
+/** An icon button on a pick row (see DialogChoice.buttons). */
+export interface DialogChoiceButton {
+  id: string;
+  /** Codicon name without the `codicon-` prefix. */
+  icon: string;
+  /** The tooltip and the accessible name. */
+  title: string;
 }
 
 /** A completion candidate for an input dialog. */
@@ -135,6 +151,8 @@ export interface DialogResult {
   value?: string | string[];
   /** A pick's or a confirm's checked options, by id. */
   options?: string[];
+  /** A pick answered by a row's button, not the row: that button's id. */
+  button?: string;
 }
 
 /**
@@ -208,6 +226,25 @@ export async function promptPick(
   const r = await run({ ...spec, kind: "pick" });
   const v = r?.value;
   return typeof v === "string" ? v : undefined;
+}
+
+/**
+ * Ask the user to choose one option, where a row may carry buttons (see
+ * DialogChoice.buttons). Answers the row's id, and the button's id when one
+ * was pressed instead of the row; undefined when dismissed.
+ */
+export async function promptPickWithButtons(
+  spec: Omit<PickSpec, "kind">,
+): Promise<{ id: string; button?: string } | undefined> {
+  if (spec.choices.length === 0) {
+    return undefined;
+  }
+  const r = await run({ ...spec, kind: "pick" });
+  const v = r?.value;
+  if (typeof v !== "string") {
+    return undefined;
+  }
+  return typeof r?.button === "string" ? { id: v, button: r.button } : { id: v };
 }
 
 /**

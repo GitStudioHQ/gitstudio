@@ -68,6 +68,7 @@ test("the editor's right-click menu has one GitStudio entry, and its staging ite
   assert.deepEqual(items.map((i) => i.command), [
     "gitstudio.showLineHistory",
     "gitstudio.openFileAtRevision",
+    "gitstudio.revealCommitInGraph",
     "gitstudio.stageSelectedLines",
     "gitstudio.unstageSelectedLines",
     "gitstudio.stageHunk",
@@ -225,4 +226,22 @@ test("every submenu a menu names is declared, and every declared one is used", (
   }
   assert.deepEqual([...used].filter((id) => !declared.has(id)), []);
   assert.deepEqual([...declared].filter((id) => !used.has(id)), []);
+});
+
+// Issue #111: a revision opened from a file's history — Open File at Revision,
+// Line History — finds its commit in the Commit Graph from the
+// editor's title bar and its GitStudio menu. Only there: a working file is no commit.
+test("Show Commit in Graph sits on a revision's title bar and GitStudio menu, nowhere else", () => {
+  const cmd = gs.contributes.commands.find((c) => c.command === "gitstudio.revealCommitInGraph") as { icon?: string } | undefined;
+  assert.ok(cmd?.icon, "a title-bar button needs an icon");
+  const title = gs.contributes.menus["editor/title"].find((i) => i.command === "gitstudio.revealCommitInGraph");
+  const menu = gs.contributes.menus["gitstudio.editorMenu"].find((i) => i.command === "gitstudio.revealCommitInGraph");
+  assert.ok(title && menu);
+  assert.match(title.group ?? "", /^navigation/);
+  const revision: WhenContext = { ...COMMON, resourceScheme: "gitstudio-rev", isInDiffEditor: true };
+  const working: WhenContext = { ...COMMON, resourceScheme: "file", scmActiveResourceHasChanges: true };
+  assert.equal(evalWhen(title.when, revision), true, "a history diff's title bar");
+  assert.equal(evalWhen(menu.when, revision), true, "its GitStudio menu");
+  assert.equal(evalWhen(title.when, working), false, "not a working file's");
+  assert.equal(evalWhen(menu.when, working), false);
 });

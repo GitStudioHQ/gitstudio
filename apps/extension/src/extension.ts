@@ -52,6 +52,7 @@ import {
   REVISION_SCHEME,
 } from "./history/revisionContentProvider";
 import { FileTimelineProvider } from "./history/fileTimelineProvider";
+import { commitToReveal } from "./history/revealInGraph";
 import { registerTimelineProvider } from "./history/timelineApi";
 import { showLineHistory } from "./history/lineHistory";
 import { RevisionNavigator } from "./history/revisionNavigation";
@@ -254,8 +255,11 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
         commitPanel,
         { webviewOptions: { retainContextWhenHidden: true } },
       ),
-      vscode.commands.registerCommand("gitstudio.revealCommitInGraph", (sha?: string) => {
-        if (typeof sha === "string" && sha) {
+      // A sha (blame, the graph's links, a history row), or — from an editor's
+      // title bar or the palette — the commit that editor shows (issue #111).
+      vscode.commands.registerCommand("gitstudio.revealCommitInGraph", async (arg?: unknown) => {
+        const sha = await commitToReveal(repos, arg);
+        if (sha) {
           void commitPanel.reveal(sha);
         }
       }),

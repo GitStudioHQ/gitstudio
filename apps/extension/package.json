@@ -917,7 +917,8 @@
       {
         "command": "gitstudio.revealCommitInGraph",
         "title": "%command.gitstudio.revealCommitInGraph.title%",
-        "category": "GitStudio"
+        "category": "GitStudio",
+        "icon": "$(git-commit)"
       },
       {
         "command": "gitstudio.blame.copyRevision",
@@ -1659,6 +1660,11 @@
           "command": "gitstudio.stageWithTicks",
           "when": "gitstudio.hasRepo && resourceScheme == file && scmActiveResourceHasChanges && !isInDiffEditor && activeCustomEditorId != 'gitstudio.mergeEditor'",
           "group": "navigation@9"
+        },
+        {
+          "command": "gitstudio.revealCommitInGraph",
+          "when": "gitstudio.hasRepo && resourceScheme == gitstudio-rev",
+          "group": "navigation@-1"
         }
       ],
       "scm/resourceGroup/context": [
@@ -1712,6 +1718,11 @@
         {
           "command": "gitstudio.openFileAtRevision",
           "group": "1_history@2"
+        },
+        {
+          "command": "gitstudio.revealCommitInGraph",
+          "when": "resourceScheme == gitstudio-rev",
+          "group": "1_history@3"
         },
         {
           "command": "gitstudio.stageSelectedLines",

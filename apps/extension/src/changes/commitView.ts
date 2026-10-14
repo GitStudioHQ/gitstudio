@@ -236,6 +236,8 @@ interface FromWebview {
   dialogValue?: string | string[];
   /** A pick's or a confirm's checked options ("Also delete the branch"). */
   dialogOptions?: string[];
+  /** A pick answered by a row's button: the button's id. */
+  dialogButton?: string;
   path?: string;
   /** Original path for a renamed file (push-modal file diff). */
   oldPath?: string;
@@ -699,6 +701,7 @@ export class CommitViewProvider
     id: string | undefined,
     value: string | string[] | undefined,
     options?: unknown,
+    button?: unknown,
   ): void {
     if (!id) {
       return;
@@ -709,7 +712,15 @@ export class CommitViewProvider
     }
     this.dialogWaiters.delete(id);
     const checked = Array.isArray(options) ? options.filter((o): o is string => typeof o === "string") : undefined;
-    resolve(value === undefined ? undefined : checked ? { value, options: checked } : { value });
+    if (value === undefined) {
+      resolve(undefined);
+      return;
+    }
+    resolve({
+      value,
+      ...(checked ? { options: checked } : {}),
+      ...(typeof button === "string" && button ? { button } : {}),
+    });
   }
 
   /** Settle every pending dialog as dismissed (view reloaded or disposed). */
@@ -784,7 +795,7 @@ export class CommitViewProvider
         await this.pushState(!!msg.amend);
         return;
       case "dialogResult":
-        this.resolveDialog(msg.dialogId, msg.dialogValue, msg.dialogOptions);
+        this.resolveDialog(msg.dialogId, msg.dialogValue, msg.dialogOptions, msg.dialogButton);
         return;
       case "branchAction":
         await this.handleBranchAction(msg);
@@ -3789,6 +3800,19 @@ export class CommitViewProvider
     .rp-choice-label { overflow: hidden; text-overflow: ellipsis; }
     .rp-choice-desc { font-size: 11px; color: var(--gs-fg-muted); line-height: 1.4; white-space: normal; }
     .rp-choice-detail { margin-left: auto; padding-left: 10px; font-size: 10px; color: var(--gs-fg-subtle); flex: 0 0 auto; }
+    /* A row's own buttons ("Show in Commit Graph"): quiet until the row is
+       hovered or the keyboard's, always reachable with Tab. */
+    .rp-row .rp-choice-btn {
+      flex: 0 0 auto; margin: -2px -4px -2px 4px; padding: 2px 3px;
+      border: none; border-radius: var(--gs-radius-sm); background: transparent;
+      color: var(--gs-fg-muted); cursor: pointer; font-size: 14px; line-height: 1;
+      opacity: 0.55;
+    }
+    .rp-row .rp-choice-detail + .rp-choice-btn { margin-left: 6px; }
+    .rp-row .rp-choice-text + .rp-choice-btn { margin-left: auto; }
+    .rp-row:hover .rp-choice-btn, .rp-row.sel .rp-choice-btn, .rp-choice-btn:focus-visible { opacity: 1; color: var(--gs-fg); }
+    .rp-choice-btn:hover { background: color-mix(in srgb, var(--gs-fg) 12%, transparent); }
+    .rp-choice-btn:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -1px; }
     .rp-choice.danger .rp-choice-label, .rp-choice.danger .codicon { color: var(--gs-danger, #f14c4c); }
     .rp-check { flex: 0 0 auto; margin: 1px 0 0; accent-color: var(--gs-accent); }
     /* A question's checkboxes ("Also delete the branch"), between the choices
@@ -8262,7 +8286,7 @@ export class CommitViewProvider
      * A host dialog MUST be answered or the awaiting command hangs, so the reply
      * is posted here — the single place every close path funnels through.
      */
-    function closeDialog(answer) {
+    function closeDialog(answer, button) {
       // Read before the teardown takes the boxes with it.
       var options = answer !== undefined && dlgOptionBoxes.length ? checkedDialogOptions() : undefined;
       dlgOptionBoxes = [];
@@ -8272,6 +8296,7 @@ export class CommitViewProvider
       if (hostId) {
         var reply = { type: "dialogResult", dialogId: hostId, dialogValue: answer };
         if (options) reply.dialogOptions = options;
+        if (answer !== undefined && button) reply.dialogButton = button;
         vscode.postMessage(reply);
       }
     }
@@ -8674,6 +8699,26 @@ export class CommitViewProvider
         var det = el("span", "rp-choice-detail");
         det.textContent = c.detail;
         row.appendChild(det);
+      }
+      // A row's own buttons (a single pick's only): each answers with the
+      // row AND itself. Its keys stay its own — Enter on a focused button
+      // presses the button, never picks the row the keyboard is on.
+      if (!multi && c.buttons && c.buttons.length) {
+        c.buttons.forEach(function (b) {
+          var btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "rp-choice-btn codicon codicon-" + b.icon;
+          btn.title = b.title;
+          btn.setAttribute("aria-label", b.title);
+          btn.addEventListener("click", function (e) {
+            e.stopPropagation();
+            closeDialog(c.id, b.id);
+          });
+          btn.addEventListener("keydown", function (e) {
+            if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+          });
+          row.appendChild(btn);
+        });
       }
       return row;
     }
