@@ -1,4 +1,5 @@
 import { linesDiffComputers } from "vscode-diff";
+import { DateTimeout } from "vscode-diff/dist/vs/editor/common/diff/defaultLinesDiffComputer/algorithms/diffAlgorithm";
 import type {
   InnerRange,
   LineEnding,
@@ -28,6 +29,39 @@ export interface DiffOptions {
    * change, to agree with Monaco's own diff (see ignoreTrimWhitespaceFor).
    */
   whitespaceOnlyChanges?: boolean;
+}
+
+/**
+ * How many of vscode-diff's "still within the time budget?" questions share
+ * one look at the clock.
+ *
+ * vscode-diff asks that question (`DateTimeout.isValid`, a `Date.now()`) in
+ * its innermost loops: for a text under 1,700 lines on both sides together, once
+ * per CELL of an n×m table. Editing an 800-line file is 640,000 clock reads per
+ * diff. Where the clock is cheap that hides inside the diff; where reading it
+ * is a system call (Linux on the hpet clocksource, ~1.2 µs) it is ~0.8 s of
+ * blocked extension host per refresh of the staging gutter, i.e. per pause in
+ * typing (#115).
+ *
+ * The answer between two reads is the same answer: the budget is 5 s, and 256
+ * cells or Myers steps are microseconds to a few milliseconds of work. A
+ * budget that has run out stays out, as before.
+ */
+export const CLOCK_STRIDE = 256;
+
+type StridedTimeout = { valid: boolean; gitstudioAsks?: number; isValid(): boolean };
+
+const timeoutProto = DateTimeout.prototype as unknown as StridedTimeout & { gitstudioStrided?: true };
+if (!timeoutProto.gitstudioStrided) {
+  const readClock = timeoutProto.isValid;
+  timeoutProto.isValid = function (this: StridedTimeout): boolean {
+    if (!this.valid) return false;
+    const asked = (this.gitstudioAsks ?? 0) + 1;
+    this.gitstudioAsks = asked;
+    // The first question reads the clock, then every CLOCK_STRIDE-th.
+    return (asked - 1) % CLOCK_STRIDE === 0 ? readClock.call(this) : true;
+  };
+  timeoutProto.gitstudioStrided = true;
 }
 
 const BASE_DIFF_OPTIONS = {

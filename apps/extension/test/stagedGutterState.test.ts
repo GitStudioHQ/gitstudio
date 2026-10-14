@@ -21,7 +21,7 @@ const { StagedGutter } = require("../src/changes/stagedGutter") as typeof import
 const { GitContext } = require("@gitstudio/git-service/GitContext") as typeof import("@gitstudio/git-service/GitContext");
 /* eslint-enable @typescript-eslint/no-require-imports */
 
-const vs = vscode as unknown as { window: Record<string, unknown>; Range: unknown };
+const vs = vscode as unknown as { window: Record<string, unknown>; workspace: Record<string, unknown>; Range: unknown };
 
 // A real Range: the stand-in's answers anything, including `start.line`.
 vs.Range = class {
@@ -38,6 +38,13 @@ const STATES = ["staged", "unstaged", "partial"] as const;
 let made = 0;
 vs.window.createTextEditorDecorationType = () => ({ state: STATES[made++ % 3], dispose() {} });
 
+// The editor's text-change event, so a test can type.
+let onEdit: ((e: { document: unknown }) => void) | undefined;
+vs.workspace.onDidChangeTextDocument = (listener: (e: { document: unknown }) => void) => {
+  onEdit = listener;
+  return { dispose() {} };
+};
+
 const repos: { done: () => void }[] = [];
 after(() => repos.forEach((r) => r.done()));
 
@@ -51,7 +58,7 @@ function setup(name: string) {
   writeFileSync(file, "a\nB\nc\nd\nE\n"); // two one-line changes: lines 1 and 4 (0-based)
 
   const uri = { scheme: "file", fsPath: file, toString: () => `file://${file}` };
-  const document = { uri, getText: () => readFileSync(file, "utf8"), lineCount: 6 };
+  const document = { uri, getText: () => readFileSync(file, "utf8"), lineCount: 6, version: 1 };
   // What each change's mark was last painted as, by 0-based line.
   const painted = new Map<number, string>();
   const editor = {
@@ -67,6 +74,7 @@ function setup(name: string) {
   const entry = { root: r.dir, ctx: new GitContext({ root: r.dir }) };
   // Every read of git the marks make.
   let reads = 0;
+  let conflictChecks = 0;
   const staging = entry.ctx.staging as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>;
   for (const name of ["indexContent", "headContent"]) {
     const real = staging[name].bind(staging);
@@ -75,6 +83,12 @@ function setup(name: string) {
       return real(...a);
     };
   }
+  const conflict = entry.ctx.conflict as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>;
+  const isConflicted = conflict.isConflicted.bind(conflict);
+  conflict.isConflicted = (...a: unknown[]) => {
+    conflictChecks++;
+    return isConflicted(...a);
+  };
   const manager = {
     getAll: () => [entry],
     onDidChange: (listener: (e: RepoChangeEvent) => void) => {
@@ -90,6 +104,13 @@ function setup(name: string) {
     painted,
     index: () => r.git("show", ":f.txt"),
     reads: () => reads,
+    conflictChecks: () => conflictChecks,
+    /** Types `text` into the buffer: a new document version and the editor's change event. */
+    type: (text: string) => {
+      writeFileSync(file, text);
+      document.version++;
+      onEdit?.({ document });
+    },
     fireRepoChange: (kind: "workingTree" | "refs" = "workingTree") => onRepoChange?.({ kinds: new Set([kind]) }),
   };
 }
@@ -162,5 +183,30 @@ test("a status run that left the index alone reads no git; a moved index or HEAD
   const afterAdd = t.reads();
   t.fireRepoChange("refs"); // a commit, a checkout: HEAD moved
   await until(() => t.reads() > afterAdd, "a ref change always repaints");
+  t.gutter.dispose();
+});
+
+test("typing re-diffs the buffer against what git said, without asking git again (#115)", async () => {
+  const t = setup("gutter-typing");
+  await until(() => t.painted.get(1) === "unstaged" && t.painted.get(4) === "unstaged", "painted from git at the start");
+  await quiet(t.reads);
+  const reads = t.reads();
+  const checks = t.conflictChecks();
+  // A burst of keystrokes, then a pause.
+  t.type("a\nB\nc\nd\nE\nx");
+  t.type("a\nB\nc\nd\nE\nxy");
+  t.type("a\nB\nc\nD\nE\n");
+  await until(() => t.painted.get(3) === "unstaged", "the typed change is marked");
+  // Typed after a pause — line 1 back as committed: still nothing asked of git.
+  t.type("a\nb\nc\nD\nE\n");
+  await until(() => !t.painted.has(1) && t.painted.get(3) === "unstaged", "the undone change loses its mark");
+  await quiet(t.reads);
+  assert.equal(t.reads(), reads, "no `git show` for HEAD or the index while typing");
+  assert.equal(t.conflictChecks(), checks, "no `git status` while typing");
+  // The repository moved: the next paint reads git again.
+  t.r.git("add", "f.txt");
+  t.fireRepoChange("refs");
+  await until(() => t.reads() > reads && t.painted.get(3) === "staged", "a repository change reads git");
+  assert.ok(t.conflictChecks() > checks);
   t.gutter.dispose();
 });

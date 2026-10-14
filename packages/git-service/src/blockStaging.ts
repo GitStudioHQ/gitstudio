@@ -60,7 +60,7 @@ export function isStageableText(text: string): boolean {
 }
 
 /** What the two sides of the tick model are computed from. */
-interface Baselines {
+export interface Baselines {
   head: string;
   index: string;
 }
@@ -70,8 +70,12 @@ interface Baselines {
  *
  * A path with no index entry reads as "" — which is correct for a brand-new
  * file, where the whole thing is one unstaged block against an empty baseline.
+ *
+ * Exported for a caller that repaints on every pause in typing (the editor
+ * gutter, #115): typing moves neither HEAD nor the index, so it reads these
+ * once and hands them to `changeBlocksFrom` until git says otherwise.
  */
-async function baselines(host: BlockStagingHost, rel: string): Promise<Baselines> {
+export async function readBaselines(host: BlockStagingHost, rel: string): Promise<Baselines> {
   const [head, index] = await Promise.all([
     host.staging.headContent(rel),
     host.staging.indexContent(rel),
@@ -95,8 +99,13 @@ export async function listChangeBlocks(
   if (!isStageableText(workingText)) {
     return [];
   }
-  const { head, index } = await baselines(host, rel);
-  if (!isStageableText(head) || !isStageableText(index)) {
+  return changeBlocksFrom(await readBaselines(host, rel), workingText);
+}
+
+/** listChangeBlocks over baselines already read (readBaselines). */
+export function changeBlocksFrom(baselines: Baselines, workingText: string): ChangeBlock[] {
+  const { head, index } = baselines;
+  if (!isStageableText(workingText) || !isStageableText(head) || !isStageableText(index)) {
     return [];
   }
   return computeChangeBlocks(head, index, workingText);
@@ -136,7 +145,7 @@ export async function setBlockStaged(
   if (!isStageableText(workingText)) {
     return { ok: false, expected: true, stderr: NOT_STAGEABLE };
   }
-  const { head, index } = await baselines(host, rel);
+  const { head, index } = await readBaselines(host, rel);
   if (!isStageableText(head) || !isStageableText(index)) {
     return { ok: false, expected: true, stderr: NOT_STAGEABLE };
   }

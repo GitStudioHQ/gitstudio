@@ -7,6 +7,7 @@ import { serializeIndexWrite } from "../src/indexWrites";
 import { stoppedIn } from "../src/stoppedOperation";
 import { checkedOutElsewhere } from "../src/branchElsewhere";
 import { GitProcess } from "../src/GitProcess";
+import { BlameNotCommittedError } from "../src/BlameProvider";
 import { makeRepo, type Repo } from "./opRepo";
 import { removeTempRepo } from "./tmpRepo";
 
@@ -97,6 +98,29 @@ test("blame refuses loudly — naming the file and git's exit — for a path git
   });
   // A rev that does not exist is refused the same way.
   await assert.rejects(ctx.blame.blameFile("f.txt", { rev: "no-such-rev" }), /git blame failed for f\.txt/);
+});
+
+test("a file not in HEAD is refused as not committed yet — the one refusal a caller may expect (#115)", async () => {
+  const repo = makeRepo("blame-not-in-head");
+  cleanup.push(() => repo.cleanup());
+  repo.write("f.txt", "x\n");
+  repo.commitAll("base");
+  repo.write("sub/new.txt", "fresh\n");
+  const ctx = repo.ctx();
+  // Untracked, on disk and as an editor buffer.
+  for (const contents of [undefined, "fresh\ntyped\n"]) {
+    await assert.rejects(ctx.blame.blameFile(join("sub", "new.txt"), { contents }), (err: Error) => {
+      assert.ok(err instanceof BlameNotCommittedError, `not committed, for ${String(contents)}`);
+      assert.match(err.message, /^git blame failed for sub[\\/]new\.txt \(exit \d+\): /);
+      return true;
+    });
+  }
+  // Added: git blames it from the index, every line not committed yet.
+  repo.git("add", "sub/new.txt");
+  const added = await ctx.blame.blameFile("sub/new.txt");
+  assert.ok(added.lines.length > 0);
+  // Every other refusal stays a plain one.
+  await assert.rejects(ctx.blame.blameFile("f.txt", { rev: "no-such-rev" }), (err: Error) => !(err instanceof BlameNotCommittedError));
 });
 
 test("stoppedIn reports conflicted files with no operation (a stash pop that conflicted)", async () => {

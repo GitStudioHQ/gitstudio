@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { relative } from "node:path";
 import type { BlameResult, BlameCommit } from "@gitstudio/git-service/index";
 import { UNCOMMITTED_SHA } from "@gitstudio/git-service/index";
+import { BlameNotCommittedError } from "@gitstudio/git-service/BlameProvider";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { touches } from "../git/repoChange";
 import { notice, notifyCopied } from "../ui/notify";
@@ -49,6 +50,14 @@ export class BlameController implements vscode.Disposable {
     string,
     { version: number; result: Promise<BlameResult | undefined> }
   >();
+  /**
+   * Documents git cannot blame because they are not in HEAD (untracked).
+   * Not asked again — every edit used to spawn a blame that failed and
+   * logged it (#115) — until git reports a change in the repository.
+   */
+  private readonly notInHead = new Set<string>();
+  /** Bumped on every repository change, so an answer from before it is not kept. */
+  private gitEpoch = 0;
 
   // Full-file annotation state, per editor (by document uri string).
   private readonly annotated = new Map<string, vscode.TextEditorDecorationType>();
@@ -146,6 +155,7 @@ export class BlameController implements vscode.Disposable {
       vscode.workspace.onDidCloseTextDocument((doc) => {
         const key = doc.uri.toString();
         this.blameCache.delete(key);
+        this.notInHead.delete(key);
         // Annotate mode creates a decoration type per opened file; without this
         // the map (and its types) grow for every file visited in the session.
         const type = this.annotated.get(key);
@@ -215,6 +225,13 @@ export class BlameController implements vscode.Disposable {
       // checkout, a rebase), not when a file is saved — a file's own edits
       // already drop its entry (keyed by document version, above). It used
       // to drop EVERY file's blame on each save and window focus.
+      // Any change git reports — a commit, or a `git add`, after which git
+      // blames the file from the index — may have put a file that was not in
+      // HEAD where blame can see it: ask again once, not on every keystroke.
+      this.repos.onDidChange(() => {
+        this.notInHead.clear();
+        this.gitEpoch++;
+      }),
       this.repos.onDidChange((e) => {
         if (!touches(e, "refs", "operation", "repos")) {
           return;
@@ -802,6 +819,9 @@ export class BlameController implements vscode.Disposable {
       return undefined;
     }
     const key = document.uri.toString();
+    if (this.notInHead.has(key)) {
+      return undefined;
+    }
     const cached = this.blameCache.get(key);
     if (cached && cached.version === document.version) {
       return cached.result;
@@ -814,11 +834,15 @@ export class BlameController implements vscode.Disposable {
     }
     // Feed the live (possibly dirty) buffer so blame matches what's on screen.
     const contents = document.isDirty ? document.getText() : undefined;
+    const epoch = this.gitEpoch;
 
     const promise = ctx.ctx.blame
       .blameFile(relPath, { contents, signal: controller.signal })
       .catch((e: unknown) => {
-        if (!controller.signal.aborted) {
+        if (e instanceof BlameNotCommittedError) {
+          // Expected, not a failure: there is no history to show yet.
+          if (epoch === this.gitEpoch) this.notInHead.add(key);
+        } else if (!controller.signal.aborted) {
           const msg = e instanceof Error ? e.message : String(e);
           this.log?.(l10n.t("blame failed for {0}: {1}", relPath, msg));
           console.error("[GitStudio] blame failed", e);

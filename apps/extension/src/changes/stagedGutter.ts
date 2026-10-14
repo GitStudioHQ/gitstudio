@@ -1,7 +1,12 @@
 import * as vscode from "vscode";
 import { stat } from "node:fs/promises";
-import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockStaging";
-import type { ChangeBlock } from "@gitstudio/git-service/blockStaging";
+import {
+  changeBlocksFrom,
+  isStageableText,
+  readBaselines,
+  setBlockStaged,
+} from "@gitstudio/git-service/blockStaging";
+import type { Baselines, ChangeBlock } from "@gitstudio/git-service/blockStaging";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { relativePath } from "./changesView";
 import { blockAtLine } from "./blockAtLine";
@@ -59,6 +64,21 @@ export class StagedGutter implements vscode.Disposable {
    * codebase keeps hitting.
    */
   private readonly generation = new Map<string, number>();
+  /**
+   * What git said about each document when it was last read: whether it is
+   * conflicted, and its HEAD and index text. An EDIT moves neither, so a
+   * refresh caused only by typing diffs the buffer against these instead of
+   * spawning `git status` and two `git show`s per pause in typing (#115).
+   * Every other cause — focus, save, a ref or index move, a toggle — reads git
+   * again and replaces the entry.
+   */
+  private readonly baselines = new Map<string, { conflicted: boolean; baselines: Baselines }>();
+  /** Documents whose next scheduled refresh must read git, not reuse `baselines`. */
+  private readonly readGit = new Set<string>();
+  /** Documents with a scheduled refresh running now; a timer that fires meanwhile waits for it. */
+  private readonly running = new Map<string, Promise<void>>();
+  /** The document version each document's marks were last painted for. */
+  private readonly paintedVersion = new Map<string, number>();
   private enabled: boolean;
 
   constructor(
@@ -99,8 +119,10 @@ export class StagedGutter implements vscode.Disposable {
         if (editor) void this.schedule(editor.document, 0);
       }),
       vscode.workspace.onDidChangeTextDocument((event) => {
-        void this.schedule(event.document, REFRESH_DEBOUNCE_MS);
+        // Typing: same HEAD, same index — re-diff, do not re-read git.
+        void this.schedule(event.document, REFRESH_DEBOUNCE_MS, false);
       }),
+      vscode.workspace.onDidCloseTextDocument((doc) => this.forget(doc.uri.toString())),
       vscode.workspace.onDidSaveTextDocument((doc) => void this.schedule(doc, 0)),
       vscode.window.onDidChangeTextEditorSelection((event) =>
         this.onPossibleGutterClick(event),
@@ -181,21 +203,49 @@ export class StagedGutter implements vscode.Disposable {
     }
   }
 
-  private schedule(document: vscode.TextDocument, delay: number): void {
+  /**
+   * Refreshes `document` after `delay`, coalescing: a newer call replaces a
+   * pending one, and a refresh never starts while the last one for the same
+   * document is still running — it runs once that one is done. `readGit`
+   * false means only the buffer changed; any true call before the refresh
+   * runs makes it read git.
+   */
+  private schedule(document: vscode.TextDocument, delay: number, readGit = true): void {
     if (document.uri.scheme !== "file") return;
     const key = document.uri.toString();
+    if (readGit) this.readGit.add(key);
     const existing = this.timers.get(key);
     if (existing) clearTimeout(existing);
     this.timers.set(
       key,
       setTimeout(() => {
         this.timers.delete(key);
-        void this.refresh(document);
+        void this.runScheduled(document);
       }, delay),
     );
   }
 
-  private async refresh(document: vscode.TextDocument): Promise<void> {
+  private async runScheduled(document: vscode.TextDocument): Promise<void> {
+    const key = document.uri.toString();
+    const inFlight = this.running.get(key);
+    if (inFlight) {
+      // Run once it is done — unless something newer has been scheduled by then.
+      await inFlight;
+      if (this.timers.has(key) || this.running.has(key)) return;
+    }
+    const readGit = this.readGit.delete(key) || !this.baselines.has(key);
+    // Only the buffer could have changed, and it has not: nothing to redo.
+    if (!readGit && typeof document.version === "number" && this.paintedVersion.get(key) === document.version) {
+      return;
+    }
+    const run = this.refresh(document, !readGit).finally(() => {
+      if (this.running.get(key) === run) this.running.delete(key);
+    });
+    this.running.set(key, run);
+    await run;
+  }
+
+  private async refresh(document: vscode.TextDocument, reuseBaselines = false): Promise<void> {
     const key = document.uri.toString();
     const gen = (this.generation.get(key) ?? 0) + 1;
     this.generation.set(key, gen);
@@ -203,16 +253,32 @@ export class StagedGutter implements vscode.Disposable {
     const target = this.resolve(document.uri);
     if (!target || !this.enabled) {
       this.blocksByDoc.delete(key);
+      this.baselines.delete(key);
+      this.paintedVersion.delete(key);
       this.paint(document, []);
       return;
     }
 
-    const blocks = await this.readBlocks(target, document);
+    const version = document.version;
+    const blocks = await this.readBlocks(target, document, reuseBaselines);
     // A newer refresh started while git was answering; its answer wins.
     if (this.generation.get(key) !== gen) return;
 
     this.blocksByDoc.set(key, blocks);
+    if (typeof version === "number") this.paintedVersion.set(key, version);
+    else this.paintedVersion.delete(key);
     this.paint(document, blocks);
+  }
+
+  private forget(key: string): void {
+    const timer = this.timers.get(key);
+    if (timer) clearTimeout(timer);
+    this.timers.delete(key);
+    this.blocksByDoc.delete(key);
+    this.baselines.delete(key);
+    this.readGit.delete(key);
+    this.paintedVersion.delete(key);
+    this.generation.delete(key);
   }
 
   private paint(document: vscode.TextDocument, blocks: ChangeBlock[]): void {
@@ -345,17 +411,35 @@ export class StagedGutter implements vscode.Disposable {
     await this.toggleAtLine(document, line);
   }
 
-  /** The document's change blocks as git has them NOW; none for a conflicted file. */
+  /**
+   * The document's change blocks as git has them NOW; none for a conflicted
+   * file. `reuseBaselines`: git was read for this document since anything but
+   * its text changed, so diff the text against what it said then.
+   */
   private async readBlocks(
     target: { entry: RepoEntry; rel: string },
     document: vscode.TextDocument,
+    reuseBaselines = false,
   ): Promise<ChangeBlock[]> {
+    const key = document.uri.toString();
+    // Binary or huge: no ticks, and no reason to ask git anything.
+    if (!isStageableText(document.getText())) return [];
     try {
-      // A conflicted file has no stage-0 index entry, so the tick model would
-      // read every change as unstaged. Say nothing rather than something wrong.
-      const conflicted = await target.entry.ctx.conflict.isConflicted(target.rel);
-      return conflicted ? [] : await listChangeBlocks(target.entry.ctx, target.rel, document.getText());
+      let known = reuseBaselines ? this.baselines.get(key) : undefined;
+      if (!known) {
+        // A conflicted file has no stage-0 index entry, so the tick model would
+        // read every change as unstaged. Say nothing rather than something wrong.
+        const conflicted = await target.entry.ctx.conflict.isConflicted(target.rel);
+        const baselines = conflicted
+          ? { head: "", index: "" }
+          : await readBaselines(target.entry.ctx, target.rel);
+        known = { conflicted, baselines };
+        this.baselines.set(key, known);
+      }
+      // The text as it is now, after git answered — not as it was when asked.
+      return known.conflicted ? [] : changeBlocksFrom(known.baselines, document.getText());
     } catch {
+      this.baselines.delete(key);
       return [];
     }
   }
@@ -377,6 +461,7 @@ export class StagedGutter implements vscode.Disposable {
   dispose(): void {
     for (const timer of this.timers.values()) clearTimeout(timer);
     this.timers.clear();
+    this.baselines.clear();
     for (const decoration of this.decorations.values()) decoration.dispose();
     this.decorations.clear();
     for (const disposable of this.disposables) disposable.dispose();
