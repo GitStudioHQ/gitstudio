@@ -15,7 +15,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { Cdp, Workbench, launchVsCode, sleep, type Rect, type Webview } from "./vscode";
+import { Cdp, Workbench, jsLiteral, launchVsCode, sleep, type Rect, type Webview } from "./vscode";
 import { REST, changesView, editorLine, onlyPane, openFile, openGraph, reset, rowBySubject, setBlame, showSidebar } from "./ui";
 
 const REPO = resolve(__dirname, "../..");
@@ -48,7 +48,7 @@ async function typeMessage(wb: Workbench, ch: Webview, msg: string): Promise<voi
   await ch.click(box, { dx: 40, dy: 12 });
   await sleep(200);
   await wb.typeKeys(msg);
-  await ch.waitFor(`${box}.value === ${JSON.stringify(msg)}`, 5_000, "the commit message");
+  await ch.waitFor(`${box}.value === ${jsLiteral(msg)}`, 5_000, "the commit message");
 }
 
 const GS_SCENES: Scene[] = [
@@ -196,7 +196,7 @@ const MS_SCENES: Scene[] = [
       await sleep(2500);
       // One conflict half taken (Yours in, Theirs still open), one change settled.
       const press = (sel: string) =>
-        m.eval<boolean>(`(() => { const b = D.querySelector(${JSON.stringify(sel)}); if (!b) return false; b.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 })); return true; })()`);
+        m.eval<boolean>(`(() => { const b = D.querySelector(${jsLiteral(sel)}); if (!b) return false; b.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 })); return true; })()`);
       if (!(await press('.jb-gutter-a .jb-change-actions[data-category="conflict"] .jb-btn-accept'))) throw new Error("no conflict to half take");
       await sleep(800);
       if (!(await press('.jb-gutter-b .jb-change-actions[data-category="theirs-only"] .jb-btn-accept')))
