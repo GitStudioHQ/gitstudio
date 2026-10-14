@@ -22,6 +22,7 @@ const TOKEN_SECRET = "github.token";
  */
 const LOGIN_SECRET = "github.login";
 import { GitHubClient } from "./githubClient";
+import { prCheckState } from "./github/checkState";
 import { requestDeviceCode, pollForToken } from "./githubAuth";
 import type { RepoStore } from "./repoStore";
 import { ExpectedError } from "./expectedError";
@@ -429,13 +430,19 @@ export class GitHubBridge {
     try {
       const pr = await this.client.getPull(r.owner, r.repo, n);
       // The FILES are the point of this response — losing them silently turns
-      // "Files (9)" into an empty tab. The combined status is genuinely
-      // optional decoration, so that one still degrades to blank.
-      const [files, status] = await Promise.all([
+      // "Files (9)" into an empty tab. The checks are genuinely optional
+      // decoration, so those still degrade to blank.
+      const [files, status, runs] = await Promise.all([
         this.client.getPullFiles(r.owner, r.repo, n),
         this.client.getCombinedStatus(r.owner, r.repo, pr.head.sha).catch(() => ({ state: "", totalCount: 0 })),
+        // The legacy statuses alone know nothing of GitHub Actions — and say
+        // "pending" for a commit that has no statuses at all (prCheckState).
+        // read-failure-reviewed: these only colour the rail's pill (the Checks
+        // tab reads pr:checks itself); unreadable runs leave the statuses'
+        // state, and must never cost the page its files.
+        this.client.listCheckRuns(r.owner, r.repo, pr.head.sha).catch(() => []),
       ]);
-      return { pr, files, checks: status.state };
+      return { pr, files, checks: prCheckState(status, runs) };
     } catch {
       return undefined;
     }

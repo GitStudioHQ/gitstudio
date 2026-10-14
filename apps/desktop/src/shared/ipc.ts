@@ -929,7 +929,8 @@ export interface PrFile {
 export interface PrDetail {
   pr: PullRequest;
   files: PrFile[];
-  /** Combined CI state: "success" | "failure" | "pending" | "error" | "". */
+  /** The head commit's check runs AND legacy statuses, rolled up (main's
+   *  prCheckState): "success" | "failure" | "pending", or "" for no checks. */
   checks: string;
 }
 export interface IssueInfo {

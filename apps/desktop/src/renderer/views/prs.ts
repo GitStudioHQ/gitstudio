@@ -83,7 +83,6 @@ import {
   PR_TABS,
   REVIEW_VERDICTS as SHARED_REVIEW_VERDICTS,
   desktopPrKind,
-  rollupCi,
 } from "@gitstudio/engine/forge/pullRequests";
 import { openPeek } from "../peek";
 import { memberCard } from "./orgs";
@@ -269,16 +268,6 @@ function watchDiffDetach(S: PrsTabState, surface: HTMLElement, panel: DiffPanel)
     if (S.diffPanel !== panel) return;
     disposePrDiff(S);
   });
-}
-
-/** One state for a set of check runs: any failure wins, then anything still
- *  running, then success — the rule the extension's list and page use too
- *  (@gitstudio/engine/forge/pullRequests). */
-function rollupChecks(
-  rows: ReadonlyArray<{ status?: string | null; conclusion?: string | null }>,
-): "success" | "failure" | "pending" | "" {
-  const state = rollupCi(rows, []).state;
-  return state === "none" ? "" : state;
 }
 
 /** The PR's display state: merged beats closed beats draft beats open (the shared rule, in this stylesheet's names). */
@@ -729,6 +718,9 @@ function showDetailPage(
   // While CI is PENDING, quietly re-fetch and repaint when something changed —
   // the checks pill and Checks tab keep themselves honest. Stands down while
   // the Files tab is open (a repaint would tear down the Monaco diff mid-read).
+  // `checks` is the check runs AND the legacy statuses (main's prCheckState),
+  // so a running Actions job keeps this going, and a PR with no CI at all
+  // ("") is never polled — it used to be, forever, on a false "pending".
   let lastSig = "";
   /** What the CI poll watches: the check state and the counts its sub-tab
    *  labels are built from. Everything else changing is not a reason to throw
@@ -1192,21 +1184,21 @@ function buildDetail(ctx: DetailCtx): void {
     c.addEventListener("click", () => selectSub("checks"));
     checksProp.body.appendChild(c);
   };
+  // The pill and the Checks tab must tell ONE story. `d.checks` is already
+  // the check runs AND the legacy statuses rolled up in main (prCheckState) —
+  // the combined-status API alone read "Pending" beside a tab listing a
+  // failed run, and beside "Checks (0)" on a PR with no CI at all. The same
+  // state drives the CI poll, so the pill never needs a second opinion here;
+  // the tab's label gets the count its siblings already carry.
   paintChecksPill(d.checks);
-  // The pill and the Checks tab must tell ONE story. The combined-status API
-  // behind `d.checks` knows only legacy statuses, so it read "Pending" beside
-  // a tab listing a failed run and a running one. Roll the check runs up
-  // (the tab fetches the same list) and let them overrule it; the tab's
-  // label gets the count its siblings already carry.
   void gget("pr:checks", full.number, 15_000)
     .then((rows) => {
       if (!checksProp.body.isConnected) return;
-      if (rows.length) paintChecksPill(rollupChecks(rows));
       const lab = tabs.el.querySelector<HTMLElement>('[data-sub="checks"] span:last-of-type');
       if (lab) lab.textContent = l10n.t("Checks ({0})", rows.length);
     })
     .catch(() => {
-      /* the combined status stands */
+      /* the tab keeps its plain label */
     });
 
   // Who pressed merge — often NOT the author, and the answer to "who shipped
