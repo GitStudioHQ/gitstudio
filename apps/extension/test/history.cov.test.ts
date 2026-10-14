@@ -657,7 +657,7 @@ test("Show in Commit Graph from another repository than the graph shows: says so
   answer = (spec) => (spec.kind === "pick" ? { value: "1", button: SHOW_IN_GRAPH_BUTTON } : undefined);
   await new RevisionNavigator(repos).openFileAtRevision();
   assert.deepEqual(revealed, []);
-  const name = (dir: string) => dir.split("/").pop();
+  const name = (dir: string) => dir.split(/[\\/]/).pop();
   assert.deepEqual(said("info"), [
     `GitStudio: That commit is in ${name(f.dir)}, and the Commit Graph is showing ${name(other.dir)}. Switch Repository to see it there.`,
     `GitStudio: That commit is in ${name(f.dir)}, and the Commit Graph is showing ${name(other.dir)}. Switch Repository to see it there.`,
