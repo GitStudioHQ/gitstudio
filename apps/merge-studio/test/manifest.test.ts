@@ -53,7 +53,7 @@ const pkg = localize(JSON.parse(read("package.json"))) as {
     commands: { command: string; icon?: string }[];
     menus: Record<string, { command?: string; when?: string }[]>;
     configuration: unknown;
-    customEditors: { viewType: string; displayName: string; priority?: string }[];
+    customEditors: { viewType: string; displayName: string; priority?: string; selector: { filenamePattern: string }[] }[];
     walkthroughs: { id: string; steps: Step[] }[];
   };
 };
@@ -82,6 +82,14 @@ test("the merge editor keeps 0.3.4's view type and stays an Open With… option"
   const editor = pkg.contributes.customEditors.find((e) => e.viewType === MS_MERGE_VIEW_TYPES.mergeEditor);
   assert.equal(editor?.priority, "option");
   assert.equal(editor?.displayName, "Merge Studio (3-way merge)");
+});
+
+test("Reopen Editor With… offers the comparison, never an empty 3-pane merge (#110)", () => {
+  const merge = pkg.contributes.customEditors.find((e) => e.viewType === MS_MERGE_VIEW_TYPES.mergeEditor);
+  assert.ok(merge?.selector.every((s) => s.filenamePattern !== "*"), "the merge editor is opened by view type only");
+  const diff = pkg.contributes.customEditors.find((e) => e.viewType === MS_MERGE_VIEW_TYPES.diffEditor);
+  assert.equal(diff?.displayName, "Merge Studio (diff)");
+  assert.equal(diff?.priority, "option");
 });
 
 test("every editor-title button has an icon (no text buttons in the tab bar)", () => {

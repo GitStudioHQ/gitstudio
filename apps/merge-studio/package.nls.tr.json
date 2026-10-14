@@ -19,6 +19,7 @@
   "config.jbMerge.autoOpen.markdownDescription": "Bir birleştirme, yeniden temellendirme, seç-al, geri alma, git am veya zula çıkarma çakışmalarda durduğunda çakışan dosyaları Merge Studio'da aç ve çakışmalar panelini göster. Aynı Çakışmalar paneline sahip bir GitStudio, `#gitstudio.merge.autoOpen#` açıkken yüklüyse, bunun yerine GitStudio bunu yapar.",
   "config.jbMerge.useAsDefaultDiffViewer.markdownDescription": "Kaynak denetimi, dosya ve revizyon karşılaştırmaları dahil VS Code metin farklarını otomatik olarak Merge Studio'da açın. `#jbMerge.autoOpen#` ayarından bağımsızdır. İkili farklar ve özel düzenleyiciler değişmez. Sonraki karşılaştırmalarda VS Code'u kullanmak için kapatın. Her iki uzantı da bu ayarı açarsa farkları GitStudio işler. GitStudio yüklüyse, hangi görünümlerinin farklarının burada açılacağını `gitstudio.diff.comparisonIn` ayarı seçer; çekme isteği farkları her zaman VS Code'un fark düzenleyicisinde kalır.",
   "config.undefined.title": "Merge Studio",
+  "customEditor.jbMerge.diffEditor.displayName": "Merge Studio (fark)",
   "customEditor.jbMerge.mergeEditor.displayName": "Merge Studio (3 yönlü birleştirme)",
   "description": "JetBrains tarzı üç panelli bir düzenleyicide Git birleştirme ve yeniden temellendirme çakışmalarını çözün, bir çakışmalar paneli, renk kodlu değişiklikler, tam geri alma ve yan yana bir farkla.",
   "displayName": "Merge Studio — Birleştirme Çakışması Çözücü ve 3 Yönlü Birleştirme Düzenleyicisi",
