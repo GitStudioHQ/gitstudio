@@ -4,7 +4,7 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.21.0] - 2026-10-15
 
 ### Added
 - **Find a file's commit in the Commit Graph.** Every commit in Show File
@@ -20,6 +20,15 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   "File History — <file>". The command id (`gitstudio.openFileAtRevision`)
   is unchanged, so keybindings keep working
   ([#111](https://github.com/GitStudioHQ/gitstudio/issues/111)).
+
+### Fixed
+- **"Reopen Editor With…" on a diff offers GitStudio Diff, not an empty
+  3-pane merge.** The 3-pane merge was listed for every file, and picking it
+  on a diff opened an empty merge window. It is now offered only where it
+  belongs, and the list has **GitStudio Diff** instead: it opens the diff you
+  picked in GitStudio's comparison, and a single file compared with HEAD
+  ([#110](https://github.com/GitStudioHQ/gitstudio/pull/110); thanks,
+  @billdwhite).
 
 ## [1.20.0] - 2026-10-13
 

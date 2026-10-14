@@ -9,6 +9,16 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [2.6.2] - 2026-10-14
+
+### Fixed
+- **A pull request with no CI says "No checks".** GitHub reports a commit with
+  no status checks as pending, so a merged PR with no CI at all read "Pending"
+  beside "Checks (0)" and the page kept re-checking it. The Checks state now
+  combines the status checks with the check runs (GitHub Actions): blank when
+  there are neither, and the page keeps refreshing only while something is
+  actually running.
+
 ## [2.6.1] - 2026-10-13
 
 ### Fixed
