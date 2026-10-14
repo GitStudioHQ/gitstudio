@@ -11,6 +11,7 @@ import {
 import {
   GITSTUDIO_MERGE_COMMANDS,
   GITSTUDIO_MERGE_SECTION,
+  GITSTUDIO_MERGE_VIEW_TYPES,
   GITSTUDIO_WALKTHROUGH_COMMAND,
 } from "../src/merge/mergeIds";
 
@@ -24,7 +25,7 @@ const manifest = readManifest() as {
     commands: { command: string; title: string }[];
     menus: Record<string, { command?: string; when?: string; group?: string }[]>;
     configuration: unknown;
-    customEditors: { viewType: string; priority?: string }[];
+    customEditors: { viewType: string; priority?: string; selector: { filenamePattern: string }[] }[];
   };
   capabilities?: {
     untrustedWorkspaces?: { supported: boolean | "limited"; restrictedConfigurations?: string[] };
@@ -72,6 +73,13 @@ test("Restricted Mode is exactly what it was: the capabilities block is main's, 
 test("the merge editor stays an 'Open With…' option, never the default for every file", () => {
   const editor = manifest.contributes.customEditors.find((e) => e.viewType === "gitstudio.mergeEditor");
   assert.equal(editor?.priority, "option");
+});
+
+test("Reopen Editor With… offers the comparison, never an empty 3-pane merge (#110)", () => {
+  const merge = manifest.contributes.customEditors.find((e) => e.viewType === GITSTUDIO_MERGE_VIEW_TYPES.mergeEditor);
+  assert.ok(merge?.selector.every((s) => s.filenamePattern !== "*"), "the merge editor is opened by view type only");
+  const diff = manifest.contributes.customEditors.find((e) => e.viewType === GITSTUDIO_MERGE_VIEW_TYPES.diffEditor);
+  assert.equal(diff?.priority, "option");
 });
 
 test("the SCM view's Merge Changes header offers Resolve Conflicts… as a button, not only in its menu", () => {

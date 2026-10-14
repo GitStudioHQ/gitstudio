@@ -19,6 +19,7 @@
  "config.jbMerge.autoOpen.markdownDescription": "當合併、變基、揀選、還原、git am 或儲藏彈出因衝突而停止時，在 Merge Studio 中開啟有衝突的檔案並顯示衝突面板。如果同時安裝了帶有相同衝突面板的 GitStudio，並且 `#gitstudio.merge.autoOpen#` 已開啟，則改由 GitStudio 執行此操作。",
   "config.jbMerge.useAsDefaultDiffViewer.markdownDescription": "自動在 Merge Studio 中開啟 VS Code 文字差異，包括原始碼管理、檔案比較和修訂比較。獨立於 `#jbMerge.autoOpen#`。二進位差異和自訂編輯器保持不變。關閉後，後續比較將使用 VS Code。如果兩個擴充功能均啟用此設定，則由 GitStudio 處理差異。安裝了 GitStudio 時，由其 `gitstudio.diff.comparisonIn` 設定選擇哪些檢視的差異在這裡開啟；拉取請求的差異一律使用 VS Code 的差異編輯器。",
  "config.undefined.title": "Merge Studio",
+ "customEditor.jbMerge.diffEditor.displayName": "Merge Studio（差異）",
  "customEditor.jbMerge.mergeEditor.displayName": "Merge Studio（三方合併）",
  "description": "在 JetBrains 風格的三欄編輯器中解決 Git 合併和變基衝突，配有衝突面板、按顏色區分的更改、完整的撤銷功能和並排差異檢視。",
  "displayName": "Merge Studio — 合併衝突解決工具和三方合併編輯器",

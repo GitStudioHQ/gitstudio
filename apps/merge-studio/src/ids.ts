@@ -36,6 +36,9 @@ export const MS_MERGE_VIEW_TYPES: MergeViewTypes = {
   // 0.3.4's custom editor, diff panel and conflicts panel view types: a diff
   // tab restored after a reload keeps finding its serializer.
   mergeEditor: "jbMerge.mergeEditor",
+  // "Merge Studio (diff)" in VS Code's editor picker: the 3-pane merge has
+  // nothing to show for a diff, so it is opened by view type only.
+  diffEditor: "jbMerge.diffEditor",
   diffView: "jbMerge.diffView",
   conflicts: "jbMerge.conflicts",
 };

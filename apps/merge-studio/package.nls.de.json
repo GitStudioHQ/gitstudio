@@ -19,6 +19,7 @@
   "config.jbMerge.autoOpen.markdownDescription": "Konfliktbehaftete Dateien in Merge Studio öffnen und das Konflikte-Dashboard anzeigen, wenn ein Merge, Rebase, Cherry-Pick, Revert, git am oder Stash-Pop wegen Konflikten anhält. Ist ein GitStudio mit demselben Konflikte-Dashboard installiert und `#gitstudio.merge.autoOpen#` aktiviert, übernimmt GitStudio dies stattdessen.",
   "config.jbMerge.useAsDefaultDiffViewer.markdownDescription": "Textvergleiche von VS Code automatisch in Merge Studio öffnen, einschließlich Quellcodeverwaltung, Datei- und Revisionsvergleichen. Unabhängig von `#jbMerge.autoOpen#`. Binärvergleiche und benutzerdefinierte Editoren bleiben unverändert. Ausschalten, um zukünftige Vergleiche in VS Code zu öffnen. Aktivieren beide Erweiterungen diese Einstellung, übernimmt GitStudio. Ist GitStudio installiert, legt seine Einstellung `gitstudio.diff.comparisonIn` fest, welche Vergleiche aus seinen Ansichten sich hier öffnen; Pull-Request-Vergleiche bleiben immer im Diff-Editor von VS Code.",
   "config.undefined.title": "Merge Studio",
+  "customEditor.jbMerge.diffEditor.displayName": "Merge Studio (Diff)",
   "customEditor.jbMerge.mergeEditor.displayName": "Merge Studio (Drei-Wege-Merge)",
   "description": "Git-Merge- und Rebase-Konflikte in einem Drei-Spalten-Editor im JetBrains-Stil lösen, mit Konflikte-Dashboard, farbcodierten Änderungen, vollständigem Rückgängig und einem Side-by-Side-Diff.",
   "displayName": "Merge Studio — Merge-Konflikt-Löser & 3-Wege-Merge-Editor",

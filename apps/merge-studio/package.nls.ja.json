@@ -19,6 +19,7 @@
   "config.jbMerge.autoOpen.markdownDescription": "マージ、リベース、チェリーピック、リバート、git am、またはスタッシュのポップがコンフリクトで停止したとき、コンフリクトのあるファイルをMerge Studioで開き、コンフリクトダッシュボードを表示します。同じコンフリクトダッシュボードを持つGitStudioがインストールされていて `#gitstudio.merge.autoOpen#` がオンの場合、代わりにGitStudioがこれを行います。",
   "config.jbMerge.useAsDefaultDiffViewer.markdownDescription": "ソース管理、ファイル比較、リビジョン比較など、VS Code のテキスト差分を Merge Studio で自動的に開きます。`#jbMerge.autoOpen#` とは独立しています。バイナリ差分とカスタムエディターは変更しません。オフにすると、今後の差分は VS Code で開きます。両方の拡張機能で有効にした場合は GitStudio が差分を処理します。GitStudio がインストールされている場合、どのビューの差分をここで開くかは GitStudio の `gitstudio.diff.comparisonIn` 設定で選べます。プルリクエストの差分は常に VS Code の差分エディターで開きます。",
   "config.undefined.title": "Merge Studio",
+  "customEditor.jbMerge.diffEditor.displayName": "Merge Studio (差分)",
   "customEditor.jbMerge.mergeEditor.displayName": "Merge Studio (3-wayマージ)",
   "description": "JetBrainsスタイルの3ペインエディターで、Gitのマージやリベースのコンフリクトを解決します。コンフリクトダッシュボード、色分けされた変更、完全な元に戻す機能、左右比較の差分表示を備えています。",
   "displayName": "Merge Studio — マージコンフリクト解決 & 3-wayマージエディター",

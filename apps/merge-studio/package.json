@@ -258,6 +258,16 @@
         "displayName": "%customEditor.jbMerge.mergeEditor.displayName%",
         "selector": [
           {
+            "filenamePattern": "*.jbmerge-merge"
+          }
+        ],
+        "priority": "option"
+      },
+      {
+        "viewType": "jbMerge.diffEditor",
+        "displayName": "%customEditor.jbMerge.diffEditor.displayName%",
+        "selector": [
+          {
             "filenamePattern": "*"
           }
         ],

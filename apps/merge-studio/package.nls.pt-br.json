@@ -19,6 +19,7 @@
   "config.jbMerge.autoOpen.markdownDescription": "Abrir arquivos em conflito no Merge Studio e mostrar o painel de conflitos quando uma mesclagem, rebase, cherry-pick, revert, git am ou pop de stash parar em conflitos. Se um GitStudio com o mesmo painel de Conflitos estiver instalado com `#gitstudio.merge.autoOpen#` ativado, o GitStudio faz isso em vez disso.",
   "config.jbMerge.useAsDefaultDiffViewer.markdownDescription": "Abrir automaticamente diferenças de texto do VS Code no Merge Studio, incluindo controle de código-fonte e comparações de arquivos e revisões. Independente de `#jbMerge.autoOpen#`. Diferenças binárias e editores personalizados permanecem inalterados. Desative para usar o VS Code nas próximas comparações. Se ambas as extensões ativarem esta opção, o GitStudio cuidará das diferenças. Com o GitStudio instalado, a configuração `gitstudio.diff.comparisonIn` dele escolhe quais diferenças das visualizações dele abrem aqui; as diferenças de pull requests sempre continuam no editor de diferenças do VS Code.",
   "config.undefined.title": "Merge Studio",
+  "customEditor.jbMerge.diffEditor.displayName": "Merge Studio (diff)",
   "customEditor.jbMerge.mergeEditor.displayName": "Merge Studio (mesclagem de 3 vias)",
   "description": "Resolva conflitos de mesclagem e rebase do Git em um editor de três painéis no estilo JetBrains, com um painel de conflitos, alterações coloridas, desfazer completo e um diff lado a lado.",
   "displayName": "Merge Studio — Resolvedor de Conflitos de Mesclagem e Editor de Mesclagem de 3 Vias",
