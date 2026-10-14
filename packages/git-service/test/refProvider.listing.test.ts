@@ -280,7 +280,7 @@ test("getHead over a .git git cannot read fails with git's reason rather than ca
     writeFileSync(join(dir, ".git"), "gitdir: ./nowhere\n");
     const proc = new GitProcess({ cwd: dir });
     try {
-      await assert.rejects(new RefProvider(proc).getHead(), /not a git repository/);
+      await assert.rejects(new RefProvider(proc).getHead(), /not a git repository|does not point to a valid repository/);
     } finally {
       proc.dispose();
     }
