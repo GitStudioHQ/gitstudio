@@ -211,6 +211,7 @@
   "config.gitstudio.statusBar.showTerminal.description": "Etkin deponun köküyle açılmış bir terminal açan bir durum çubuğu düğmesi göster — bu çalışma alanı kökü olmak zorunda değildir.",
   "config.gitstudio.worktrees.prefixWithProjectName.description": "Artık kullanılmıyor: Yeni Çalışma Alanı şimdi ana çalışma alanının yanında '<project>-<branch>' klasörünü önerir ve oluşturulmadan önce düzenleyebilirsiniz.",
   "customEditor.gitstudio.mergeEditor.displayName": "GitStudio 3 Panelli Birleştirme",
+  "customEditor.gitstudio.diffEditor.displayName": "GitStudio Diff",
   "customEditor.gitstudio.rebaseTodoEditor.displayName": "GitStudio Etkileşimli Yeniden Temellendirme",
   "description": "VS Code ve Cursor için ücretsiz, açık kaynaklı Git GUI ve işleme grafiği. Git Studio, JetBrains tarzı bir Git iş akışını düzenleyiciye getirir — satır içi sorumlu bulma, dosya geçmişi, öbek ve satır hazırlama, 3 panelli birleştirme, evrensel Geri Al özellikli etkileşimli yeniden temellendirme, zula/raf, çalışma alanları ve düzenleyici içi GitHub PR'ları. GitLens, GitKraken ve Sourcetree'ye ücretsiz bir alternatif.",
   "displayName": "GitStudio — JetBrains Tarzı Git Grafiği, Sorumlu Bulma ve Birleştirme",

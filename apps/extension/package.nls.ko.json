@@ -211,6 +211,7 @@
   "config.gitstudio.statusBar.showTerminal.description": "활성 리포지토리의 루트(작업 영역 루트와 다를 수 있음)에서 터미널을 여는 상태 표시줄 버튼을 표시합니다.",
   "config.gitstudio.worktrees.prefixWithProjectName.description": "더 이상 사용되지 않습니다: 새 작업 폴더는 이제 메인 작업 폴더 옆에 '<project>-<branch>' 폴더를 제안하며, 만들기 전에 편집할 수 있습니다.",
   "customEditor.gitstudio.mergeEditor.displayName": "GitStudio 3분할 병합",
+  "customEditor.gitstudio.diffEditor.displayName": "GitStudio Diff",
   "customEditor.gitstudio.rebaseTodoEditor.displayName": "GitStudio 대화형 리베이스",
   "description": "VS Code와 Cursor를 위한 무료 오픈 소스 Git GUI 및 커밋 그래프입니다. Git Studio는 JetBrains 스타일의 Git 워크플로를 에디터에 가져옵니다 — 인라인 블레임, 파일 기록, 헝크 및 줄 단위 스테이징, 3분할 병합, 전체 실행 취소가 가능한 대화형 리베이스, 스태시/셸프, 작업 폴더, 에디터 내 GitHub PR까지. GitLens, GitKraken, Sourcetree의 무료 대안입니다.",
   "displayName": "GitStudio — JetBrains 스타일 Git 그래프, 블레임 및 병합",

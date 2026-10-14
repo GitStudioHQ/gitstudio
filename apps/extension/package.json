@@ -154,6 +154,16 @@
         "displayName": "%customEditor.gitstudio.mergeEditor.displayName%",
         "selector": [
           {
+            "filenamePattern": "*.gitstudio-merge"
+          }
+        ],
+        "priority": "option"
+      },
+      {
+        "viewType": "gitstudio.diffEditor",
+        "displayName": "%customEditor.gitstudio.diffEditor.displayName%",
+        "selector": [
+          {
             "filenamePattern": "*"
           }
         ],

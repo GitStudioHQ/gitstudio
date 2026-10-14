@@ -211,6 +211,7 @@
   "config.gitstudio.statusBar.showTerminal.description": "Zobrazit tlačítko ve stavovém řádku, které otevře terminál přímo v kořeni aktivního repozitáře — což nemusí být kořen pracovního prostoru.",
   "config.gitstudio.worktrees.prefixWithProjectName.description": "Už se nepoužívá: Nový pracovní strom teď navrhuje složku '<projekt>-<větev>' vedle hlavního pracovního stromu a můžete ji upravit před vytvořením.",
   "customEditor.gitstudio.mergeEditor.displayName": "GitStudio – třípanelové sloučení",
+  "customEditor.gitstudio.diffEditor.displayName": "GitStudio Diff",
   "customEditor.gitstudio.rebaseTodoEditor.displayName": "GitStudio – interaktivní rebase",
   "description": "Bezplatné grafické rozhraní pro Git a graf commitů s otevřeným zdrojovým kódem pro VS Code a Cursor. Git Studio přináší do editoru workflow gitu ve stylu JetBrains — inline blame, historii souborů, stage po blocích a řádcích, třípanelové sloučení, interaktivní rebase s univerzálním Zpět, stash/shelf, pracovní stromy a GitHub PR přímo v editoru. Bezplatná alternativa k GitLens, GitKraken a Sourcetree.",
   "displayName": "GitStudio — graf commitů, blame a sloučení ve stylu JetBrains",

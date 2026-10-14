@@ -23,6 +23,7 @@ export const GITSTUDIO_MERGE_COMMANDS: MergeCommandIds = {
 
 export const GITSTUDIO_MERGE_VIEW_TYPES: MergeViewTypes = {
   mergeEditor: "gitstudio.mergeEditor",
+  diffEditor: "gitstudio.diffEditor",
   diffView: "gitstudio.diffView",
   conflicts: "gitstudio.conflicts",
 };
