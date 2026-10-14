@@ -620,6 +620,7 @@ const CASES = [
   ["the-detail-rail-is-a-constant-width", "issues~open31"],
   ["the-detail-rail-is-a-constant-width", "prs~open106"],
   ["check-rows-and-the-checks-pill-tell-one-story", "prs~open106~text:Checks"],
+  ["a-pr-with-no-ci-says-no-checks", "prs~open103"],
   ["menus-hang-from-their-trigger", "prs~open106"],
   ["the-review-composer-hands-focus-back", "prs~open106"],
   ["avatar-stacks-and-chips-stay-legible", "prs", { width: 1000 }],

@@ -2755,7 +2755,16 @@
     "pr:detail": (n) => {
       const pr = prs.find((p) => p.number === n);
       if (!pr) return undefined;
-      return { pr, files: prFiles[n] || [], checks: n === 106 ? "pending" : "success" };
+      // As main's prCheckState: the check runs AND the legacy statuses rolled
+      // up — failure, then anything running, then success; "" for neither.
+      // The PRs with check runs here are Actions-only (no legacy statuses);
+      // #103 has no CI at all (GitHub still answers its combined status as
+      // "pending", total 0); the rest carry one passing legacy status.
+      const runs = prChecks[n] || [];
+      const failed = runs.some((r) => /^(failure|timed_out|cancelled|action_required|startup_failure)$/.test(r.conclusion || ""));
+      const running = runs.some((r) => !r.conclusion || /queued|in_progress|waiting|pending|requested/.test(r.status || ""));
+      const checks = runs.length ? (failed ? "failure" : running ? "pending" : "success") : n === 103 ? "" : "success";
+      return { pr, files: prFiles[n] || [], checks };
     },
     "pr:conversation": (n) => prConversation[n] || [],
     "pr:files": (n) => prFiles[n] || [],

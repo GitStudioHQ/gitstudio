@@ -9076,6 +9076,21 @@
       c.match(text('.gh-subtab[data-sub="checks"]') || "", /Checks \(\d+\)/, "the Checks tab carries its count like its siblings");
     },
 
+    /**
+     * A PR with no CI at all: GitHub's combined status answers "pending" with
+     * total_count 0 for it, and the rail read "Pending" beside "Checks (0)"
+     * (and the page polled forever). Main rolls statuses and check runs up
+     * now, so the rail says there are none.
+     */
+    "a-pr-with-no-ci-says-no-checks": async (f) => {
+      const c = check(f);
+      await settle(500);
+      c.ok(!$(".det-checks-pill"), "no Checks pill when there are no checks");
+      const rail = $$(".det-prop-none").map((x) => text(x));
+      c.ok(rail.some((t) => /No checks/.test(t)), `the rail says "No checks" (${rail.join(" / ")})`);
+      c.match(text('.gh-subtab[data-sub="checks"]') || "", /Checks \(0\)/, "beside a Checks (0) tab");
+    },
+
     /** A menu near the right edge hangs from its trigger's right edge, keeping the window margin. */
     "menus-hang-from-their-trigger": async (f) => {
       const c = check(f);

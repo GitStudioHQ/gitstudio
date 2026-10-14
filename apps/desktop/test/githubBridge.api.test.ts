@@ -362,6 +362,32 @@ test("a PR's detail carries its files and the combined check state", async (t) =
   assert.equal(d?.checks, "failure");
 });
 
+test("a PR's check state counts its check runs, and is blank with no CI at all", async (t) => {
+  // GitHub answers the combined status of a commit with NO statuses as
+  // { state: "pending", total_count: 0 } — the page read "Pending" beside
+  // "Checks (0)" and polled forever.
+  const RUNS = "GET /repos/acme/app/commits/h1/check-runs?per_page=100";
+  const { bridge, gh } = setup(t, {
+    "GET /repos/acme/app/pulls/5": rawPull(5),
+    "GET /repos/acme/app/pulls/5/files?per_page=100": () => page([]),
+    "GET /repos/acme/app/commits/h1/status": { state: "pending", total_count: 0 },
+  });
+  await signIn(bridge, gh);
+  const cases: Array<[string, unknown, string]> = [
+    ["no CI at all", { check_runs: [] }, ""],
+    ["Actions running", { check_runs: [{ name: "ci", status: "in_progress", conclusion: null }] }, "pending"],
+    ["Actions failed", { check_runs: [{ name: "ci", status: "completed", conclusion: "failure" }] }, "failure"],
+    ["Actions passed", { check_runs: [{ name: "ci", status: "completed", conclusion: "success" }] }, "success"],
+  ];
+  for (const [what, runs, want] of cases) {
+    gh.route(RUNS, runs);
+    assert.equal((await bridge.prDetail(5))?.checks, want, what);
+  }
+  // A check-runs read that fails leaves the (empty) statuses: still blank.
+  gh.route(RUNS, () => reply(500, {}));
+  assert.equal((await bridge.prDetail(5))?.checks, "", "check runs unreadable");
+});
+
 test("a PR detail whose files can't be read is absent, not an empty Files tab", async (t) => {
   const { bridge, gh } = setup(t, {
     "GET /repos/acme/app/pulls/5": rawPull(5),
