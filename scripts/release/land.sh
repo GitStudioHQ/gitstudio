@@ -16,7 +16,10 @@ while :; do
   sha=${head#* }
   js=$(gh api "repos/$R/commits/$sha/check-runs?per_page=100" --jq '[.check_runs[]|select(.name|startswith("codecov/")|not)|{n:.name,s:.status,c:(.conclusion//"")}]')
   total=$(echo "$js" | jq length); open=$(echo "$js" | jq '[.[]|select(.s!="completed")]|length')
-  [ "$total" -ge 4 ] && [ "$open" = 0 ] && break
+  # A re-run job leaves the check-run list for a moment: count the workflow
+  # runs too, or a re-run's gap reads as "all done" (#114 merged that way).
+  runs=$(gh api "repos/$R/actions/runs?head_sha=$sha&per_page=100" --jq '[.workflow_runs[]|select(.status!="completed")]|length')
+  [ "$total" -ge 4 ] && [ "$open" = 0 ] && [ "$runs" = 0 ] && break
   sleep 60
 done
 echo "$js" | jq -r '.[]|.c' | sort | uniq -c | sed "s/^/#$N /"
