@@ -5,7 +5,7 @@
 //  · resolveActiveFile: the active editor's file → its (innermost) repository;
 //  · FileTimelineProvider: the Timeline's pages of a file's commits, a rename
 //    read under the old name, a refresh only when commits can have changed;
-//  · RevisionNavigator: Open Changes, Open File at Revision, Back / Forward
+//  · RevisionNavigator: Open Changes, Show File History, Back / Forward
 //    through a file's history (from the working file or a revision diff);
 //  · showLineHistory: the commits that touched the selected lines;
 //  · showReflog: every position HEAD held, and a branch made at one of them;
@@ -120,8 +120,11 @@ vscode.window.withProgress = async (opts: { title: string }, task: () => Promise
   return task();
 };
 const diffs: { left: FakeUri; right: FakeUri; title: string }[] = [];
+/** The shas handed to "Show in Commit Graph". */
+const revealed: unknown[] = [];
 vscode.commands.executeCommand = async (id: string, ...args: unknown[]) => {
   if (id === "vscode.diff") diffs.push({ left: args[0] as FakeUri, right: args[1] as FakeUri, title: args[2] as string });
+  if (id === "gitstudio.revealCommitInGraph") revealed.push(args[0]);
   return undefined;
 };
 
@@ -132,6 +135,8 @@ const { FileTimelineProvider, FILE_HISTORY_SOURCE, FILE_HISTORY_ITEM_CONTEXT } =
 const { RevisionNavigator } = require("../src/history/revisionNavigation") as typeof import("../src/history/revisionNavigation");
 const { showLineHistory } = require("../src/history/lineHistory") as typeof import("../src/history/lineHistory");
 const { showReflog } = require("../src/history/reflog") as typeof import("../src/history/reflog");
+const { commitToReveal, SHOW_IN_GRAPH_BUTTON } =
+  require("../src/history/revealInGraph") as typeof import("../src/history/revealInGraph");
 const { createTimelineItem, registerTimelineProvider } =
   require("../src/history/timelineApi") as typeof import("../src/history/timelineApi");
 const { fromRevisionUri, toRevisionUri } =
@@ -139,15 +144,16 @@ const { fromRevisionUri, toRevisionUri } =
 const { repoChange } = require("../src/git/repoChange") as typeof import("../src/git/repoChange");
 const { GitContext } = require("@gitstudio/git-service/GitContext") as typeof import("@gitstudio/git-service/GitContext");
 /* eslint-enable @typescript-eslint/no-require-imports */
-import type { DialogSpec } from "../src/ui/dialogs";
+import type { DialogResult, DialogSpec } from "../src/ui/dialogs";
 
 let asked: DialogSpec[] = [];
-let answer: (spec: DialogSpec) => string | undefined = () => undefined;
+/** A choice's id — or a whole result, for a row's button. */
+let answer: (spec: DialogSpec) => string | DialogResult | undefined = () => undefined;
 registerDialogHost({
   show: async (spec) => {
     asked.push(spec);
     const v = answer(spec);
-    return v === undefined ? undefined : { value: v };
+    return v === undefined ? undefined : typeof v === "string" ? { value: v } : v;
   },
 });
 
@@ -218,6 +224,7 @@ function said(kind: string): string[] {
 function reset(): void {
   vscode.__said.length = 0;
   diffs.length = 0;
+  revealed.length = 0;
   asked = [];
   answer = () => undefined;
 }
@@ -410,7 +417,7 @@ test("Open Changes diffs HEAD against the working file", async () => {
   nav.dispose();
 });
 
-test("Open File at Revision offers the file's history and opens the picked commit's change", async () => {
+test("Show File History offers the file's history and opens the picked commit's change", async () => {
   const f = fixture();
   const [s3, s2] = threeCommits(f);
   const nav = new RevisionNavigator(f.repos);
@@ -419,7 +426,7 @@ test("Open File at Revision offers the file's history and opens the picked commi
   answer = (spec) => (spec.kind === "pick" ? spec.choices[1].id : undefined);
   await nav.openFileAtRevision();
   const pick = asked[0];
-  assert.equal(pick?.title, "Open f.txt at Revision");
+  assert.equal(pick?.title, "File History — f.txt");
   assert.ok(pick.kind === "pick");
   assert.deepEqual(pick.choices.map((c) => c.detail), [s3, s2].map((s) => s.slice(0, 7)).concat(pick.choices[2].detail!));
   assert.equal(diffs.length, 1);
@@ -438,7 +445,7 @@ test("Open File at Revision offers the file's history and opens the picked commi
   assert.equal(diffs.length, 2, "dismissed, or a choice that isn't there: nothing opens");
 });
 
-test("Open File at Revision: a file with no history, or history git can't read, says so", async () => {
+test("Show File History: a file with no history, or history git can't read, says so", async () => {
   const f = fixture();
   threeCommits(f);
   writeFileSync(join(f.dir, "new.txt"), "untracked\n");
@@ -575,6 +582,86 @@ test("Line History: no lines' history, a git error, or no file — each says so 
   edit(undefined);
   await showLineHistory(f.repos);
   assert.equal(asked.length, 0, "no file: nothing asked");
+});
+
+// ── Show in Commit Graph (issue #111) ────────────────────────────────────────
+
+test("Show File History: each row's Show in Commit Graph reveals that commit, by its full sha, and opens nothing", async () => {
+  const f = fixture();
+  const [, s2] = threeCommits(f);
+  const nav = new RevisionNavigator(f.repos);
+  reset();
+  edit(fileUri(f.dir, "f.txt"));
+  answer = (spec) => (spec.kind === "pick" ? { value: spec.choices[1].id, button: SHOW_IN_GRAPH_BUTTON } : undefined);
+  await nav.openFileAtRevision();
+  const pick = asked[0];
+  assert.ok(pick.kind === "pick");
+  assert.ok(pick.choices.every((c) => c.buttons?.some((b) => b.id === SHOW_IN_GRAPH_BUTTON && b.title === "Show in Commit Graph")));
+  assert.deepEqual(revealed, [s2]);
+  assert.equal(diffs.length, 0, "the graph is the answer — no diff opens");
+});
+
+test("Line History: a row's Show in Commit Graph reveals that commit and ends the walk", async () => {
+  const f = fixture();
+  const [, s2] = threeCommits(f);
+  reset();
+  edit(fileUri(f.dir, "f.txt"), { start: 1, end: 1 });
+  answer = (spec) => (spec.kind === "pick" ? { value: spec.choices[0].id, button: SHOW_IN_GRAPH_BUTTON } : undefined);
+  await showLineHistory(f.repos);
+  assert.equal(asked.length, 1, "the list does not re-open");
+  assert.deepEqual(revealed, [s2]);
+  assert.equal(diffs.length, 0);
+});
+
+test("Show Commit in Graph resolves the commit an editor shows — a revision, or a sha as given", async () => {
+  const f = fixture();
+  const [s3, s2] = threeCommits(f);
+  const repos = { ...(f.repos as object), findByPath: () => f.entry } as never;
+  reset();
+  assert.equal(await commitToReveal(repos, "abc123"), "abc123", "a sha is passed through untouched");
+  // A revision editor (its title bar passes its URI, the palette passes nothing).
+  assert.equal(await commitToReveal(repos, toRevisionUri(f.dir, s2.slice(0, 10), "f.txt")), s2, "a short rev, made full");
+  edit(toRevisionUri(f.dir, "HEAD", "f.txt") as never);
+  assert.equal(await commitToReveal(repos, undefined), s3, "the active editor's revision");
+  // vscode.git's own sides (the Changes list's diff of a modification).
+  const gitSide = Uri.from({ scheme: "git", path: `${f.dir}/f.txt`, query: JSON.stringify({ path: `${f.dir}/f.txt`, ref: s2 }) });
+  assert.equal(await commitToReveal(repos, gitSide), s2);
+  assert.deepEqual(said("info"), []);
+
+  // Nothing to show: the index, the empty tree, a working file, no editor, a rev git can't find.
+  for (const arg of [
+    toRevisionUri(f.dir, "", "f.txt"),
+    toRevisionUri(f.dir, "4b825dc642cb6eb9a060e54bf8d69288fbee4904", "f.txt"),
+    toRevisionUri(f.dir, "no-such-rev", "f.txt"),
+    toRevisionUri(f.dir, "--output=x", "f.txt"),
+    toRevisionUri(join(scratch, "gone"), s2, "f.txt"),
+    fileUri(f.dir, "f.txt"),
+  ]) {
+    assert.equal(await commitToReveal(repos, arg), undefined, String(arg));
+  }
+  edit(undefined);
+  assert.equal(await commitToReveal(repos, undefined), undefined);
+  assert.deepEqual(new Set(said("info")), new Set(["GitStudio: This editor isn't showing a commit."]));
+  assert.equal(said("info").length, 7);
+});
+
+test("Show in Commit Graph from another repository than the graph shows: says so, reveals nothing", async () => {
+  const f = fixture();
+  const other = fixture();
+  const [, s2] = threeCommits(f);
+  threeCommits(other);
+  const repos = { getActive: () => other.entry, getAll: () => [f.entry, other.entry] } as never;
+  reset();
+  assert.equal(await commitToReveal(repos, toRevisionUri(f.dir, s2, "f.txt")), undefined);
+  edit(fileUri(f.dir, "f.txt"));
+  answer = (spec) => (spec.kind === "pick" ? { value: "1", button: SHOW_IN_GRAPH_BUTTON } : undefined);
+  await new RevisionNavigator(repos).openFileAtRevision();
+  assert.deepEqual(revealed, []);
+  const name = (dir: string) => dir.split(/[\\/]/).pop();
+  assert.deepEqual(said("info"), [
+    `GitStudio: That commit is in ${name(f.dir)}, and the Commit Graph is showing ${name(other.dir)}. Switch Repository to see it there.`,
+    `GitStudio: That commit is in ${name(f.dir)}, and the Commit Graph is showing ${name(other.dir)}. Switch Repository to see it there.`,
+  ]);
 });
 
 // ── showReflog ───────────────────────────────────────────────────────────────

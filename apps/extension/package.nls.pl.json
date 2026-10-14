@@ -69,7 +69,7 @@
  "command.gitstudio.merge.restoreBuiltInMergeEditor.title": "Przywróć domyślny edytor scalania VS Code",
  "command.gitstudio.openChanges.title": "Otwórz zmiany (vs HEAD)",
  "command.gitstudio.openDiff.title": "Otwórz we wbudowanym diffie",
- "command.gitstudio.openFileAtRevision.title": "Otwórz plik w rewizji…",
+ "command.gitstudio.openFileAtRevision.title": "Pokaż historię pliku",
  "command.gitstudio.openTerminal.title": "Otwórz terminal w katalogu głównym repozytorium",
  "command.gitstudio.openWalkthrough.title": "Rozpocznij",
  "command.gitstudio.operation.abort.title": "Przerwij operację",

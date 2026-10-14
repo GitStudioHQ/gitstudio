@@ -5,7 +5,8 @@ import type { RepoEntry, RepoManager } from "../git/repoManager";
 import { relativeTime } from "../util/relativeTime";
 import { commitChangeSides, openSidesDiff } from "./revisionContentProvider";
 import { resolveActiveFile } from "./historyContext";
-import { promptPick } from "../ui/dialogs";
+import { promptPickWithButtons } from "../ui/dialogs";
+import { SHOW_IN_GRAPH_BUTTON, revealInGraph, showInGraphButton } from "./revealInGraph";
 import * as l10n from "@vscode/l10n";
 
 /**
@@ -62,9 +63,15 @@ export async function showLineHistory(repos: RepoManager): Promise<void> {
   // user can step to an older/newer revision. Escape closes the loop.
   let keepWalking = true;
   while (keepWalking) {
-    const picked = await pickCommit(entries, `${fileName} · ${range}`);
+    const choice = await pickCommit(entries, `${fileName} · ${range}`);
+    const picked = choice?.entry;
     if (!picked) {
       keepWalking = false;
+      break;
+    }
+    if (choice?.button === SHOW_IN_GRAPH_BUTTON) {
+      // Where the commit sits in the graph is the answer: the walk ends there.
+      await revealInGraph(repos, active.entry, picked.sha);
       break;
     }
     // `git log -L` follows the lines through renames, so the picked commit
@@ -103,8 +110,9 @@ async function pathsAt(
 async function pickCommit(
   entries: LineHistoryEntry[],
   title: string,
-): Promise<LineHistoryEntry | undefined> {
-  const picked = await promptPick({
+): Promise<{ entry: LineHistoryEntry; button?: string } | undefined> {
+  const graph = showInGraphButton();
+  const picked = await promptPickWithButtons({
     title: l10n.t("Line History — {0}", title),
     hint: l10n.t("Pick a commit to diff it against its parent."),
     choices: entries.map((e, i) => ({
@@ -113,9 +121,11 @@ async function pickCommit(
       icon: "git-commit",
       detail: e.shortSha,
       description: `${e.author} · ${relativeTime(e.authorDate)}`,
+      buttons: [graph],
     })),
   });
-  return picked === undefined ? undefined : entries[Number(picked)];
+  const entry = picked === undefined ? undefined : entries[Number(picked.id)];
+  return entry ? { entry, button: picked?.button } : undefined;
 }
 
 /** Best-effort scroll of the freshly-opened diff to the range of interest. */

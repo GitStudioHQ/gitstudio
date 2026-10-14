@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { failed, notice } from "../ui/notify";
-import { promptPick } from "../ui/dialogs";
+import { promptPickWithButtons } from "../ui/dialogs";
 import type { FileHistoryEntry } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { relativeTime } from "../util/relativeTime";
@@ -14,6 +14,7 @@ import {
 import { resolveActiveFile } from "./historyContext";
 import { fromGitUriQuery, revOfGitRef } from "../changes/nativeDiffSides";
 import { relativeInside } from "../util/repoScope";
+import { SHOW_IN_GRAPH_BUTTON, revealInGraph, showInGraphButton } from "./revealInGraph";
 import * as l10n from "@vscode/l10n";
 
 /** A resolved working-tree file, plus the rev when invoked from a diff editor. */
@@ -77,6 +78,10 @@ export class RevisionNavigator implements vscode.Disposable {
 
     const picked = await pickRevision(history, baseName(rel));
     if (!picked) {
+      return;
+    }
+    if (picked.button === SHOW_IN_GRAPH_BUTTON) {
+      await revealInGraph(this.repos, entry, picked.entry.sha);
       return;
     }
     this.cursors.set(this.key(root, rel), picked.index);
@@ -198,9 +203,10 @@ export class RevisionNavigator implements vscode.Disposable {
 async function pickRevision(
   history: FileHistoryEntry[],
   fileName: string,
-): Promise<{ entry: FileHistoryEntry; index: number } | undefined> {
-  const picked = await promptPick({
-    title: l10n.t("Open {0} at Revision", fileName),
+): Promise<{ entry: FileHistoryEntry; index: number; button?: string } | undefined> {
+  const graph = showInGraphButton();
+  const picked = await promptPickWithButtons({
+    title: l10n.t("File History — {0}", fileName),
     hint: l10n.t("Pick a revision to diff against your working tree."),
     choices: history.map((e, index) => ({
       id: String(index),
@@ -208,14 +214,15 @@ async function pickRevision(
       icon: "git-commit",
       detail: e.shortSha,
       description: `${e.author} · ${relativeTime(e.authorDate)}`,
+      buttons: [graph],
     })),
   });
   if (picked === undefined) {
     return undefined;
   }
-  const index = Number(picked);
+  const index = Number(picked.id);
   const entry = history[index];
-  return entry ? { entry, index } : undefined;
+  return entry ? { entry, index, button: picked.button } : undefined;
 }
 
 function baseName(rel: string): string {

@@ -69,7 +69,7 @@
   "command.gitstudio.merge.restoreBuiltInMergeEditor.title": "Ripristina l'editor di merge di VS Code",
   "command.gitstudio.openChanges.title": "Apri modifiche (vs HEAD)",
   "command.gitstudio.openDiff.title": "Apri nel diff integrato",
-  "command.gitstudio.openFileAtRevision.title": "Apri file alla revisione…",
+  "command.gitstudio.openFileAtRevision.title": "Mostra cronologia del file",
   "command.gitstudio.openTerminal.title": "Apri terminale nella radice del repository",
   "command.gitstudio.openWalkthrough.title": "Inizia",
   "command.gitstudio.operation.abort.title": "Interrompi operazione",

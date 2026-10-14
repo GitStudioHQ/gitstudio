@@ -67,6 +67,17 @@ test("a dialog is posted to the page and resolves with the answer and the option
   assert.deepEqual(await answer, { value: "ok", options: ["also", "branch"] });
 });
 
+test("a pick answered by a row's button carries the button's id (issue #111)", async () => {
+  const r = repo("host-dialog-button");
+  const h = host(r.dir);
+  await h.send({ type: "ready" });
+  const answer = h.provider.show({ kind: "pick", title: "Pick", choices: [{ id: "0", label: "a" }] } as never);
+  await until(() => h.all("dialog").length > 0);
+  const posted = h.last("dialog") as { dialogId: string };
+  await h.send({ type: "dialogResult", dialogId: posted.dialogId, dialogValue: "0", dialogButton: "showInGraph" });
+  assert.deepEqual(await answer, { value: "0", button: "showInGraph" });
+});
+
 test("a dialog dismissed on the page resolves undefined; one answered without options carries only the value", async () => {
   const r = repo("host-dialog-dismiss");
   const h = host(r.dir);

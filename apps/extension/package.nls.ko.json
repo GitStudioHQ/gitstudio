@@ -69,7 +69,7 @@
   "command.gitstudio.merge.restoreBuiltInMergeEditor.title": "VS Code의 병합 편집기 복원",
   "command.gitstudio.openChanges.title": "변경 내용 열기(HEAD와 비교)",
   "command.gitstudio.openDiff.title": "내장 diff로 열기",
-  "command.gitstudio.openFileAtRevision.title": "리비전에서 파일 열기…",
+  "command.gitstudio.openFileAtRevision.title": "파일 기록 표시",
   "command.gitstudio.openTerminal.title": "리포지토리 루트에서 터미널 열기",
   "command.gitstudio.openWalkthrough.title": "시작하기",
   "command.gitstudio.operation.abort.title": "작업 중단",

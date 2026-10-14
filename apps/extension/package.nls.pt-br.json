@@ -69,7 +69,7 @@
   "command.gitstudio.merge.restoreBuiltInMergeEditor.title": "Restaurar o Editor de Mesclagem do VS Code",
   "command.gitstudio.openChanges.title": "Abrir Alterações (vs HEAD)",
   "command.gitstudio.openDiff.title": "Abrir no Diff Incorporado",
-  "command.gitstudio.openFileAtRevision.title": "Abrir Arquivo na Revisão…",
+  "command.gitstudio.openFileAtRevision.title": "Mostrar Histórico do Arquivo",
   "command.gitstudio.openTerminal.title": "Abrir Terminal na Raiz do Repositório",
   "command.gitstudio.openWalkthrough.title": "Primeiros Passos",
   "command.gitstudio.operation.abort.title": "Abortar Operação",

@@ -69,7 +69,7 @@
   "command.gitstudio.merge.restoreBuiltInMergeEditor.title": "VS Codes Merge-Editor wiederherstellen",
   "command.gitstudio.openChanges.title": "Changes öffnen (vs. HEAD)",
   "command.gitstudio.openDiff.title": "Im eingebetteten Diff öffnen",
-  "command.gitstudio.openFileAtRevision.title": "Datei bei Revision öffnen…",
+  "command.gitstudio.openFileAtRevision.title": "Dateiverlauf anzeigen",
   "command.gitstudio.openTerminal.title": "Terminal im Repository-Stammverzeichnis öffnen",
   "command.gitstudio.openWalkthrough.title": "Erste Schritte",
   "command.gitstudio.operation.abort.title": "Operation abbrechen",

@@ -4,6 +4,23 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Find a file's commit in the Commit Graph.** Every commit in Show File
+  History and Show Line History has a Show in Commit Graph button, and a
+  revision opened from either has Show Commit in Graph in its title bar and
+  in the editor's GitStudio menu. The graph opens if it is closed and scrolls back to a commit older
+  than the rows it has loaded
+  ([#111](https://github.com/GitStudioHQ/gitstudio/issues/111)).
+
+### Changed
+- **Open File at Revision… is now Show File History.** Same list of the
+  file's commits, under the name that says what it is; its dialog is titled
+  "File History — <file>". The command id (`gitstudio.openFileAtRevision`)
+  is unchanged, so keybindings keep working
+  ([#111](https://github.com/GitStudioHQ/gitstudio/issues/111)).
+
 ## [1.20.0] - 2026-10-13
 
 ### Added
