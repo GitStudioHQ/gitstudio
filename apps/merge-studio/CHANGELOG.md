@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.2 — 2026-10-14
+
+### Fixed
+
+- **"Reopen Editor With…" on a diff offers the comparison, not an empty 3-pane merge.** The merge editor was listed for every file, and picking it on a diff opened an empty merge. It is now offered only where it belongs, and the list has **Merge Studio (diff)** instead, which opens the diff you picked in Merge Studio's side-by-side comparison — a single file is compared with HEAD ([#110](https://github.com/GitStudioHQ/gitstudio/pull/110); thanks, @billdwhite).
+
 ## 1.4.1 — 2026-10-13
 
 ### Changed
