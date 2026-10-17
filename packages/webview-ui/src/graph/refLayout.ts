@@ -167,6 +167,14 @@ const LEGIBLE_CHIP_CAP = 150;
  * a chip is 16px of icon + 14px of gap + the name + an optional 14px remote
  * tail, and the track adds REFS_PADDING around it. A floor short of that draws
  * the chip's furniture and none of its name.
+ *
+ * Plus one REF_CHIP_GAP of slack, the same trailing gap `wanted` carries for
+ * every chip. The estimate is an estimate: the current HEAD's chip is set at
+ * weight 650 against the 550 it is calibrated for, and "main" measured 57px
+ * against 55 estimated — so a track at the bare floor read "m…". It used to
+ * land there only in an 8px band above 860px; once Date and SHA stayed on
+ * screen below that (issue #124), it was every width down to 660. With the
+ * slack a one-chip row's floor equals its `wanted`, which never cut it.
  */
 export function legibleRefsWidth(rows: readonly { refs?: WireRef[] }[]): number {
   let widest = 0;
@@ -176,7 +184,7 @@ export function legibleRefsWidth(rows: readonly { refs?: WireRef[] }[]): number 
       widest = Math.max(widest, estimateChipWidth(entry, LEGIBLE_CHIP_CAP));
     }
   }
-  return widest === 0 ? 0 : REFS_PADDING + widest;
+  return widest === 0 ? 0 : REFS_PADDING + widest + REF_CHIP_GAP;
 }
 
 export function fitRefsWidth(opts: {

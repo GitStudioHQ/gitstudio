@@ -103,6 +103,12 @@ const SUBJECT_MIN_WIDTH = 220;
  * fixed width: the user's own dragged width still wins above it.
  */
 const REFS_MIN_READABLE = 150;
+/** The Branch/Tag track's cap at and below COLUMN_DROP_TAIL_AT (the CSS tier). */
+const REFS_CAP_NARROW = 300;
+/** …and in the narrow table tier, at and below COLUMN_DROP_TAIL_AT - 200. */
+const REFS_CAP_TIGHT = 240;
+/** The message's floor in that narrow table tier. */
+const SUBJECT_MIN_TIGHT = Math.round(SUBJECT_MIN_WIDTH * 0.5);
 /**
  * The width at which a commit message stops feeling cramped. Above the hard
  * SUBJECT_MIN_WIDTH floor: the Branch/Tag track auto-fits only with whatever is
@@ -121,21 +127,39 @@ const COMPACT_DROP_DATE_AT = 580;
 const COMPACT_DROP_AUTHOR_AT = 430;
 const SUBJECT_MIN_COMPACT_MID = 150;
 const SUBJECT_MIN_COMPACT_TIGHT = 120;
+/** Compact's own floor: below this it is a one-line list with no header. */
+const COMPACT_LIST_AT = 330;
+/** Compact's default track widths — narrower than the editor tab's (`def`). */
+const COMPACT_DEF = { changes: 84, author: 112, date: 64, sha: 66 } as const;
 /**
- * Below this host width, column mode drops its Date and SHA tracks.
+ * Date and SHA stay on screen for as long as they FIT (issue #124).
  *
- * The threshold is set by what the REFS column needs when the tail comes back,
- * not by when the tail itself starts to feel tight. At 760 the tail returned
- * ~36px too early: crossing it (a 1296px window) collapsed the branch/tag track
- * from 168px to 87px and rendered zero readable characters in it, so WIDENING
- * the window made a column narrower and emptied it. That put the dead band over
- * exactly the maximised-laptop widths, and nothing on screen said the column had
- * been starved — it just looked empty.
+ * They used to go at a fixed breakpoint — below an 860px host in the editor
+ * tab, and always in the bottom panel, which had no SHA track at all — whether
+ * or not there was room, while the Columns menu went on showing them ticked.
+ * "The SHA column is enabled and not shown" is what a person sees then, and
+ * nothing on screen says why.
  *
- * Date and SHA are the right things to give up for it: both are still on the
- * row's hover tooltip and in the details dock, and both can be turned back on
- * from the Columns menu. A branch name has nowhere else to be.
+ * Now the message gives way first, down to its floor, and the Branch/Tag
+ * track keeps the width at which a ref name is still readable — the reason the
+ * breakpoint sat as high as it did: at 760 the tail came back ~36px too early,
+ * collapsed the branch/tag track from 168px to 87px and rendered zero readable
+ * characters in it. Only what is left over is offered to the tail, SHA first:
+ * it is the narrowest column and the one that names the commit. Date goes
+ * first; both are still on the row's tooltip and in the details pane, and a
+ * column that has no room says so in the Columns menu. See fitTail.
  */
+const TAIL_FIT_ORDER: readonly ColumnSpec["id"][] = ["sha", "date"];
+/**
+ * Compact fits Author too, between the two. Its ladder drops Author at 430px
+ * anyway; without this, the band just above that had no room for SHA and hid
+ * it, and narrowing the panel by ten more pixels brought it BACK — a column
+ * that blinks out and in as you drag. Taking Author first keeps it one way.
+ */
+const TAIL_FIT_ORDER_COMPACT: readonly ColumnSpec["id"][] = ["sha", "author", "date"];
+/** The row's own horizontal chrome: the 2px spacer border + padding-right. */
+const ROW_CHROME = 2 + 12;
+const ROW_CHROME_COMPACT = 2 + 10;
 
 /** `:host([compact]) .content .refs { max-width }` — a share of the MESSAGE track. */
 const COMPACT_REFS_SHARE = 0.44;
@@ -590,6 +614,15 @@ export class CommitGraph extends LitElement {
     }
     .gh-menuitem[aria-checked="true"] .codicon-check { opacity: 1; }
     .gh-menuitem .lbl { flex: 1 1 auto; }
+    /* "no room": a ticked column this width cannot hold (issue #124). Muted,
+       like the footer that says the same at more length. */
+    .gh-menu-note {
+      flex: 0 0 auto;
+      font-size: 10.5px;
+      color: var(--gs-menu-muted);
+    }
+    .gh-menuitem:hover .gh-menu-note,
+    .gh-menuitem:focus-visible .gh-menu-note { color: inherit; opacity: 0.8; }
     .gh-menuitem[disabled] {
       opacity: 0.5;
       cursor: default;
@@ -822,29 +855,31 @@ export class CommitGraph extends LitElement {
        A short, wide surface. Two things wasted space here: a fixed Branch/Tag
        track that sat empty on most rows, and a wide gap between the message and
        the trailing metadata. So in compact the refs flow INLINE just before the
-       message (a ref-less commit uses the full width), the SHA track goes away
-       (it is right there in the details pane), and what is left — changes /
-       author / date — forms one quiet cluster on the right. The message leads;
-       everything else recedes. */
+       message (a ref-less commit uses the full width), and what is left —
+       changes / author / date / sha — forms one quiet cluster on the right.
+       The message leads; everything else recedes.
+       The SHA track is a real one. It used to be left out here ("it is right
+       there in the details pane") while the Columns menu went on offering SHA,
+       ticked, with nothing behind it (issue #124). It is on when the user has
+       it on and there is room — see fitTail. */
     :host([compact]) {
       --gs-grid:
         var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
         minmax(${SUBJECT_MIN_WIDTH}px, 1fr)
-        minmax(0, var(--col-changes-w, 84px))
-        minmax(0, var(--col-author-w, 112px))
-        minmax(0, var(--col-date-w, 64px));
+        minmax(0, var(--col-changes-w, ${COMPACT_DEF.changes}px))
+        minmax(0, var(--col-author-w, ${COMPACT_DEF.author}px))
+        minmax(0, var(--col-date-w, ${COMPACT_DEF.date}px))
+        minmax(0, var(--col-sha-w, ${COMPACT_DEF.sha}px));
     }
-    :host([compact]) .colhead .ch-refs,
-    :host([compact]) .colhead .ch-sha,
-    :host([compact]) .row .sha { display: none; }
+    :host([compact]) .colhead .ch-refs { display: none; }
     /* Compact's tracks are graph | message | changes | author | date, so four
        of the six grips land on a real boundary and stay draggable. (The claim
        they "would sit on the wrong boundaries" only held for the refs grip,
        whose cell is hidden here anyway — and a short panel is precisely where
        width is scarce and re-balancing matters most.) */
     :host([compact]) .col-resize[data-col="refs"] { display: none; }
-    /* Date is compact's last track: its right-edge grip divides nothing. */
-    :host([compact]) .col-resize[data-col="date"] { display: none; }
+    /* Date's grip divides Date | SHA; with SHA off it divides nothing, and the
+       shared :host(.hide-sha) rule below takes it away. */
     :host([compact]) .content {
       display: flex; align-items: center; gap: 7px; min-width: 0;
     }
@@ -907,21 +942,16 @@ export class CommitGraph extends LitElement {
       :host(:not([compact])) .row {
         --gs-grid:
           var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
-          minmax(0, clamp(0px, var(--col-refs-w, ${col("refs")}px), 300px))
+          minmax(0, clamp(0px, var(--col-refs-w, ${col("refs")}px), ${REFS_CAP_NARROW}px))
           minmax(${SUBJECT_MIN_WIDTH}px, 1fr)
           minmax(0, var(--col-changes-w, ${col("changes")}px))
-          minmax(0, var(--col-author-w, ${col("author")}px));
+          minmax(0, var(--col-author-w, ${col("author")}px))
+          minmax(0, var(--col-date-w, ${col("date")}px))
+          minmax(0, var(--col-sha-w, ${col("sha")}px));
       }
-      :host(:not([compact])) .colhead .ch-date,
-      :host(:not([compact])) .colhead .ch-sha,
-      :host(:not([compact])) .row .date,
-      :host(:not([compact])) .row .sha { display: none; }
-      /* The cells are gone, but their grips are absolutely positioned inside
-         them and survived as 0x0 hit targets — a handle you can see the cursor
-         change on but can never drag. Author becomes the last visible column
-         here, so it must not keep a trailing grip either. */
-      :host(:not([compact])) .colhead .col-resize[data-col="date"],
-      :host(:not([compact])) .colhead .col-resize[data-col="author"] { display: none; }
+      /* Date and SHA no longer go here by breakpoint: they stay while they fit
+         and fitTail hides them (the .hide-* classes, with their grips) when
+         they do not — issue #124. */
     }
     /* ── Still a table, just a narrower one ─────────────────────────────────
        Between the inline floor and the tail drop, the two things that identify
@@ -935,15 +965,24 @@ export class CommitGraph extends LitElement {
     @container (max-width: ${COLUMN_DROP_TAIL_AT - 200}px) {
       :host(:not([compact])) .colhead,
       :host(:not([compact])) .row {
+        /* SHA stays (issue #124): ~66px that names the commit, where a
+           desktop window with the details pane open usually lands. Seven
+           tracks, the dropped ones at 0, because every cell is pinned. */
         --gs-grid:
           var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
-          minmax(0, clamp(${REFS_MIN_READABLE}px, var(--col-refs-w, ${col("refs")}px), 240px))
-          minmax(${Math.round(SUBJECT_MIN_WIDTH * 0.5)}px, 1fr);
+          minmax(0, clamp(${REFS_MIN_READABLE}px, var(--col-refs-w, ${col("refs")}px), ${REFS_CAP_TIGHT}px))
+          minmax(${SUBJECT_MIN_TIGHT}px, 1fr)
+          0px
+          0px
+          0px
+          minmax(0, var(--col-sha-w, ${col("sha")}px));
       }
       :host(:not([compact])) .colhead .ch-changes,
       :host(:not([compact])) .colhead .ch-author,
+      :host(:not([compact])) .colhead .ch-date,
       :host(:not([compact])) .row .changes,
-      :host(:not([compact])) .row .author { display: none; }
+      :host(:not([compact])) .row .author,
+      :host(:not([compact])) .row .date { display: none; }
       /* Their grips would survive as 0x0 hit targets otherwise. */
       :host(:not([compact])) .colhead .col-resize[data-col="changes"],
       :host(:not([compact])) .colhead .col-resize[data-col="refs"][data-invert="0"] { display: none; }
@@ -953,18 +992,23 @@ export class CommitGraph extends LitElement {
        so the message keeps the width. Mirrors the column-mode ladder above
        without ever reintroducing a Branch/Tag track (refs flow inline here). */
     @container (max-width: ${COMPACT_DROP_DATE_AT}px) {
+      /* Six tracks still, the dropped one at 0: every cell is pinned to its
+         track (see "Every cell is PINNED"), so removing a track would move
+         the ones after it. */
       :host([compact]) .colhead,
       :host([compact]) .row {
         --gs-grid:
           var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
           minmax(${SUBJECT_MIN_COMPACT_MID}px, 1fr)
-          minmax(0, var(--col-changes-w, 84px))
-          minmax(0, var(--col-author-w, 112px));
+          minmax(0, var(--col-changes-w, ${COMPACT_DEF.changes}px))
+          minmax(0, var(--col-author-w, ${COMPACT_DEF.author}px))
+          0px
+          minmax(0, var(--col-sha-w, ${COMPACT_DEF.sha}px));
       }
       :host([compact]) .colhead .ch-date,
       :host([compact]) .row .date { display: none; }
-      /* Author is last now, so its grip divides nothing. */
-      :host([compact]) .col-resize[data-col="author"] { display: none; }
+      /* Without SHA, Author is last, so its grip divides nothing. */
+      :host([compact].hide-sha) .col-resize[data-col="author"] { display: none; }
     }
     @container (max-width: ${COMPACT_DROP_AUTHOR_AT}px) {
       :host([compact]) .colhead,
@@ -972,11 +1016,16 @@ export class CommitGraph extends LitElement {
         --gs-grid:
           var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
           minmax(${SUBJECT_MIN_COMPACT_TIGHT}px, 1fr)
-          minmax(0, var(--col-changes-w, 84px));
+          minmax(0, var(--col-changes-w, ${COMPACT_DEF.changes}px))
+          0px
+          0px
+          minmax(0, var(--col-sha-w, ${COMPACT_DEF.sha}px));
       }
       :host([compact]) .colhead .ch-author,
       :host([compact]) .row .author { display: none; }
-      :host([compact]) .col-resize[data-col="changes"][data-invert="0"] { display: none; }
+      :host([compact].hide-sha) .col-resize[data-col="changes"][data-invert="0"] { display: none; }
+      /* Author's grip went with its cell; with SHA on, the Changes | SHA
+         boundary keeps Changes' own. */
     }
 
     /* ── Sidebar (inline) mode ──────────────────────────────────────────────
@@ -1006,7 +1055,8 @@ export class CommitGraph extends LitElement {
          the two tracks that still exist and says what they are. */
       :host(:not([compact])) .colhead .ch-refs,
       :host(:not([compact])) .colhead .ch-changes,
-      :host(:not([compact])) .colhead .ch-author { display: none; }
+      :host(:not([compact])) .colhead .ch-author,
+      :host(:not([compact])) .colhead .ch-sha { display: none; }
       :host(:not([compact])) .col-resize[data-col="refs"],
       :host(:not([compact])) .col-resize[data-col="changes"],
       :host(:not([compact])) .col-resize[data-col="author"] { display: none; }
@@ -1027,13 +1077,14 @@ export class CommitGraph extends LitElement {
     }
     /* Compact's own floor: below this even three columns are too many, so it
        becomes the same clean one-line list the sidebar uses. */
-    @container (max-width: 330px) {
+    @container (max-width: ${COMPACT_LIST_AT}px) {
       :host([compact]) .colhead { display: none; }
       :host([compact]) .col-resize { display: none; }
       :host([compact]) .colhead, :host([compact]) .row {
         --gs-grid: var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px) minmax(0, 1fr);
       }
-      :host([compact]) .row .changes { display: none; }
+      :host([compact]) .row .changes,
+      :host([compact]) .row .sha { display: none; }
     }
 
     /* ── Column header row (aligned to the row grid) ──────────────────── */
@@ -1151,7 +1202,7 @@ export class CommitGraph extends LitElement {
        Columns menu still showed SHA as checked, which is a menu lying about
        what is on screen.
        With an explicit grid-column, removing a cell moves nothing. Compact
-       mode lays .content out as flex and is unaffected. */
+       lays .content out as flex, but its tracks are pinned too (below). */
     :host(:not([compact])) .row > .gutter,
     :host(:not([compact])) .colhead .ch-graph { grid-column: 1; }
     :host(:not([compact])) .row .refs,
@@ -1166,6 +1217,21 @@ export class CommitGraph extends LitElement {
     :host(:not([compact])) .colhead .ch-date { grid-column: 6; }
     :host(:not([compact])) .row .meta.sha,
     :host(:not([compact])) .colhead .ch-sha { grid-column: 7; }
+    /* Compact pins its own six tracks the same way. It did not need to while
+       SHA had no track there; now a user who turns Date off (issue #124's
+       reporter had) would see SHA slide into Date's 0px track and vanish. */
+    :host([compact]) .row > .gutter,
+    :host([compact]) .colhead .ch-graph { grid-column: 1; }
+    :host([compact]) .row > .content,
+    :host([compact]) .colhead .ch-subject { grid-column: 2; }
+    :host([compact]) .row .changes,
+    :host([compact]) .colhead .ch-changes { grid-column: 3; }
+    :host([compact]) .row .meta.author,
+    :host([compact]) .colhead .ch-author { grid-column: 4; }
+    :host([compact]) .row .meta.date,
+    :host([compact]) .colhead .ch-date { grid-column: 5; }
+    :host([compact]) .row .meta.sha,
+    :host([compact]) .colhead .ch-sha { grid-column: 6; }
 
     /* ── Hidden columns: hide the cells/header (the track is collapsed to 0 on
        the inline :host style by applyColumnStyles, which outranks any saved
@@ -1937,11 +2003,19 @@ export class CommitGraph extends LitElement {
       }
     | undefined;
 
-  /** Memoised auto-fit for the refs track, keyed on row count + host width. */
-  private autoRefs = { n: -1, host: -1, w: 0 };
+  /** Memoised auto-fit for the refs track, keyed on row count + host width +
+   *  what the other tracks take (a column turned on or off moves the budget). */
+  private autoRefs = { n: -1, host: -1, non: -1, w: 0 };
   private resizeObs: ResizeObserver | undefined;
   /** Hidden column ids; persisted to localStorage. */
   private hiddenCols = new Set<ColumnSpec["id"]>();
+  /**
+   * Columns the user has ON that this width has no room for (issue #124) —
+   * never persisted, recomputed on every update and resize. See fitTail.
+   */
+  private fitHidden = new Set<ColumnSpec["id"]>();
+  /** Memo for fitTail: its inputs, joined, and the answer they gave. */
+  private fitMemo = { key: "", out: new Set<ColumnSpec["id"]>() };
   /** Live column-drag bookkeeping (null when not dragging). */
   private drag: {
     id: ColumnSpec["id"];
@@ -2059,11 +2133,15 @@ export class CommitGraph extends LitElement {
     // responsive behaviour never call back into JS. Without this the track
     // keeps whatever width the last Lit update computed, so a plain window
     // resize leaves it stale until something else happens to re-render.
+    //
+    // Date and SHA are fitted to the width as well (fitTail), so this runs for
+    // a user-set refs width too. And the Columns menu says which ticked
+    // columns have no room, which a resize changes while it is open.
     this.resizeObs = new ResizeObserver(() => {
-      if (this.colWidths.refs !== undefined) return; // user-set: nothing to fit
-      const before = this.autoRefs.w;
+      const before = `${this.autoRefs.w}|${[...this.fitHidden].join()}`;
       this.applyColumnStyles();
-      if (this.autoRefs.w !== before) this.renderRows(); // re-fold the chips
+      if (`${this.autoRefs.w}|${[...this.fitHidden].join()}` !== before) this.renderRows(); // re-fold the chips
+      if (this.columnsOpen) this.requestUpdate();
     });
     this.resizeObs.observe(this);
     // A click in another editor, the Explorer or the terminal never reaches
@@ -2423,31 +2501,153 @@ export class CommitGraph extends LitElement {
   }
 
   /**
-   * Which column tracks are actually on screen — the user's hidden set AND the
+   * Which column tracks are actually on screen — the user's hidden set, the
    * responsive ladder, which drops trailing columns via container queries that
-   * never call back into JS.
+   * never call back into JS, and (unless `fitted` is false) the columns
+   * fitTail found no room for.
    */
-  private visibleTrackIds(): ColumnSpec["id"][] {
+  private visibleTrackIds(fitted = true): ColumnSpec["id"][] {
     const host = this.clientWidth;
     const compact = this.hasAttribute("compact");
     const out: ColumnSpec["id"][] = [];
     for (const spec of COLUMN_SPECS) {
       if (this.hiddenCols.has(spec.id)) continue;
+      if (fitted && this.fitHidden.has(spec.id)) continue;
       if (compact) {
-        // Compact has no Branch/Tag track (chips flow inline) and no SHA track.
-        if (spec.id === "refs" || spec.id === "sha") continue;
+        // Compact has no Branch/Tag track: its chips flow inline.
+        if (spec.id === "refs") continue;
         if (host > 0 && host <= COMPACT_DROP_DATE_AT && spec.id === "date") continue;
         if (host > 0 && host <= COMPACT_DROP_AUTHOR_AT && spec.id === "author") continue;
-      } else if (
-        host > 0 &&
-        host <= COLUMN_DROP_TAIL_AT &&
-        (spec.id === "date" || spec.id === "sha")
-      ) {
+        if (host > 0 && host <= COMPACT_LIST_AT && spec.id === "sha") continue;
+      } else if (host > 0 && host <= COLUMN_DROP_TAIL_AT - 200 && spec.id === "date") {
+        continue;
+      } else if (host > 0 && host <= INLINE_LIST_BELOW && spec.id === "sha") {
         continue;
       }
       out.push(spec.id);
     }
     return out;
+  }
+
+  /**
+   * Is a column the user has ON missing from the screen for want of room?
+   * What the Columns menu says beside it (issue #124), so it mirrors every
+   * rung of the CSS ladder — including Changes and Author, which the narrow
+   * table tier and compact's floor drop — and not only the tracks that
+   * visibleTrackIds budgets for. Branch/Tag never is: where it is not a track
+   * its chips flow inline before the message.
+   */
+  private noRoomFor(id: ColumnSpec["id"]): boolean {
+    if (id === "refs" || id === "graph" || this.hiddenCols.has(id)) return false;
+    return this.fitHidden.has(id) || this.ladderDrops(id);
+  }
+
+  /** Does the CSS ladder (the container queries) drop this column here? */
+  private ladderDrops(id: ColumnSpec["id"]): boolean {
+    const host = this.clientWidth;
+    if (host <= 0 || id === "graph" || id === "refs") return false;
+    if (this.hasAttribute("compact")) {
+      if (host <= COMPACT_LIST_AT) return true;
+      if (host <= COMPACT_DROP_AUTHOR_AT) return id === "author" || id === "date";
+      if (host <= COMPACT_DROP_DATE_AT) return id === "date";
+      return false;
+    }
+    if (host <= INLINE_LIST_BELOW) return true;
+    if (host <= COLUMN_DROP_TAIL_AT - 200) return id !== "sha";
+    return false;
+  }
+
+  /**
+   * Which of Date and SHA — those the user has on and the ladder still lays
+   * out — this width has no room for. The rule is in TAIL_FIT_ORDER's comment:
+   * every other track at its own width, the message at its floor and the
+   * Branch/Tag track at a readable width come first; SHA, then Date, take
+   * what is left, and whatever does not fit is hidden and named in the
+   * Columns menu.
+   *
+   * Memoised: it runs on every Lit update, and the refs reserve is O(rows).
+   */
+  private fitTail(): Set<ColumnSpec["id"]> {
+    const host = this.clientWidth;
+    const compact = this.hasAttribute("compact");
+    const tracks = host > 0 ? this.visibleTrackIds(false) : [];
+    const key = [
+      host,
+      compact ? 1 : 0,
+      this.rows.length,
+      tracks.join(),
+      JSON.stringify(this.colWidths),
+      this.colWidths.graph ?? this.gutterWidth(),
+    ].join("|");
+    if (key === this.fitMemo.key) return this.fitMemo.out;
+
+    const out = new Set<ColumnSpec["id"]>();
+    const order = compact ? TAIL_FIT_ORDER_COMPACT : TAIL_FIT_ORDER;
+    const tail = order.filter((id) => tracks.includes(id));
+    if (tail.length > 0) {
+      const tight = !compact && host <= COLUMN_DROP_TAIL_AT - 200;
+      let room =
+        host - (compact ? ROW_CHROME_COMPACT : ROW_CHROME) - (tight ? SUBJECT_MIN_TIGHT : this.subjectFloor());
+      for (const id of tracks) {
+        // visibleTrackIds budgets the refs track and keeps Changes and Author
+        // in the narrow tier; the CSS has them at 0px there, so they cost
+        // nothing here.
+        if (tail.includes(id) || this.ladderDrops(id)) continue;
+        room -= this.fitNeed(id, compact);
+      }
+      for (const id of tail) {
+        const need = this.fitNeed(id, compact);
+        if (need <= room) room -= need;
+        else out.add(id);
+      }
+    }
+    this.fitMemo = { key, out };
+    return out;
+  }
+
+  /**
+   * The width fitTail charges a track. In compact, Changes and Author may
+   * narrow to their own minimum to make room: they are minmax(0, …) tracks,
+   * and the grid takes a deficit from the widest track first, so SHA keeps its
+   * width and the author's name ellipsizes. Not in the editor tab, where the
+   * Branch/Tag auto-fit budgets against their FULL widths and would be the
+   * track starved instead.
+   */
+  private fitNeed(id: ColumnSpec["id"], compact: boolean): number {
+    const need = this.trackNeed(id);
+    return compact && (id === "changes" || id === "author")
+      ? Math.min(need, COLUMN_BY_ID.get(id)!.min)
+      : need;
+  }
+
+  /** The width a track takes when it is on screen, for fitTail. */
+  private trackNeed(id: ColumnSpec["id"]): number {
+    if (id === "graph") return this.colWidths.graph ?? this.gutterWidth();
+    if (id === "refs") return this.refsReserve();
+    const own = this.colWidths[id];
+    if (own !== undefined) return own;
+    const compactDef = (COMPACT_DEF as Partial<Record<ColumnSpec["id"], number>>)[id];
+    return (this.hasAttribute("compact") ? compactDef : undefined) ?? COLUMN_BY_ID.get(id)!.def;
+  }
+
+  /**
+   * What the Branch/Tag track must keep before Date and SHA get any room: the
+   * user's own width, or the auto-fit's floor — the width at which the
+   * busiest ref name is still readable (fitRefsWidth's `legible`), never more
+   * than the refs want. Capped as the CSS caps the track.
+   */
+  private refsReserve(): number {
+    const spec = COLUMN_BY_ID.get("refs")!;
+    const host = this.clientWidth;
+    // The narrow table tier clamps the track to [REFS_MIN_READABLE, 240].
+    const tight = host <= COLUMN_DROP_TAIL_AT - 200;
+    const cap = tight ? REFS_CAP_TIGHT : host <= COLUMN_DROP_TAIL_AT ? REFS_CAP_NARROW : spec.max;
+    const floor = tight ? REFS_MIN_READABLE : 0;
+    const own = this.colWidths.refs;
+    if (own !== undefined) return Math.max(floor, Math.min(cap, own));
+    const wanted = wantedRefsWidth(this.rows, spec.max, spec.min);
+    const auto = Math.max(spec.min, Math.min(wanted, legibleRefsWidth(this.rows)));
+    return Math.max(floor, Math.min(cap, auto));
   }
 
   /** The floor the message track is entitled to at this width — matches the CSS. */
@@ -2465,10 +2665,14 @@ export class CommitGraph extends LitElement {
    *  outranks the `:host(.hide-*)` stylesheet rule, so we must zero it here or a
    *  previously-resized-then-hidden column would leave a ghost gap. */
   private applyColumnStyles(): void {
+    // First: the refs auto-fit below budgets against the tracks on screen.
+    this.fitHidden = this.fitTail();
     for (const spec of COLUMN_SPECS) {
       // The graph track is owned by applyGutterWidth (auto-size + override).
       if (spec.id === "graph") continue;
-      const hidden = this.hiddenCols.has(spec.id);
+      // A column with no room collapses exactly as an unticked one does —
+      // track at 0, cells and grip gone — but stays ticked in the menu.
+      const hidden = this.hiddenCols.has(spec.id) || this.fitHidden.has(spec.id);
       // refs falls back to its auto-fit rather than to the CSS literal, so the
       // track, the chip cap and the fold all read the same number.
       const w =
@@ -2672,14 +2876,19 @@ export class CommitGraph extends LitElement {
     // (row count, host width): the ref set cannot change without the rows
     // changing, and the budget cannot change without a resize.
     const host = this.clientWidth;
-    if (this.autoRefs.n === this.rows.length && this.autoRefs.host === host) {
+    const nonRefs = this.nonRefsWidth();
+    if (
+      this.autoRefs.n === this.rows.length &&
+      this.autoRefs.host === host &&
+      this.autoRefs.non === nonRefs
+    ) {
       return this.autoRefs.w;
     }
 
     const fitted = fitRefsWidth({
       wanted: wantedRefsWidth(this.rows, spec.max, spec.min),
       host,
-      nonRefs: this.nonRefsWidth(),
+      nonRefs,
       // A flat 420px comfort floor is most of a narrow host, which starved the
       // refs track to its minimum on any window under ~1000px. Scale it: the
       // message still leads, but it stops claiming the entire surface.
@@ -2693,7 +2902,7 @@ export class CommitGraph extends LitElement {
       subjectFloor: this.subjectFloor(),
       legible: legibleRefsWidth(this.rows),
     });
-    this.autoRefs = { n: this.rows.length, host, w: fitted };
+    this.autoRefs = { n: this.rows.length, host, non: nonRefs, w: fitted };
     return fitted;
   }
 
@@ -4591,6 +4800,13 @@ export class CommitGraph extends LitElement {
   /** The "Columns" button + show/hide popover. */
   private columnsControlHtml() {
     const hiddenCount = this.hiddenCols.size;
+    // Ticked columns this width has no room for (issue #124): the menu used to
+    // count only the unticked ones, so "1 hidden" meant Date while SHA was
+    // ticked and nowhere to be seen. Each is named, beside its row and below.
+    const noRoom = COLUMN_SPECS.filter((s) => s.hideable !== false && this.noRoomFor(s.id));
+    const noRoomHint = noRoom.length
+      ? l10n.t("{0} hidden — panel too narrow", noRoom.map((s) => s.label).join(", "))
+      : "";
     return html`<span class="gh-anchor">
       <button
         class="gh-iconbtn gh-columns-btn"
@@ -4614,14 +4830,19 @@ export class CommitGraph extends LitElement {
             <div class="gh-pop-title">${l10n.t("Columns")}</div>
             ${COLUMN_SPECS.filter((s) => s.hideable !== false).map((spec) => {
               const visible = !this.hiddenCols.has(spec.id);
+              const squeezed = noRoom.includes(spec);
               return html`<button
                 class="gh-menuitem"
                 role="menuitemcheckbox"
                 aria-checked=${visible ? "true" : "false"}
+                title=${squeezed ? noRoomHint : nothing}
                 @click=${() => this.toggleColumn(spec.id)}
               >
                 <span class="codicon codicon-check" aria-hidden="true"></span>
                 <span class="lbl">${spec.label}</span>
+                ${squeezed
+                  ? html`<span class="gh-menu-note">${l10n.t("no room")}</span>`
+                  : nothing}
               </button>`;
             })}
             <div class="gh-pop-sep"></div>
@@ -4636,9 +4857,11 @@ export class CommitGraph extends LitElement {
             </button>
             <div class="gh-pop-sep"></div>
             <div class="gh-pop-hint">
-              ${hiddenCount === 0
-                ? l10n.t("Graph & message are always shown")
-                : l10n.t("{0} hidden · drag header edges to resize", hiddenCount)}
+              ${noRoomHint
+                ? noRoomHint
+                : hiddenCount === 0
+                  ? l10n.t("Graph & message are always shown")
+                  : l10n.t("{0} hidden · drag header edges to resize", hiddenCount)}
             </div>
           </div>`
         : nothing}

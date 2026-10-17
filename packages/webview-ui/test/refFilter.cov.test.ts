@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { GraphRefEntry, WireRef, WireRow } from "@gitstudio/host-bridge/graphProtocol";
 import { presetUnavailable, refFilterHint } from "../src/graph/refFilter";
-import { REFS_PADDING, estimateChipWidth, foldRefs, legibleRefsWidth } from "../src/graph/refLayout";
+import { REFS_PADDING, REF_CHIP_GAP, estimateChipWidth, foldRefs, legibleRefsWidth } from "../src/graph/refLayout";
 import { rowMatches } from "../src/graph/search";
 
 // The Branches picker's footnote and excuses, the refs column's legibility
@@ -49,13 +49,14 @@ test("the refs column's floor is one readable chip of the busiest row, or nothin
   ];
   const widest = foldRefs(rows[1].refs).map((e) => estimateChipWidth(e, 150));
   assert.equal(widest.length, 1, "the remote twin folds into its local chip");
-  assert.equal(legibleRefsWidth(rows), REFS_PADDING + widest[0]);
+  // The chip, the track's padding, and one chip gap of slack for the estimate.
+  assert.equal(legibleRefsWidth(rows), REFS_PADDING + widest[0] + REF_CHIP_GAP);
   assert.ok(legibleRefsWidth(rows) > legibleRefsWidth([rows[0]]), "the busier chip sets the floor");
 });
 
 test("a very long branch name cannot make the floor demand half the window", () => {
   const long = [{ refs: [ref(`refs/heads/${"x".repeat(200)}`, "head")] }];
-  assert.equal(legibleRefsWidth(long), REFS_PADDING + 150);
+  assert.equal(legibleRefsWidth(long), REFS_PADDING + 150 + REF_CHIP_GAP);
 });
 
 test("the 'refs' search scope matches a ref's name and nothing else", () => {
