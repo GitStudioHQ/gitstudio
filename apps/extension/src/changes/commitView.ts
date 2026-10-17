@@ -4819,6 +4819,8 @@ export class CommitViewProvider
       text-overflow: ellipsis;
     }
     .group--staged .glabel { color: var(--gs-fg); }
+    /* A changelist's name is the user's own: shown as typed, not shouted. */
+    .group--changelist .glabel { text-transform: none; letter-spacing: normal; }
     .group-header .gcount {
       font-family: var(--gs-font-mono);
       font-variant-numeric: tabular-nums;
