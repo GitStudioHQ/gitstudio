@@ -480,6 +480,151 @@ test("a several-commit rewrite runs and reloads: Drop 2 commits leaves the other
   void three;
 });
 
+// ── Compare With… (#123) ─────────────────────────────────────────────────────
+
+/** Compare panels opened since `from` (kit.panels' length before the test). */
+const comparePanels = (from: number) => kit.panels.slice(from).filter((x) => x.viewType === "gitstudio.compare");
+
+/** The Compare panel opened since `from`, closed and forgotten when the test
+ *  ends: it is one shared panel, the next test must open its own, and the
+ *  editor-tab graph's test counts every panel there is. */
+async function comparePanel(from: number): Promise<kit.FakePanel> {
+  const p = await kit.until(() => comparePanels(from)[0], "the Compare panel");
+  live.push({
+    dispose: () => {
+      p.dispose();
+      kit.panels.splice(kit.panels.indexOf(p), 1);
+    },
+  });
+  return p;
+}
+
+/** What the panel's page was handed: its DATA, once a comparison has painted. */
+async function compared(p: kit.FakePanel): Promise<{ base: string; head: string; threeDot: boolean; files: { path: string }[] }> {
+  const html = await kit.until(() => p.webview.html.includes("const DATA = ") && p.webview.html, "a painted comparison");
+  const json = html.slice(html.indexOf("const DATA = ") + "const DATA = ".length, html.indexOf(";\n", html.indexOf("const DATA = ")));
+  return JSON.parse(json);
+}
+
+test("Compare With… is on one commit's menu, beside Copy SHA", async () => {
+  const { two, entry } = history();
+  const g = track(open(entry));
+  await g.nth("graphInit", 1);
+  g.w.send({ type: "contextMenu", sha: two, x: 1, y: 1 });
+  const menu = await g.nth("commitMenu", 1);
+  const ids = menu.items.map((i: { id: string; sep?: boolean }) => (i.sep ? "—" : i.id));
+  assert.deepEqual(ids.slice(-4), ["—", "compareWith", "copySha", "copyMessage"]);
+  const item = menu.items.find((i: { id: string }) => i.id === "compareWith");
+  assert.equal(item.label, "Compare With…");
+  assert.equal(item.icon, "git-compare");
+});
+
+test("Compare With… offers every branch, remote branch and tag by full name, and a SHA row first", async () => {
+  const { r, one, entry } = history();
+  r.git("update-ref", "refs/remotes/origin/main", "HEAD");
+  r.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+  const g = track(open(entry));
+  await g.nth("graphInit", 1);
+  const from = kit.panels.length;
+  kit.dialog.pick = undefined; // dismissed
+  g.w.send({ type: "commitMenuAction", sha: one, id: "compareWith" });
+  await kit.until(() => kit.asked.length > 0, "the question");
+  const q = kit.asked[0];
+  assert.equal(q.kind, "pick");
+  assert.equal(q.title, `Compare ${one.slice(0, 7)} with…`);
+  assert.deepEqual(
+    q.choices!.map((c) => [c.id, c.label]),
+    [
+      ["enter-commit", "Enter a commit SHA…"],
+      ["refs/heads/feature", "feature"],
+      ["refs/heads/main", "main"],
+      // origin/HEAD is a pointer to origin/main, not a branch of its own.
+      ["refs/remotes/origin/main", "origin/main"],
+      ["refs/tags/v1", "v1"],
+    ],
+  );
+  // Dismissed: nothing opens.
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(comparePanels(from).length, 0);
+});
+
+test("picking a tag opens Compare from the commit to it, as the plain diff between the two", async () => {
+  const { two, entry } = history();
+  const g = track(open(entry));
+  await g.nth("graphInit", 1);
+  const from = kit.panels.length;
+  kit.dialog.pick = "refs/tags/v1";
+  g.w.send({ type: "commitMenuAction", sha: two, id: "compareWith" });
+  const p = await comparePanel(from);
+  const data = await compared(p);
+  assert.equal(data.base, two);
+  assert.equal(data.head, "refs/tags/v1");
+  // v1 is older than `two`: "what v1 adds" would be nothing. The two-dot diff
+  // is what changed between them — two.txt, which v1 does not have.
+  assert.equal(data.threeDot, false);
+  assert.deepEqual(data.files.map((f) => f.path), ["two.txt"]);
+  // Named the way a person reads them: a short sha, a tag by its name.
+  assert.equal(p.title, `Compare: ${two.slice(0, 7)} ↔ v1`);
+  assert.match(p.webview.html, new RegExp(`id="pick-base"[^>]*><i class="codicon codicon-git-commit"></i><span class="nm">${two.slice(0, 7)}</span>`));
+  assert.match(p.webview.html, /id="pick-head"[^>]*><i class="codicon codicon-tag"><\/i><span class="nm">v1<\/span>/);
+});
+
+test("a tag and a branch of one name: the one picked is the one compared", async () => {
+  const { r, base, one, two, entry } = history();
+  r.git("branch", "release", two);
+  r.git("tag", "release", base);
+  const g = track(open(entry));
+  await g.nth("graphInit", 1);
+  const from = kit.panels.length;
+  kit.dialog.pick = (a) => {
+    const rows = a.choices!.filter((c) => c.label === "release").map((c) => c.id);
+    assert.deepEqual(rows, ["refs/heads/release", "refs/tags/release"], "both listed, each by its full name");
+    return "refs/heads/release";
+  };
+  g.w.send({ type: "commitMenuAction", sha: one, id: "compareWith" });
+  const data = await compared(await comparePanel(from));
+  assert.equal(data.head, "refs/heads/release");
+  // The branch is at `two`; the tag at `base` would have listed one.txt.
+  assert.deepEqual(data.files.map((f) => f.path), ["two.txt"]);
+});
+
+test("Enter a commit SHA…: a text that names no commit asks again, and a short sha compares by its full one", async () => {
+  const { base, two, entry } = history();
+  const g = track(open(entry));
+  await g.nth("graphInit", 1);
+  const from = kit.panels.length;
+  kit.dialog.pick = "enter-commit";
+  const typed = ["nope", "--output=x", "deadbeef", ` ${base.slice(0, 8)} `];
+  kit.dialog.input = () => typed.shift();
+  g.w.send({ type: "commitMenuAction", sha: two, id: "compareWith" });
+  const data = await compared(await comparePanel(from));
+  assert.equal(data.base, two);
+  assert.equal(data.head, base, "the full sha, never the abbreviation typed");
+  const inputs = kit.asked.filter((a) => a.kind === "input");
+  assert.deepEqual(
+    inputs.map((a) => [a.value, a.text]),
+    [
+      ["", ""],
+      ["nope", "nope is not a commit in this repository."],
+      ["--output=x", "--output=x is not a commit in this repository."],
+      ["deadbeef", "deadbeef is not a commit in this repository."],
+    ],
+  );
+});
+
+test("Enter a commit SHA… dismissed opens nothing", async () => {
+  const { two, entry } = history();
+  const g = track(open(entry));
+  await g.nth("graphInit", 1);
+  const from = kit.panels.length;
+  kit.dialog.pick = "enter-commit";
+  kit.dialog.input = undefined;
+  g.w.send({ type: "commitMenuAction", sha: two, id: "compareWith" });
+  await kit.until(() => kit.asked.some((a) => a.kind === "input"), "the SHA field");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(comparePanels(from).length, 0);
+});
+
 // ── The details pane's toolbar ───────────────────────────────────────────────
 
 test("details toolbar: Copy SHA, Tag and an unknown action", async () => {

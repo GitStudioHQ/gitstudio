@@ -27,7 +27,7 @@ loaders[".css"] = (m, f) => {
 
 /* eslint-disable @typescript-eslint/no-require-imports -- loaded after the stand-in is in place */
 const { ComparePanel } = require("../src/compare/comparePanel") as typeof import("../src/compare/comparePanel");
-const { compareRefsData } = require("../src/compare/refCompare") as typeof import("../src/compare/refCompare");
+const { compareRefsData, compareRefLabel } = require("../src/compare/refCompare") as typeof import("../src/compare/refCompare");
 const { GitContext } = require("@gitstudio/git-service/GitContext") as typeof import("@gitstudio/git-service/GitContext");
 /* eslint-enable @typescript-eslint/no-require-imports */
 import type { CompareResult } from "../src/compare/refCompare";
@@ -144,4 +144,24 @@ test("what each ref names, as git resolves it", async () => {
   assert.deepEqual([tagged.baseKind, tagged.headKind], ["tag", "branch"]);
   const remote = await compareRefsData(repo, git("rev-parse", "--short", "v1.0"), "origin/main", false);
   assert.deepEqual([remote.baseKind, remote.headKind], ["commit", "remote"]);
+});
+
+// Compare With… (issue #123) compares a commit by its full sha with a ref by
+// its full name — so a tag and a branch of one name cannot be confused. What
+// the panel SHOWS is what a person reads: a short sha, a ref's own name.
+test("a side is named by its short sha or its ref's name, never forty characters or refs/…", () => {
+  const sha = "0123456789abcdef0123456789abcdef01234567";
+  assert.equal(compareRefLabel(sha), "0123456");
+  assert.equal(compareRefLabel("refs/heads/main"), "main");
+  assert.equal(compareRefLabel("refs/remotes/origin/main"), "origin/main");
+  assert.equal(compareRefLabel("refs/tags/v1.0"), "v1.0");
+  assert.equal(compareRefLabel("feature/x"), "feature/x", "a short name is left alone");
+  assert.equal(compareRefLabel("abc1234"), "abc1234", "so is a short sha");
+  const html = render(sha, "refs/heads/main", result(1, { baseKind: "commit", headKind: "branch" }));
+  assert.match(html, /id="pick-base"[^>]*><i class="codicon codicon-git-commit"><\/i><span class="nm">0123456<\/span>/);
+  assert.match(html, /id="pick-head"[^>]*><i class="codicon codicon-git-branch"><\/i><span class="nm">main<\/span>/);
+  assert.match(html, />What main adds<\/button>/);
+  assert.match(html, /<b class="ds-head">main<\/b>/);
+  assert.match(html, /<b class="ds-base">0123456<\/b>/);
+  assert.doesNotMatch(html.slice(0, html.indexOf("const DATA")), /refs\/heads|0123456789/, "nowhere in the page's words");
 });

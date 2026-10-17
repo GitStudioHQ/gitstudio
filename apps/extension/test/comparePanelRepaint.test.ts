@@ -58,11 +58,13 @@ function makeUpdate(resultFor: () => unknown): (self: Stub) => Promise<void> {
     // new Function speaks JavaScript; the method is TypeScript. The one
     // annotation in it goes; if more appear the syntax error will say so.
     .replace(/let result: [A-Za-z]+;/, "let result;");
+  // The title names each side through the module-scope compareRefLabel.
   const fn = new Function(
     "compareRefsData",
+    "compareRefLabel",
     `${body}\nreturn update;`,
-  ) as (c: () => unknown) => () => Promise<void>;
-  return (self: Stub) => fn(() => resultFor()).call(self);
+  ) as (c: () => unknown, label: (r: string) => string) => () => Promise<void>;
+  return (self: Stub) => fn(() => resultFor(), (r) => r).call(self);
 }
 
 function stub(): Stub {

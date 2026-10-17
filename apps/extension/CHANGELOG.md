@@ -20,12 +20,23 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   `gitstudio.staging.codeLens` for the same links as a CodeLens above every
   change. A diff editor shows them only while VS Code's Diff Editor: Code Lens
   setting is on.
+- **Compare a commit with a branch, a tag or another commit.** Right-click
+  any commit in the Commit Graph and choose Compare With…, then pick a local
+  branch, a remote branch or a tag, or enter a commit SHA. The Compare panel
+  opens on every difference between the two, with its changed files and
+  their diffs; the panel's own ref pickers offer the same choices
+  ([#123](https://github.com/GitStudioHQ/gitstudio/issues/123)).
 
 ### Changed
 - **The staging marks in the gutter are dots, not checkboxes.** VS Code lets
   no extension make a gutter icon clickable or show a tooltip on it, so the
   marks only report: grey for unstaged, half amber for partly staged, green
   for staged ([#87](https://github.com/GitStudioHQ/gitstudio/issues/87)).
+
+### Fixed
+- **The Compare panel names commits by their short SHA.** Comparing two
+  commits used to show forty-character SHAs in the tab title, the ref
+  pickers and the summary.
 
 ## [1.21.1] - 2026-10-15
 
