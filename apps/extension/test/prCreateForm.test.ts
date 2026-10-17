@@ -106,13 +106,24 @@ const at =
   (...args: string[]): string =>
     execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-async function until(check: () => boolean, what: string, ms = 5000): Promise<void> {
+// A deadline, not a delay: a wait ends the moment its check holds. Create
+// alone runs ~17 git processes and a push one after another — a fraction of a
+// second on a Mac, seconds on the Windows runner, and 5 s was once not enough
+// there (git 2.56 run, 17 Oct 2026). A wait that runs out says what the form
+// showed, so the next one names its cause.
+async function until(check: () => boolean, what: string, ms = 20_000): Promise<void> {
   const end = Date.now() + ms;
   while (Date.now() < end) {
     if (check()) return;
     await sleep(10);
   }
-  throw new Error(`timed out waiting for ${what}`);
+  throw new Error(`timed out waiting for ${what}; the form: ${formNow()}`);
+}
+function formNow(): string {
+  const s = formPanel()?.state();
+  if (!s) return "none open";
+  const { status, busy, head, problem, notice, refreshing } = s;
+  return JSON.stringify({ status, busy, head, problem, notice, refreshing, compare: s.compare?.status, commits: s.compare?.commits?.length });
 }
 
 const TEMPLATE = "## What\n\n## Why\n";

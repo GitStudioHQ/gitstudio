@@ -185,11 +185,15 @@ test("Checkout of a pull request whose branch another worktree has: says where, 
   s.git("worktree", "add", "-q", "--track", "-b", "topic", prTree, "origin/topic");
   const before = s.git("rev-parse", "refs/heads/topic");
   const tracked = s.git("rev-parse", "refs/remotes/origin/topic");
-  // The contributor pushes again: a fetch would move origin/topic.
-  s.git("commit", "-q", "--allow-empty", "-m", "more");
-  // (to the repository by its path: a push by the remote's name would move origin/topic itself)
-  s.git("push", "-q", remote, "HEAD:refs/heads/topic");
-  s.git("reset", "-q", "--hard", "HEAD~1");
+  // The contributor pushes again: a fetch would move origin/topic. Their
+  // commit is made in acme/app itself, never pushed from this clone: any push
+  // from here moves origin/topic — by the remote's name always, and since git
+  // 2.56 by its path too, a push URL that is exactly one configured remote's
+  // updating that remote's remote-tracking refs.
+  const bare = (...args: string[]) => execFileSync("git", ["--git-dir", remote, ...args], { encoding: "utf8" }).trim();
+  const more = bare("-c", "user.name=Contributor", "-c", "user.email=c@example.com", "commit-tree", "-p", "refs/heads/topic", "-m", "more", "refs/heads/topic^{tree}");
+  bare("update-ref", "refs/heads/topic", more);
+  assert.equal(s.git("rev-parse", "refs/remotes/origin/topic"), tracked, "the contributor's push moved nothing here");
   rmSync(join(s.git("rev-parse", "--absolute-git-dir"), "FETCH_HEAD"), { force: true }); // the setup's own fetch
   const repoContext = { owner: "acme", repo: "app", remoteName: "origin", entry: { ctx: s.ctx, root: s.app } };
   const pr = {
