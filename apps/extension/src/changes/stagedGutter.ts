@@ -24,7 +24,12 @@ import * as l10n from "@vscode/l10n";
  * ship on the Marketplace.
  *
  * What CAN be done, and is done here: show the state truthfully in the real
- * gutter, and give three ways to change it that do not need a clickable glyph —
+ * gutter — as a dot (grey: unstaged, half amber: partly staged, green: staged),
+ * never as a checkbox. The marks were checkboxes once, and in VS Code's diff
+ * editor that read as a column of controls that did nothing when clicked (#87,
+ * reopened); a mark that can only report must not look like a control
+ * (test/stagedGutterGlyphs.test.ts). Then give three ways to change the state
+ * that do not need a clickable glyph —
  * a keybinding, the line-number context menu, and the Changes list. Anyone who
  * wants the tick itself is one command away from our own diff page, where the
  * gutter is ours and the tick is real.
@@ -316,7 +321,7 @@ export class StagedGutter implements vscode.Disposable {
    * already ships. Note what it can NOT see: a click on the glyph itself. Monaco
    * swallows a left click in the glyph margin without moving the caret
    * (verified in VS Code 1.140 for #87), so no selection event arrives and the
-   * checkbox-looking glyph stays unclickable with this setting on too — the
+   * glyph stays unclickable with this setting on too — the
    * gesture that works is a click at the very start of the text. It cannot be
    * told apart from someone genuinely putting their caret at the start of a
    * line — which is a thing people do constantly — so staging a change on that
