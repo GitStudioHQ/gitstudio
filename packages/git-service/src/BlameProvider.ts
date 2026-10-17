@@ -1,6 +1,7 @@
 import type { BlameResult } from "@gitstudio/host-bridge/blame";
 import { parseIncrementalBlame } from "@gitstudio/engine/blame/parse";
 import type { GitProcess } from "./GitProcess";
+import { sep } from "node:path";
 import * as l10n from "@vscode/l10n";
 
 export interface BlameFileOptions {
@@ -13,6 +14,18 @@ export interface BlameFileOptions {
    */
   contents?: string;
   signal?: AbortSignal;
+}
+
+/**
+ * Blame refused because the file is not in HEAD: it is untracked. (A file that
+ * is added but not committed git blames from the index.) Nothing is wrong —
+ * there is no history to show yet. Thrown so a
+ * caller that blames on every edit can stop asking (and stop logging it,
+ * #115) until a commit could have changed the answer. The message is the same
+ * as any other refusal's.
+ */
+export class BlameNotCommittedError extends Error {
+  readonly notCommitted = true;
 }
 
 /**
@@ -49,9 +62,21 @@ export class BlameProvider {
     });
 
     if (result.code !== 0) {
-      throw new Error(
-        l10n.t("git blame failed for {0} (exit {1}): {2}", relPath, result.code, result.stderr.trim()),
+      const message = l10n.t(
+        "git blame failed for {0} (exit {1}): {2}",
+        relPath,
+        result.code,
+        result.stderr.trim(),
       );
+      // Asked of git rather than read from its message, which is translated.
+      // `HEAD:<path>` is relative to the repository root, as relPath is, and
+      // spelled with "/" — a Windows relative path arrives with backslashes.
+      if (!opts?.rev && !opts?.signal?.aborted) {
+        const treePath = sep === "\\" ? relPath.replace(/\\/g, "/") : relPath;
+        const inHead = await this.proc.run(["cat-file", "-e", `HEAD:${treePath}`], { signal: opts?.signal });
+        if (inHead.code !== 0) throw new BlameNotCommittedError(message);
+      }
+      throw new Error(message);
     }
 
     return parseIncrementalBlame(result.stdout);
