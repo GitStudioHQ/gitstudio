@@ -26,6 +26,16 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   opens on every difference between the two, with its changed files and
   their diffs; the panel's own ref pickers offer the same choices
   ([#123](https://github.com/GitStudioHQ/gitstudio/issues/123)).
+- **Changelists in the Changes view.** Park files you never want to stage or
+  commit, such as a local config, in a named changelist: right-click a file
+  (or a selection, or a folder) and choose **Move to Changelist…**, or drag
+  files onto a changelist. Each changelist is its own group under Unstaged
+  (or under Changes with checkboxes). Its files are left out of Stage All,
+  Check all, Commit all and Discard All, and are staged only when you stage
+  them yourself. A changelist's menu stages, renames or deletes it; deleting
+  one puts its files back in Changes and touches no file. Changelists are kept
+  per repository and per worktree inside `.git`, never in your project
+  ([#122](https://github.com/GitStudioHQ/gitstudio/issues/122)).
 
 ### Changed
 - **The staging marks in the gutter are dots, not checkboxes.** VS Code lets
