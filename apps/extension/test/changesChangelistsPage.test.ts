@@ -13,6 +13,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { ChangesPage, stateMessage } from "./changesPage";
+import { jsLiteral } from "../../../scripts/test/js-literal.mjs";
 
 const chrome = ChangesPage.chrome();
 const skip = chrome ? false : "no windowless Chrome on this machine (set GS_CHROME)";
@@ -63,8 +64,9 @@ function groups(p: ChangesPage): Promise<{ label: string; count: string; files: 
 }
 
 const listHeader = (id: string) =>
-  `Array.prototype.find.call(document.querySelectorAll("#groups > .group--changelist"), function (g) { return g.dataset.list === ${JSON.stringify(id)}; }).firstChild`;
-const fileRow = (path: string) => `document.querySelector('#groups .row.is-file[data-path="${path}"]')`;
+  `Array.prototype.find.call(document.querySelectorAll("#groups > .group--changelist"), function (g) { return g.dataset.list === ${jsLiteral(id)}; }).firstChild`;
+const fileRow = (path: string) =>
+  `Array.prototype.find.call(document.querySelectorAll("#groups .row.is-file"), function (r) { return r.dataset.path === ${jsLiteral(path)}; })`;
 
 async function centre(p: ChangesPage, expr: string): Promise<{ x: number; y: number }> {
   return p.eval(`(function () {
