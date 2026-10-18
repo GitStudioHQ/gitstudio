@@ -120,7 +120,7 @@ The lanes, chips and avatars follow your theme — the same graph in Light Moder
 
 ## Branch compare
 
-**A GitHub-style compare, locally, for any two refs.** *Compare Branches/Tags…* (or *Compare with Current* from any branch) opens a panel with ahead/behind counts, the exact commits between the two refs, and the changed files as native diffs. Answer "what would this merge actually bring in" *before* you merge it.
+**A GitHub-style compare, locally, for any two refs.** *Compare Branches/Tags…* (or *Compare with Current* from any branch, or *Compare With…* on any commit in the Commit Graph, against a branch, a tag or a commit SHA) opens a panel with ahead/behind counts, the exact commits between the two refs, and the changed files as native diffs. Answer "what would this merge actually bring in" *before* you merge it.
 
 ## Optional AI, on your terms
 

@@ -3,9 +3,10 @@ import type { CommitRecord, GitRef } from "@gitstudio/host-bridge/git";
 import { mergeCommitFiles } from "@gitstudio/git-service/CommitDetailsProvider";
 import type { RepoEntry } from "../git/repoManager";
 import { toRevisionUri } from "../history/revisionContentProvider";
-import { promptPick } from "../ui/dialogs";
+import { promptInput, promptPick, type DialogChoice } from "../ui/dialogs";
 import * as l10n from "@vscode/l10n";
 import { openDiff } from "../merge/diffPlaces";
+import { refLabel } from "@gitstudio/host-bridge/graphRefFilter";
 
 // The ref-comparison engine, lifted out of the retired Search & Compare view so
 // the branch-compare panel (and any future consumer) can reuse the same
@@ -271,26 +272,105 @@ export async function openCompareFileDiff(arg: {
   await openDiff(
     left,
     right,
-    `${name} (${arg.refA} ↔ ${arg.refB})`,
+    `${name} (${compareRefLabel(arg.refA)} ↔ ${compareRefLabel(arg.refB)})`,
     undefined,
     "compare",
   );
 }
 
-/** A GitStudio dialog over the repo's branches/tags; returns the chosen name. */
-export async function pickRef(
-  refs: GitRef[],
-  title: string,
-): Promise<string | undefined> {
-  const icon = (r: GitRef) =>
-    r.type === "tag" ? "tag" : r.type === "remote" ? "cloud" : "git-branch";
-  return promptPick({
-    title,
-    choices: refs.map((r) => ({
-      id: r.name,
-      label: r.name,
-      icon: icon(r),
-      detail: r.sha.slice(0, 7),
-    })),
-  });
+/**
+ * A compared side as the panel names it: a commit by its short sha, a ref by
+ * its name with the namespace shorn ("refs/tags/v1" reads "v1", as the graph's
+ * chips say it). The panel compares by full names and full shas, so neither a
+ * tag and a branch of one name nor two abbreviations can be mistaken for each
+ * other; only what is SHOWN is short. Each pill's icon still says which kind.
+ */
+export function compareRefLabel(ref: string): string {
+  return /^[0-9a-f]{40}([0-9a-f]{24})?$/i.test(ref) ? ref.slice(0, 7) : refLabel(ref);
+}
+
+/** The id of the "Enter a commit SHA…" row. Never a ref's: those start "refs/". */
+export const ENTER_COMMIT = "enter-commit";
+
+/**
+ * What a commit can be compared with (issue #123): every local branch, then
+ * every remote branch (a remote's HEAD pointer left out — it is a copy of the
+ * default branch beside it), then every tag. Each is picked by its FULL name:
+ * `%(refname:short)` is "heads/release" beside a tag "release", and a short
+ * name handed on to git means whichever of the two git prefers.
+ */
+export function compareTargetChoices(refs: readonly GitRef[]): DialogChoice[] {
+  const of = (type: GitRef["type"], icon: string): DialogChoice[] =>
+    refs
+      .filter((r) => r.type === type && !(type === "remote" && r.symref))
+      .map((r) => ({
+        id: r.fullName,
+        label: refLabel(r.fullName),
+        icon,
+        detail: r.sha.slice(0, 7),
+      }));
+  return [
+    { id: ENTER_COMMIT, label: l10n.t("Enter a commit SHA…"), icon: "git-commit" },
+    ...of("head", "git-branch"),
+    ...of("remote", "cloud"),
+    ...of("tag", "tag"),
+  ];
+}
+
+/** `rev` as a full commit sha, or undefined when it names no commit here. An
+ *  option-like text never reaches git. */
+export async function resolveCommit(repo: RepoEntry, rev: string): Promise<string | undefined> {
+  const text = rev.trim();
+  if (!text || text.startsWith("-")) {
+    return undefined;
+  }
+  try {
+    const r = await repo.ctx.process.run(["rev-parse", "--verify", "--quiet", `${text}^{commit}`]);
+    const sha = r.code === 0 ? r.stdout.trim() : "";
+    return /^[0-9a-f]{40}([0-9a-f]{24})?$/i.test(sha) ? sha : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Ask what to compare a commit with: a branch, a remote branch, a tag, or a
+ * commit typed by its SHA. Answers a ref's full name or a commit's full sha;
+ * undefined when the question was dismissed. A SHA that names no commit asks
+ * again, with what was typed still in the field and the reason under the title.
+ */
+export async function pickCompareTarget(repo: RepoEntry, title: string): Promise<string | undefined> {
+  let refs: GitRef[] = [];
+  try {
+    refs = await repo.ctx.refs.listRefs();
+  } catch {
+    // No refs to list still leaves the SHA row.
+  }
+  const picked = await promptPick({ title, choices: compareTargetChoices(refs) });
+  if (picked !== ENTER_COMMIT) {
+    return picked;
+  }
+  let value = "";
+  let hint: string | undefined;
+  for (;;) {
+    const typed = (
+      await promptInput({
+        title,
+        placeholder: l10n.t("Commit SHA"),
+        value,
+        hint,
+        confirmLabel: l10n.t("Compare"),
+        validate: "nonEmpty",
+      })
+    )?.trim();
+    if (!typed) {
+      return undefined;
+    }
+    const sha = await resolveCommit(repo, typed);
+    if (sha) {
+      return sha;
+    }
+    value = typed;
+    hint = l10n.t("{0} is not a commit in this repository.", typed);
+  }
 }

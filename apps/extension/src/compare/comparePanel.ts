@@ -8,14 +8,14 @@ import { relativeTime } from "../util/relativeTime";
 import tokensCss from "../../../../packages/webview-ui/src/styles/tokens.css";
 import { SOLID_ACCENT_JS } from "../../../../packages/webview-ui/src/styles/solidAccent";
 import {
+  compareRefLabel,
   compareRefsData,
   fileDiffPatch,
   openCompareFileDiff,
-  pickRef,
+  pickCompareTarget,
   type CompareResult,
   type RefKind,
 } from "./refCompare";
-import type { GitRef } from "@gitstudio/host-bridge/git";
 import * as l10n from "@vscode/l10n";
 import { l10nWebviewScript } from "@gitstudio/l10n/index";
 
@@ -54,6 +54,10 @@ export class ComparePanel {
     extensionUri: vscode.Uri,
     base?: string,
     head?: string,
+    /** Open in this mode: `threeDot: false` is "All differences" — the plain
+     *  diff between two commits, for a comparison of one commit with another
+     *  ref, where neither need contain the other. Omitted, the mode stays. */
+    opts: { threeDot?: boolean } = {},
   ): Promise<void> {
     const active = repos.getActive();
     if (!active) {
@@ -61,27 +65,25 @@ export class ComparePanel {
       return;
     }
     const headRef = await active.ctx.refs.getHead();
-    const current = headRef.detached ? headRef.sha : headRef.branch;
+    // By its full name: `branch` is git's shortest unambiguous one, which is
+    // "heads/release" beside a tag "release" — and the panel shows it short.
+    const current = headRef.detached ? headRef.sha : (headRef.fullName ?? headRef.branch);
     const b = base ?? current;
     let h = head;
     if (!h) {
       // Palette entry point — prompt for the ref to compare `b` against.
-      const refs = (await active.ctx.refs.listRefs()).filter(
-        (r: GitRef) =>
-          r.type === "head" || r.type === "remote" || r.type === "tag",
-      );
-      h = await pickRef(refs, l10n.t("Compare {0} with…", b ?? ""));
+      h = await pickCompareTarget(active, l10n.t("Compare {0} with…", compareRefLabel(b ?? "")));
     }
     if (!b || !h) {
       return;
     }
 
     if (ComparePanel.current) {
-      ComparePanel.current.setRefs(b, h);
+      ComparePanel.current.setRefs(b, h, opts.threeDot);
       ComparePanel.current.panel.reveal(vscode.ViewColumn.Active);
       return;
     }
-    ComparePanel.current = new ComparePanel(repos, extensionUri, b, h);
+    ComparePanel.current = new ComparePanel(repos, extensionUri, b, h, opts.threeDot);
   }
 
   private readonly panel: vscode.WebviewPanel;
@@ -109,9 +111,13 @@ export class ComparePanel {
     private readonly extensionUri: vscode.Uri,
     base: string,
     head: string,
+    threeDot?: boolean,
   ) {
     this.base = base;
     this.head = head;
+    if (threeDot !== undefined) {
+      this.threeDot = threeDot;
+    }
     this.panel = vscode.window.createWebviewPanel(
       "gitstudio.compare",
       l10n.t("Compare"),
@@ -132,9 +138,12 @@ export class ComparePanel {
     void this.update();
   }
 
-  private setRefs(base: string, head: string): void {
+  private setRefs(base: string, head: string, threeDot?: boolean): void {
     this.base = base;
     this.head = head;
+    if (threeDot !== undefined) {
+      this.threeDot = threeDot;
+    }
     void this.update();
   }
 
@@ -148,7 +157,7 @@ export class ComparePanel {
     const base = this.base;
     const head = this.head;
     const threeDot = this.threeDot;
-    this.panel.title = l10n.t("Compare: {0} ↔ {1}", base, head);
+    this.panel.title = l10n.t("Compare: {0} ↔ {1}", compareRefLabel(base), compareRefLabel(head));
     const active = this.repos.getActive();
     if (!active) {
       this.lastRenderKey = "";
@@ -169,7 +178,7 @@ export class ComparePanel {
       }
       this.lastRenderKey = "";
       this.panel.webview.html = this.errorHtml(
-        l10n.t("Couldn't compare {0} with {1}.", this.base, this.head),
+        l10n.t("Couldn't compare {0} with {1}.", compareRefLabel(this.base), compareRefLabel(this.head)),
       );
       return;
     }
@@ -200,12 +209,8 @@ export class ComparePanel {
         if (!active) {
           return;
         }
-        const refs = (await active.ctx.refs.listRefs()).filter(
-          (r: GitRef) =>
-            r.type === "head" || r.type === "remote" || r.type === "tag",
-        );
-        const picked = await pickRef(
-          refs,
+        const picked = await pickCompareTarget(
+          active,
           m.type === "pickBase" ? l10n.t("Compare from (base)…") : l10n.t("Compare to (head)…"),
         );
         if (picked) {
@@ -289,6 +294,9 @@ export class ComparePanel {
 
   private render(result: CompareResult): string {
     this.filesLeftRef = result.filesLeftRef;
+    // What each side is CALLED; git is always handed this.base / this.head.
+    const baseName = compareRefLabel(this.base);
+    const headName = compareRefLabel(this.head);
     const nonce = getNonce();
     const codiconUri = this.panel.webview.asWebviewUri(
       vscode.Uri.joinPath(this.extensionUri, "dist", "codicons", "codicon.css"),
@@ -335,21 +343,21 @@ export class ComparePanel {
 </head>
 <body>
   <div class="cmp-bar">
-    <button class="ref-pick" id="pick-base" title="${l10n.t("Change base ref")}"><i class="codicon codicon-${REF_ICON[result.baseKind]}"></i><span class="nm">${esc(this.base)}</span></button>
+    <button class="ref-pick" id="pick-base" title="${l10n.t("Change base ref")}"><i class="codicon codicon-${REF_ICON[result.baseKind]}"></i><span class="nm">${esc(baseName)}</span></button>
     <span class="cmp-arrow" aria-hidden="true"><i class="codicon codicon-arrow-right"></i></span>
-    <button class="ref-pick" id="pick-head" title="${l10n.t("Change compare ref")}"><i class="codicon codicon-${REF_ICON[result.headKind]}"></i><span class="nm">${esc(this.head)}</span></button>
+    <button class="ref-pick" id="pick-head" title="${l10n.t("Change compare ref")}"><i class="codicon codicon-${REF_ICON[result.headKind]}"></i><span class="nm">${esc(headName)}</span></button>
     <button class="icon-btn" id="swap" title="${l10n.t("Swap base and compare")}"><i class="codicon codicon-arrow-swap"></i></button>
     <div class="cmp-mode" role="group" aria-label="${l10n.t("Comparison mode")}">
-      <button id="mode-3" class="${this.threeDot ? "on" : ""}" title="Commits and changes ${esc(this.head)} adds on top of the merge-base">What ${esc(this.head)} adds</button>
+      <button id="mode-3" class="${this.threeDot ? "on" : ""}" title="Commits and changes ${esc(headName)} adds on top of the merge-base">What ${esc(headName)} adds</button>
       <button id="mode-2" class="${this.threeDot ? "" : "on"}" title="${l10n.t("Every difference between the two refs")}">${l10n.t("All differences")}</button>
     </div>
   </div>
 
   <div class="cmp-diffstat">
     <div class="ds-headline">
-      <b class="ds-head">${esc(this.head)}</b>
+      <b class="ds-head">${esc(headName)}</b>
       <span class="ds-vs">${l10n.t("compared with")}</span>
-      <b class="ds-base">${esc(this.base)}</b>
+      <b class="ds-base">${esc(baseName)}</b>
     </div>
     <div class="ds-metrics">
       <span class="ds-metric"><b id="m-commits">${result.ahead}</b> ${result.ahead === 1 ? l10n.t("commit") : l10n.t("commits")}</span>
@@ -359,7 +367,7 @@ export class ComparePanel {
       <span class="ds-metric ds-add">+${result.additions}</span>
       <span class="ds-metric ds-del">−${result.deletions}</span>
       <span class="ds-bar" id="ds-bar" aria-hidden="true"></span>
-      ${result.behind > 0 ? `<span class="ds-behind" title="${l10n.t("{0} has commits {1} doesn't", esc(this.base), esc(this.head))}"><i class="codicon codicon-arrow-down"></i>${l10n.t("{0} behind", result.behind)}</span>` : ""}
+      ${result.behind > 0 ? `<span class="ds-behind" title="${l10n.t("{0} has commits {1} doesn't", esc(baseName), esc(headName))}"><i class="codicon codicon-arrow-down"></i>${l10n.t("{0} behind", result.behind)}</span>` : ""}
     </div>
   </div>
 
@@ -399,7 +407,7 @@ export class ComparePanel {
 
   <div class="cmp-panel" id="panel-commits" hidden>
     <div class="commits-list" id="commits-list"></div>
-    <div class="cmp-empty" id="commits-empty" hidden>${l10n.t("No commits —")} <b>${esc(this.head)}</b> ${l10n.t("has nothing that")} <b>${esc(this.base)}</b> ${l10n.t("doesn't.")}</div>
+    <div class="cmp-empty" id="commits-empty" hidden>${l10n.t("No commits —")} <b>${esc(headName)}</b> ${l10n.t("has nothing that")} <b>${esc(baseName)}</b> ${l10n.t("doesn't.")}</div>
   </div>
 
 ${l10nWebviewScript(nonce)}
@@ -418,6 +426,10 @@ ${COMPARE_JS}
   }
 
   private dispose(): void {
+    // Once: disposing the panel fires its onDidDispose, which lands here again.
+    if (this.disposed) {
+      return;
+    }
     this.disposed = true;
     ComparePanel.current = undefined;
     this.panel.dispose();

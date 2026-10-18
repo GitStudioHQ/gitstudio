@@ -64,10 +64,20 @@ export function commitMenuItems(opts: { drop?: boolean; reword?: boolean } = {})
     { id: "reset", label: l10n.t("Reset Current Branch to Here…"), icon: "discard", danger: true },
     { id: "interactiveRebase", label: l10n.t("Start Interactive Rebase Here…"), icon: "git-merge" },
     { id: "", label: "", sep: true },
+    // With a branch, a tag or another commit (issue #123) — the graph host
+    // asks which and opens the Compare panel; see COMPARE_WITH.
+    { id: COMPARE_WITH, label: l10n.t("Compare With…"), icon: "git-compare" },
     { id: "copySha", label: l10n.t("Copy SHA"), icon: "copy" },
     { id: "copyMessage", label: l10n.t("Copy Message"), icon: "copy" },
   ];
 }
+
+/**
+ * "Compare With…": not a runCommitAction arm. It changes nothing in the
+ * repository and opens a panel, which only the graph host can (it owns the
+ * RepoManager and the extension's URI) — like Start Interactive Rebase Here.
+ */
+export const COMPARE_WITH = "compareWith";
 
 /**
  * The commit menu for `sha`, asking git whether it can be dropped.

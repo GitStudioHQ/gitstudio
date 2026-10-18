@@ -36,6 +36,7 @@ import { gravatarAllowed, onGravatarSettingChange } from "./avatarPrefs";
 import { getRefFilterStore } from "./refFilterStore";
 import { getFilesLayoutStore } from "./filesLayoutStore";
 import {
+  COMPARE_WITH,
   commitMenuItems,
   commitMenuItemsFor,
   multiCommitMenuItemsFor,
@@ -47,6 +48,7 @@ import {
 import { menuTarget, selectedCommits } from "@gitstudio/host-bridge/graphSelection";
 import { SettleLatest } from "@gitstudio/host-bridge/settleLatest";
 import { ComparePanel } from "../compare/comparePanel";
+import { pickCompareTarget } from "../compare/refCompare";
 import type { MenuRef } from "./checkoutTarget";
 import { rowStatsReply } from "./rowStatsReply";
 import { readRewritableChain } from "@gitstudio/git-service/rebaseChain";
@@ -1161,6 +1163,10 @@ export class CommitGraphPanel {
       await vscode.commands.executeCommand("gitstudio.startInteractiveRebase", sha);
       return;
     }
+    if (id === COMPARE_WITH) {
+      await this.compareWith(active, sha);
+      return;
+    }
     const record = this.records.get(sha);
     // Route destructive ops through the Undo envelope when it's available.
     const ledger = this.repos.getUndoLedger();
@@ -1178,6 +1184,21 @@ export class CommitGraphPanel {
     if (changed) {
       this.scheduleRefresh();
     }
+  }
+
+  /**
+   * "Compare With…" (issue #123): ask for a branch, a tag or a commit, then
+   * open the Compare panel from this commit to it. "All differences" — the
+   * plain diff between the two — because the other side need not contain this
+   * commit: "what it adds" of an older tag is nothing at all. The panel's own
+   * toggle offers the other mode, and its swap button the other direction.
+   */
+  private async compareWith(active: RepoEntry, sha: string): Promise<void> {
+    const target = await pickCompareTarget(active, l10n.t("Compare {0} with…", sha.slice(0, 7)));
+    if (!target) {
+      return;
+    }
+    await ComparePanel.show(this.repos, this.extensionUri, sha, target, { threeDot: false });
   }
 
   // ── Commit details panel (docked under the graph) ──────────────────────────
