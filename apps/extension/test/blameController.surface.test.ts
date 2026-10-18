@@ -320,6 +320,42 @@ test("the hover names the commit, its author and date, with Copy SHA and Show in
   assert.equal(await ui.hover.provideHover(d, new kit.Position(1, 0), token()), undefined, "Show Diff On Hover off");
 });
 
+test("where the staging hover offers Stage / Unstage, the Uncommitted changes note is left out (#87)", async () => {
+  // The two hovers stack. "Unstaged change · Stage change" already says the
+  // line is uncommitted; blame's note under it said it again. Wired as
+  // extension.ts wires it, against the real EditorStagingActions over a gutter
+  // that reports one unstaged change on line 3.
+  /* eslint-disable-next-line @typescript-eslint/no-require-imports */
+  const { EditorStagingActions } = require("../src/changes/editorStagingActions") as typeof import("../src/changes/editorStagingActions");
+  const s = setup();
+  const ui = start(s);
+  const dirty = doc(s.file, { text: "one\nTWO\nthree\nnew\n" });
+  dirty.version = 2;
+  const gutter = {
+    blocksFor: () => [{ head: { start: 3, end: 2 }, working: { start: 3, end: 3 }, state: "unstaged" }],
+    onDidRefresh: () => ({ dispose() {} }),
+  };
+  const staging = new EditorStagingActions(gutter as never);
+  live.push(staging);
+  (ui.c as any).yieldUncommittedHover?.((d: never, line: number) => staging.offersLinksAt(d, line));
+
+  assert.ok(staging.offersLinksAt(dirty as never, 3), "the staging hover has links on line 3");
+  assert.equal(await ui.hover.provideHover(dirty, new kit.Position(3, 0), token()), undefined, "no Uncommitted changes note beside them");
+  const committed = await ui.hover.provideHover(dirty, new kit.Position(1, 0), token());
+  assert.match(committed.contents.value, /\*\*change f\*\*/, "a committed line keeps its commit hover");
+
+  kit.settings.set("gitstudio.staging.hoverActions", false);
+  assert.equal(staging.offersLinksAt(dirty as never, 3), false);
+  const note = await ui.hover.provideHover(dirty, new kit.Position(3, 0), token());
+  assert.match(note.contents.value, /\*\*Uncommitted changes\*\*/, "with the staging hover off, the note is back");
+
+  assert.match(
+    readFileSync(join(__dirname, "..", "src", "extension.ts"), "utf8"),
+    /blame\.yieldUncommittedHover\(\(document, line\) => editorStaging\.offersLinksAt\(document, line\)\)/,
+    "extension.ts wires the two together",
+  );
+});
+
 // ── The annotate gutter ──────────────────────────────────────────────────────
 
 const gutterText = (decos: any[]) => decos.map((d) => d.renderOptions.before.contentText);

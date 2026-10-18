@@ -65,6 +65,8 @@ import { isOwnDiff, routableIntent } from "@gitstudio/merge-vscode/ownDiffs";
 import { openDiff } from "./merge/diffPlaces";
 import { setUpSidesTip, SIDES_WHY_URL } from "@gitstudio/merge-vscode/upgradeTip";
 import { StagedGutter } from "./changes/stagedGutter";
+import { EditorStagingActions, runSetChange, runSetSelectedLines } from "./changes/editorStagingActions";
+import { SET_CHANGE_COMMAND, SET_SELECTED_LINES_COMMAND } from "./changes/stagingActions";
 import { lineMenuTarget, type LineMenuArg } from "./changes/lineTargets";
 import { CommitViewProvider } from "./changes/commitView";
 import {
@@ -528,6 +530,10 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
     const stagedGutter = new StagedGutter(context, repos, (uri) =>
       blame.ownsGutterStrip(uri),
     );
+    // The hover's Stage / Unstage links (#87). Where they show, blame's hover
+    // leaves out its "Uncommitted changes" note: the links already say it.
+    const editorStaging = new EditorStagingActions(stagedGutter);
+    blame.yieldUncommittedHover((document, line) => editorStaging.offersLinksAt(document, line));
     const statusCluster = new StatusCluster(repos);
 
     // What `stagingRefresh` (declared above, before the merge hook) does.
@@ -566,6 +572,15 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
           );
           if (target) await stagedGutter.toggleAtUri(target.uri, target.line);
         },
+      ),
+      // The hover's and the CodeLens's links (editorStagingActions.ts): the
+      // change at a line, staged or unstaged by the same engine as the menu
+      // item above; and the selected lines of the editor showing a document,
+      // by the same engine as Stage / Unstage Selected Lines.
+      editorStaging,
+      vscode.commands.registerCommand(SET_CHANGE_COMMAND, (arg?: unknown) => runSetChange(stagedGutter, arg)),
+      vscode.commands.registerCommand(SET_SELECTED_LINES_COMMAND, (arg?: unknown) =>
+        runSetSelectedLines(repos, stagingRefresh, arg),
       ),
       vscode.commands.registerCommand("gitstudio.stageSelectedLines", () =>
         stageSelectedLines(repos, stagingRefresh),

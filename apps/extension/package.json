@@ -1114,6 +1114,18 @@
             "default": false,
             "description": "%config.gitstudio.staging.clickGutterToggles.description%",
             "order": 5
+          },
+          "gitstudio.staging.hoverActions": {
+            "type": "boolean",
+            "default": true,
+            "description": "%config.gitstudio.staging.hoverActions.description%",
+            "order": 6
+          },
+          "gitstudio.staging.codeLens": {
+            "type": "boolean",
+            "default": false,
+            "description": "%config.gitstudio.staging.codeLens.description%",
+            "order": 7
           }
         }
       },

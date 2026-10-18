@@ -367,6 +367,7 @@ const stub: Record<string, unknown> = {
       hoverProviders.push(provider);
       return { dispose() {} };
     },
+    registerCodeLensProvider: () => ({ dispose() {} }),
   },
   Uri,
   Range,

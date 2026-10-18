@@ -24,8 +24,15 @@ import * as l10n from "@vscode/l10n";
  * ship on the Marketplace.
  *
  * What CAN be done, and is done here: show the state truthfully in the real
- * gutter, and give three ways to change it that do not need a clickable glyph —
- * a keybinding, the line-number context menu, and the Changes list. Anyone who
+ * gutter — as a dot (grey: unstaged, half amber: partly staged, green: staged),
+ * never as a checkbox. The marks were checkboxes once, and in VS Code's diff
+ * editor that read as a column of controls that did nothing when clicked (#87,
+ * reopened); a mark that can only report must not look like a control
+ * (test/stagedGutterGlyphs.test.ts). Then give ways to change the state that
+ * do not need a clickable glyph — a HOVER on the changed lines with Stage /
+ * Unstage links (editorStagingActions.ts; in the text editor, a hover link is
+ * the one plain click that reaches an extension), an opt-in CodeLens, a
+ * keybinding, the line-number context menu, and the Changes list. Anyone who
  * wants the tick itself is one command away from our own diff page, where the
  * gutter is ours and the tick is real.
  *
@@ -42,6 +49,27 @@ import * as l10n from "@vscode/l10n";
  */
 
 type State = "staged" | "unstaged" | "partial";
+
+/** The settings that decide whether blocks are read, and whether marks are drawn. */
+const WATCHED_SETTINGS = [
+  "gitstudio.staging.showGutterState",
+  "gitstudio.staging.hoverActions",
+  "gitstudio.staging.codeLens",
+];
+
+function readShowMarks(): boolean {
+  return vscode.workspace.getConfiguration("gitstudio").get<boolean>("staging.showGutterState", true) !== false;
+}
+
+/** Whether anything needs the blocks: the marks, the hover (on by default) or the CodeLens (off). */
+function readEnabled(): boolean {
+  const config = vscode.workspace.getConfiguration("gitstudio");
+  return (
+    readShowMarks() ||
+    config.get<boolean>("staging.hoverActions", true) !== false ||
+    config.get<boolean>("staging.codeLens", false) === true
+  );
+}
 
 const STATES: readonly State[] = ["staged", "unstaged", "partial"];
 
@@ -79,7 +107,16 @@ export class StagedGutter implements vscode.Disposable {
   private readonly running = new Map<string, Promise<void>>();
   /** The document version each document's marks were last painted for. */
   private readonly paintedVersion = new Map<string, number>();
+  /** Whether the marks are drawn (`staging.showGutterState`). */
+  private showMarks: boolean;
+  /**
+   * Whether the blocks are read at all: for the marks, or for the hover and the
+   * CodeLens, which act on the same blocks (any of the three settings).
+   */
   private enabled: boolean;
+  private readonly refreshed = new vscode.EventEmitter<vscode.Uri>();
+  /** A document's blocks were re-read (or dropped) — the CodeLens repaints on it. */
+  readonly onDidRefresh = this.refreshed.event;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -110,11 +147,11 @@ export class StagedGutter implements vscode.Disposable {
       );
     }
 
-    this.enabled = vscode.workspace
-      .getConfiguration("gitstudio")
-      .get<boolean>("staging.showGutterState", true);
+    this.showMarks = readShowMarks();
+    this.enabled = readEnabled();
 
     this.disposables.push(
+      this.refreshed,
       vscode.window.onDidChangeActiveTextEditor((editor) => {
         if (editor) void this.schedule(editor.document, 0);
       }),
@@ -141,10 +178,9 @@ export class StagedGutter implements vscode.Disposable {
         else if (touches(event, "workingTree")) void this.refreshIfIndexMoved();
       }),
       vscode.workspace.onDidChangeConfiguration((event) => {
-        if (!event.affectsConfiguration("gitstudio.staging.showGutterState")) return;
-        this.enabled = vscode.workspace
-          .getConfiguration("gitstudio")
-          .get<boolean>("staging.showGutterState", true);
+        if (!WATCHED_SETTINGS.some((key) => event.affectsConfiguration(key))) return;
+        this.showMarks = readShowMarks();
+        this.enabled = readEnabled();
         this.refreshAll();
       }),
     );
@@ -256,6 +292,7 @@ export class StagedGutter implements vscode.Disposable {
       this.baselines.delete(key);
       this.paintedVersion.delete(key);
       this.paint(document, []);
+      this.refreshed.fire(document.uri);
       return;
     }
 
@@ -267,7 +304,17 @@ export class StagedGutter implements vscode.Disposable {
     this.blocksByDoc.set(key, blocks);
     if (typeof version === "number") this.paintedVersion.set(key, version);
     else this.paintedVersion.delete(key);
-    this.paint(document, blocks);
+    this.paint(document, this.showMarks ? blocks : []);
+    this.refreshed.fire(document.uri);
+  }
+
+  /**
+   * The change blocks last read for `uri`, or undefined when none have been —
+   * what the hover and the CodeLens offer actions for. They never read git
+   * themselves (a hover must answer at once); the action does, see setAtLine.
+   */
+  blocksFor(uri: vscode.Uri): readonly ChangeBlock[] | undefined {
+    return this.blocksByDoc.get(uri.toString());
   }
 
   private forget(key: string): void {
@@ -316,7 +363,7 @@ export class StagedGutter implements vscode.Disposable {
    * already ships. Note what it can NOT see: a click on the glyph itself. Monaco
    * swallows a left click in the glyph margin without moving the caret
    * (verified in VS Code 1.140 for #87), so no selection event arrives and the
-   * checkbox-looking glyph stays unclickable with this setting on too — the
+   * glyph stays unclickable with this setting on too — the
    * gesture that works is a click at the very start of the text. It cannot be
    * told apart from someone genuinely putting their caret at the start of a
    * line — which is a thing people do constantly — so staging a change on that
@@ -327,7 +374,7 @@ export class StagedGutter implements vscode.Disposable {
    * that strip and reads the same gesture.
    */
   private onPossibleGutterClick(event: vscode.TextEditorSelectionChangeEvent): void {
-    if (!this.enabled) return;
+    if (!this.showMarks) return;
     if (event.kind !== vscode.TextEditorSelectionChangeKind.Mouse) return;
 
     const selection = event.selections[0];
@@ -361,6 +408,16 @@ export class StagedGutter implements vscode.Disposable {
    * so the conversion happens at the command boundary and nowhere else.
    */
   async toggleAtLine(document: vscode.TextDocument, line: number): Promise<void> {
+    await this.setAtLine(document, line);
+  }
+
+  /**
+   * Stages (`staged` true) or unstages the change at `line` (0-based) — or,
+   * with `staged` undefined, toggles it as the line-number menu does. One
+   * engine for every door — the menu, the keybinding, the hover, the
+   * CodeLens — so each leaves the index exactly as the others would.
+   */
+  async setAtLine(document: vscode.TextDocument, line: number, staged?: boolean): Promise<void> {
     const target = this.resolve(document.uri);
     if (!target) {
       void vscode.window.showInformationMessage(
@@ -384,15 +441,14 @@ export class StagedGutter implements vscode.Disposable {
       return;
     }
 
-    // A partial block stages the remainder; unstaging it would discard work the
-    // user staged earlier, which is the more surprising direction.
-    const staged = block.state !== "staged";
+    // Toggling a partial block stages the remainder; unstaging it would discard
+    // work the user staged earlier, which is the more surprising direction.
     const result = await setBlockStaged(
       target.entry.ctx,
       target.rel,
       document.getText(),
       block,
-      staged,
+      staged ?? block.state !== "staged",
     );
     if (!result.ok) {
       void vscode.window.setStatusBarMessage(l10n.t("$(info) GitStudio: {0}", result.stderr), 4000);
@@ -400,15 +456,15 @@ export class StagedGutter implements vscode.Disposable {
     await this.refresh(document);
   }
 
-  /** toggleAtLine for the document `uri` names — open already, or opened now. */
-  async toggleAtUri(uri: vscode.Uri, line: number): Promise<void> {
+  /** setAtLine for the document `uri` names — open already, or opened now. */
+  async toggleAtUri(uri: vscode.Uri, line: number, staged?: boolean): Promise<void> {
     let document: vscode.TextDocument;
     try {
       document = await vscode.workspace.openTextDocument(uri);
     } catch {
       return;
     }
-    await this.toggleAtLine(document, line);
+    await this.setAtLine(document, line, staged);
   }
 
   /**

@@ -32,8 +32,8 @@ export interface StagingRefresh {
  */
 function resolveTarget(
   repos: RepoManager,
+  editor: vscode.TextEditor | undefined = vscode.window.activeTextEditor,
 ): { entry: RepoEntry; rel: string; doc: vscode.TextDocument } | undefined {
-  const editor = vscode.window.activeTextEditor;
   if (!editor || editor.document.uri.scheme !== "file") {
     void vscode.window.showInformationMessage(
       l10n.t("GitStudio: open a file in a Git repository to stage lines."),
@@ -86,12 +86,14 @@ function cursorLines(editor: vscode.TextEditor): number[] {
 export async function stageSelectedLines(
   repos: RepoManager,
   refresh: StagingRefresh,
+  /** The editor whose selection to stage; the active one when not given (the palette, a key). */
+  inEditor?: vscode.TextEditor,
 ): Promise<void> {
-  const target = resolveTarget(repos);
+  const target = resolveTarget(repos, inEditor ?? vscode.window.activeTextEditor);
   if (!target) {
     return;
   }
-  const editor = vscode.window.activeTextEditor!;
+  const editor = inEditor ?? vscode.window.activeTextEditor!;
   const ranges = selectionRanges(editor);
   await stageRangesAgainstIndex(target.entry, target.rel, target.doc, ranges, refresh);
 }
@@ -156,9 +158,14 @@ async function stageRangesAgainstIndex(
 export async function unstageSelectedLines(
   repos: RepoManager,
   refresh: StagingRefresh,
+  /** The editor whose selection to unstage; the active one when not given. */
+  inEditor?: vscode.TextEditor,
 ): Promise<void> {
-  await unstageLines(repos, refresh, (head, index, working, editor) =>
-    unstageSelection(head, index, working, selectionRanges(editor)),
+  await unstageLines(
+    repos,
+    refresh,
+    (head, index, working, editor) => unstageSelection(head, index, working, selectionRanges(editor)),
+    inEditor,
   );
 }
 
@@ -182,12 +189,13 @@ async function unstageLines(
     working: string,
     editor: vscode.TextEditor,
   ) => SelectionWrite | undefined,
+  inEditor?: vscode.TextEditor,
 ): Promise<void> {
-  const target = resolveTarget(repos);
+  const target = resolveTarget(repos, inEditor ?? vscode.window.activeTextEditor);
   if (!target) {
     return;
   }
-  const editor = vscode.window.activeTextEditor!;
+  const editor = inEditor ?? vscode.window.activeTextEditor!;
   const head = await target.entry.ctx.staging.headContent(target.rel);
   const index = await target.entry.ctx.staging.indexContent(target.rel);
   if (computeHunks(head, index).length === 0) {
