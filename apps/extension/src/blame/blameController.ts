@@ -650,6 +650,25 @@ export class BlameController implements vscode.Disposable {
     return this.annotateAll || this.annotated.has(uri.toString());
   }
 
+  /** See yieldUncommittedHover. */
+  private uncommittedHoverYields: (document: vscode.TextDocument, line: number) => boolean = () => false;
+
+  /**
+   * Lets another hover take an uncommitted line: while `yields` says so, the
+   * hover leaves out its "Uncommitted changes" note. The staging hover's
+   * "Unstaged change · Stage change" already says the line is uncommitted, and
+   * says what to do about it (#87); the note under it only repeated it. A
+   * committed line keeps its commit hover whatever `yields` says.
+   */
+  public yieldUncommittedHover(yields: (document: vscode.TextDocument, line: number) => boolean): void {
+    this.uncommittedHoverYields = yields;
+  }
+
+  /** Whether the hover leaves the uncommitted `line` of `document` to another hover. */
+  public uncommittedHoverYieldsAt(document: vscode.TextDocument, line: number): boolean {
+    return this.uncommittedHoverYields(document, line);
+  }
+
   /**
    * Clicking an annotation opens that commit in the Commit panel — the JetBrains
    * behaviour. VS Code gives decorations no click event, so we infer it: a MOUSE
@@ -953,6 +972,9 @@ class BlameHoverProvider implements vscode.HoverProvider {
     }
     const commit = commitForLine(blame, position.line);
     if (!commit) {
+      return undefined;
+    }
+    if (commit.sha === UNCOMMITTED_SHA && this.controller.uncommittedHoverYieldsAt(document, position.line)) {
       return undefined;
     }
     return new vscode.Hover(hoverMarkdown(commit), document.lineAt(position.line).range);

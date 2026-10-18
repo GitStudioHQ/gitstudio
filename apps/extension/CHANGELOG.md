@@ -11,7 +11,8 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   the editor or on the changed side of a diff, and a hover offers Stage change
   or Unstage change (Stage the rest for a partly staged change). With lines
   selected it also offers Stage selected lines. It stages exactly what the
-  line-number menu stages, untracked files included. From the keyboard: Show
+  line-number menu stages, untracked files included, and blame's hover no
+  longer adds its "Uncommitted changes" note under the links. From the keyboard: Show
   or Focus Hover twice, then Tab to a link. Turn it off with
   `gitstudio.staging.hoverActions`
   ([#87](https://github.com/GitStudioHQ/gitstudio/issues/87)).

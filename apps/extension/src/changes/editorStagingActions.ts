@@ -60,15 +60,30 @@ export class EditorStagingActions implements vscode.Disposable {
     );
   }
 
-  /** The hover for a changed line: what the change is, and what can be done to it. */
-  hover(document: vscode.TextDocument, position: vscode.Position): vscode.Hover | undefined {
+  /**
+   * Whether the hover on `line` shows staging links — what blame's hover asks
+   * before adding its own "Uncommitted changes" note, which would only repeat it.
+   */
+  offersLinksAt(document: vscode.TextDocument, line: number): boolean {
+    return this.offer(document, line) !== undefined;
+  }
+
+  /** The change at `line` and the verbs its hover offers, or undefined for no hover. */
+  private offer(document: vscode.TextDocument, line: number): { block: ChangeBlock; verbs: StagingVerb[] } | undefined {
     if (!hoverOn()) return undefined;
-    const block = this.blockAt(document, position.line);
+    const block = this.blockAt(document, line);
     if (!block) return undefined;
     const editor = editorFor(document.uri);
     const ranges = editor ? selectedRanges(editor) : [];
     const verbs = verbsFor(block.state, ranges.length > 0 && selectionTouches(block, ranges));
-    if (verbs.length === 0) return undefined;
+    return verbs.length > 0 ? { block, verbs } : undefined;
+  }
+
+  /** The hover for a changed line: what the change is, and what can be done to it. */
+  hover(document: vscode.TextDocument, position: vscode.Position): vscode.Hover | undefined {
+    const offer = this.offer(document, position.line);
+    if (!offer) return undefined;
+    const { block, verbs } = offer;
 
     const uri = document.uri.toString();
     const links = verbs.map((verb) => {

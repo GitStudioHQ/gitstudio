@@ -530,6 +530,10 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
     const stagedGutter = new StagedGutter(context, repos, (uri) =>
       blame.ownsGutterStrip(uri),
     );
+    // The hover's Stage / Unstage links (#87). Where they show, blame's hover
+    // leaves out its "Uncommitted changes" note: the links already say it.
+    const editorStaging = new EditorStagingActions(stagedGutter);
+    blame.yieldUncommittedHover((document, line) => editorStaging.offersLinksAt(document, line));
     const statusCluster = new StatusCluster(repos);
 
     // What `stagingRefresh` (declared above, before the merge hook) does.
@@ -573,7 +577,7 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
       // change at a line, staged or unstaged by the same engine as the menu
       // item above; and the selected lines of the editor showing a document,
       // by the same engine as Stage / Unstage Selected Lines.
-      new EditorStagingActions(stagedGutter),
+      editorStaging,
       vscode.commands.registerCommand(SET_CHANGE_COMMAND, (arg?: unknown) => runSetChange(stagedGutter, arg)),
       vscode.commands.registerCommand(SET_SELECTED_LINES_COMMAND, (arg?: unknown) =>
         runSetSelectedLines(repos, stagingRefresh, arg),
