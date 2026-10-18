@@ -4,6 +4,28 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Stage and unstage from the code.** Rest the pointer on a changed line, in
+  the editor or on the changed side of a diff, and a hover offers Stage change
+  or Unstage change (Stage the rest for a partly staged change). With lines
+  selected it also offers Stage selected lines. It stages exactly what the
+  line-number menu stages, untracked files included. From the keyboard: Show
+  or Focus Hover twice, then Tab to a link. Turn it off with
+  `gitstudio.staging.hoverActions`
+  ([#87](https://github.com/GitStudioHQ/gitstudio/issues/87)).
+- **Stage and Unstage above each change (opt-in).** Turn on
+  `gitstudio.staging.codeLens` for the same links as a CodeLens above every
+  change. A diff editor shows them only while VS Code's Diff Editor: Code Lens
+  setting is on.
+
+### Changed
+- **The staging marks in the gutter are dots, not checkboxes.** VS Code lets
+  no extension make a gutter icon clickable or show a tooltip on it, so the
+  marks only report: grey for unstaged, half amber for partly staged, green
+  for staged ([#87](https://github.com/GitStudioHQ/gitstudio/issues/87)).
+
 ## [1.21.1] - 2026-10-15
 
 ### Fixed
