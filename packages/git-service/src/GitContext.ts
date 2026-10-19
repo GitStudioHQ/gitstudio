@@ -16,6 +16,7 @@ import { SyncOps } from "./SyncOps";
 import { TagOps } from "./TagOps";
 import { OperationProvider } from "./OperationProvider";
 import { ConflictOps } from "./ConflictOps";
+import { ChangelistStore } from "./Changelists";
 
 export interface GitContextOptions {
   /** Absolute path to the repo root. */
@@ -55,6 +56,8 @@ export class GitContext {
   readonly operation: OperationProvider;
   /** Whole-file conflict actions + the dashboard snapshot, in role terms. */
   readonly conflictOps: ConflictOps;
+  /** The Changes view's changelists (#122), kept in the git-dir. */
+  readonly changelists: ChangelistStore;
 
   /** How this context was made — for `at`, which makes another like it. */
   private readonly opts: GitContextOptions;
@@ -100,6 +103,7 @@ export class GitContext {
       gitPath: opts.gitPath,
       onRun: opts.onRun,
     });
+    this.changelists = new ChangelistStore(this.process);
     this.conflictOps = new ConflictOps(
       this.process,
       opts.root,

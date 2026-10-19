@@ -38,6 +38,7 @@ import type { Change } from "../git/git";
 import { getNonce } from "../webview/html";
 import {
   promptConfirm,
+  promptInput,
   promptPick,
   type DialogHost,
   type DialogResult,
@@ -82,6 +83,18 @@ import {
   type StashOutcome,
 } from "../views/stashesView";
 import { l10nWebviewScript } from "@gitstudio/l10n/index";
+import {
+  addChangelist,
+  changelistNameProblem,
+  deleteChangelist,
+  emptyChangelists,
+  forgetPaths,
+  isParked,
+  moveToChangelist,
+  parkedAmong,
+  renameChangelist,
+  type ChangelistState,
+} from "@gitstudio/git-service/Changelists";
 import { openDiff } from "../merge/diffPlaces";
 
 // The unified Commit window: ONE WebviewView ("Commit", viewId gitstudio.commit)
@@ -170,6 +183,17 @@ interface StatePayload {
    * are none (no group).
    */
   stashes?: StashRow[];
+  /**
+   * The repository's named changelists (#122), in the order they were made.
+   * The default changelist is implicit (Unstaged / Changes) and not listed.
+   */
+  changelists: { id: string; name: string }[];
+  /**
+   * Which changelist each changed file is parked in — only the changed files
+   * that are in one. A parked file is left out of Stage All, Commit all and
+   * Discard All, and is staged only by hand.
+   */
+  parked: Record<string, string>;
 }
 
 interface FromWebview {
@@ -221,6 +245,10 @@ interface FromWebview {
     | "stashOpenFile"
     | "stashOpenAll"
     | "stashReadFiles"
+    | "moveToChangelist"
+    | "newChangelist"
+    | "renameChangelist"
+    | "deleteChangelist"
     | "dialogResult";
   /**
    * A full sha: the stash (stashAct, stashFiles, stashOpenFile, stashOpenAll,
@@ -273,6 +301,11 @@ interface FromWebview {
   parent?: string;
   /** openPushCommitFile: git's letter for what the commit did to the file. */
   status?: string;
+  /**
+   * A changelist id (moveToChangelist / renameChangelist / deleteChangelist).
+   * For moveToChangelist, "" is the default changelist and absent means "ask".
+   */
+  list?: string;
 }
 
 /**
@@ -976,6 +1009,18 @@ export class CommitViewProvider
         }
         break;
       }
+      case "moveToChangelist":
+        await this.doMoveToChangelist(msg.paths ?? [], msg.list);
+        return;
+      case "newChangelist":
+        await this.doNewChangelist(msg.paths ?? []);
+        return;
+      case "renameChangelist":
+        await this.doRenameChangelist(msg.list ?? "");
+        return;
+      case "deleteChangelist":
+        await this.doDeleteChangelist(msg.list ?? "");
+        return;
       case "setStagingModel": {
         // Persisted as a real setting, so the choice survives a reload and stays
         // editable from Settings — the toggle is a shortcut to it, not a
@@ -1009,6 +1054,227 @@ export class CommitViewProvider
         }
         await this.pushState();
         return;
+    }
+  }
+
+  // ── Changelists (#122) ─────────────────────────────────────────────────────
+  //
+  // Named groups a working-tree file can be parked in, so the "everything"
+  // actions leave it alone. GitStudio's own bookkeeping, kept in the git-dir
+  // (git-service/Changelists): nothing here touches the index or a file.
+
+  /** The active repository's changelists; none when they cannot be read. */
+  private async changelistsOf(entry: RepoEntry): Promise<ChangelistState> {
+    try {
+      return (await entry.ctx.changelists?.read()) ?? emptyChangelists();
+    } catch {
+      return emptyChangelists();
+    }
+  }
+
+  /**
+   * Change the active repository's changelists, then repaint. Resolves with
+   * what was kept, or undefined when it could not be written (said).
+   */
+  private async changeChangelists(
+    entry: RepoEntry,
+    change: (state: ChangelistState) => ChangelistState,
+  ): Promise<ChangelistState | undefined> {
+    try {
+      const kept = await entry.ctx.changelists.update(change);
+      await this.pushState();
+      return kept;
+    } catch (err) {
+      void vscode.window.showErrorMessage(
+        l10n.t("GitStudio: couldn't save the changelists — {0}", err instanceof Error ? err.message : String(err)),
+      );
+      await this.pushState();
+      return undefined;
+    }
+  }
+
+  /**
+   * Ask for a changelist name until it is one that can be used, or the user
+   * backs out. `current` is the list being renamed.
+   */
+  private async askChangelistName(
+    state: ChangelistState,
+    spec: { title: string; confirmLabel: string; value?: string; current?: string },
+  ): Promise<string | undefined> {
+    let value = spec.value ?? "";
+    let hint: string | undefined = l10n.t("Files in a changelist are left out of Stage All and Commit all until you stage them yourself.");
+    for (;;) {
+      const name = await promptInput({
+        title: spec.title,
+        hint,
+        placeholder: l10n.t("Changelist name"),
+        value,
+        confirmLabel: spec.confirmLabel,
+        validate: "nonEmpty",
+      });
+      if (name === undefined) {
+        return undefined;
+      }
+      const problem = changelistNameProblem(state, name, spec.current);
+      if (!problem) {
+        return name;
+      }
+      value = name;
+      hint = problem === "taken"
+        ? l10n.t("There is already a group called “{0}”. Choose another name.", name.trim())
+        : problem === "tooLong"
+          ? l10n.t("That name is too long. Keep it under 80 characters.")
+          : l10n.t("Enter a name for the changelist.");
+    }
+  }
+
+  /**
+   * Move files to a changelist. With `list` given ("" = the default one) it
+   * moves straight there — a drop names its target; without it the user
+   * picks one, or makes a new one.
+   */
+  private async doMoveToChangelist(paths: string[], list: string | undefined): Promise<void> {
+    const entry = this.repos.getActive();
+    const wanted = [...new Set(paths.filter((p) => p))];
+    if (!entry || wanted.length === 0) {
+      return;
+    }
+    // A conflicted file is never parked: it is not a staging question.
+    const conflicted = new Set((await this.resolveState(entry)).merge.map((e) => e.path));
+    const movable = wanted.filter((p) => !conflicted.has(p));
+    if (movable.length === 0) {
+      return;
+    }
+    const state = await this.changelistsOf(entry);
+    let target = list;
+    if (target === undefined) {
+      const from = new Set(movable.map((p) => state.files[p] ?? ""));
+      const only = from.size === 1 ? [...from][0] : undefined;
+      const choices = [
+        ...state.lists
+          .filter((l) => l.id !== only)
+          .map((l) => ({ id: l.id, label: l.name, icon: "list-unordered" })),
+        ...(only === "" ? [] : [{ id: "", label: l10n.t("Changes"), icon: "inbox", description: l10n.t("The default changelist") }]),
+        { id: "+new", label: l10n.t("New Changelist…"), icon: "new-folder" },
+      ];
+      const n = movable.length;
+      target = await promptPick({
+        title: n === 1 ? l10n.t("Move {0} to Changelist", movable[0]) : l10n.t("Move {0} Files to Changelist", n),
+        choices,
+      });
+      if (target === undefined) {
+        return;
+      }
+      if (target === "+new") {
+        await this.doNewChangelist(movable);
+        return;
+      }
+    }
+    await this.changeChangelists(entry, (s) => moveToChangelist(s, movable, target || undefined));
+  }
+
+  /** Make a changelist — and put `paths` in it, when there are any. */
+  private async doNewChangelist(paths: string[]): Promise<void> {
+    const entry = this.repos.getActive();
+    if (!entry) {
+      return;
+    }
+    const state = await this.changelistsOf(entry);
+    const n = paths.length;
+    const name = await this.askChangelistName(state, {
+      title: n === 0
+        ? l10n.t("New Changelist")
+        : n === 1
+          ? l10n.t("New Changelist for {0}", paths[0])
+          : l10n.t("New Changelist for {0} Files", n),
+      confirmLabel: l10n.t("Create"),
+    });
+    if (name === undefined) {
+      return;
+    }
+    await this.changeChangelists(entry, (s) => {
+      // Checked again against what is on disk now: another window may have
+      // made one with this name meanwhile.
+      if (changelistNameProblem(s, name)) {
+        return s;
+      }
+      const made = addChangelist(s, name);
+      return moveToChangelist(made.state, paths, made.id);
+    });
+  }
+
+  private async doRenameChangelist(id: string): Promise<void> {
+    const entry = this.repos.getActive();
+    if (!entry) {
+      return;
+    }
+    const state = await this.changelistsOf(entry);
+    const list = state.lists.find((l) => l.id === id);
+    if (!list) {
+      return;
+    }
+    const name = await this.askChangelistName(state, {
+      title: l10n.t("Rename Changelist “{0}”", list.name),
+      confirmLabel: l10n.t("Rename"),
+      value: list.name,
+      current: id,
+    });
+    if (name === undefined) {
+      return;
+    }
+    await this.changeChangelists(entry, (s) =>
+      changelistNameProblem(s, name, id) ? s : renameChangelist(s, id, name),
+    );
+  }
+
+  /** Delete a changelist. Its files go back to Changes; no file is touched, so nothing is asked. */
+  private async doDeleteChangelist(id: string): Promise<void> {
+    const entry = this.repos.getActive();
+    if (!entry) {
+      return;
+    }
+    const state = await this.changelistsOf(entry);
+    const list = state.lists.find((l) => l.id === id);
+    if (!list) {
+      return;
+    }
+    const kept = await this.changeChangelists(entry, (s) => deleteChangelist(s, id).state);
+    if (kept) {
+      void vscode.window.setStatusBarMessage(
+        l10n.t("$(check) Deleted changelist “{0}” — its files are back in Changes", list.name),
+        4000,
+      );
+    }
+  }
+
+  /**
+   * Forget the parked files that are clean now — committed, discarded, or
+   * reverted outside GitStudio. Asked of git itself (not vscode.git's cached
+   * lists, which can read empty while it re-scans: pruning on that would
+   * empty every changelist), and only right after GitStudio's own commit and
+   * discard, which are the moments a parked file is expected to go clean.
+   */
+  private async pruneChangelists(entry: RepoEntry): Promise<void> {
+    const state = await this.changelistsOf(entry);
+    const parked = Object.keys(state.files);
+    if (parked.length === 0) {
+      return;
+    }
+    let changed: Set<string>;
+    try {
+      const st = await entry.ctx.status.read();
+      changed = new Set([...st.merge, ...st.staged, ...st.unstaged].map((e) => e.path));
+    } catch {
+      return; // git could not say: keep everything
+    }
+    const clean = parked.filter((p) => !changed.has(p));
+    if (clean.length === 0) {
+      return;
+    }
+    try {
+      await entry.ctx.changelists.update((s) => forgetPaths(s, clean));
+    } catch {
+      // A stale entry is harmless: it shows again only if the file changes.
     }
   }
 
@@ -1270,6 +1536,8 @@ export class CommitViewProvider
       async (e) => {
         const checkedOut = tracked.length > 0 ? await e.ctx.staging.discardFiles(tracked) : undefined;
         const cleaned = untracked.length > 0 ? await e.ctx.staging.cleanFiles(untracked) : undefined;
+        // A parked file discarded clean leaves its changelist.
+        await this.pruneChangelists(e);
         return [checkedOut, cleaned].find(isRefusal);
       },
       { verb: "discard", paths: files.map((f) => f.path) },
@@ -1472,8 +1740,20 @@ export class CommitViewProvider
       );
       return "cancelled";
     }
-    const candidates = unstaged;
+    // A file parked in a changelist is never part of "everything" (#122):
+    // it is committed only once the user stages it.
+    const lists = await this.changelistsOf(entry);
+    const candidates = unstaged.filter((e) => !isParked(lists, e.path));
+    const parked = unstaged.length - candidates.length;
     if (candidates.length === 0) {
+      if (parked > 0) {
+        void vscode.window.showInformationMessage(
+          parked === 1
+            ? l10n.t("GitStudio: nothing to commit. The only changed file is in a changelist — stage it first to commit it.")
+            : l10n.t("GitStudio: nothing to commit. The only changed files are in changelists — stage the ones to commit first."),
+        );
+        return "cancelled";
+      }
       return "ok"; // nothing anywhere; the commit will explain itself
     }
     const n = candidates.length;
@@ -1483,7 +1763,12 @@ export class CommitViewProvider
         : l10n.t("Commit all {0} changed files?", n),
       message:
         l10n.t("Nothing is staged, so everything currently changed will be included — new files too. ") +
-        l10n.t("Stage individually first if you only want some of it."),
+        l10n.t("Stage individually first if you only want some of it.") +
+        (parked === 0
+          ? ""
+          : parked === 1
+            ? " " + l10n.t("1 file in a changelist is left out.")
+            : " " + l10n.t("{0} files in changelists are left out.", parked)),
       confirmLabel: l10n.t("Commit all {0}", n),
     });
     if (!ok) {
@@ -1605,7 +1890,10 @@ export class CommitViewProvider
       return;
     }
     const { merge, unstaged } = await this.resolveState(active);
-    await this.stageHoldingConflicts([...merge, ...unstaged].map((e) => e.path));
+    const lists = await this.changelistsOf(active);
+    await this.stageHoldingConflicts(
+      [...merge, ...unstaged.filter((e) => !isParked(lists, e.path))].map((e) => e.path),
+    );
   }
 
   /**
@@ -1619,7 +1907,12 @@ export class CommitViewProvider
       return;
     }
     const { merge, unstaged } = await this.resolveState(active);
-    await this.stageHoldingConflicts((group === "merge" ? merge : unstaged).map((e) => e.path));
+    // Unstaged's Stage All is the default changelist's: a parked file stays
+    // where it is (#122).
+    const lists = await this.changelistsOf(active);
+    await this.stageHoldingConflicts(
+      (group === "merge" ? merge : unstaged.filter((e) => !isParked(lists, e.path))).map((e) => e.path),
+    );
   }
 
   private async doBulkUnstage(): Promise<void> {
@@ -1637,7 +1930,10 @@ export class CommitViewProvider
     if (!active) {
       return;
     }
-    const { unstaged } = await this.resolveState(active);
+    // Unstaged's Discard All is the default changelist's: a parked file —
+    // a local config, say — is never thrown away with the rest (#122).
+    const lists = await this.changelistsOf(active);
+    const unstaged = (await this.resolveState(active)).unstaged.filter((e) => !isParked(lists, e.path));
     const rels = unstaged.map((e) => e.path);
     if (rels.length === 0) {
       return;
@@ -1803,6 +2099,8 @@ export class CommitViewProvider
 
       void vscode.window.setStatusBarMessage(l10n.t("$(check) Committed"), 3000);
       markWalkthrough("committed");
+      // A parked file committed whole is clean now: it leaves its changelist.
+      await this.pruneChangelists(entry);
 
       // Clear the box and refresh the views. The commit spinner clears on
       // commitDone; for a Commit & Push the modal then opens for the push step.
@@ -2859,10 +3157,13 @@ export class CommitViewProvider
     let ahead: number | undefined;
     let behind: number | undefined;
     let detached: boolean | undefined;
+    let lists = emptyChangelists();
     if (active) {
       try {
-        ({ merge, staged, unstaged, branch, detached, upstream, ahead, behind } =
-          await this.resolveState(active));
+        // The changelists come with the first post: a parked file shown in
+        // Unstaged for a moment, then jumping to its changelist, is a flicker.
+        [{ merge, staged, unstaged, branch, detached, upstream, ahead, behind }, lists] =
+          await Promise.all([this.resolveState(active), this.changelistsOf(active)]);
         hasRepo = true;
       } catch {
         hasRepo = false;
@@ -2948,6 +3249,8 @@ export class CommitViewProvider
       layout,
       busy: this.busy,
       stashes: firstStashes,
+      changelists: lists.lists.map((l) => ({ id: l.id, name: l.name })),
+      parked: parkedAmong(lists, [...staged, ...unstaged].map((e) => e.path)),
     };
     void this.view.webview.postMessage(base);
     this.updateBadge(staged, unstaged, behind);
@@ -4308,7 +4611,7 @@ export class CommitViewProvider
     /* The group is the lit place; its header only speaks — one ring, and its
        tint made solid, held in sight at the top while the group is: let go
        over a stash far down a long list, the words are still there. */
-    .group--stashes.is-drop-over > .group-header.is-drop-over {
+    .group.is-drop-over > .group-header.is-drop-over {
       position: sticky; top: 0; z-index: 3;
       background: var(--drop-over-solid); outline: none;
     }
@@ -4353,6 +4656,9 @@ export class CommitViewProvider
        shownItem in the script). Hide a treeitem another way, and teach
        shownItem the same rule. */
     .group.empty { display: none; }
+    /* A changelist (or Unstaged) with nothing in it is still somewhere a
+       dragged file can go (#122): drawn while the drag is on. */
+    .group.empty.is-drop-ready, .group.empty.is-drop-over { display: block; }
     /* Checkbox model (gitstudio.changes.stagingModel = "checkboxes"). The tick
        is the only staging affordance in this mode, so it gets a real hit area
        rather than the browser default. */
@@ -4513,6 +4819,8 @@ export class CommitViewProvider
       text-overflow: ellipsis;
     }
     .group--staged .glabel { color: var(--gs-fg); }
+    /* A changelist's name is the user's own: shown as typed, not shouted. */
+    .group--changelist .glabel { text-transform: none; letter-spacing: normal; }
     .group-header .gcount {
       font-family: var(--gs-font-mono);
       font-variant-numeric: tabular-nums;
@@ -5789,6 +6097,20 @@ export class CommitViewProvider
             clearSelection();
           } });
       }
+      // Park them in a changelist (#122): the unstaged rows (in the checkbox
+      // model, every file that is not conflicted).
+      const movable = [];
+      for (const en of entries) {
+        const ok = en.kind === "unstaged" || (stagingModel === "checkboxes" && en.kind !== "merge");
+        if (ok && movable.indexOf(en.path) === -1) movable.push(en.path);
+      }
+      if (movable.length > 0) {
+        items.push({ icon: "list-unordered", label: l10nT("Move {0} to Changelist…", countFilesCap(movable.length)),
+          fn: () => {
+            vscode.postMessage({ type: "moveToChangelist", paths: movable });
+            clearSelection();
+          } });
+      }
       const discardable = entries.filter((en) => en.kind === "unstaged");
       if (discardable.length > 0) {
         items.push({ sep: true });
@@ -5876,15 +6198,43 @@ export class CommitViewProvider
       return paths.filter((p) => !conflicted.has(p));
     }
 
-    /** The places the drag in hand can go, by name. */
+    /**
+     * The places the drag in hand can go, by name. Working-tree files also go
+     * to a changelist ("cl:<id>") or back to the default one ("cl:") (#122) —
+     * every one but the one they are all in already.
+     */
     function dropKeys() {
       if (!drag) return [];
-      if (drag.kind === "tree") return drag.paths.length ? ["stashes"] : [];
+      if (drag.kind === "tree") {
+        if (!drag.paths.length) return [];
+        const from = new Set(drag.paths.map((p) => parked[p] || ""));
+        const lists = [""].concat(changelists.map((c) => c.id))
+          .filter((id) => !(from.size === 1 && from.has(id)))
+          .map((id) => "cl:" + id);
+        return ["stashes"].concat(lists);
+      }
       return ["tree", "empty"];
+    }
+    /** The changelist a "cl:" place is, by name ("Changes" for the default one). */
+    function listName(key) {
+      const id = key.slice(3);
+      const cl = id ? changelists.find((c) => c.id === id) : null;
+      return cl ? cl.name : l10nT("Changes");
     }
     /** Where a place shows its words. */
     function dropEl(key) {
       if (key === "stashes") return stashesEl.hidden ? null : stashesEl.querySelector(".group--stashes > .group-header");
+      if (key.indexOf("cl:") === 0) {
+        const id = key.slice(3);
+        if (!id) {
+          return groupsEl.querySelector(stagingModel === "checkboxes"
+            ? ":scope > .group--all > .group-header"
+            : ":scope > .group--unstaged > .group-header");
+        }
+        const g = Array.prototype.find.call(groupsEl.querySelectorAll(":scope > .group--changelist"),
+          (n) => n.dataset.list === id);
+        return g ? g.firstChild : null;
+      }
       if (key === "empty") return emptyEl.classList.contains("visible") ? emptyEl : null;
       // The working tree: every group it shows, as one place.
       return groupsEl.querySelector(":scope > .group:not(.empty)") ? groupsEl : null;
@@ -5892,7 +6242,7 @@ export class CommitViewProvider
     /** A place, whole: what takes the drop and is lit — the Stashes group with its rows. */
     function dropArea(key) {
       const t = dropEl(key);
-      return t && key === "stashes" ? t.parentElement : t;
+      return t && (key === "stashes" || key.indexOf("cl:") === 0) ? t.parentElement : t;
     }
     /** The place a node is in, when the drag in hand can go there. */
     function dropKeyAt(node) {
@@ -5906,6 +6256,9 @@ export class CommitViewProvider
     /** What a drop does, in words: [the verb, how Alt/Option picks the other]. */
     function dropWords() {
       if (drag.kind === "tree") {
+        if (dropKey && dropKey.indexOf("cl:") === 0) {
+          return [l10nT("Drop to move {0} to “{1}”", countWords(drag.paths.length), listName(dropKey)), ""];
+        }
         return [l10nT("Drop to stash {0}", countWords(drag.paths.length)), ""];
       }
       if (drag.kind === "stash") {
@@ -6025,9 +6378,21 @@ export class CommitViewProvider
       if (wasTree && shownStashes().length === 0) renderStashes();
     }
     /** The drag landed on key: do what the menus do. */
-    function dropOn(d, alt) {
+    function dropOn(d, alt, key) {
       if (d.kind === "tree") {
         if (!d.paths.length) return;
+        if (key && key.indexOf("cl:") === 0) {
+          // Moved at once; the host writes it and its next state agrees.
+          const id = key.slice(3);
+          for (const p of d.paths) {
+            if (id) parked[p] = id;
+            else delete parked[p];
+          }
+          vscode.postMessage({ type: "moveToChangelist", paths: d.paths, list: id });
+          if (d.selection) clearSelection();
+          render();
+          return;
+        }
         vscode.postMessage({ type: "stashPaths", paths: d.paths });
         if (d.selection) clearSelection();
         return;
@@ -6079,7 +6444,7 @@ export class CommitViewProvider
       const d = drag;
       const key = dropKeyAt(ev.target);
       endDrag();
-      if (key) dropOn(d, ev.altKey);
+      if (key) dropOn(d, ev.altKey, key);
     });
     // Its source's end: dropped (above), cancelled with Escape, or let go
     // outside the view.
@@ -6156,6 +6521,15 @@ export class CommitViewProvider
     // up — the row never snaps back mid-flight, even across rapid clicks.
     let authState = { merge: [], staged: [], unstaged: [] };
     let lastState = { merge: [], staged: [], unstaged: [] };
+    // Changelists (#122): the host's named lists ({ id, name }, in the order
+    // they were made) and which changed file is parked in which. A parked
+    // file leaves Unstaged (the checkbox model's Changes list) for its
+    // changelist's group, and is out of every "everything" action — Stage
+    // All, Check all, Commit all, Discard All — until it is staged by hand.
+    let changelists = [];
+    let parked = Object.create(null);
+    /** The files of list that are in no changelist: the default one's. */
+    function outsideLists(list) { return list.filter((e) => !parked[e.path]); }
     let branchData = { local: [], remote: [], recent: [], tags: [] };
     // True until the host has listed this repository's branches: a state push
     // carries none on its first post for a repository (see pushState).
@@ -6250,7 +6624,11 @@ export class CommitViewProvider
     // Stage/unstage every file currently shown in a group, optimistically.
     // Sets all pending ops first, then repaints once (not per file).
     function queueGroup(kind, action) {
-      const list = (lastState[kind] || []).slice();
+      // Unstaged's Stage All is the default changelist's: a parked file
+      // stays put, as the host leaves it (#122).
+      const list = kind === "unstaged" && action === "stage"
+        ? outsideLists(lastState.unstaged || [])
+        : (lastState[kind] || []).slice();
       if (!list.length) return;
       const at = Date.now();
       for (const e of list) pending.set(e.path, { action, at });
@@ -6362,8 +6740,10 @@ export class CommitViewProvider
       // Conflicted files are not part of "all": the host never sweeps them in
       // (staging one marks it resolved, markers and all), so counting them
       // offered "Commit all 1" for a commit that could not include it.
+      // Nor are parked files (#122): "Commit all" leaves them out, so the
+      // count it offers is the one the host will stage.
       const totalChanges =
-        (lastState ? lastState.staged.length + lastState.unstaged.length : 0);
+        (lastState ? lastState.staged.length + outsideLists(lastState.unstaged).length : 0);
       const canCommit = hasStaged || totalChanges > 0;
       // Commit button label + state.
       if (!committing) {
@@ -9350,6 +9730,8 @@ export class CommitViewProvider
         s += "|" + k + ":";
         for (const e of list) s += e.path + e.status + ",";
       }
+      // Which file is in which changelist, and what each is called.
+      s += "|lists:" + JSON.stringify(changelists) + "|parked:" + JSON.stringify(parked);
       return s;
     }
     // The firehose pushes state on EVERY git poke (fetches, unrelated ref
@@ -9478,7 +9860,8 @@ export class CommitViewProvider
       // conflict resolved for it — the Merge Changes header's Stage All does,
       // past the marker check. Lit over conflicted files alone, a click
       // staged nothing and said nothing.
-      stageAllTopBtn.disabled = data.unstaged.length === 0;
+      // Nor does a parked file count (#122): Stage All leaves it where it is.
+      stageAllTopBtn.disabled = outsideLists(data.unstaged).length === 0;
       stashChangesBtn.disabled = total === 0;
       // "Changed Files" counts files: a partly staged file is one file, in
       // both groups. It said 4 over a checkbox list of 3.
@@ -9493,12 +9876,19 @@ export class CommitViewProvider
 
       const groups = [];
       if (stagingModel === "checkboxes") {
-        groups.push(renderChecklist(data));
+        groups.push.apply(groups, renderChecklist(data, total));
       } else {
         for (const def of GROUP_DEFS) {
-          const list = data[def.kind];
+          const list = def.kind === "unstaged" ? outsideLists(data.unstaged) : data[def.kind];
           if (def.kind === "merge" && list.length === 0) continue;
           groups.push(renderGroup(def, list));
+        }
+        // Each changelist after Unstaged: the unstaged side of its files.
+        // Their staged side stays in Staged, which is always exactly what
+        // the commit will hold.
+        for (const cl of changelists) {
+          const files = data.unstaged.filter((e) => parked[e.path] === cl.id);
+          groups.push(renderListGroup(changelistDef(cl), files, total, null));
         }
       }
       patchChildren(groupsEl, groups);
@@ -9517,7 +9907,7 @@ export class CommitViewProvider
     // selection to drift out of sync with the repository, nothing new to persist,
     // and every other surface (the badge, the commit count, an external git add
     // in a terminal) keeps agreeing with what you see.
-    function renderChecklist(data) {
+    function renderChecklist(data, total) {
       // ONE ROW PER FILE, merged by path.
       //
       // A partly staged file is in BOTH data.staged and data.unstaged — that is
@@ -9570,27 +9960,33 @@ export class CommitViewProvider
         });
       });
       all.sort(function (a, b) { return a.entry.path.localeCompare(b.entry.path); });
+      // A parked file is in its changelist's group, ticked or not — so the
+      // tick still means "in the index" and there is still one row per file —
+      // and out of this list, whose master tick never takes it (#122). A
+      // conflicted file stays here: it is not a staging question.
+      const inList = function (f) { return f.kind !== "merge" && parked[f.entry.path] ? parked[f.entry.path] : ""; };
+      const main = all.filter(function (f) { return !inList(f); });
 
       // The group and its header are built once and kept: what changes from
       // render to render (the master tick, the count, the rows it acts on)
       // is painted onto them below, and read by its handlers from __live.
       const group = keep("grp|ck", "", buildChecklistShell);
       const header = group.firstChild;
-      const checkedCount = all.filter(function (f) { return f.staged; }).length;
-      header.__live = { all: all, checkedCount: checkedCount };
-      const wantClass = "group group--all" + (all.length === 0 ? " empty" : "");
+      const checkedCount = main.filter(function (f) { return f.staged; }).length;
+      header.__live = { all: main, checkedCount: checkedCount };
+      const wantClass = "group group--all" + (main.length === 0 ? " empty" : "");
       if (group.className !== wantClass) group.className = wantClass;
       const master = header.querySelector(".ck-master");
-      master.checked = checkedCount > 0 && checkedCount === all.length;
+      master.checked = checkedCount > 0 && checkedCount === main.length;
       // A partly staged file is some of the changes included, too: the header
       // said "none" over a staged part.
       master.indeterminate = !master.checked &&
-        all.some(function (f) { return f.state !== "unstaged"; });
+        main.some(function (f) { return f.state !== "unstaged"; });
       const masterTip = master.checked ? l10nT("Uncheck all") : l10nT("Check all");
       if (master.dataset.tip !== masterTip) master.dataset.tip = masterTip;
       setAttr(header, "aria-checked", master.indeterminate ? "mixed" : master.checked ? "true" : "false");
-      setAttr(header, "aria-label", l10nT("Changes, {0}", countWords(all.length)));
-      header.querySelector(".gcount").textContent = String(all.length);
+      setAttr(header, "aria-label", l10nT("Changes, {0}", countWords(main.length)));
+      header.querySelector(".gcount").textContent = String(main.length);
 
       const stagedByPath = new Map();
       const kindByPath = new Map();
@@ -9636,17 +10032,23 @@ export class CommitViewProvider
       // visible and inert whenever the checkbox model was on.
       const nodes = [];
       if (layout === "tree") {
-        renderTreeInto(nodes, GROUP_DEFS[2], all.map(function (f) { return f.entry; }), {
+        renderTreeInto(nodes, GROUP_DEFS[2], main.map(function (f) { return f.entry; }), {
           defFor: defForEntry,
           tick: tickFor,
         });
       } else {
-        for (const f of all) {
+        for (const f of main) {
           renderFileRow(nodes, defForEntry(f.entry), f.entry, 1, tickFor(f.entry));
         }
       }
       patchChildren(group.lastChild, nodes);
-      return group;
+      const groups = [group];
+      for (const cl of changelists) {
+        const entries = all.filter(function (f) { return inList(f) === cl.id; })
+          .map(function (f) { return f.entry; });
+        groups.push(renderListGroup(changelistDef(cl), entries, total, { defFor: defForEntry, tick: tickFor }));
+      }
+      return groups;
     }
 
     /** The checkbox model's group and header, built once (see renderChecklist). */
@@ -9671,8 +10073,15 @@ export class CommitViewProvider
         // Aim at the state the user is asking for, not at a toggle of each row:
         // from indeterminate, one click should mean "include everything".
         if (live.checkedCount === live.all.length && live.all.length > 0) {
-          queueGroup("staged", "unstage");
-          vscode.postMessage({ type: "unstageAll" });
+          if (changelists.length === 0) {
+            queueGroup("staged", "unstage");
+            vscode.postMessage({ type: "unstageAll" });
+          } else {
+            // This list's files only: a parked file ticked by hand stays ticked.
+            const paths = live.all.map(function (f) { return f.entry.path; });
+            queueFiles(paths, "unstage");
+            vscode.postMessage({ type: "unstagePaths", paths: paths });
+          }
         } else {
           queueGroup("unstaged", "stage");
           vscode.postMessage({ type: "stageAllForCommit" });
@@ -9748,6 +10157,9 @@ export class CommitViewProvider
           fn: function () { vscode.postMessage({ type: "stashStaged" }); } });
         items.push({ icon: "git-stash", label: l10nT("Stash All Changes"),
           fn: function () { vscode.postMessage({ type: "stash" }); } });
+        items.push({ sep: true });
+        items.push({ icon: "new-folder", label: l10nT("New Changelist…"),
+          fn: function () { vscode.postMessage({ type: "newChangelist", paths: [] }); } });
         // The header's own button, for the keyboard (it is out of the tab order).
         items.push({ sep: true });
         items.push({ icon: "discard", label: l10nT("Discard All"), danger: true, fn: discardAllNow });
@@ -10089,6 +10501,11 @@ export class CommitViewProvider
             ? { icon: "git-stash", label: l10nT("Stash Everything Staged"), fn: () => vscode.postMessage({ type: "stashStaged" }) }
             : { icon: "git-stash", label: l10nT("Stash All Changes"), fn: () => vscode.postMessage({ type: "stash" }) });
         }
+        if (def.kind === "unstaged") {
+          items.push({ sep: true });
+          items.push({ icon: "new-folder", label: l10nT("New Changelist…"),
+            fn: () => vscode.postMessage({ type: "newChangelist", paths: [] }) });
+        }
         openActionMenu(def.label, items, header, null);
       };
       header.addEventListener("contextmenu", header.__menu);
@@ -10109,6 +10526,146 @@ export class CommitViewProvider
       header.__activate = () => setOpen(collapsed[collapseKey] === true);
       group.appendChild(header);
 
+      const body = el("div", "group-body");
+      body.setAttribute("role", "group");
+      group.appendChild(body);
+      return group;
+    }
+
+    // ── Changelists (#122) ─────────────────────────────────────────────
+    // A changelist's group holds the files parked in it: out of Unstaged (the
+    // checkbox model's Changes list) and out of every "everything" action,
+    // staged only by hand. Its rows are Unstaged's rows — the same keys,
+    // buttons and menus, as a file is in one place at a time — so a row's +
+    // still stages it. def.group keeps its folders and its collapse apart
+    // from Unstaged's, where the same folder can be too.
+    function changelistDef(cl) {
+      return { kind: "unstaged", group: "cl-" + cl.id, list: cl, label: cl.name, staged: false };
+    }
+
+    /**
+     * One changelist's group, in either model. opts is the checkbox model's
+     * (each row's own def and tick, as renderTreeInto takes them); null in
+     * the split model.
+     */
+    function renderListGroup(def, entries, total, opts) {
+      const collapseKey = "group:" + def.group;
+      const isCollapsed = collapsed[collapseKey] === true;
+      const group = keep("grp|" + def.group, "", function () { return buildChangelistShell(def); });
+      // Shown when empty, so it can be dropped onto, renamed and deleted —
+      // but not over a clean tree, which says only that it is clean.
+      const wantClass = "group group--changelist" + (total === 0 ? " empty" : "") +
+        (isCollapsed ? " collapsed" : "");
+      if (group.className !== wantClass) group.className = wantClass;
+      setAttr(group, "data-list", def.list.id);
+      const header = group.firstChild;
+      header.__def = def;
+      header.__list = entries;
+      header.__keys = entries.map(function (e) { return rowKey((opts ? opts.defFor(e) : def).kind, e.path); });
+      const glabel = header.querySelector(".glabel");
+      if (glabel.textContent !== def.label) glabel.textContent = def.label;
+      const tip = l10nT("{0} — a changelist: its files stay out of Stage All and Commit all until you stage them. Click to collapse, Ctrl/Cmd-click to select its files, right-click for its actions.", def.label);
+      if (header.dataset.tip !== tip) header.dataset.tip = tip;
+      setAttr(header, "aria-expanded", isCollapsed ? "false" : "true");
+      setAttr(header, "aria-label", l10nT("{0}, changelist, {1}", def.label, countWords(entries.length)));
+      const gcount = header.querySelector(".gcount");
+      if (gcount.textContent !== String(entries.length)) gcount.textContent = String(entries.length);
+      const stageBtn = header.querySelector(".group-actions .icon-btn");
+      if (stageBtn) stageBtn.disabled = entries.length === 0;
+
+      const nodes = [];
+      if (layout === "tree") {
+        renderTreeInto(nodes, def, entries, opts || undefined);
+      } else {
+        for (const e of entries) {
+          renderFileRow(nodes, opts ? opts.defFor(e) : def, e, 1, opts ? opts.tick(e) : null);
+        }
+      }
+      patchChildren(group.lastChild, nodes);
+      return group;
+    }
+
+    /** A changelist's group and header, built once per changelist (see renderListGroup). */
+    function buildChangelistShell(def) {
+      const collapseKey = "group:" + def.group;
+      const group = el("div", "group group--changelist");
+      group.setAttribute("role", "none");
+      const header = el("div", "group-header");
+      header.tabIndex = -1;
+      header.setAttribute("role", "treeitem");
+      header.setAttribute("aria-level", "1");
+      header.dataset.tkey = "g:" + def.group;
+      header.__def = def;
+      const twisty = el("span", "twisty", ICON_CHEVRON);
+      const gdot = el("span", "gdot");
+      const glabel = el("span", "glabel");
+      glabel.textContent = def.label;
+      const gcount = el("span", "gcount");
+      const paths = () => (header.__list || []).map((e) => e.path);
+      const selectAll = () => {
+        const keys = header.__keys || [];
+        selectedRows.forEach((k) => { if (selScope(k) !== "tree") selectedRows.delete(k); });
+        const allOn = keys.length > 0 && keys.every((k) => selectedRows.has(k));
+        for (let i = 0; i < keys.length; i++) {
+          if (allOn) selectedRows.delete(keys[i]);
+          else selectedRows.add(keys[i]);
+        }
+        selectionAnchor = keys.length > 0 ? keys[keys.length - 1] : null;
+        paintSelection();
+      };
+      // Staging a changelist's files is always by hand — this button is the
+      // hand: "Stage All" here means this changelist's files, nothing else.
+      const stageAll = () => {
+        const p = paths();
+        if (p.length === 0) return;
+        queueFiles(p, "stage");
+        vscode.postMessage({ type: "stagePaths", paths: p });
+      };
+      const actions = el("span", "group-actions");
+      actions.appendChild(rowBtn(ICON_STAGE, l10nT("Stage All in This Changelist"), (ev) => { ev.stopPropagation(); stageAll(); }));
+      header.addEventListener("click", (ev) => {
+        if (!(ev.ctrlKey || ev.metaKey)) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        selectAll();
+      });
+      header.__menu = (ev) => {
+        if (ev) ev.preventDefault();
+        const live = header.__def;
+        const n = (header.__list || []).length;
+        const items = [];
+        if (n > 0) {
+          items.push({ icon: "add", label: l10nT("Stage All in This Changelist"), fn: stageAll });
+          items.push({ sep: true });
+        }
+        items.push({ icon: "edit", label: l10nT("Rename Changelist…"),
+          fn: () => vscode.postMessage({ type: "renameChangelist", list: live.list.id }) });
+        items.push({ icon: "trash", label: l10nT("Delete Changelist"),
+          fn: () => vscode.postMessage({ type: "deleteChangelist", list: live.list.id }) });
+        if (n > 0) {
+          items.push({ sep: true });
+          items.push({ icon: "check-all", label: l10nT("Select All (") + n + ")", fn: () => {
+            selectedRows.clear();
+            selectAll();
+          } });
+          items.push({ icon: "git-stash", label: l10nT("Stash These Files"),
+            fn: () => vscode.postMessage({ type: "stashPaths", paths: paths() }) });
+        }
+        openActionMenu(live.label, items, header, null);
+      };
+      header.addEventListener("contextmenu", header.__menu);
+      header.append(twisty, gdot, glabel, actions, gcount);
+      const setOpen = (open) => {
+        collapsed[collapseKey] = !open;
+        render();
+      };
+      header.addEventListener("click", (ev) => {
+        if (ev.ctrlKey || ev.metaKey) return;
+        setOpen(collapsed[collapseKey] === true);
+      });
+      header.__expand = setOpen;
+      header.__activate = () => setOpen(collapsed[collapseKey] === true);
+      group.appendChild(header);
       const body = el("div", "group-body");
       body.setAttribute("role", "group");
       group.appendChild(body);
@@ -10141,12 +10698,15 @@ export class CommitViewProvider
       // Folders first (alphabetical), then files.
       const dirs = [...node.dirs.values()].sort((a, b) =>
         a.name.localeCompare(b.name));
+      // A changelist's folders are its own: the same folder can be in
+      // Unstaged and in a changelist at once (def.group tells them apart).
+      const gk = def.group || def.kind;
       for (const dir of dirs) {
-        const key = "folder:" + def.kind + ":" + dir.path;
+        const key = "folder:" + gk + ":" + dir.path;
         folderKeyAccumulator.push(key);
         const isCollapsed = collapsed[key] === true;
         const row = keep(
-          "fold|" + stagingModel + "|" + def.kind + "|" + dir.path,
+          "fold|" + stagingModel + "|" + gk + "|" + dir.path,
           dir.name + "|" + depth,
           function () { return buildFolderRow(def, dir.name, dir.path, key, depth); },
         );
@@ -10174,7 +10734,7 @@ export class CommitViewProvider
       // It opens and closes like a group header: a treeitem one level in.
       row.setAttribute("role", "treeitem");
       row.setAttribute("aria-level", String(depth + 1));
-      row.dataset.tkey = "d:" + stagingModel + ":" + def.kind + ":" + path;
+      row.dataset.tkey = "d:" + stagingModel + ":" + (def.group || def.kind) + ":" + path;
       row.appendChild(el("span", "twisty", ICON_CHEVRON));
       row.appendChild(el("span", "file-icon folder-icon", ICON_FOLDER));
       const nameEl = el("span", "name");
@@ -10220,6 +10780,10 @@ export class CommitViewProvider
           items.push({ sep: true });
           items.push({ icon: "git-stash", label: l10nT("Stash This Folder"),
             fn: () => vscode.postMessage({ type: "stashPaths", paths: row.__paths }) });
+        }
+        if (def.kind === "unstaged") {
+          items.push({ icon: "list-unordered", label: l10nT("Move to Changelist…"),
+            fn: () => vscode.postMessage({ type: "moveToChangelist", paths: row.__paths }) });
         }
         openActionMenu(name, items, row, "folder");
       };
@@ -10380,6 +10944,14 @@ export class CommitViewProvider
             items.push({ icon: "discard", label: l10nT("Discard Changes"), danger: true,
               fn: () => vscode.postMessage({ type: "discard", path: e.path }) });
           }
+        }
+        // Park it in a changelist (#122) — or move it on, or back. Not a
+        // conflicted file, and in the split model only its unstaged row: a
+        // changelist holds the work still to stage.
+        if (!conflict && (def.kind === "unstaged" || (stagingModel === "checkboxes" && def.kind !== "merge"))) {
+          items.push({ sep: true });
+          items.push({ icon: "list-unordered", label: l10nT("Move to Changelist…"),
+            fn: () => vscode.postMessage({ type: "moveToChangelist", paths: [e.path] }) });
         }
         items.push({ sep: true });
         items.push({ icon: "git-stash", label: l10nT("Stash This File"),
@@ -11374,6 +11946,8 @@ export class CommitViewProvider
         reconcilePending(authState);
         lastState = applyPending(authState);
         stagedCount = lastState.staged.length;
+        changelists = Array.isArray(msg.changelists) ? msg.changelists : [];
+        parked = Object.assign(Object.create(null), msg.parked || {});
         // From the MESSAGE, not from lastState: applyPending() rebuilds lastState
         // out of the three file lists, so anything else on the payload is dropped.
         stagingModel = msg.stagingModel || "split";
