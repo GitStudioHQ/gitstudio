@@ -4,7 +4,7 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.22.0] - 2026-10-19
 
 ### Added
 - **Stage and unstage from the code.** Rest the pointer on a changed line, in
@@ -44,6 +44,12 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   for staged ([#87](https://github.com/GitStudioHQ/gitstudio/issues/87)).
 
 ### Fixed
+- **A column you turn on shows when there is room.** The Commit Graph's
+  bottom-panel layout had no SHA column, so ticking SHA in the Columns menu
+  did nothing, and narrower graphs dropped Date and SHA even when they fit.
+  The commit message now gives way first; a column that truly can't fit is
+  named in the Columns menu ("SHA hidden — panel too narrow")
+  ([#124](https://github.com/GitStudioHQ/gitstudio/issues/124)).
 - **The Compare panel names commits by their short SHA.** Comparing two
   commits used to show forty-character SHAs in the tab title, the ref
   pickers and the summary.
