@@ -9,6 +9,16 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [2.7.0] - 2026-10-19
+
+### Fixed
+- **A column you turn on shows when there is room.** Below a fixed width the
+  Commit Graph dropped Date and SHA even when they fit, so ticking them in the
+  Columns menu could do nothing. The commit message now gives way first, and
+  a column that truly can't fit is
+  named in the Columns menu ("SHA hidden — panel too narrow")
+  ([#124](https://github.com/GitStudioHQ/gitstudio/issues/124)).
+
 ## [2.6.2] - 2026-10-14
 
 ### Fixed
