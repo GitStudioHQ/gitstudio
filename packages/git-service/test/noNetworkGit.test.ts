@@ -189,8 +189,9 @@ test("this process is guarded: no credential helper, no prompt, the global and s
 
 // Where an https attempt died: the guard's proxy, which nothing listens on.
 // curl on macOS and Linux names its port ("127.0.0.1 port 1"); Git for
-// Windows' curl says "… over proxy 127.0.0.1 …" instead.
-const VIA_GUARD_PROXY = /127\.0\.0\.1 port 1\b|over proxy 127\.0\.0\.1\b/;
+// Windows' curl says "… over proxy 127.0.0.1 …" instead, and newer curl
+// (Ubuntu runners, Oct 2026) "… port 443 via 127.0.0.1 after 0 ms".
+const VIA_GUARD_PROXY = /127\.0\.0\.1 port 1\b|over proxy 127\.0\.0\.1\b|\bvia 127\.0\.0\.1\b/;
 
 test("a remote on the network fails at once, and never leaves the machine", () => {
   // `.invalid` never resolves, so even a broken guard would not reach a host —
