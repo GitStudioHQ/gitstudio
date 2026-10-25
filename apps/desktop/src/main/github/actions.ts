@@ -23,6 +23,7 @@ import { sliceLogDelta, type LogDelta } from "./logTail";
 import { PAGE_CAPS } from "../githubPaging";
 import { ExpectedError } from "../expectedError";
 import { errorFields, githubHttpError, networkError } from "../githubErrors";
+import { netFetch } from "../netFetch";
 import type {
   ActionsRunsFilter,
   ArtifactInfo,
@@ -136,26 +137,24 @@ async function fetchSignedRedirect(
 ): Promise<Response> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}${path}`, {
+    res = await netFetch(`${API_BASE}${path}`, {
       headers: ghHeaders(token),
       redirect: "manual",
       // This used to be the app's ONLY un-timed network path — a hung blob
       // fetch pinned a log pane on its spinner forever.
       signal: AbortSignal.timeout(timeoutMs),
     });
-  } catch {
-    throw networkError();
+  } catch (e) {
+    throw networkError(e, `${API_BASE}${path}`);
   }
-  // undici surfaces the real 3xx (not an opaque response) with a readable Location.
+  // netFetch (like undici) surfaces the real 3xx, not an opaque response, with a readable Location.
   if (res.status >= 300 && res.status < 400) {
     const loc = res.headers.get("location");
     if (!loc) throw new Error(l10n.t("GitHub returned a redirect with no location."));
     try {
-      res = await fetch(loc, { signal: AbortSignal.timeout(timeoutMs) });
-    } catch {
-      throw networkError(
-        l10n.t("Couldn't download from GitHub's storage. Check your network connection."),
-      );
+      res = await netFetch(loc, { signal: AbortSignal.timeout(timeoutMs) });
+    } catch (e) {
+      throw networkError(e, loc, "storage");
     }
   }
   if (res.status === 404 && notFound) throw notFound();

@@ -12,6 +12,7 @@
 
 import { ExpectedError } from "./expectedError";
 import { networkError } from "./githubErrors";
+import { netFetch } from "./netFetch";
 import * as l10n from "@vscode/l10n";
 
 /** Public OAuth App Client ID — safe to embed (the secret is intentionally unused). */
@@ -65,7 +66,7 @@ export type PollResult =
 export async function requestDeviceCode(): Promise<DeviceCode> {
   let res: Response;
   try {
-    res = await fetch(DEVICE_CODE_URL, {
+    res = await netFetch(DEVICE_CODE_URL, {
       method: "POST",
       headers: {
         Accept: "application/json",
@@ -74,8 +75,8 @@ export async function requestDeviceCode(): Promise<DeviceCode> {
       },
       body: JSON.stringify({ client_id: GITHUB_CLIENT_ID, scope: GITHUB_SCOPES }),
     });
-  } catch {
-    throw networkError();
+  } catch (e) {
+    throw networkError(e, DEVICE_CODE_URL);
   }
   const j = await readJson(res);
   if (!res.ok || j.error) {
@@ -102,7 +103,7 @@ export async function requestDeviceCode(): Promise<DeviceCode> {
 export async function pollForToken(deviceCode: string): Promise<PollResult> {
   let res: Response;
   try {
-    res = await fetch(TOKEN_URL, {
+    res = await netFetch(TOKEN_URL, {
       method: "POST",
       headers: {
         Accept: "application/json",
@@ -115,8 +116,8 @@ export async function pollForToken(deviceCode: string): Promise<PollResult> {
         grant_type: "urn:ietf:params:oauth:grant-type:device_code",
       }),
     });
-  } catch {
-    throw networkError();
+  } catch (e) {
+    throw networkError(e, TOKEN_URL);
   }
   const j = await readJson(res);
   if (j.access_token) {

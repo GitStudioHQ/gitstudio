@@ -20,6 +20,7 @@ import {
   type ToolCall,
 } from "../types";
 import * as l10n from "@vscode/l10n";
+import { networkReason } from "../networkReason";
 
 export interface OpenAiCompatOptions {
   baseUrl: string;
@@ -142,7 +143,7 @@ export class OpenAiCompatProvider implements Provider {
       if (isAbort(err)) {
         throw new AiError(l10n.t("Request cancelled."));
       }
-      throw new AiError(l10n.t("Couldn't reach {0} — is the endpoint reachable?", hostOf(this.opts.baseUrl)), undefined, true);
+      throw unreachable(this.opts.baseUrl, err);
     }
     if (!res.ok) {
       throw httpError(res.status, hostOf(this.opts.baseUrl));
@@ -187,7 +188,7 @@ export class OpenAiCompatProvider implements Provider {
       if (isAbort(err)) {
         return null;
       }
-      throw new AiError(l10n.t("Couldn't reach {0} — is the endpoint reachable?", hostOf(this.opts.baseUrl)), undefined, true);
+      throw unreachable(this.opts.baseUrl, err);
     }
     if (!res.ok) {
       throw httpError(res.status, hostOf(this.opts.baseUrl));
@@ -250,7 +251,7 @@ export class OpenAiCompatProvider implements Provider {
       if (isAbort(err)) {
         return { text: "", toolCalls: [], stopReason: "stop" };
       }
-      throw new AiError(l10n.t("Couldn't reach {0} — is the endpoint reachable?", hostOf(this.opts.baseUrl)), undefined, true);
+      throw unreachable(this.opts.baseUrl, err);
     }
     if (!res.ok) {
       throw httpError(res.status, hostOf(this.opts.baseUrl));
@@ -400,6 +401,18 @@ function hostOf(url: string): string {
   } catch {
     return url;
   }
+}
+
+/** The network failed before any answer. Says why, when the error says (#133). */
+function unreachable(baseUrl: string, err: unknown): AiError {
+  const reason = networkReason(err);
+  return new AiError(
+    reason
+      ? l10n.t("Couldn't reach {0} ({1}) — is the endpoint reachable?", hostOf(baseUrl), reason)
+      : l10n.t("Couldn't reach {0} — is the endpoint reachable?", hostOf(baseUrl)),
+    undefined,
+    true,
+  );
 }
 
 function isAbort(err: unknown): boolean {

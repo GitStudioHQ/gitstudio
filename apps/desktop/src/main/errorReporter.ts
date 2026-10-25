@@ -1,10 +1,9 @@
 import * as os from "node:os";
-import * as https from "node:https";
-import * as http from "node:http";
 import { URL } from "node:url";
 import { join } from "node:path";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { app } from "electron";
+import { netFetch } from "./netFetch";
 import { randomId, safeShort, scrub, scrubExtra, scrubGitMessage } from "@gitstudio/host-bridge/scrub";
 
 /**
@@ -187,7 +186,9 @@ function safeAppVersion(): string {
 
 // ── transport ────────────────────────────────────────────────────────────────
 
-/** Fire-and-forget POST — short timeout, never throws, never blocks the app. */
+/** Fire-and-forget POST — short timeout, never throws, never blocks the app.
+ *  Over netFetch, so a report reaches the collector through the system proxy
+ *  like every other request (#133). */
 function postJson(endpoint: string, payload: unknown): void {
   let url: URL;
   try {
@@ -198,29 +199,18 @@ function postJson(endpoint: string, payload: unknown): void {
   if (url.protocol !== "https:" && url.protocol !== "http:") {
     return;
   }
-  const mod = url.protocol === "https:" ? https : http;
   try {
-    const body = Buffer.from(JSON.stringify(payload));
-    const req = mod.request(
-      {
-        method: "POST",
-        hostname: url.hostname,
-        port: url.port || undefined,
-        path: url.pathname + url.search,
-        headers: {
-          "content-type": "application/json",
-          "content-length": body.length,
-          "user-agent": "gitstudio-error-reporter",
-        },
-        timeout: 4000,
+    netFetch(url.href, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "user-agent": "gitstudio-error-reporter",
       },
-      (res) => {
-        res.resume(); // drain
-      },
-    );
-    req.on("error", () => {});
-    req.on("timeout", () => req.destroy());
-    req.end(body);
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(4000),
+    })
+      .then((res) => res.body?.cancel())
+      .catch(() => {});
   } catch {
     // Never let error reporting surface to the user.
   }

@@ -34,10 +34,32 @@ test("being offline is a condition, not a crash", () => {
   assert.ok(e instanceof Error, "must stay an Error for existing catch sites");
 });
 
-test("networkError keeps a caller's own wording", () => {
-  const e = networkError("Couldn't download from GitHub's storage. Check your network connection.");
-  assert.equal(isExpectedError(e), true);
-  assert.match(e.message, /GitHub's storage/);
+test("networkError says why and which request, for the API and for storage (#133)", () => {
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const api = networkError(new Error("net::ERR_PROXY_CONNECTION_FAILED"), "https://github.com/login/device/code");
+    assert.equal(isExpectedError(api), true);
+    assert.equal(
+      api.message,
+      "Couldn't reach GitHub (ERR_PROXY_CONNECTION_FAILED) — github.com/login/device/code. Check your network or proxy settings.",
+    );
+    const blob = networkError(
+      new TypeError("fetch failed", { cause: { code: "ECONNRESET" } }),
+      "https://productionresultssa0.blob.core.windows.net/logs/1.txt?sig=SECRET",
+      "storage",
+    );
+    assert.equal(isExpectedError(blob), true);
+    assert.equal(
+      blob.message,
+      "Couldn't download from GitHub's storage (ECONNRESET) — productionresultssa0.blob.core.windows.net/logs/1.txt. Check your network or proxy settings.",
+    );
+    assert.doesNotMatch(blob.message, /SECRET/, "a signed URL's query never reaches the message");
+    // A failure with no code at all still says something rather than nothing.
+    assert.match(networkError(new TypeError("fetch failed"), "https://api.github.com/user").message, /\(TypeError\) — api\.github\.com\/user/);
+  } finally {
+    console.warn = warn;
+  }
 });
 
 test("an expired or revoked token is not reported", async () => {
