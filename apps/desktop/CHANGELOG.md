@@ -23,6 +23,11 @@ but they share the same engine, so most Git behaviour lands in both at once.
   (ERR_PROXY_CONNECTION_FAILED) — github.com/login/device/code"
   ([#133](https://github.com/GitStudioHQ/gitstudio/issues/133)).
 
+### Security
+- Electron 42.11.18 (from 41.10.7, which no longer receives fixes), with the
+  security fixes Electron and Chromium shipped since, and DOMPurify 3.4.17
+  for the Markdown sanitizer.
+
 ## [2.7.0] - 2026-10-19
 
 ### Fixed
