@@ -244,6 +244,30 @@ npm test && npm run check-types && npm run check-purity
 - **Strict CSP + per-load nonces** on every webview; AI keys live in SecretStorage (extension) / safeStorage (desktop) and never reach a webview.
 - **One core, two hosts.** The desktop app runs `@gitstudio/git-service` unchanged in Electron's main process and renders the same `@gitstudio/webview-ui` components the extension uses — behind the same `@gitstudio/host-bridge` protocol.
 
+## 💚 Sponsors & Supporters
+
+GitStudio is free and open source. The AI tokens, hosting and tooling behind it come out of my own pocket — sponsoring covers those costs and moves your issues and feature requests up the queue.
+
+**[Become a sponsor →](https://github.com/sponsors/antonarnaudov)**
+
+### 🏢 Company sponsors
+
+<!-- $100/mo and $250 one-time sponsors: company logo + link -->
+
+_Your company's logo could be here._
+
+### ⭐ Sponsors
+
+<!-- $50+ sponsors: avatar + link -->
+
+_Be the first._
+
+### 📜 Supporters
+
+<!-- $10+ sponsors: name -->
+
+_Be the first._
+
 ## License
 
 **Apache-2.0** (see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE)). Brand assets in [`brand/`](brand/) identify the project; don't use the GitStudio name/logo in a way that implies official endorsement.
