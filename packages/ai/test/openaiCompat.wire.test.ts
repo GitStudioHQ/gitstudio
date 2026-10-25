@@ -436,3 +436,19 @@ test("openai-compat streamChat: a broken stream errors, a cancelled one keeps it
   assert.equal(r.text, "half");
   assert.equal(r.stopReason, "stop");
 });
+
+test("openai-compat says why the endpoint was unreachable (#133)", async () => {
+  // Node's fetch hides the reason under `cause`; Chromium's names it in the message.
+  const undici = (async () => {
+    throw Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error("connect"), { code: "ECONNREFUSED" }) });
+  }) as unknown as typeof fetch;
+  await assert.rejects(() => provider(undici, { baseUrl: "http://localhost:11434/v1" }).chat(user), {
+    message: "Couldn't reach localhost:11434 (ECONNREFUSED) — is the endpoint reachable?",
+  });
+  const chromium = (async () => {
+    throw new Error("net::ERR_PROXY_CONNECTION_FAILED");
+  }) as unknown as typeof fetch;
+  await assert.rejects(() => provider(chromium, { baseUrl: "https://api.openai.com/v1" }).streamText(user, () => {}), {
+    message: "Couldn't reach api.openai.com (ERR_PROXY_CONNECTION_FAILED) — is the endpoint reachable?",
+  });
+});

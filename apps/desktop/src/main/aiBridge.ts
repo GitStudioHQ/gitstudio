@@ -16,6 +16,7 @@
 // of keys written by the old scheme.
 
 import { app } from "electron";
+import { netFetch } from "./netFetch";
 import * as l10n from "@vscode/l10n";
 import { readFile, writeFile, mkdir, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -302,7 +303,7 @@ export class AiBridge {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 4000);
     try {
-      const res = await fetch(url, { headers, signal: ctrl.signal });
+      const res = await netFetch(url, { headers, signal: ctrl.signal });
       if (!res.ok) return [];
       const json = (await res.json()) as {
         data?: Array<{ id?: string; name?: string }>;
@@ -460,7 +461,7 @@ export class AiBridge {
         label: `${conn.label}${conn.models.mid ? ` · ${conn.models.mid}` : ""}`,
       });
     }
-    return makeProvider(conn, () => this.loadKey(conn.id));
+    return makeProvider(conn, () => this.loadKey(conn.id), netFetch);
   }
 
   private async resolveProvider(connectionId?: string, task?: string): Promise<{ provider: Provider; conn: Connection } | undefined> {

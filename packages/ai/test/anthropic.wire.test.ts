@@ -501,3 +501,12 @@ test("anthropic streamChat surfaces a broken stream, but keeps partial text on c
   assert.equal(r.text, "so far");
   assert.equal(r.stopReason, "stop");
 });
+
+test("anthropic says why it was unreachable (#133)", async () => {
+  const fetchImpl = (async () => {
+    throw Object.assign(new TypeError("fetch failed"), { cause: { code: "ENOTFOUND" } });
+  }) as unknown as typeof fetch;
+  for (const run of [() => provider(fetchImpl).chat(user), () => provider(fetchImpl).streamChat(user, () => {})]) {
+    await assert.rejects(run, { message: "Couldn't reach Anthropic (ENOTFOUND)." });
+  }
+});

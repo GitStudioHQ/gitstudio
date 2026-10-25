@@ -16,6 +16,7 @@ import {
   type ToolCall,
 } from "../types";
 import * as l10n from "@vscode/l10n";
+import { networkReason } from "../networkReason";
 
 const ANTHROPIC_VERSION = "2023-06-01";
 
@@ -171,7 +172,7 @@ export class AnthropicProvider implements Provider {
       if (isAbort(err)) {
         throw new AiError(l10n.t("Request cancelled."));
       }
-      throw new AiError(l10n.t("Couldn't reach Anthropic (network error)."), undefined, true);
+      throw unreachable(err);
     }
     if (!res.ok) {
       throw httpError(res.status);
@@ -224,7 +225,7 @@ export class AnthropicProvider implements Provider {
       if (isAbort(err)) {
         return null;
       }
-      throw new AiError(l10n.t("Couldn't reach Anthropic (network error)."), undefined, true);
+      throw unreachable(err);
     }
     if (!res.ok) {
       throw httpError(res.status);
@@ -286,7 +287,7 @@ export class AnthropicProvider implements Provider {
     } catch (err) {
       if (err instanceof AiError) throw err;
       if (isAbort(err)) return { text: "", toolCalls: [], stopReason: "stop" };
-      throw new AiError(l10n.t("Couldn't reach Anthropic (network error)."), undefined, true);
+      throw unreachable(err);
     }
     if (!res.ok) {
       throw httpError(res.status);
@@ -408,6 +409,18 @@ function httpError(status: number): AiError {
     default:
       return new AiError(l10n.t("Anthropic request failed (HTTP {0}).", status), status, status >= 500);
   }
+}
+
+/** The network failed before any answer. Says why, when the error says (#133). */
+function unreachable(err: unknown): AiError {
+  const reason = networkReason(err);
+  return new AiError(
+    reason
+      ? l10n.t("Couldn't reach Anthropic ({0}).", reason)
+      : l10n.t("Couldn't reach Anthropic (network error)."),
+    undefined,
+    true,
+  );
 }
 
 function isAbort(err: unknown): boolean {

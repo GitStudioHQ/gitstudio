@@ -42,20 +42,40 @@
 import { emptyRepoMessage, isEmptyRepoResponse } from "../shared/githubStates";
 import { ExpectedError, isExpectedError } from "./expectedError";
 import * as l10n from "@vscode/l10n";
+import { endpointOf, networkReason } from "@gitstudio/ai/networkReason";
 
 /**
- * We never reached GitHub at all — offline, DNS, a dropped TLS handshake. Node
- * surfaces these as a bare `TypeError: fetch failed`, which is both useless to
- * the user and pure noise in the crash reporter.
+ * We never reached GitHub at all — offline, DNS, a dropped TLS handshake, a
+ * proxy that refused the connection. Node surfaces these as a bare
+ * `TypeError: fetch failed` and Chromium as `net::ERR_…`, which are useless to
+ * the user as they stand and pure noise in the crash reporter.
  *
- * The default is a function call, not a literal: a default PARAMETER
- * expression runs when the function is called, not at module load, so
- * l10n.t() here already reads the bundle after boot() configures it.
+ * Pass the error and the URL: the message then says WHY and WHICH request
+ * ("Couldn't reach GitHub (ERR_PROXY_CONNECTION_FAILED) — github.com/login/device/code"),
+ * because "check your network connection" alone sent a user whose network was
+ * fine — it was a proxy we never asked — looking in the wrong place (#133).
+ * The failure is logged too, with its full cause chain.
+ *
+ * The l10n.t() calls run when the function is called, not at module load, so
+ * they read the bundle after boot() configures it.
  */
 export function networkError(
-  message = l10n.t("Couldn't reach GitHub. Check your network connection."),
+  cause?: unknown,
+  url?: string,
+  where: "api" | "storage" = "api",
 ): ExpectedError {
-  return new ExpectedError(message);
+  if (cause === undefined && url === undefined) {
+    return new ExpectedError(l10n.t("Couldn't reach GitHub. Check your network connection."));
+  }
+  // No code and no message worth showing: the error's class still beats nothing.
+  const reason = networkReason(cause) ?? (cause instanceof Error ? cause.name : "unknown");
+  const endpoint = url ? endpointOf(url) : "";
+  console.warn(`GitStudio: request to ${endpoint || "GitHub"} failed (${reason}):`, cause);
+  const message =
+    where === "storage"
+      ? l10n.t("Couldn't download from GitHub's storage ({0}) — {1}. Check your network or proxy settings.", reason, endpoint)
+      : l10n.t("Couldn't reach GitHub ({0}) — {1}. Check your network or proxy settings.", reason, endpoint);
+  return new ExpectedError(message, { cause });
 }
 
 /**

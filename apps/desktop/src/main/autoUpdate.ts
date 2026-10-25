@@ -25,6 +25,7 @@ import { createWriteStream } from "node:fs";
 import { rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { IpcEvents, OkResult, UpdateCheckResult } from "../shared/ipc";
+import { netFetch } from "./netFetch";
 
 export interface AutoUpdateOptions {
   isDev: boolean;
@@ -250,7 +251,7 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
     if (state === "downloading") return { status: "downloading", current, version: availableVersion };
     if (state === "ready") return { status: "ready", current, version: availableVersion };
     try {
-      const res = await fetch(RELEASES_API, {
+      const res = await netFetch(RELEASES_API, {
         headers: { Accept: "application/vnd.github+json" },
         signal: AbortSignal.timeout(10_000),
       });
@@ -313,7 +314,7 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
     const dest = join(app.getPath("downloads"), macAsset.name);
     const tmp = `${dest}.part`;
     try {
-      const res = await fetch(macAsset.url, {
+      const res = await netFetch(macAsset.url, {
         redirect: "follow",
         signal: AbortSignal.timeout(15 * 60_000),
       });

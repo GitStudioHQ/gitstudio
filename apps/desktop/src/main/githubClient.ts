@@ -1,6 +1,6 @@
 // A thin GitHub REST + GraphQL client for the desktop app's PRs / Issues /
-// Projects views. It runs in the Electron MAIN process over Node's global
-// `fetch`, talks only to api.github.com, and returns typed results. Mirrors the
+// Projects views. It runs in the Electron MAIN process over netFetch
+// (Chromium's network stack, so the system proxy applies), talks only to api.github.com, and returns typed results. Mirrors the
 // extension's githubApi.ts (the proven PR client) and adds Issues + Projects.
 // The token is supplied by the caller (GitHubBridge reads it from safeStorage).
 
@@ -14,6 +14,7 @@ import {
   type GraphqlFailure,
 } from "./githubErrors";
 import { nextPagePath, PAGE_CAPS } from "./githubPaging";
+import { netFetch } from "./netFetch";
 import { mapIssue, mapPull, mapReactions, mapUser, type RawIssue, type RawPull, type RawUser } from "./github/maps";
 import type {
   CheckRun,
@@ -65,7 +66,7 @@ export class GitHubClient {
     }
     let res: Response;
     try {
-      res = await fetch(`${API_BASE}${path}`, {
+      res = await netFetch(`${API_BASE}${path}`, {
         method,
         headers,
         body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -73,8 +74,8 @@ export class GitHubClient {
         // forever — the API must fail fast enough for the UI to say so.
         signal: AbortSignal.timeout(20_000),
       });
-    } catch {
-      throw networkError();
+    } catch (e) {
+      throw networkError(e, `${API_BASE}${path}`);
     }
     if (!res.ok) {
       throw await githubHttpError(res);
@@ -163,10 +164,11 @@ export class GitHubClient {
     if (!token) {
       throw new ExpectedError(l10n.t("Not connected to GitHub."));
     }
+    const uploadUrl = `https://uploads.github.com/repos/${enc(owner)}/${enc(repo)}/releases/${releaseId}/assets?name=${encodeURIComponent(name)}`;
     let res: Response;
     try {
-      res = await fetch(
-        `https://uploads.github.com/repos/${enc(owner)}/${enc(repo)}/releases/${releaseId}/assets?name=${encodeURIComponent(name)}`,
+      res = await netFetch(
+        uploadUrl,
         {
           method: "POST",
           headers: {
@@ -180,8 +182,8 @@ export class GitHubClient {
           signal: AbortSignal.timeout(300_000),
         },
       );
-    } catch {
-      throw networkError();
+    } catch (e) {
+      throw networkError(e, uploadUrl);
     }
     if (!res.ok) {
       throw await githubHttpError(res);
@@ -199,7 +201,7 @@ export class GitHubClient {
     // filed a report instead of telling the user to check their connection.
     let res: Response;
     try {
-      res = await fetch(`${API_BASE}${path}`, {
+      res = await netFetch(`${API_BASE}${path}`, {
         method,
         signal: AbortSignal.timeout(30_000),
         headers: {
@@ -211,8 +213,8 @@ export class GitHubClient {
         },
         body: JSON.stringify(body),
       });
-    } catch {
-      throw networkError();
+    } catch (e) {
+      throw networkError(e, `${API_BASE}${path}`);
     }
     if (!res.ok) {
       throw await githubHttpError(res);
@@ -238,7 +240,7 @@ export class GitHubClient {
     }
     let res: Response;
     try {
-      res = await fetch(GRAPHQL, {
+      res = await netFetch(GRAPHQL, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -247,8 +249,8 @@ export class GitHubClient {
         },
         body: JSON.stringify({ query, variables }),
       });
-    } catch {
-      throw networkError();
+    } catch (e) {
+      throw networkError(e, GRAPHQL);
     }
     if (!res.ok) {
       throw await githubHttpError(res);
