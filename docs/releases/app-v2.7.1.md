@@ -11,3 +11,8 @@
   now says why and which address, for example "Couldn't reach GitHub
   (ERR_PROXY_CONNECTION_FAILED) — github.com/login/device/code"
   (#133).
+
+### Security
+- Electron 42.11.18 (from 41.10.7, which no longer receives fixes), with the
+  security fixes Electron and Chromium shipped since, and DOMPurify 3.4.17
+  for the Markdown sanitizer.
