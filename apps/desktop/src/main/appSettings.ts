@@ -10,7 +10,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { AppSettingsView } from "../shared/ipc";
 
+import { DEFAULT_EDITOR_FONT_SIZE, isEditorFontSize } from "../shared/editorFont";
+
 interface Persisted {
+  editorFontSize?: number;
   cloneDir?: string;
   askWhereEveryTime?: boolean;
   /** Folders GitStudio scans for repositories, besides the clone folder. */
@@ -51,6 +54,7 @@ export class AppSettings {
       const raw = JSON.parse(await readFile(file, "utf8")) as unknown;
       if (raw && typeof raw === "object") {
         const r = raw as Record<string, unknown>;
+        if (isEditorFontSize(r.editorFontSize)) data.editorFontSize = r.editorFontSize;
         if (typeof r.cloneDir === "string" && r.cloneDir.trim()) data.cloneDir = r.cloneDir;
         if (typeof r.askWhereEveryTime === "boolean") data.askWhereEveryTime = r.askWhereEveryTime;
         if (Array.isArray(r.repoFolders)) {
@@ -202,6 +206,7 @@ export class AppSettings {
   view(): AppSettingsView {
     const dir = this.effectiveCloneDir();
     return {
+      editorFontSize: this.data.editorFontSize ?? DEFAULT_EDITOR_FONT_SIZE,
       cloneDir: dir,
       cloneDirDisplay: dir.startsWith(this.home) ? `~${dir.slice(this.home.length)}` : dir,
       cloneDirIsDefault: this.data.cloneDir === undefined,
@@ -211,7 +216,8 @@ export class AppSettings {
   }
 
   /** Apply a patch (null cloneDir resets to the default) and persist. */
-  async update(patch: { cloneDir?: string | null; askWhereEveryTime?: boolean }): Promise<AppSettingsView> {
+  async update(patch: { cloneDir?: string | null; askWhereEveryTime?: boolean; editorFontSize?: number }): Promise<AppSettingsView> {
+    if (isEditorFontSize(patch.editorFontSize)) this.data.editorFontSize = patch.editorFontSize;
     if (patch.cloneDir === null) delete this.data.cloneDir;
     else if (typeof patch.cloneDir === "string" && patch.cloneDir.trim()) {
       this.data.cloneDir = patch.cloneDir;

@@ -86,3 +86,31 @@ test("the file on disk is the two persisted fields, nothing else", async () => {
   const raw = JSON.parse(readFileSync(join(d, "app-settings.json"), "utf8"));
   assert.deepEqual(raw, { cloneDir: "/x", askWhereEveryTime: true });
 });
+
+
+test("editor font size defaults, persists, and resets independently of clone preferences", async () => {
+  const d = dir();
+  const options = { defaultCloneDir: DEF, home: HOME };
+  const s = await AppSettings.load(d, options);
+  assert.equal(s.view().editorFontSize, 12.5);
+  await s.update({ editorFontSize: 18 });
+  const reloaded = await AppSettings.load(d, options);
+  assert.equal(reloaded.view().editorFontSize, 18);
+  await reloaded.update({ cloneDir: "/work" });
+  assert.equal(reloaded.view().editorFontSize, 18);
+  await reloaded.update({ editorFontSize: 12.5 });
+  assert.equal((await AppSettings.load(d, options)).view().editorFontSize, 12.5);
+});
+
+test("invalid editor font sizes are ignored on update and load", async () => {
+  for (const value of [0, -1, 5, 73, NaN, Infinity, "18", null]) {
+    const d = dir();
+    const options = { defaultCloneDir: DEF, home: HOME };
+    const s = await AppSettings.load(d, options);
+    await s.update({ editorFontSize: 18 });
+    await s.update({ editorFontSize: value as number });
+    assert.equal(s.view().editorFontSize, 18);
+    writeFileSync(join(d, "app-settings.json"), JSON.stringify({ editorFontSize: value }));
+    assert.equal((await AppSettings.load(d, options)).view().editorFontSize, 12.5);
+  }
+});

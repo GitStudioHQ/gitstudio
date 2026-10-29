@@ -645,6 +645,15 @@ export class DiffView {
   }
 
   private installViewListeners(): void {
+    for (const editor of this.editors) {
+      this.viewSubs.push(editor.onDidChangeConfiguration((event) => {
+        if (!event.hasChanged(monaco.editor.EditorOption.lineHeight)) return;
+        if (this.model) this.installAlignment(this.model);
+        this.ribbons?.scheduleDraw();
+        this.scheduleButtons();
+      }));
+    }
+
     if (!this.left || !this.right) {
       return;
     }

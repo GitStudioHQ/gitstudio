@@ -1700,6 +1700,8 @@ export interface EditorsView {
 }
 
 export interface AppSettingsView {
+  /** Font size in CSS pixels for code, diff, and merge editors. */
+  editorFontSize: number;
   /** Effective absolute default clone parent. */
   cloneDir: string;
   /** "~/GitStudio"-style rendering for UI copy. */
@@ -2492,7 +2494,7 @@ export interface IpcChannels {
   "editors:reveal": [{ root?: string } | void, void];
   "settings:get": [void, AppSettingsView];
   /** Patch settings; `cloneDir: null` resets to the built-in default. */
-  "settings:update": [{ cloneDir?: string | null; askWhereEveryTime?: boolean }, AppSettingsView];
+  "settings:update": [{ cloneDir?: string | null; askWhereEveryTime?: boolean; editorFontSize?: number }, AppSettingsView];
   /** Native picker for the default clone folder; persists on choice. */
   "settings:pickCloneDir": [void, AppSettingsView | undefined];
   // ── Accounts (Explore profile pages) ──
