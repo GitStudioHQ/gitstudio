@@ -5858,6 +5858,7 @@ class App {
     label.textContent = l10n.t("Editor font size (px)");
     const input = document.createElement("input");
     input.type = "number";
+    input.dataset.editorFontSize = "";
     input.required = true;
     input.min = String(MIN_EDITOR_FONT_SIZE);
     input.max = String(MAX_EDITOR_FONT_SIZE);
@@ -5872,7 +5873,11 @@ class App {
     reset.textContent = l10n.t("Reset");
     reset.disabled = true;
     const apply = (v: AppSettingsView): void => {
-      input.value = String(v.editorFontSize);
+      // Settings DOM is kept per repository tab, so update parked cards too;
+      // otherwise an edit there would be based on an outdated value.
+      for (const cardInput of document.querySelectorAll<HTMLInputElement>("input[data-editor-font-size]")) {
+        cardInput.value = String(v.editorFontSize);
+      }
       applyEditorFontSize(v.editorFontSize);
       input.disabled = reset.disabled = false;
     };
