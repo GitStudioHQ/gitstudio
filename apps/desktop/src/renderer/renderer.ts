@@ -5883,7 +5883,7 @@ class App {
     };
     const save = (size: number): void => {
       input.disabled = reset.disabled = true;
-      void host.invoke("settings:update", { editorFontSize: size }).then(apply).catch((e) => {
+      void shellHost.invoke("settings:update", { editorFontSize: size }).then(apply).catch((e) => {
         input.disabled = reset.disabled = false;
         toast(cleanErr(e) || l10n.t("Couldn't save the setting."), "error");
       });
@@ -5893,7 +5893,7 @@ class App {
       save(input.valueAsNumber);
     });
     reset.addEventListener("click", () => save(DEFAULT_EDITOR_FONT_SIZE));
-    void host.invoke("settings:get", undefined).then(apply).catch((e) => {
+    void shellHost.invoke("settings:get", undefined).then(apply).catch((e) => {
       toast(cleanErr(e) || l10n.t("Couldn't load the setting."), "error");
     });
     body.append(label, sub, reset);
