@@ -2010,6 +2010,15 @@ export class MergeView implements MergeViewApi {
 
   /** Keeps ribbons + buttons in sync with result scroll and manual edits. */
   private installViewListeners(): void {
+    for (const editor of this.editors) {
+      this.viewSubs.push(editor.onDidChangeConfiguration((event) => {
+        if (!event.hasChanged(monaco.editor.EditorOption.lineHeight)) return;
+        if (this.model) this.installAlignment(this.model);
+        this.ribbons?.scheduleDraw();
+        this.scheduleButtons();
+      }));
+    }
+
     if (!this.result) {
       return;
     }
