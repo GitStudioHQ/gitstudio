@@ -18,6 +18,13 @@ but they share the same engine, so most Git behaviour lands in both at once.
   applies at once to the editors already open and is remembered across
   restarts. Thanks to [@billdwhite](https://github.com/billdwhite)
   ([#140](https://github.com/GitStudioHQ/gitstudio/pull/140)).
+- **Merge a branch or tag from the commit graph.** Right-click a branch, remote
+  branch or tag label in Commits for **Merge 'x' into y**. It asks first,
+  offers Stash & Retry when uncommitted changes are in the way, and writes the
+  merge message itself ("Merge branch 'x' into y"), as `git merge --no-edit`
+  would. A tag's ⋯ menu in Branches has **Merge into current** too: tags can
+  be merged now, recorded as "Merge tag 'v1'" with an annotated tag's message
+  ([#141](https://github.com/GitStudioHQ/gitstudio/issues/141)).
 
 ## [2.7.1] - 2026-10-25
 

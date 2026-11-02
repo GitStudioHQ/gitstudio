@@ -626,6 +626,7 @@
  "Marking ready…": "Hazır olarak işaretleniyor…",
  "Merge": "Birleştir",
  "Merge #{0} into {1}": "#{0}'ı {1}'e Birleştir",
+ "Merge '{0}' into {1}": "'{0}'ı {1}'e Birleştir",
  "Merge Studio is free and open source. If it saves you time, you can support it.": "Merge Studio ücretsiz ve açık kaynaktır. Size zaman kazandırıyorsa destekleyebilirsiniz.",
  "Merge applied": "Birleştirme uygulandı",
  "Merge applied and staged": "Birleştirme uygulandı ve hazırlandı",

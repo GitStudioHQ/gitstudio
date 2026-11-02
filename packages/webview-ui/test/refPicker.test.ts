@@ -306,6 +306,27 @@ const AMBIGUOUS_SCRIPT = `
   await settle();
   expect(lastAction().fullName === "refs/tags/release" && lastAction().kind === "tag",
     "Checkout on the tag chip posts the tag's (" + JSON.stringify(lastAction()) + ")");
+  // Merge into the current branch (issue #141): by the real full name too —
+  // the bare "release" would merge the TAG beside a branch of that name.
+  chipOf("heads/release").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: 200, clientY: 120 }));
+  await settle();
+  const mergeItem = $(CHIP_MENU + " [data-chip-action=merge]");
+  expect(!!mergeItem && /Merge 'release' into main/.test(mergeItem.textContent), "the branch chip offers Merge 'release' into main (" + (mergeItem && mergeItem.textContent.trim()) + ")");
+  mergeItem && mergeItem.click();
+  await settle();
+  expect(lastAction().type === "mergeRef" && lastAction().fullName === "refs/heads/release" && lastAction().kind === "head",
+    "Merge on the branch chip posts the branch's real full name (" + JSON.stringify(lastAction()) + ")");
+  expect(!$(CHIP_MENU), "…and closes the menu");
+  chipOf("tags/release").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: 200, clientY: 120 }));
+  await settle();
+  $(CHIP_MENU + " [data-chip-action=merge]").click();
+  await settle();
+  expect(lastAction().type === "mergeRef" && lastAction().fullName === "refs/tags/release" && lastAction().kind === "tag",
+    "a tag merges too, by its full name (" + JSON.stringify(lastAction()) + ")");
+  // The branch HEAD is on has nothing to merge into itself.
+  chipOf("main").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: 200, clientY: 120 }));
+  await settle();
+  expect(!!$(CHIP_MENU) && !$(CHIP_MENU + " [data-chip-action=merge]"), "the current branch's chip offers no merge");
 `;
 
 test("the graph's chip shortcut resolves an ambiguous short name through the ref list", { skip: !CHROME && "no Chrome on this machine" }, async () => {

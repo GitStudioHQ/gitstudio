@@ -187,6 +187,15 @@ function start(root: HTMLElement): void {
           fullName: action.fullName,
         });
         break;
+      case "mergeRef":
+        vscode.postMessage({
+          type: "mergeRef",
+          sha: action.sha,
+          name: action.name,
+          kind: action.kind,
+          fullName: action.fullName,
+        });
+        break;
     }
   };
 

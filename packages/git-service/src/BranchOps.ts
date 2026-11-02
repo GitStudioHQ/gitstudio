@@ -243,8 +243,9 @@ export class BranchOps {
   /**
    * git's own merge message for merging the full name `ref`, named the way a
    * person would name it ("Merge branch 'release'", "Merge remote-tracking
-   * branch 'origin/release'", "… into feature" off the default branch). Undefined for anything
-   * else — a short name, a tag, a sha — which git names well enough itself,
+   * branch 'origin/release'", "Merge tag 'v1'" with an annotated tag's message, "… into
+   * feature" off the default branch). Undefined for anything else — a short name, a sha —
+   * which git names well enough itself,
    * and when git cannot say (the merge then reports the real error).
    */
   private async mergeMessage(ref: string, signal?: AbortSignal): Promise<string | undefined> {
@@ -252,11 +253,19 @@ export class BranchOps {
       ? { prefix: "refs/heads/", what: "branch" }
       : ref.startsWith("refs/remotes/")
         ? { prefix: "refs/remotes/", what: "remote-tracking branch" }
-        : undefined;
+        : ref.startsWith("refs/tags/")
+          ? { prefix: "refs/tags/", what: "tag" }
+          : undefined;
     if (!kind) return undefined;
     const name = ref.slice(kind.prefix.length);
     if (!name) return undefined;
-    const tip = await this.proc.run(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], { signal });
+    // A tag by its own object, unpeeled, as `git merge v1` hands it over: then
+    // fmt-merge-msg adds an annotated tag's message under "Merge tag 'v1'".
+    // Left to git, the full name read "Merge tag 'refs/tags/v1'".
+    const tip = await this.proc.run(
+      ["rev-parse", "--verify", "--quiet", kind.what === "tag" ? ref : `${ref}^{commit}`],
+      { signal },
+    );
     const sha = tip.stdout.trim();
     if (tip.code !== 0 || !sha) return undefined;
     // The line `git merge` itself feeds fmt-merge-msg (builtin/merge.c,

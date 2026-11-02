@@ -626,6 +626,7 @@
  "Marking ready…": "Отметка готовности…",
  "Merge": "Слияние",
  "Merge #{0} into {1}": "Слить #{0} в {1}",
+ "Merge '{0}' into {1}": "Слить '{0}' в {1}",
  "Merge Studio is free and open source. If it saves you time, you can support it.": "Merge Studio бесплатен и имеет открытый исходный код. Если он экономит ваше время, вы можете его поддержать.",
  "Merge applied": "Слияние применено",
  "Merge applied and staged": "Слияние применено и добавлено в индекс",

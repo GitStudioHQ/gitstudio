@@ -369,6 +369,24 @@ export class CommitGraphPanel {
         // short one.
         void this.runCommitMenuAction(msg.sha, refActionId(msg.fullName));
         break;
+      case "mergeRef":
+        // The chip menu's "Merge <ref> into <current>" (issue #141): the
+        // branch menus' own command, by the full name the webview resolved —
+        // so the same question first, Stash & Retry over work in the way,
+        // the conflict report, Undo, and git's own merge message ("Merge
+        // branch 'x' into y"). The graph follows the repository's change.
+        void Promise.resolve(
+          vscode.commands.executeCommand("gitstudio.branch.merge", {
+            ref: {
+              name: msg.name,
+              type: msg.kind === "tag" ? "tag" : msg.kind === "remoteHead" ? "remote" : "head",
+              fullName: msg.fullName,
+              sha: msg.sha,
+              isCurrent: false,
+            },
+          }),
+        ).then(() => this.scheduleRefresh(), () => undefined);
+        break;
       case "openInGraph":
         // Sidebar rail → promote into the BOTTOM PANEL graph (the split view
         // beside the terminal), which supersedes the old editor-tab graph.

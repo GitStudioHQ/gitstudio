@@ -124,6 +124,22 @@ test("mergeArgs names a remote-tracking branch the way git would, and adds no me
   assert.deepEqual(await ops.mergeArgs("topic"), ["merge", "topic"], "a short name is git's to name");
 });
 
+test("mergeArgs names a tag the way `git merge v1` does — an annotated tag's message included (issue #141)", async () => {
+  const { r, A } = scene("mergetag");
+  const tree = r.git("rev-parse", `${A}^{tree}`).trim();
+  const tagged = r.git("commit-tree", tree, "-p", A, "-m", "tagged work").trim();
+  r.git("tag", "-a", "v1", "-m", "release one", tagged);
+  r.git("tag", "v1-light", tagged);
+  const ops = r.ctx().branches;
+  assert.deepEqual(await ops.mergeArgs("refs/tags/v1"), ["merge", "--no-log", "-m", "Merge tag 'v1'\n\nrelease one", "refs/tags/v1"]);
+  assert.deepEqual(await ops.mergeArgs("refs/tags/v1-light"), ["merge", "--no-log", "-m", "Merge tag 'v1-light'", "refs/tags/v1-light"]);
+  assert.deepEqual(await ops.mergeArgs("refs/tags/gone"), ["merge", "refs/tags/gone"], "a tag git can't resolve: git reports it");
+  // …and the merge it runs records exactly that, never "Merge tag 'refs/tags/v1'".
+  const res = await ops.merge("refs/tags/v1");
+  assert.equal(res.ok, true, res.stderr);
+  assert.equal(r.git("log", "-1", "--format=%B").trim(), "Merge tag 'v1'\n\nrelease one");
+});
+
 test("merge of a full branch name beside a same-named tag merges the BRANCH, recorded under its plain name", async () => {
   const { r, A } = scene("mergeambig");
   // branch "release" gets its own commit; a tag "release" sits on an older one.

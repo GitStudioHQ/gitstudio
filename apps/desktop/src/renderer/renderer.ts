@@ -2932,6 +2932,8 @@ class App {
     return [
       { label: l10n.t("View in Commits"), icon: "git-commit", onClick: () => this.routeView("graph", false, { sha: r.sha }) },
       { label: l10n.t("Compare with {0}", r.name), icon: "git-compare", onClick: () => this.compareWithRef(r.name) },
+      // in-the-way-reviewed: mergeRefIntoCurrent says nothing on `cancelled`.
+      { label: l10n.t("Merge {0} into current", tagName(r)), icon: "git-merge", onClick: () => void this.mergeRefIntoCurrent(r.fullName) },
       { separator: true },
       { label: l10n.t("Copy name"), icon: "copy", onClick: () => void copyText(r.name, l10n.t("Copied “{0}”.", r.name)) },
       { separator: true },
@@ -4578,6 +4580,40 @@ class App {
   private currentBranchName(): string | undefined {
     const cur = this.refs.find((r) => r.type === "head" && r.isCurrent);
     return cur ? branchName(cur) : undefined;
+  }
+
+  /**
+   * "Merge <ref> into <current>" from a graph chip's menu (issue #141): a
+   * local branch, a remote branch or a tag. Asked first — a right-click is
+   * easy to mis-aim — then through main's merge door (branch:merge), which
+   * says what is in the way with Stash & Retry and records git's own message
+   * ("Merge branch 'x' into y", "Merge tag 'v1'").
+   */
+  private async mergeRefIntoCurrent(fullName: string): Promise<void> {
+    const name = refDisplay(fullName);
+    const current = this.currentBranchName();
+    const ok = await confirmDialog({
+      title: current ? l10n.t("Merge {0} into {1}?", name, current) : l10n.t("Merge {0} into the current branch?", name),
+      message: l10n.t("Bring {0} in and record a merge commit. Your commits keep their shas and their place in history.", name),
+      confirmLabel: l10n.t("Merge"),
+    });
+    if (!ok) return;
+    const label = l10n.t("merge {0}", name);
+    try {
+      // in-the-way-reviewed: a cancelled Stash & Retry ran nothing and says nothing.
+      const r = await host.invoke("branch:merge", { fullName });
+      // A merge that stopped on conflicts, or work still in the way, is the
+      // user's state — said in the neutral tone, as the Branches menu does.
+      if (r.cancelled) {
+        // nothing ran
+      } else if (!r.ok) toast(cleanErr(r.message) || l10n.t("Couldn't {0}.", label), r.expected ? "info" : "error");
+      else toast(l10n.t("{0} ✓", label), "success");
+    } catch (e) {
+      toast(cleanErr(e) || l10n.t("Couldn't {0}.", label), "error");
+    }
+    bust();
+    await this.refreshAfterBranchChange();
+    if (this.graph && this.currentView === "graph") await this.graph.reload();
   }
 
   /** Whatever was showing the branch state, redrawn. Shared by every branch
@@ -9142,6 +9178,8 @@ class App {
           current: kind === "currentHead",
           fullName,
         }),
+      // The chip menu's "Merge <ref> into <current>" (issue #141).
+      onMergeRef: (fullName) => void this.mergeRefIntoCurrent(fullName),
       // Show the pane again WITHOUT re-selecting: selectCommit() would call
       // closeGraphDiff() and dispose a diff the user still has open.
       onShowDetails: () => this.setGraphDetailsVisible(true),

@@ -426,4 +426,12 @@ export type GraphWebviewMessage =
    * at. The webview resolves the chip through the ref list (chipRefs), where
    * the full name git gave it lives.
    */
-  | { type: "checkoutRef"; sha: string; name: string; kind: WireRef["kind"]; fullName: string };
+  | { type: "checkoutRef"; sha: string; name: string; kind: WireRef["kind"]; fullName: string }
+  /**
+   * "Merge <ref> into <current>" from a chip's own menu (issue #141): the
+   * host runs its merge-into-current command — the same question, Stash &
+   * Retry, conflict report and Undo as the branch menus' item, and git's own
+   * merge message. `fullName` is what is merged (see checkoutRef for why
+   * never the chip's short name); `name` and `kind` are the chip's words.
+   */
+  | { type: "mergeRef"; sha: string; name: string; kind: WireRef["kind"]; fullName: string };

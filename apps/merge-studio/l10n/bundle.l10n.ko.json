@@ -626,6 +626,7 @@
  "Marking ready…": "준비 완료로 표시 중…",
  "Merge": "병합",
  "Merge #{0} into {1}": "#{0}을 {1}에 병합",
+ "Merge '{0}' into {1}": "'{0}'을 {1}에 병합",
  "Merge Studio is free and open source. If it saves you time, you can support it.": "Merge Studio는 무료이며 오픈 소스입니다. 시간을 절약해 준다면 후원할 수 있습니다.",
  "Merge applied": "병합이 적용됨",
  "Merge applied and staged": "병합이 적용되고 스테이지에 추가됨",

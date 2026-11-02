@@ -3307,7 +3307,9 @@ export class GitBridge {
   // "cannot rebase: You have unstaged changes" in red, and file it.
 
   async branchMerge(req: { fullName: string; noFf?: boolean; stashFirst?: string }): Promise<CommitActionResult> {
-    if (!isFullRef(req.fullName, ["heads", "remotes"])) return notABranch("merge");
+    // A tag merges too (issue #141), as in the extension: git names it
+    // itself ("Merge tag 'v1'"), with the tag's message for an annotated one.
+    if (!isFullRef(req.fullName, ["heads", "remotes", "tags"])) return notABranch("merge");
     const fullName = req.fullName;
     return this.staged(async (ctx) => {
       // The argv BranchOps.merge runs — which records "Merge branch

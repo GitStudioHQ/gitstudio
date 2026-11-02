@@ -227,3 +227,22 @@ export function chipCheckout(chip: {
   if (chip.kind === "remoteHead") return { label: l10n.t("Checkout {0}", chip.name), icon: "cloud" };
   return { label: l10n.t("Checkout {0}", chip.name), icon: "git-branch" };
 }
+
+/**
+ * The "Merge <ref> into <current>" a chip's own menu offers (issue #141) — a
+ * local branch, a remote branch or a tag, merged into the branch HEAD is on
+ * (`current`, or "HEAD" when it is on none). Undefined for the branch HEAD is
+ * on (merging it into itself is nothing) and a remote's HEAD pointer (a copy
+ * of its default branch, which has its own chip). The host asks before it
+ * merges, and git writes the message ("Merge branch 'x' into y").
+ */
+export function chipMerge(
+  chip: { name: string; kind: WireRef["kind"]; sha: string },
+  current: string,
+): { label: string; icon: string } | undefined {
+  if (!chip.sha || chip.kind === "currentHead" || chip.name.endsWith("/HEAD")) return undefined;
+  // A branch chip of the current branch that is not marked currentHead (the
+  // list's name for it, folded) is the current branch all the same.
+  if (current && chip.kind === "head" && chip.name === current) return undefined;
+  return { label: l10n.t("Merge '{0}' into {1}", chip.name, current || "HEAD"), icon: "git-merge" };
+}
