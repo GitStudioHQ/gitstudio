@@ -230,6 +230,20 @@ test("the chip menu's checkout runs the commit menu's own ref-checkout arm, by t
   }
 });
 
+test("the chip menu's merge goes to the branch menus' merge command, by the FULL name, from both webview entries (issue #141)", async () => {
+  const host = await readFile(`${SRC}/graph/graphPanel.ts`, "utf8");
+  assert.match(host, /case "mergeRef":[\s\S]*?executeCommand\("gitstudio\.branch\.merge", \{[\s\S]*?fullName: msg\.fullName,/);
+  const WEBVIEW = fileURLToPath(new URL("../../../packages/webview-ui/src/graph", import.meta.url));
+  for (const entry of ["main.ts", "sidebar-main.ts"]) {
+    const text = await readFile(`${WEBVIEW}/${entry}`, "utf8");
+    assert.match(
+      text,
+      /case "mergeRef":\s*vscode\.postMessage\(\{\s*type: "mergeRef",\s*sha: action\.sha,\s*name: action\.name,\s*kind: action\.kind,\s*fullName: action\.fullName,\s*\}\);/,
+      `${entry} posts the chip menu's merge to the host, full name included`,
+    );
+  }
+});
+
 test("a failed stats batch goes back unanswered, and the webview releases it for another try", async () => {
   // The per-sha stats answered zeros for a failed diff; the one-spawn batch
   // did the same for the whole window, and a zero is an ANSWER the webview

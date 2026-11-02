@@ -96,6 +96,14 @@ test("merge by full name merges the BRANCH and records \"Merge branch 'release'\
   assert.equal(git("log", "-1", "--format=%s"), "Merge branch 'release'");
 });
 
+test("a tag merges too, by its full name, recorded the way git names it (issue #141)", async () => {
+  git("tag", "-a", "v2", "-m", "release two", releaseTip);
+  const r = await bridge.branchMerge({ fullName: "refs/tags/v2" });
+  assert.equal(r.ok, true, r.message);
+  assert.ok(git("log", "-1", "--format=%P").split(" ").includes(releaseTip), "the tag's commit is a parent");
+  assert.equal(git("log", "-1", "--format=%B").trim(), "Merge tag 'v2'\n\nrelease two");
+});
+
 test("rebase by full name lands on the BRANCH, not the tag", async () => {
   const r = await bridge.branchRebase({ fullName: "refs/heads/release" });
   assert.equal(r.ok, true, r.message);

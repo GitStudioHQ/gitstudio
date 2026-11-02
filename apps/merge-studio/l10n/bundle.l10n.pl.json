@@ -626,6 +626,7 @@
  "Marking ready…": "Oznaczanie jako gotowy…",
  "Merge": "Scalenie",
  "Merge #{0} into {1}": "Scal #{0} z {1}",
+ "Merge '{0}' into {1}": "Scal '{0}' z {1}",
  "Merge Studio is free and open source. If it saves you time, you can support it.": "Merge Studio jest darmowy i open source. Jeśli Ci zaoszczędza czas, możesz go wspierać.",
  "Merge applied": "Scalenie zastosowane",
  "Merge applied and staged": "Scalenie zastosowane i przygotowane",

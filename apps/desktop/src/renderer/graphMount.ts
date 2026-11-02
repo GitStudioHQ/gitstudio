@@ -32,6 +32,9 @@ export interface GraphCallbacks {
    *  `fullName` is the ref as the webview resolved it through the ref list;
    *  `name` is the chip's short form, for the words only. */
   onCheckoutRef(sha: string, name: string, kind: string, fullName: string): void;
+  /** "Merge <ref> into <current>" from a chip's own menu (issue #141).
+   *  `fullName` is what is merged — a branch, a remote branch or a tag. */
+  onMergeRef?(fullName: string): void;
   /** The history is empty (or stopped being). Lets the shell stand the details
    *  pane down instead of asking you to select a commit that doesn't exist. */
   onEmpty?(empty: boolean): void;
@@ -73,6 +76,9 @@ export class GraphMount {
           break;
         case "checkoutRef":
           cb.onCheckoutRef(action.sha, action.name, action.kind, action.fullName);
+          break;
+        case "mergeRef":
+          cb.onMergeRef?.(action.fullName);
           break;
         case "loadMore":
           this.adapter.loadMore().catch(() => {

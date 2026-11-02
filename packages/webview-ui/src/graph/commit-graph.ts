@@ -61,6 +61,7 @@ import {
   activePreset,
   addRefs,
   chipCheckout,
+  chipMerge,
   groupRefs,
   presetFilter,
   presetUnavailable,
@@ -304,7 +305,10 @@ export type GraphAction =
    *  is the ref resolved through the picker's list (chipRefs): the chip's
    *  own name is git's SHORT form, which names a revision rather than a
    *  branch the moment a tag shares it. */
-  | { type: "checkoutRef"; sha: string; name: string; kind: WireRef["kind"]; fullName: string };
+  | { type: "checkoutRef"; sha: string; name: string; kind: WireRef["kind"]; fullName: string }
+  /** "Merge <ref> into <current>" from a chip's own menu (issue #141) — the
+   *  host asks first, then merges `fullName` as its branch menus do. */
+  | { type: "mergeRef"; sha: string; name: string; kind: WireRef["kind"]; fullName: string };
 
 /** One item in the in-graph commit actions popover (from the host). */
 export interface CommitMenuItem {
@@ -4710,7 +4714,7 @@ export class CommitGraph extends LitElement {
   }
 
   /** A ref chip's menu: show only it, add it to / remove it from the filter,
-   *  and check it out. */
+   *  check it out, and merge it into the current branch. */
   private renderChipMenu() {
     const m = this.chipMenu;
     if (!m) return nothing;
@@ -4731,6 +4735,7 @@ export class CommitGraph extends LitElement {
     // does not know it.
     const title = refDisplayName(known ? m.refs[0] : m.fullName || m.name);
     const checkout = known ? chipCheckout({ ...m, name: title }) : undefined;
+    const merge = known ? chipMerge({ ...m, name: title }, this.currentBranchName()) : undefined;
     return html`<div
       class="gh-pop gh-ctx gh-chip-menu"
       role="menu"
@@ -4788,6 +4793,21 @@ export class CommitGraph extends LitElement {
             >
               <span class="codicon codicon-${checkout.icon}" aria-hidden="true"></span>
               <span class="lbl">${checkout.label}</span>
+            </button>`
+        : nothing}
+      ${merge
+        ? html`${checkout ? nothing : html`<div class="gh-pop-sep"></div>`}
+            <button
+              class="gh-menuitem"
+              role="menuitem"
+              data-chip-action="merge"
+              @click=${() => {
+                this.chipMenu = null;
+                this.onAction({ type: "mergeRef", sha: m.sha, name: m.name, kind: m.kind, fullName: m.refs[0] });
+              }}
+            >
+              <span class="codicon codicon-${merge.icon}" aria-hidden="true"></span>
+              <span class="lbl">${merge.label}</span>
             </button>`
         : nothing}
       ${known

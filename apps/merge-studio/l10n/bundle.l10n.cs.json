@@ -626,6 +626,7 @@
  "Marking ready…": "Označování jako připravený…",
  "Merge": "Sloučit",
  "Merge #{0} into {1}": "Sloučit #{0} do {1}",
+ "Merge '{0}' into {1}": "Sloučit '{0}' do {1}",
  "Merge Studio is free and open source. If it saves you time, you can support it.": "Merge Studio je zdarma a open source. Pokud vám šetří čas, můžete ho podpořit.",
  "Merge applied": "Sloučení bylo použito",
  "Merge applied and staged": "Sloučení bylo použito a připraveno ke commitu",

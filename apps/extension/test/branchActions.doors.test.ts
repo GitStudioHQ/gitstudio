@@ -853,6 +853,28 @@ test("merge: the question names the branch, and a yes merges it with git's own m
   assert.deepEqual(said("status"), ["$(check) Merged side"]);
 });
 
+test("merge from the graph's chip menu: by full name, a tag included, with git's own message (issue #141)", async () => {
+  const w = world();
+  w.git("checkout", "-q", "-b", "side");
+  writeFileSync(join(w.dir, "side.txt"), "side\n");
+  w.git("add", ".");
+  w.git("commit", "-qm", "side work");
+  w.git("tag", "-a", "v1", "-m", "release one");
+  w.git("checkout", "-q", "main");
+  w.git("commit", "-q", "--allow-empty", "-m", "main moves on");
+  // The shape the graph panel sends for a chip: the full name it resolved, and the row's sha.
+  const tip = w.git("rev-parse", "side");
+  reset([[/^Merge v1 into the current branch\?$/, "ok"]]);
+  await actions.mergeBranchIntoCurrent(
+    w.repos,
+    { ref: { name: "v1", type: "tag", sha: tip, fullName: "refs/tags/v1", isCurrent: false } },
+    w.refresh,
+  );
+  assert.equal(w.git("log", "-1", "--format=%s"), "Merge tag 'v1'");
+  assert.equal(w.git("rev-parse", "HEAD^2"), tip, "the tag's commit is the merge's second parent");
+  assert.deepEqual(said("status"), ["$(check) Merged v1"]);
+});
+
 test("merge or rebase, declined: HEAD does not move", async () => {
   const w = world();
   w.git("checkout", "-q", "-b", "side");

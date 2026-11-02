@@ -626,6 +626,7 @@
  "Marking ready…": "正在标记为就绪…",
  "Merge": "合并",
  "Merge #{0} into {1}": "将 #{0} 合并到 {1}",
+ "Merge '{0}' into {1}": "将“{0}”合并到 {1}",
  "Merge Studio is free and open source. If it saves you time, you can support it.": "Merge Studio 免费且开源。如果它为你节省了时间，你可以支持它。",
  "Merge applied": "已应用合并",
  "Merge applied and staged": "已应用合并并暂存",

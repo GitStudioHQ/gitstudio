@@ -626,6 +626,7 @@
  "Marking ready…": "Marking ready…",
  "Merge": "Merge",
  "Merge #{0} into {1}": "Merge #{0} into {1}",
+ "Merge '{0}' into {1}": "Merge '{0}' into {1}",
  "Merge Studio is free and open source. If it saves you time, you can support it.": "Merge Studio is free and open source. If it saves you time, you can support it.",
  "Merge applied": "Merge applied",
  "Merge applied and staged": "Merge applied and staged",

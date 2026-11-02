@@ -6,6 +6,7 @@ import {
   activePreset,
   addRefs,
   chipCheckout,
+  chipMerge,
   groupRefs,
   presetFilter,
   presetUnavailable,
@@ -164,4 +165,21 @@ test("chipCheckout: what a chip's menu offers to check out, and what it declines
   assert.equal(chipCheckout({ name: "origin/HEAD", kind: "remoteHead", sha: "abc" }), undefined);
   // …and a chip whose row is unknown has nothing to run the checkout on.
   assert.equal(chipCheckout({ name: "feature/x", kind: "head", sha: "" }), undefined);
+});
+
+test("chipMerge: what a chip's menu offers to merge into the current branch (issue #141)", () => {
+  // A local branch, a remote branch and a tag all merge, named into the branch HEAD is on.
+  assert.deepEqual(chipMerge({ name: "feature/x", kind: "head", sha: "abc" }, "main"), { label: "Merge 'feature/x' into main", icon: "git-merge" });
+  assert.deepEqual(chipMerge({ name: "origin/feature/x", kind: "remoteHead", sha: "abc" }, "main"), { label: "Merge 'origin/feature/x' into main", icon: "git-merge" });
+  assert.deepEqual(chipMerge({ name: "v1", kind: "tag", sha: "abc" }, "main"), { label: "Merge 'v1' into main", icon: "git-merge" });
+  // On no branch, the merge goes into HEAD — and says so.
+  assert.deepEqual(chipMerge({ name: "feature/x", kind: "head", sha: "abc" }, ""), { label: "Merge 'feature/x' into HEAD", icon: "git-merge" });
+  // Nothing to merge: the branch you are on (by its chip or by its name), and a remote's HEAD pointer.
+  assert.equal(chipMerge({ name: "main", kind: "currentHead", sha: "abc" }, "main"), undefined);
+  assert.equal(chipMerge({ name: "main", kind: "head", sha: "abc" }, "main"), undefined);
+  assert.equal(chipMerge({ name: "origin/HEAD", kind: "remoteHead", sha: "abc" }, "main"), undefined);
+  // A tag or remote of the current branch's name is still something else to merge.
+  assert.deepEqual(chipMerge({ name: "main", kind: "tag", sha: "abc" }, "main"), { label: "Merge 'main' into main", icon: "git-merge" });
+  // …and a chip whose row is unknown has nothing to merge.
+  assert.equal(chipMerge({ name: "feature/x", kind: "head", sha: "" }, "main"), undefined);
 });

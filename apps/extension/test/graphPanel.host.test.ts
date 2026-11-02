@@ -438,6 +438,24 @@ test("the chip's Checkout switches to the branch by its full name", async () => 
   await g.nth("graphInit", 2);
 });
 
+test("the chip's Merge hands off to the branch menus' merge command, by full name and ref type (issue #141)", async () => {
+  const { one, entry } = history();
+  const g = track(open(entry));
+  await g.nth("graphInit", 1);
+  g.w.send({ type: "mergeRef", sha: one, name: "heads/release", kind: "head", fullName: "refs/heads/release" });
+  g.w.send({ type: "mergeRef", sha: one, name: "origin/x", kind: "remoteHead", fullName: "refs/remotes/origin/x" });
+  g.w.send({ type: "mergeRef", sha: one, name: "v1", kind: "tag", fullName: "refs/tags/v1" });
+  await kit.until(() => kit.ran.length >= 3, "three commands");
+  assert.deepEqual(
+    kit.ran.map((c) => [c.command, c.args[0]]),
+    [
+      ["gitstudio.branch.merge", { ref: { name: "heads/release", type: "head", fullName: "refs/heads/release", sha: one, isCurrent: false } }],
+      ["gitstudio.branch.merge", { ref: { name: "origin/x", type: "remote", fullName: "refs/remotes/origin/x", sha: one, isCurrent: false } }],
+      ["gitstudio.branch.merge", { ref: { name: "v1", type: "tag", fullName: "refs/tags/v1", sha: one, isCurrent: false } }],
+    ],
+  );
+});
+
 test("Start Interactive Rebase Here and Open in Graph hand off to their commands", async () => {
   const { one, entry } = history();
   const g = track(open(entry));

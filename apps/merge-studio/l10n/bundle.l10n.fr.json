@@ -626,6 +626,7 @@
  "Marking ready…": "Marquage comme prête…",
  "Merge": "Fusion",
  "Merge #{0} into {1}": "Fusionner #{0} dans {1}",
+ "Merge '{0}' into {1}": "Fusionner « {0} » dans {1}",
  "Merge Studio is free and open source. If it saves you time, you can support it.": "Merge Studio est gratuit et open source. S'il vous fait gagner du temps, vous pouvez le soutenir.",
  "Merge applied": "Fusion appliquée",
  "Merge applied and staged": "Fusion appliquée et indexée",

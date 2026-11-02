@@ -57,6 +57,7 @@ import {
   activePreset,
   addRefs,
   chipCheckout,
+  chipMerge,
   groupRefs,
   presetFilter,
   presetUnavailable,
@@ -133,7 +134,10 @@ export type RailAction =
    *  is the ref resolved through the picker's list (chipRefs): the chip's
    *  own name is git's SHORT form, which names a revision rather than a
    *  branch the moment a tag shares it. */
-  | { type: "checkoutRef"; sha: string; name: string; kind: WireRef["kind"]; fullName: string };
+  | { type: "checkoutRef"; sha: string; name: string; kind: WireRef["kind"]; fullName: string }
+  /** "Merge <ref> into <current>" from a chip's own menu (issue #141) — the
+   *  host asks first, then merges `fullName` as its branch menus do. */
+  | { type: "mergeRef"; sha: string; name: string; kind: WireRef["kind"]; fullName: string };
 
 /** One item in the commit actions popover (host-built, same as the graph's). */
 export interface RailMenuItem {
@@ -2375,7 +2379,7 @@ export class CommitRail extends LitElement {
   }
 
   /** A ref chip's menu: show only it, add it to / remove it from the filter,
-   *  and check it out. */
+   *  check it out, and merge it into the current branch. */
   private chipMenuTpl(m: NonNullable<CommitRail["chipMenu"]>) {
     // A chip the ref list has no entry for resolves to nothing (chipRefs):
     // its menu says so and acts on nothing, rather than guess a full name.
@@ -2391,6 +2395,8 @@ export class CommitRail extends LitElement {
     // does not know it.
     const title = refDisplayName(known ? m.refs[0] : m.fullName || m.name);
     const checkout = known ? chipCheckout({ ...m, name: title }) : undefined;
+    const cur = this.refList.find((r) => r.kind === "head" && r.isCurrent);
+    const merge = known ? chipMerge({ ...m, name: title }, cur ? refDisplayName(cur.fullName) : "") : undefined;
     return html`
       <div
         class="pop chipmenu"
@@ -2446,6 +2452,23 @@ export class CommitRail extends LitElement {
               >
                 <span class="codicon codicon-${checkout.icon}"></span>
                 <span class="nm">${checkout.label}</span>
+              </button>
+            `
+          : nothing}
+        ${merge
+          ? html`
+              ${checkout ? nothing : html`<div class="sep" role="separator"></div>`}
+              <button
+                class="mi"
+                role="menuitem"
+                data-chip-action="merge"
+                @click=${() => {
+                  this.chipMenu = null;
+                  this.onAction({ type: "mergeRef", sha: m.sha, name: m.name, kind: m.kind, fullName: m.refs[0] });
+                }}
+              >
+                <span class="codicon codicon-${merge.icon}"></span>
+                <span class="nm">${merge.label}</span>
               </button>
             `
           : nothing}

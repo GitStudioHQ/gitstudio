@@ -4,6 +4,20 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Merge a branch or tag from the commit graph.** Right-click a branch, remote
+  branch or tag label in the graph (or the sidebar's commit list) for
+  **Merge 'x' into y**. It asks first, offers Stash & Retry when uncommitted
+  changes are in the way, reports conflicts, can be undone, and writes the
+  merge message itself ("Merge branch 'x' into y"), as `git merge --no-edit`
+  would ([#141](https://github.com/GitStudioHQ/gitstudio/issues/141)).
+
+### Fixed
+- Merging a tag recorded "Merge tag 'refs/tags/v1'". It now reads
+  "Merge tag 'v1'", with an annotated tag's message under it, as git writes it.
+
 ## [1.22.0] - 2026-10-19
 
 ### Added

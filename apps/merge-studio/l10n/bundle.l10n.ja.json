@@ -626,6 +626,7 @@
  "Marking ready…": "レビュー可能にしています…",
  "Merge": "マージ",
  "Merge #{0} into {1}": "#{0} を {1} にマージ",
+ "Merge '{0}' into {1}": "'{0}' を {1} にマージ",
  "Merge Studio is free and open source. If it saves you time, you can support it.": "Merge Studio は無料でオープンソースです。時間の節約になったなら、ぜひサポートをお願いします。",
  "Merge applied": "マージを適用しました",
  "Merge applied and staged": "マージを適用してステージしました",
