@@ -114,3 +114,15 @@ test("invalid editor font sizes are ignored on update and load", async () => {
     assert.equal((await AppSettings.load(d, options)).view().editorFontSize, 12.5);
   }
 });
+
+test("an invalid font size in a patch is dropped without losing the rest of the patch", async () => {
+  const d = dir();
+  const options = { defaultCloneDir: DEF, home: HOME };
+  const s = await AppSettings.load(d, options);
+  await s.update({ editorFontSize: 14 });
+  const v = await s.update({ editorFontSize: 500, cloneDir: "/work" });
+  assert.equal(v.editorFontSize, 14);
+  assert.equal(v.cloneDir, "/work");
+  const raw = JSON.parse(readFileSync(join(d, "app-settings.json"), "utf8"));
+  assert.deepEqual(raw, { editorFontSize: 14, cloneDir: "/work" });
+});
