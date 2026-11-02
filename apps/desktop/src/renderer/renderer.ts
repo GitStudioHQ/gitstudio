@@ -53,6 +53,8 @@ import "./styles/app.css";
 // imported last so its correct codepoints override any legacy hand-typed one.
 import "./styles/codicons-full.css";
 import { host } from "./bridge";
+import { applyEditorFontSize } from "./editorFont";
+import { DEFAULT_EDITOR_FONT_SIZE, MIN_EDITOR_FONT_SIZE, MAX_EDITOR_FONT_SIZE } from "../shared/editorFont";
 import { applyDarkStyle, applyTheme, followSystemTheme, resolveTheme } from "./desktopTheme";
 import { DARK_STYLES, DEFAULT_DARK_STYLE, parseDarkStyle, previewIconFor, type DarkStyle } from "../shared/darkStyle";
 import { LANGUAGES, type LanguageSetting } from "../shared/languages";
@@ -5583,6 +5585,7 @@ class App {
     scroll.append(
       this.settingsAppearanceCard(),
       this.settingsAccountCard(),
+      this.settingsEditorCard(),
       this.settingsRepositoriesCard(),
       editorsCard(),
       mergeSettingsCard(),
@@ -5846,6 +5849,54 @@ class App {
     }
     markSegment(seg, label);
     body.append(label, sub, seg);
+    return card;
+  }
+
+  private settingsEditorCard(): HTMLElement {
+    const { card, body } = settingsCard(l10n.t("Code and comparisons"), "code");
+    const label = el("label", "settings-field-label");
+    label.textContent = l10n.t("Editor font size (px)");
+    const input = document.createElement("input");
+    input.type = "number";
+    input.dataset.editorFontSize = "";
+    input.required = true;
+    input.min = String(MIN_EDITOR_FONT_SIZE);
+    input.max = String(MAX_EDITOR_FONT_SIZE);
+    input.step = "0.5";
+    input.value = String(DEFAULT_EDITOR_FONT_SIZE);
+    input.disabled = true;
+    label.appendChild(input);
+    const sub = el("div", "settings-sub");
+    sub.textContent = l10n.t("Applies immediately to code, comparisons, commit changes, and merge editors.");
+    const reset = document.createElement("button");
+    reset.className = "mini-btn";
+    reset.textContent = l10n.t("Reset");
+    reset.disabled = true;
+    const apply = (v: AppSettingsView): void => {
+      // Settings DOM is kept per repository tab, so update parked cards too;
+      // otherwise an edit there would be based on an outdated value.
+      for (const cardInput of document.querySelectorAll<HTMLInputElement>("input[data-editor-font-size]")) {
+        cardInput.value = String(v.editorFontSize);
+      }
+      applyEditorFontSize(v.editorFontSize);
+      input.disabled = reset.disabled = false;
+    };
+    const save = (size: number): void => {
+      input.disabled = reset.disabled = true;
+      void shellHost.invoke("settings:update", { editorFontSize: size }).then(apply).catch((e) => {
+        input.disabled = reset.disabled = false;
+        toast(cleanErr(e) || l10n.t("Couldn't save the setting."), "error");
+      });
+    };
+    input.addEventListener("change", () => {
+      if (!input.reportValidity() || !input.value) return;
+      save(input.valueAsNumber);
+    });
+    reset.addEventListener("click", () => save(DEFAULT_EDITOR_FONT_SIZE));
+    void shellHost.invoke("settings:get", undefined).then(apply).catch((e) => {
+      toast(cleanErr(e) || l10n.t("Couldn't load the setting."), "error");
+    });
+    body.append(label, sub, reset);
     return card;
   }
 
@@ -11334,6 +11385,9 @@ class TabShell {
   }
 
   async start(): Promise<void> {
+    await host.invoke("settings:get", undefined)
+      .then((v) => applyEditorFontSize(v.editorFontSize))
+      .catch(() => applyEditorFontSize(DEFAULT_EDITOR_FONT_SIZE));
     document.getElementById("root")!.replaceChildren(this.strip.el, this.stage);
     // Before anything can invoke a commit-applying command: the one place that
     // asks Stash & Retry or Cancel for all of them (bridge.ts). It holds its
