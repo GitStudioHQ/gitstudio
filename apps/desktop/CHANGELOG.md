@@ -9,6 +9,16 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [Unreleased]
+
+### Added
+- **Editor font size.** Settings → Code and comparisons sets the font size of
+  every code, diff, commit-changes and merge editor (6–72 px, default 12.5),
+  without zooming the rest of the window the way ⌘/Ctrl + Shift + +/− does. It
+  applies at once to the editors already open and is remembered across
+  restarts. Thanks to [@billdwhite](https://github.com/billdwhite)
+  ([#140](https://github.com/GitStudioHQ/gitstudio/pull/140)).
+
 ## [2.7.1] - 2026-10-25
 
 ### Fixed

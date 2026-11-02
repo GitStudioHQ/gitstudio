@@ -54,6 +54,7 @@ import "./styles/app.css";
 import "./styles/codicons-full.css";
 import { host } from "./bridge";
 import { applyEditorFontSize } from "./editorFont";
+import { latestOnly } from "./latestOnly";
 import { DEFAULT_EDITOR_FONT_SIZE, MIN_EDITOR_FONT_SIZE, MAX_EDITOR_FONT_SIZE } from "../shared/editorFont";
 import { applyDarkStyle, applyTheme, followSystemTheme, resolveTheme } from "./desktopTheme";
 import { DARK_STYLES, DEFAULT_DARK_STYLE, parseDarkStyle, previewIconFor, type DarkStyle } from "../shared/darkStyle";
@@ -5872,7 +5873,10 @@ class App {
     reset.className = "mini-btn";
     reset.textContent = l10n.t("Reset");
     reset.disabled = true;
+    // The size main last confirmed: what a cleared box or a failed save goes back to.
+    let saved = DEFAULT_EDITOR_FONT_SIZE;
     const apply = (v: AppSettingsView): void => {
+      saved = v.editorFontSize;
       // Settings DOM is kept per repository tab, so update parked cards too;
       // otherwise an edit there would be based on an outdated value.
       for (const cardInput of document.querySelectorAll<HTMLInputElement>("input[data-editor-font-size]")) {
@@ -5881,15 +5885,29 @@ class App {
       applyEditorFontSize(v.editorFontSize);
       input.disabled = reset.disabled = false;
     };
+    const send = latestOnly((size: number) => shellHost.invoke("settings:update", { editorFontSize: size }));
     const save = (size: number): void => {
-      input.disabled = reset.disabled = true;
-      void shellHost.invoke("settings:update", { editorFontSize: size }).then(apply).catch((e) => {
-        input.disabled = reset.disabled = false;
-        toast(cleanErr(e) || l10n.t("Couldn't save the setting."), "error");
+      // The box stays enabled while this saves: disabling a focused input
+      // drops its focus, so the next arrow-key step went to the page instead.
+      // Saves go out in order and only the newest answer lands (latestOnly).
+      applyEditorFontSize(size);
+      void send(size).then((r) => {
+        if (!r) return; // a newer save overtook this one
+        if ("value" in r) {
+          apply(r.value);
+          return;
+        }
+        input.value = String(saved);
+        applyEditorFontSize(saved);
+        toast(cleanErr(r.error) || l10n.t("Couldn't save the setting."), "error");
       });
     };
     input.addEventListener("change", () => {
-      if (!input.reportValidity() || !input.value) return;
+      if (!input.value) {
+        input.value = String(saved); // cleared: show the size still in use
+        return;
+      }
+      if (!input.reportValidity()) return;
       save(input.valueAsNumber);
     });
     reset.addEventListener("click", () => save(DEFAULT_EDITOR_FONT_SIZE));
@@ -11385,7 +11403,8 @@ class TabShell {
   }
 
   async start(): Promise<void> {
-    await host.invoke("settings:get", undefined)
+    // A shell call, not a tab's: no tab exists yet, and none owns the answer.
+    await shellHost.invoke("settings:get", undefined)
       .then((v) => applyEditorFontSize(v.editorFontSize))
       .catch(() => applyEditorFontSize(DEFAULT_EDITOR_FONT_SIZE));
     document.getElementById("root")!.replaceChildren(this.strip.el, this.stage);
