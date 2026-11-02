@@ -4,7 +4,7 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.23.0] - 2026-11-03
+## [1.23.0] - 2026-11-02
 
 ### Added
 - **Merge a branch or tag from the commit graph.** Right-click a branch, remote

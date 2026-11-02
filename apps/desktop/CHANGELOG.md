@@ -9,7 +9,7 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
-## [2.8.0] - 2026-11-03
+## [2.8.0] - 2026-11-02
 
 ### Added
 - **Editor font size.** Settings → Code and comparisons sets the font size of
