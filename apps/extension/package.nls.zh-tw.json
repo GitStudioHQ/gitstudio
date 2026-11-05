@@ -248,5 +248,12 @@
  "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.altText": "帶勾選框的“更改”檢視：某個檔案的更改已展開，其中一項被勾選，提交資訊已就緒",
  "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.description": "在 **更改** 檢視中暫存整個檔案，或勾選檔案中的單個更改，然後從其提交框提交（修正、簽名、其他作者、提交併推送）。開啟 AI 後，提交框中的閃光按鈕會根據你暫存的內容起草一條資訊。你的儲藏列在更改下方：開啟一個即可看到它包含的每個檔案，並用 **移入更改** 只取回你想要的檔案。\n[開啟“更改”檢視](command:workbench.view.extension.gitstudio)\n在編輯器中：選中若干行並按 __Ctrl/Cmd+Alt+G S__ 可暫存它們涉及的更改。",
  "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.title": "暫存更改並提交",
- "walkthrough.gitstudio.gettingStarted.title": "開始使用 GitStudio"
+ "walkthrough.gitstudio.gettingStarted.title": "開始使用 GitStudio",
+ "config.gitstudio.diff.whitespace.description": "GitStudio 差異檢視預設的空白字元處理方式。關閉並重新開啟差異檢視後生效。",
+ "config.gitstudio.diff.highlight.description": "GitStudio 差異檢視預設的醒目提示粒度。關閉並重新開啟差異檢視後生效。",
+ "config.gitstudio.diff.whitespace.enumItemLabels.0": "不忽略空白字元",
+ "config.gitstudio.diff.whitespace.enumItemLabels.1": "忽略行尾空白字元",
+ "config.gitstudio.diff.whitespace.enumItemLabels.2": "忽略空白字元",
+ "config.gitstudio.diff.highlight.enumItemLabels.0": "醒目提示單字",
+ "config.gitstudio.diff.highlight.enumItemLabels.1": "醒目提示行"
 }

@@ -248,5 +248,12 @@
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.altText": "체크 표시가 있는 변경 내용 보기: 한 파일의 변경 내용이 열려 있고 그중 하나가 체크되어 있으며 커밋 메시지가 준비됨",
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.description": "**변경 내용** 보기에서 파일 전체를 스테이지에 추가하거나 파일 안의 변경 내용 하나만 체크하고, 커밋 상자(수정, 서명, 다른 작성자, 커밋 및 푸시)에서 커밋하세요. AI가 켜져 있으면 상자의 스파클 버튼이 스테이지에 추가한 내용으로 메시지를 작성해 줍니다. 스태시는 변경 내용 아래에 나열됩니다. 하나를 열어 담긴 모든 파일을 확인하고, 원하는 파일만 **변경 내용으로 이동**하세요.\n[변경 내용 보기 열기](command:workbench.view.extension.gitstudio)\n에디터에서: 줄을 선택하고 __Ctrl/Cmd+Alt+G S__를 눌러 해당 변경 내용을 스테이지에 추가하세요.",
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.title": "변경 내용 스테이지에 추가하고 커밋하기",
-  "walkthrough.gitstudio.gettingStarted.title": "GitStudio 시작하기"
+  "walkthrough.gitstudio.gettingStarted.title": "GitStudio 시작하기",
+  "config.gitstudio.diff.whitespace.description": "GitStudio 비교 보기의 기본 공백 처리 방식입니다. 변경 사항을 적용하려면 비교 보기를 닫았다가 다시 여세요.",
+  "config.gitstudio.diff.highlight.description": "GitStudio 비교 보기의 기본 강조 표시 단위입니다. 변경 사항을 적용하려면 비교 보기를 닫았다가 다시 여세요.",
+  "config.gitstudio.diff.whitespace.enumItemLabels.0": "무시하지 않음",
+  "config.gitstudio.diff.whitespace.enumItemLabels.1": "줄 끝 공백 무시",
+  "config.gitstudio.diff.whitespace.enumItemLabels.2": "공백 무시",
+  "config.gitstudio.diff.highlight.enumItemLabels.0": "단어 강조 표시",
+  "config.gitstudio.diff.highlight.enumItemLabels.1": "줄 강조 표시"
 }

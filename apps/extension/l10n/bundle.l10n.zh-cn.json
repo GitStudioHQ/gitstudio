@@ -3308,5 +3308,7 @@
  "“{0}” is not a stash git can read.": "“{0}”不是 git 可读的贮藏。",
  "“{0}” is not a stash.": "“{0}”不是贮藏。",
  "✓ deleted": "✓ 已删除",
- "✓ resolved": "✓ 已解决"
+ "✓ resolved": "✓ 已解决",
+ "Open working tree file": "打开工作区文件",
+ "Could not open working tree file: {0}": "无法打开工作区文件：{0}"
 }

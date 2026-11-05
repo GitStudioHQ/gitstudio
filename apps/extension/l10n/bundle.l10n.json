@@ -3308,5 +3308,7 @@
  "“{0}” is not a stash git can read.": "“{0}” is not a stash git can read.",
  "“{0}” is not a stash.": "“{0}” is not a stash.",
  "✓ deleted": "✓ deleted",
- "✓ resolved": "✓ resolved"
+ "✓ resolved": "✓ resolved",
+ "Open working tree file": "Open working tree file",
+ "Could not open working tree file: {0}": "Could not open working tree file: {0}"
 }

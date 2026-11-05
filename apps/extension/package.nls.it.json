@@ -248,5 +248,12 @@
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.altText": "La vista Modifiche con le selezioni: le modifiche di un file aperte, una di esse selezionata, e un messaggio di commit pronto",
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.description": "Metti in stage intere file, o seleziona singole modifiche al loro interno, nella vista **Modifiche**, poi esegui il commit dalla sua casella di commit (Amend, Sign-off, un autore diverso, Commit e push). Con l'AI attiva, il pulsante a scintilla nella casella scrive una bozza di messaggio da ciò che hai messo in stage. I tuoi stash sono elencati sotto le tue modifiche: aprine uno per vedere ogni file che contiene, e usa **Move to Changes** solo sui file che vuoi ripristinare.\n[Apri la vista Modifiche](command:workbench.view.extension.gitstudio)\nNell'editor: seleziona righe e premi __Ctrl/Cmd+Alt+G S__ per metterne in stage le modifiche.",
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.title": "Metti in stage le modifiche ed esegui il commit",
-  "walkthrough.gitstudio.gettingStarted.title": "Inizia con GitStudio"
+  "walkthrough.gitstudio.gettingStarted.title": "Inizia con GitStudio",
+  "config.gitstudio.diff.whitespace.description": "Gestione predefinita degli spazi nelle viste delle differenze di GitStudio. Chiudi e riapri la vista per applicare le modifiche.",
+  "config.gitstudio.diff.highlight.description": "Granularità predefinita dell’evidenziazione nelle viste delle differenze di GitStudio. Chiudi e riapri la vista per applicare le modifiche.",
+  "config.gitstudio.diff.whitespace.enumItemLabels.0": "Non ignorare",
+  "config.gitstudio.diff.whitespace.enumItemLabels.1": "Ignora gli spazi a fine riga",
+  "config.gitstudio.diff.whitespace.enumItemLabels.2": "Ignora gli spazi",
+  "config.gitstudio.diff.highlight.enumItemLabels.0": "Evidenzia parole",
+  "config.gitstudio.diff.highlight.enumItemLabels.1": "Evidenzia righe"
 }

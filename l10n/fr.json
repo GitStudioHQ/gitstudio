@@ -6111,5 +6111,7 @@
  "“{0}” will be permanently deleted on GitHub. This can't be undone.": "« {0} » sera définitivement supprimé sur GitHub. Ceci ne peut pas être annulé.",
  "•••••••• (stored — leave blank to keep)": "•••••••• (stocké — laisser vide pour conserver)",
  "✓ deleted": "✓ supprimé",
- "✓ resolved": "✓ résolu"
+ "✓ resolved": "✓ résolu",
+ "Open working tree file": "Ouvrir le fichier de l’arbre de travail",
+ "Could not open working tree file: {0}": "Impossible d’ouvrir le fichier de l’arbre de travail : {0}"
 }

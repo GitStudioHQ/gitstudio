@@ -248,5 +248,12 @@
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.altText": "Die Changes-Ansicht mit Häkchen: die Änderungen einer Datei geöffnet, eine davon angehäkelt, und eine Commit-Nachricht bereit",
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.description": "Ganze Dateien bereitstellen, oder einzelne Änderungen darin ankreuzen, in der **Changes**-Ansicht, dann aus der Commit-Box committen (Amend, Sign-off, ein anderer Autor, Commit & Push). Mit aktivierter KI entwirft die Glitzer-Schaltfläche in der Box eine Nachricht aus dem Bereitgestellten. Stashes werden unter den Änderungen aufgelistet: einen öffnen, um jede enthaltene Datei zu sehen, und **Zu Changes verschieben** nur die gewünschten Dateien zurückholen.\n[Die Changes-Ansicht öffnen](command:workbench.view.extension.gitstudio)\nIm Editor: Zeilen auswählen und __Strg/Cmd+Alt+G S__ drücken, um die betroffenen Änderungen bereitzustellen.",
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.title": "Änderungen bereitstellen & committen",
-  "walkthrough.gitstudio.gettingStarted.title": "Erste Schritte mit GitStudio"
+  "walkthrough.gitstudio.gettingStarted.title": "Erste Schritte mit GitStudio",
+  "config.gitstudio.diff.whitespace.description": "Standardbehandlung von Leerraum in GitStudio-Diff-Ansichten. Zum Anwenden die Diff-Ansicht schließen und erneut öffnen.",
+  "config.gitstudio.diff.highlight.description": "Standardgranularität der Hervorhebung in GitStudio-Diff-Ansichten. Zum Anwenden die Diff-Ansicht schließen und erneut öffnen.",
+  "config.gitstudio.diff.whitespace.enumItemLabels.0": "Nicht ignorieren",
+  "config.gitstudio.diff.whitespace.enumItemLabels.1": "Leerraum am Zeilenende ignorieren",
+  "config.gitstudio.diff.whitespace.enumItemLabels.2": "Leerraum ignorieren",
+  "config.gitstudio.diff.highlight.enumItemLabels.0": "Wörter hervorheben",
+  "config.gitstudio.diff.highlight.enumItemLabels.1": "Zeilen hervorheben"
 }

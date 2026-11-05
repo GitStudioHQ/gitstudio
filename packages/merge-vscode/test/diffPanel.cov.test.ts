@@ -763,3 +763,21 @@ test("a panel closed while a tick is being staged is not sent the new index", as
   await settle();
   assert.deepEqual(panel.posted, []);
 });
+
+for (const [label, section, config, expected] of [
+  ["GitStudio defaults", "gitstudio.merge", {}, { whitespace: "none", showInner: true }],
+  ["ignore whitespace and highlight lines", "gitstudio.merge", { "gitstudio.diff.whitespace": "all", "gitstudio.diff.highlight": "lines" }, { whitespace: "all", showInner: false }],
+  ["explicit preferences", "gitstudio.merge", { "gitstudio.diff.whitespace": "trailing", "gitstudio.diff.highlight": "words" }, { whitespace: "trailing", showInner: true }],
+  ["invalid preferences", "gitstudio.merge", { "gitstudio.diff.whitespace": "invalid", "gitstudio.diff.highlight": "invalid" }, { whitespace: "none", showInner: true }],
+  ["other hosts", "jbMerge", {}, undefined],
+] as const) {
+  test(`diff render defaults: ${label}`, async () => {
+    Object.assign(stub.config, config);
+    const { host } = makeHost(nowhere, { settingsSection: section });
+    await new DiffCommands(host).openDemoDiff();
+    const panel = stub.panels[0];
+    panel.receive({ type: "ready" });
+    await until(() => ofType(panel, "persistState").length === 1, "diff defaults");
+    assert.deepEqual(ofType(panel, "diffInit")[0].renderOptions, expected);
+  });
+}

@@ -6111,5 +6111,7 @@
  "“{0}” will be permanently deleted on GitHub. This can't be undone.": "「{0}」は GitHub 上で完全に削除されます。これは元に戻せません。",
  "•••••••• (stored — leave blank to keep)": "•••••••• （保存済み — 変更しない場合は空欄のままにしてください）",
  "✓ deleted": "✓ 削除済み",
- "✓ resolved": "✓ 解決済み"
+ "✓ resolved": "✓ 解決済み",
+ "Open working tree file": "作業ツリーのファイルを開く",
+ "Could not open working tree file: {0}": "作業ツリーのファイルを開けませんでした: {0}"
 }

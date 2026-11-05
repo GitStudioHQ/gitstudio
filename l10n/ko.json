@@ -6111,5 +6111,7 @@
  "“{0}” will be permanently deleted on GitHub. This can't be undone.": "“{0}”이(가) GitHub에서 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
  "•••••••• (stored — leave blank to keep)": "•••••••• (저장됨 — 유지하려면 비워 두세요)",
  "✓ deleted": "✓ 삭제됨",
- "✓ resolved": "✓ 해결됨"
+ "✓ resolved": "✓ 해결됨",
+ "Open working tree file": "작업 트리 파일 열기",
+ "Could not open working tree file: {0}": "작업 트리 파일을 열 수 없습니다: {0}"
 }

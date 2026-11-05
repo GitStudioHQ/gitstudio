@@ -248,5 +248,12 @@
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.altText": "A visualização de Alterações com marcações: as alterações de um arquivo abertas, uma delas marcada, e uma mensagem de commit pronta",
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.description": "Coloque arquivos inteiros em stage, ou marque alterações individuais dentro de um, na visualização de **Changes**, depois commite pela caixa de commit dela (Amend, Sign-off, um autor diferente, Commit & Push). Com a IA ativada, o botão de brilho na caixa rascunha uma mensagem a partir do que você colocou em stage. Seus stashes são listados abaixo das suas alterações: abra um para ver todo arquivo que ele contém, e **Move to Changes** apenas os arquivos que você quer de volta.\n[Abrir a visualização de Changes](command:workbench.view.extension.gitstudio)\nNo editor: selecione linhas e pressione __Ctrl/Cmd+Alt+G S__ para colocar em stage as alterações que elas tocam.",
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.title": "Coloque alterações em stage e commite",
-  "walkthrough.gitstudio.gettingStarted.title": "Primeiros Passos com o GitStudio"
+  "walkthrough.gitstudio.gettingStarted.title": "Primeiros Passos com o GitStudio",
+  "config.gitstudio.diff.whitespace.description": "Tratamento padrão de espaços em branco nas visualizações de diferenças do GitStudio. Feche e reabra a visualização para aplicar as alterações.",
+  "config.gitstudio.diff.highlight.description": "Granularidade padrão do destaque nas visualizações de diferenças do GitStudio. Feche e reabra a visualização para aplicar as alterações.",
+  "config.gitstudio.diff.whitespace.enumItemLabels.0": "Não ignorar",
+  "config.gitstudio.diff.whitespace.enumItemLabels.1": "Ignorar espaços no fim da linha",
+  "config.gitstudio.diff.whitespace.enumItemLabels.2": "Ignorar espaços em branco",
+  "config.gitstudio.diff.highlight.enumItemLabels.0": "Destacar palavras",
+  "config.gitstudio.diff.highlight.enumItemLabels.1": "Destacar linhas"
 }

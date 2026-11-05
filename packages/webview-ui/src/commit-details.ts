@@ -1608,6 +1608,9 @@ export class CommitDetails extends LitElement {
    * folder it is in beside its name; the tree already says that, so there the
    * gray text is where a renamed file came from.
    */
+  /** Enabled by the VS Code graph host only. */
+  openWorkspaceFile = false;
+
   private fileRow(f: CommitFileChange, wip: boolean, place: FileRow, tree: boolean) {
     const st = statusColor(f.status);
     const slash = f.path.lastIndexOf("/");
@@ -1643,6 +1646,11 @@ export class CommitDetails extends LitElement {
         : dir
           ? html`<span class="fdir"><bdi dir="ltr">${dir}</bdi></span>`
           : html`<span class="fdir"></span>`}
+      ${this.openWorkspaceFile && f.status !== "D" ? html`<button class="icon-btn"
+        title=${l10n.t("Open working tree file")} aria-label=${l10n.t("Open working tree file")}
+        @keydown=${(e: KeyboardEvent) => e.stopPropagation()}
+        @click=${(e: MouseEvent) => { e.stopPropagation(); this.emit("gs-workspace-file-open", { path: f.path }); }}>
+        <span class="codicon codicon-link-external" aria-hidden="true"></span></button>` : nothing}
       <span class="fnums">
         ${binary
           ? html`<span class="bin">bin</span>`

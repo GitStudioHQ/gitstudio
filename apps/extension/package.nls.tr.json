@@ -248,5 +248,12 @@
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.altText": "İşaretlerle Değişiklikler görünümü: bir dosyanın değişiklikleri açık, biri işaretli ve bir işleme mesajı hazır",
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.description": "**Değişiklikler** görünümünde bütün dosyaları hazırlayın veya birinin içindeki tek değişiklikleri işaretleyin, sonra işleme kutusundan işleyin (Değiştir, İmza, farklı bir yazar, İşle ve Gönder). Yapay zeka açıkken, kutudaki kıvılcım düğmesi hazırladığınızdan bir mesaj taslağı oluşturur. Zulalarınız değişikliklerinizin altında listelenir: içindeki her dosyayı görmek için birini açın ve yalnızca istediğiniz dosyaları **Değişiklikler'e Taşı**.\n[Değişiklikler görünümünü aç](command:workbench.view.extension.gitstudio)\nDüzenleyicide: satırları seçip dokundukları değişiklikleri hazırlamak için __Ctrl/Cmd+Alt+G S__'ye basın.",
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.title": "Değişiklikleri hazırlayın ve işleyin",
-  "walkthrough.gitstudio.gettingStarted.title": "GitStudio ile Başlayın"
+  "walkthrough.gitstudio.gettingStarted.title": "GitStudio ile Başlayın",
+  "config.gitstudio.diff.whitespace.description": "GitStudio fark görünümlerinde varsayılan boşluk işleme biçimi. Değişiklikleri uygulamak için fark görünümünü kapatıp yeniden açın.",
+  "config.gitstudio.diff.highlight.description": "GitStudio fark görünümlerinde varsayılan vurgulama düzeyi. Değişiklikleri uygulamak için fark görünümünü kapatıp yeniden açın.",
+  "config.gitstudio.diff.whitespace.enumItemLabels.0": "Yok sayma",
+  "config.gitstudio.diff.whitespace.enumItemLabels.1": "Satır sonundaki boşlukları yok say",
+  "config.gitstudio.diff.whitespace.enumItemLabels.2": "Boşlukları yok say",
+  "config.gitstudio.diff.highlight.enumItemLabels.0": "Sözcükleri vurgula",
+  "config.gitstudio.diff.highlight.enumItemLabels.1": "Satırları vurgula"
 }

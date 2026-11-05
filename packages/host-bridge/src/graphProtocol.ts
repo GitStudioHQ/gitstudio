@@ -370,6 +370,7 @@ export type GraphWebviewMessage =
    * read under that name); `status` is git's letter (A has no parent side, D
    * no commit side).
    */
+  | { type: "openWorkspaceFile"; path: string }
   | { type: "openFile"; sha: string; path: string; oldPath?: string; status?: string; wip?: boolean }
   /** A commit action from the details panel's toolbar. */
   | { type: "commitAction"; action: string; sha: string }
