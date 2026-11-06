@@ -3308,5 +3308,7 @@
  "“{0}” is not a stash git can read.": "「{0}」はgitが読み取れるスタッシュではありません。",
  "“{0}” is not a stash.": "「{0}」はスタッシュではありません。",
  "✓ deleted": "✓ 削除済み",
- "✓ resolved": "✓ 解決済み"
+ "✓ resolved": "✓ 解決済み",
+ "Open working tree file": "作業ツリーのファイルを開く",
+ "Could not open working tree file: {0}": "作業ツリーのファイルを開けませんでした: {0}"
 }

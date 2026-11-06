@@ -248,5 +248,12 @@
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.altText": "La vista de Cambios con marcas: los cambios de un archivo abiertos, uno de ellos marcado, y un mensaje de commit listo",
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.description": "Prepara archivos completos, o marca cambios individuales dentro de uno, en la vista **Cambios**, y luego confirma desde su cuadro de commit (Enmendar, Firma, un autor distinto, Confirmar y publicar). Con la IA activada, el botón de destello en el cuadro redacta un mensaje a partir de lo que preparaste. Tus stashes se listan bajo tus cambios: abre uno para ver cada archivo que contiene, y **Mover a Cambios** solo los archivos que quieras recuperar.\n[Abrir la vista de Cambios](command:workbench.view.extension.gitstudio)\nEn el editor: selecciona líneas y presiona __Ctrl/Cmd+Alt+G S__ para preparar los cambios que tocan.",
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.title": "Prepara cambios y confirma",
-  "walkthrough.gitstudio.gettingStarted.title": "Primeros pasos con GitStudio"
+  "walkthrough.gitstudio.gettingStarted.title": "Primeros pasos con GitStudio",
+  "config.gitstudio.diff.whitespace.description": "Tratamiento predeterminado de los espacios en blanco en las vistas de diferencias de GitStudio. Cierra y vuelve a abrir la vista para aplicar los cambios.",
+  "config.gitstudio.diff.highlight.description": "Nivel de detalle predeterminado del resaltado en las vistas de diferencias de GitStudio. Cierra y vuelve a abrir la vista para aplicar los cambios.",
+  "config.gitstudio.diff.whitespace.enumItemLabels.0": "No ignorar",
+  "config.gitstudio.diff.whitespace.enumItemLabels.1": "Ignorar espacios al final de línea",
+  "config.gitstudio.diff.whitespace.enumItemLabels.2": "Ignorar espacios en blanco",
+  "config.gitstudio.diff.highlight.enumItemLabels.0": "Resaltar palabras",
+  "config.gitstudio.diff.highlight.enumItemLabels.1": "Resaltar líneas"
 }

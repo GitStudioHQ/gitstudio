@@ -239,6 +239,7 @@ export class DiffPanel {
       ? await readUriText(vscode.Uri.parse(this.state.rightUri))
       : (this.state.rightText ?? "");
     return {
+      ...this.diffDefaults(),
       fileName: this.state.fileName,
       leftLabel: this.state.leftLabel,
       rightLabel: this.state.rightLabel,
@@ -246,6 +247,19 @@ export class DiffPanel {
       rightText,
       rightEditable: this.state.rightEditable && this.state.rightUri !== undefined,
     };
+  }
+
+  private diffDefaults(): Pick<DiffInitPayload, "renderOptions"> {
+    // Keep other hosts (Merge Studio and desktop) on their existing defaults.
+    if (this.host.product.settingsSection !== "gitstudio.merge") return {};
+    const config = vscode.workspace.getConfiguration("gitstudio.diff",
+      this.state.rightUri ? vscode.Uri.parse(this.state.rightUri) : undefined);
+    const whitespace = config.get<string>("whitespace", "none");
+    const highlight = config.get<string>("highlight", "words");
+    return { renderOptions: {
+      whitespace: whitespace === "all" || whitespace === "trailing" ? whitespace : "none",
+      showInner: highlight !== "lines",
+    } };
   }
 
   private async resolveLeftText(): Promise<string> {

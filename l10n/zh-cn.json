@@ -6111,5 +6111,7 @@
  "“{0}” will be permanently deleted on GitHub. This can't be undone.": "“{0}”将在 GitHub 上被永久删除。此操作无法撤销。",
  "•••••••• (stored — leave blank to keep)": "•••••••• （已存储 — 留空以保留）",
  "✓ deleted": "✓ 已删除",
- "✓ resolved": "✓ 已解决"
+ "✓ resolved": "✓ 已解决",
+ "Open working tree file": "打开工作区文件",
+ "Could not open working tree file: {0}": "无法打开工作区文件：{0}"
 }

@@ -3308,5 +3308,7 @@
  "“{0}” is not a stash git can read.": "«{0}» — не тайник, который может прочитать git.",
  "“{0}” is not a stash.": "«{0}» — не тайник.",
  "✓ deleted": "✓ удалено",
- "✓ resolved": "✓ разрешено"
+ "✓ resolved": "✓ разрешено",
+ "Open working tree file": "Открыть файл рабочего дерева",
+ "Could not open working tree file: {0}": "Не удалось открыть файл рабочего дерева: {0}"
 }

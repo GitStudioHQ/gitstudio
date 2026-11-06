@@ -6111,5 +6111,7 @@
  "“{0}” will be permanently deleted on GitHub. This can't be undone.": "“{0}”, GitHub'da kalıcı olarak silinecek. Bu geri alınamaz.",
  "•••••••• (stored — leave blank to keep)": "•••••••• (saklandı — korumak için boş bırakın)",
  "✓ deleted": "✓ silindi",
- "✓ resolved": "✓ çözüldü"
+ "✓ resolved": "✓ çözüldü",
+ "Open working tree file": "Çalışma ağacındaki dosyayı aç",
+ "Could not open working tree file: {0}": "Çalışma ağacındaki dosya açılamadı: {0}"
 }

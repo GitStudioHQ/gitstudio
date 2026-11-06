@@ -337,6 +337,16 @@ export class CommitGraphPanel {
         void (t.kind === "many" ? this.runMultiMenuAction(t.shas, msg.id) : this.runCommitMenuAction(msg.sha, msg.id));
         break;
       }
+      case "openWorkspaceFile": {
+        const active = this.repos.getActive();
+        if (active) {
+          const uri = vscode.Uri.joinPath(vscode.Uri.file(active.root), msg.path);
+          void vscode.window.showTextDocument(uri, { preview: false }).then(undefined, (error) => {
+            void vscode.window.showWarningMessage(l10n.t("Could not open working tree file: {0}", String(error)));
+          });
+        }
+        break;
+      }
       case "openFile":
         void this.doOpenFile(msg.sha, msg.path, !!msg.wip, msg.oldPath, msg.status);
         break;

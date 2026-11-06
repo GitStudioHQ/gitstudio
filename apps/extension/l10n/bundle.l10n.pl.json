@@ -3308,5 +3308,7 @@
  "“{0}” is not a stash git can read.": "„{0}” nie jest schowkiem, który git może odczytać.",
  "“{0}” is not a stash.": "„{0}” nie jest schowkiem.",
  "✓ deleted": "✓ usunięto",
- "✓ resolved": "✓ rozwiązano"
+ "✓ resolved": "✓ rozwiązano",
+ "Open working tree file": "Otwórz plik drzewa roboczego",
+ "Could not open working tree file: {0}": "Nie można otworzyć pliku drzewa roboczego: {0}"
 }

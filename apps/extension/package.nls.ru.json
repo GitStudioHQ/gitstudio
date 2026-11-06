@@ -248,5 +248,12 @@
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.altText": "Вид «Изменения» с отметками: изменения одного файла открыты, одно отмечено, и готово сообщение коммита",
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.description": "Добавляйте в индекс целые файлы или отмечайте отдельные изменения внутри одного, в виде **Изменения**, затем коммитьте из его поля коммита (Amend, Sign-off, другой автор, Commit & Push). При включённом AI кнопка со звёздочкой в поле составит сообщение по тому, что вы добавили в индекс. Ваши тайники перечислены под изменениями: откройте один, чтобы увидеть все файлы в нём, и **Move to Changes** — только те файлы, которые хотите вернуть.\n[Открыть вид «Изменения»](command:workbench.view.extension.gitstudio)\nВ редакторе: выделите строки и нажмите __Ctrl/Cmd+Alt+G S__, чтобы добавить в индекс изменения, которые они затрагивают.",
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.title": "Добавляйте изменения в индекс и коммитьте",
-  "walkthrough.gitstudio.gettingStarted.title": "Начало работы с GitStudio"
+  "walkthrough.gitstudio.gettingStarted.title": "Начало работы с GitStudio",
+  "config.gitstudio.diff.whitespace.description": "Обработка пробельных символов по умолчанию в представлениях различий GitStudio. Чтобы применить изменения, закройте и снова откройте представление различий.",
+  "config.gitstudio.diff.highlight.description": "Детализация подсветки по умолчанию в представлениях различий GitStudio. Чтобы применить изменения, закройте и снова откройте представление различий.",
+  "config.gitstudio.diff.whitespace.enumItemLabels.0": "Не игнорировать",
+  "config.gitstudio.diff.whitespace.enumItemLabels.1": "Игнорировать пробелы в конце строк",
+  "config.gitstudio.diff.whitespace.enumItemLabels.2": "Игнорировать пробельные символы",
+  "config.gitstudio.diff.highlight.enumItemLabels.0": "Подсвечивать слова",
+  "config.gitstudio.diff.highlight.enumItemLabels.1": "Подсвечивать строки"
 }

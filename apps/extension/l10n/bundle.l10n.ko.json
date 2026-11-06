@@ -3308,5 +3308,7 @@
  "“{0}” is not a stash git can read.": "“{0}”은 git이 읽을 수 있는 스태시가 아닙니다.",
  "“{0}” is not a stash.": "“{0}”은 스태시가 아닙니다.",
  "✓ deleted": "✓ 삭제됨",
- "✓ resolved": "✓ 해결됨"
+ "✓ resolved": "✓ 해결됨",
+ "Open working tree file": "작업 트리 파일 열기",
+ "Could not open working tree file: {0}": "작업 트리 파일을 열 수 없습니다: {0}"
 }

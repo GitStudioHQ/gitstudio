@@ -1324,6 +1324,36 @@
             "default": false,
             "description": "%config.gitstudio.merge.autoApplyNonConflicting.description%",
             "order": 5
+          },
+          "gitstudio.diff.whitespace": {
+            "type": "string",
+            "enum": [
+              "none",
+              "trailing",
+              "all"
+            ],
+            "default": "none",
+            "description": "%config.gitstudio.diff.whitespace.description%",
+            "enumItemLabels": [
+              "%config.gitstudio.diff.whitespace.enumItemLabels.0%",
+              "%config.gitstudio.diff.whitespace.enumItemLabels.1%",
+              "%config.gitstudio.diff.whitespace.enumItemLabels.2%"
+            ],
+            "order": 6
+          },
+          "gitstudio.diff.highlight": {
+            "type": "string",
+            "enum": [
+              "words",
+              "lines"
+            ],
+            "default": "words",
+            "description": "%config.gitstudio.diff.highlight.description%",
+            "enumItemLabels": [
+              "%config.gitstudio.diff.highlight.enumItemLabels.0%",
+              "%config.gitstudio.diff.highlight.enumItemLabels.1%"
+            ],
+            "order": 7
           }
         }
       },

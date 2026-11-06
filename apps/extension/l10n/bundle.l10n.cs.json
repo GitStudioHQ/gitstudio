@@ -3308,5 +3308,7 @@
  "“{0}” is not a stash git can read.": "„{0}“ není stash, který git umí přečíst.",
  "“{0}” is not a stash.": "„{0}“ není stash.",
  "✓ deleted": "✓ smazáno",
- "✓ resolved": "✓ vyřešeno"
+ "✓ resolved": "✓ vyřešeno",
+ "Open working tree file": "Otevřít soubor pracovního stromu",
+ "Could not open working tree file: {0}": "Nelze otevřít soubor pracovního stromu: {0}"
 }

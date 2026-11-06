@@ -122,6 +122,11 @@ function startDiff(root: HTMLElement, first: DiffInitPayload & { type: "diffInit
   root.replaceChildren(app);
 
   const view = new DiffView(content);
+  if (first.renderOptions) {
+    wsSelect.value = first.renderOptions.whitespace;
+    granSelect.value = first.renderOptions.showInner ? "words" : "lines";
+    view.setRenderOptions(first.renderOptions);
+  }
 
   view.onLargeFile = (large) => {
     largeNote.hidden = !large;

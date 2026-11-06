@@ -79,6 +79,8 @@ export interface MergeInitPayload {
 }
 
 export interface DiffInitPayload {
+  /** Host defaults, applied only when opening a new diff page. */
+  renderOptions?: { whitespace: "none" | "trailing" | "all"; showInner: boolean };
   leftLabel: string;
   rightLabel: string;
   leftText: string;

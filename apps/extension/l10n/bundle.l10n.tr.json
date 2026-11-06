@@ -3308,5 +3308,7 @@
  "“{0}” is not a stash git can read.": "“{0}”, git'in okuyabileceği bir zula değil.",
  "“{0}” is not a stash.": "“{0}” bir zula değil.",
  "✓ deleted": "✓ silindi",
- "✓ resolved": "✓ çözüldü"
+ "✓ resolved": "✓ çözüldü",
+ "Open working tree file": "Çalışma ağacındaki dosyayı aç",
+ "Could not open working tree file: {0}": "Çalışma ağacındaki dosya açılamadı: {0}"
 }

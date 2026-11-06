@@ -200,6 +200,11 @@ function start(root: HTMLElement): void {
   };
 
   // ── Details panel events → host ───────────────────────────────────────────
+  details.openWorkspaceFile = true;
+  details.addEventListener("gs-workspace-file-open", (e) => {
+    const d = (e as CustomEvent).detail as { path: string };
+    vscode.postMessage({ type: "openWorkspaceFile", path: d.path });
+  });
   details.addEventListener("gs-file-open", (e) => {
     const d = (e as CustomEvent).detail as { path: string; oldPath?: string; status?: string; wip?: boolean };
     const sha = details.details?.sha ?? "";

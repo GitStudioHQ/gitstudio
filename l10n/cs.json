@@ -6111,5 +6111,7 @@
  "“{0}” will be permanently deleted on GitHub. This can't be undone.": "„{0}“ bude trvale smazáno na GitHubu. Toto nelze vrátit zpět.",
  "•••••••• (stored — leave blank to keep)": "•••••••• (uloženo — nechte prázdné pro zachování)",
  "✓ deleted": "✓ smazáno",
- "✓ resolved": "✓ vyřešeno"
+ "✓ resolved": "✓ vyřešeno",
+ "Open working tree file": "Otevřít soubor pracovního stromu",
+ "Could not open working tree file: {0}": "Nelze otevřít soubor pracovního stromu: {0}"
 }
