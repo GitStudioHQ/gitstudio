@@ -97,6 +97,81 @@ test("a malformed request IS reported — that one is ours", async () => {
   }
 });
 
+// ── "Pr create" / "Pr review": a 422's reason lives in errors[] ──────────────
+
+test("a 422 says GitHub's reasons, not just \"Validation Failed\"", async () => {
+  // The user read "Validation Failed" and the reporter filed it, because the
+  // sentence that says WHY was in errors[] and nobody read it.
+  const exists = await githubHttpError(
+    json(422, {
+      message: "Validation Failed",
+      errors: [{ resource: "PullRequest", code: "custom", message: "A pull request already exists for acme:feature." }],
+    }),
+  );
+  assert.equal(exists.message, "A pull request already exists for acme:feature.");
+
+  // Reviews send bare strings, under "Unprocessable Entity".
+  const line = await githubHttpError(
+    json(422, { message: "Unprocessable Entity", errors: ["Pull request review thread line must be part of the diff"] }),
+  );
+  assert.equal(line.message, "Pull request review thread line must be part of the diff");
+
+  // A field-only reason still says which field, and a specific top-level
+  // message is kept in front of its reasons.
+  const field = await githubHttpError(
+    json(422, { message: "Invalid request", errors: [{ resource: "Label", field: "color", code: "invalid" }] }),
+  );
+  assert.equal(field.message, "Invalid request: Label color invalid");
+
+  // The head branch GitHub does not have says what to do about it.
+  const head = await githubHttpError(
+    json(422, { message: "Validation Failed", errors: [{ resource: "PullRequest", field: "head", code: "invalid" }] }),
+  );
+  assert.match(head.message, /Push it/);
+});
+
+test("a 422 about the repository as it stands is a state, not a crash", async () => {
+  const states: unknown[] = [
+    { message: "Validation Failed", errors: [{ resource: "PullRequest", code: "custom", message: "A pull request already exists for acme:feature." }] },
+    { message: "Validation Failed", errors: [{ resource: "PullRequest", code: "custom", message: "No commits between main and feature" }] },
+    { message: "Validation Failed", errors: [{ resource: "PullRequest", field: "head", code: "invalid" }] },
+    { message: "Validation Failed", errors: [{ resource: "PullRequest", field: "base", code: "invalid" }] },
+    { message: "Validation Failed", errors: [{ resource: "Label", field: "name", code: "already_exists" }] },
+    { message: "Unprocessable Entity", errors: ["Review Can not approve your own pull request"] },
+    { message: "Unprocessable Entity", errors: ["Review Can not request changes on your own pull request"] },
+    { message: "Unprocessable Entity", errors: ["User can only have one pending review per pull request"] },
+    { message: "There are no new commits on the base branch." },
+  ];
+  for (const body of states) {
+    const e = await githubHttpError(json(422, body));
+    assert.equal(isExpectedError(e), true, `must not be reported: ${e.message}`);
+  }
+});
+
+test("a 422 that says we sent it wrong keeps reporting", async () => {
+  const ours: unknown[] = [
+    // No reason at all: the payload's fault by default.
+    { message: "Validation Failed" },
+    { message: "Unprocessable Entity", errors: [] },
+    { message: "Validation Failed", errors: [{ resource: "PullRequest", field: "title", code: "missing_field" }] },
+    { message: "Invalid request", errors: [{ resource: "Label", field: "color", code: "invalid" }] },
+    { message: "Unprocessable Entity", errors: ["Pull request review thread line must be part of the diff"] },
+    { message: "Unprocessable Entity", errors: ["Line could not be resolved"] },
+    // One state does not launder a defect riding the same answer.
+    {
+      message: "Validation Failed",
+      errors: [
+        { resource: "PullRequest", code: "custom", message: "No commits between main and feature" },
+        { resource: "PullRequest", field: "title", code: "missing_field" },
+      ],
+    },
+  ];
+  for (const body of ours) {
+    const e = await githubHttpError(json(422, body));
+    assert.equal(isExpectedError(e), false, `must still report: ${e.message}`);
+  }
+});
+
 test("404 stays reported, deliberately", async () => {
   // The edge case in the policy. Some 404s are an auth state (GitHub answers 404
   // rather than 403 for a private repo a token cannot see), but a path we built

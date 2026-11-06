@@ -1943,6 +1943,8 @@
  "GitHub didn't answer any of the work searches.": "GitHub, iş aramalarının hiçbirini yanıtlamadı.",
  "GitHub didn't answer.": "GitHub yanıt vermedi.",
  "GitHub didn't give this run a link": "GitHub bu çalıştırmaya bir bağlantı vermedi",
+ "GitHub doesn't have the base branch. Pick another, or push it first.": "GitHub'da temel dal yok. Başka birini seçin ya da önce gönderin.",
+ "GitHub doesn't have the branch to merge. Push it, then try again.": "GitHub'da birleştirilecek dal yok. Gönderin, sonra yeniden deneyin.",
  "GitHub doesn't say which: a team's name takes the read:org permission, which GitStudio's sign-in isn't given.": "GitHub hangisi olduğunu söylemiyor: bir ekibin adı read:org iznini gerektirir ve GitStudio'nun oturum açmasında bu izin yok.",
  "GitHub has no log for this job right now. A job's log appears once the job starts running, and GitHub deletes old logs after a while.": "GitHub'da şu anda bu iş için günlük yok. Bir işin günlüğü, iş çalışmaya başladığında görünür ve GitHub eski günlükleri bir süre sonra siler.",
  "GitHub has no pull request {0}#{1}": "GitHub'da {0}#{1} çekme isteği yok",

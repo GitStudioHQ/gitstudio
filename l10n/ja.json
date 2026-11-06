@@ -1943,6 +1943,8 @@
  "GitHub didn't answer any of the work searches.": "GitHub は作業検索のいずれにも応答しませんでした。",
  "GitHub didn't answer.": "GitHub は応答しませんでした。",
  "GitHub didn't give this run a link": "GitHub はこの実行にリンクを提供しませんでした",
+ "GitHub doesn't have the base branch. Pick another, or push it first.": "GitHub にベースブランチがありません。別のブランチを選ぶか、先にプッシュしてください。",
+ "GitHub doesn't have the branch to merge. Push it, then try again.": "GitHub にマージするブランチがありません。プッシュしてからもう一度お試しください。",
  "GitHub doesn't say which: a team's name takes the read:org permission, which GitStudio's sign-in isn't given.": "GitHub はどのチームかを示しません: チーム名には read:org 権限が必要ですが、GitStudio のサインインにはその権限がありません。",
  "GitHub has no log for this job right now. A job's log appears once the job starts running, and GitHub deletes old logs after a while.": "GitHub には現在このジョブのログがありません。ジョブのログはジョブの実行が始まると表示され、古いログは一定期間が過ぎると GitHub によって削除されます。",
  "GitHub has no pull request {0}#{1}": "GitHub にプルリクエスト {0}#{1} はありません",

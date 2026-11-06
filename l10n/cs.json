@@ -1943,6 +1943,8 @@
  "GitHub didn't answer any of the work searches.": "GitHub neodpověděl na žádné z vyhledávání práce.",
  "GitHub didn't answer.": "GitHub neodpověděl.",
  "GitHub didn't give this run a link": "GitHub neposkytl pro tento běh odkaz",
+ "GitHub doesn't have the base branch. Pick another, or push it first.": "GitHub nemá základní větev. Vyberte jinou, nebo ji nejdřív odešlete.",
+ "GitHub doesn't have the branch to merge. Push it, then try again.": "GitHub nemá větev ke sloučení. Odešlete ji a zkuste to znovu.",
  "GitHub doesn't say which: a team's name takes the read:org permission, which GitStudio's sign-in isn't given.": "GitHub neříká který: název týmu vyžaduje oprávnění read:org, které přihlášení GitStudia nemá.",
  "GitHub has no log for this job right now. A job's log appears once the job starts running, and GitHub deletes old logs after a while.": "GitHub pro tuto úlohu teď nemá žádný log. Log úlohy se objeví, jakmile se úloha spustí, a staré logy GitHub po čase maže.",
  "GitHub has no pull request {0}#{1}": "GitHub nemá pull request {0}#{1}",

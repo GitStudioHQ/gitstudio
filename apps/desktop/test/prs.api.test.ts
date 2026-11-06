@@ -62,14 +62,30 @@ test("a draft PR with a body sends both", async (t) => {
   assert.deepEqual(gh.calls[0].body, { title: "WIP", head: "f", base: "main", body: "notes", draft: true });
 });
 
-test("a PR GitHub refuses to create comes back as its message", async (t) => {
+test("a PR GitHub refuses to create comes back as its reason, not \"Validation Failed\"", async (t) => {
+  // GitHub's real shape: the generic word on top, the reason in errors[].
+  // The user used to read only the generic word, and it was crash-reported.
   const gh = fakeGitHub(t, {
-    [`POST ${R}/pulls`]: () => reply(422, { message: "A pull request already exists for o:feat." }),
+    [`POST ${R}/pulls`]: () =>
+      reply(422, {
+        message: "Validation Failed",
+        errors: [{ resource: "PullRequest", code: "custom", message: "A pull request already exists for o:feat." }],
+      }),
   });
   assert.deepEqual(await prCreate(gh.client, "o", "r", { title: "x", head: "feat", base: "main" }), {
     ok: false,
     changed: false,
     message: "A pull request already exists for o:feat.",
+    expected: true,
+  });
+  // A payload GitHub calls malformed still reports.
+  gh.route(`POST ${R}/pulls`, () =>
+    reply(422, { message: "Validation Failed", errors: [{ resource: "PullRequest", field: "title", code: "missing_field" }] }),
+  );
+  assert.deepEqual(await prCreate(gh.client, "o", "r", { title: "", head: "feat", base: "main" }), {
+    ok: false,
+    changed: false,
+    message: "PullRequest title missing_field",
   });
 });
 
@@ -100,12 +116,14 @@ test("a review sends the event, the body and the commit it was made against", as
 
 test("a review GitHub refuses is a result", async (t) => {
   const gh = fakeGitHub(t, {
-    [`POST ${R}/pulls/3/reviews`]: () => reply(422, { message: "Can not approve your own pull request" }),
+    [`POST ${R}/pulls/3/reviews`]: () =>
+      reply(422, { message: "Unprocessable Entity", errors: ["Review Can not approve your own pull request"] }),
   });
   assert.deepEqual(await prReview(gh.client, "o", "r", { number: 3, event: "APPROVE" }), {
     ok: false,
     changed: false,
-    message: "Can not approve your own pull request",
+    message: "Review Can not approve your own pull request",
+    expected: true,
   });
 });
 
@@ -506,5 +524,6 @@ test("update-branch PUTs to the PR and surfaces 'already up to date' as a result
     ok: false,
     changed: false,
     message: "There are no new commits on the base branch.",
+    expected: true,
   });
 });

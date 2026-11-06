@@ -9,8 +9,9 @@
  *
  * The policy, stated once so it stops being decided case by case:
  *
- *   REPORT   — our bugs. A malformed request (400/422), a path we built wrong
- *              (404), a response we failed to parse.
+ *   REPORT   — our bugs. A malformed request (400/422 — but see the 422
+ *              states below), a path we built wrong (404), a response we
+ *              failed to parse.
  *   IGNORE   — the network, the user's auth state, and GitHub's own health.
  *              Being offline, a revoked or expired token, a scope the user did
  *              not grant, the rate limiter, and 5xx are all things a user can
@@ -33,6 +34,18 @@
  *     could not resolve.
  *
  * Both were filed as crashes (reports #13, #14, #17) and neither is a defect.
+ *
+ * 422 is the third, and the one where the status says least. GitHub answers
+ * "Validation Failed" / "Unprocessable Entity" for a payload we built wrong AND
+ * for a request that was well formed but cannot happen in the repository as it
+ * stands — a pull request that already exists, no commits between the two
+ * branches, approving your own pull request. The reason is in the body's
+ * `errors[]`, which this module used to drop: the user read "Validation
+ * Failed" and the reporter filed it ("Pr create", "Pr review"). Now the
+ * reasons ARE the message, and a 422 is expected only when EVERY reason is one
+ * of the known states in VALIDATION_STATES. A missing field, an invalid value,
+ * a review line outside the diff, a bare 422 with no reasons — and anything
+ * GitHub says that we have not seen — still report.
  *
  * Nothing here changes what the user sees: an ExpectedError carries the same
  * message and reaches the renderer as the same rejection. Only the reporter
@@ -84,8 +97,11 @@ export function networkError(
  */
 export async function githubHttpError(res: Response): Promise<Error> {
   let detail = "";
+  let reasons: ValidationReason[] = [];
   try {
-    detail = ((await res.json()) as { message?: string })?.message ?? "";
+    const body = (await res.json()) as { message?: string; errors?: unknown } | null;
+    detail = body?.message ?? "";
+    if (Array.isArray(body?.errors)) reasons = body.errors as ValidationReason[];
   } catch {
     /* non-JSON body */
   }
@@ -131,7 +147,91 @@ export async function githubHttpError(res: Response): Promise<Error> {
   if (res.status === 404) {
     return new Error(detail || l10n.t("Not found on GitHub."));
   }
+  if (res.status === 422) {
+    return validationError(detail, reasons);
+  }
   return new Error(detail || l10n.t("GitHub request failed (HTTP {0}).", res.status));
+}
+
+/**
+ * One entry of a 422 body's `errors[]`. GitHub sends either a bare sentence or
+ * an object: `{ resource, field, code }`, with a `message` when `code` is
+ * "custom" — "A pull request already exists for acme:feature.".
+ */
+type ValidationReason =
+  | string
+  | { resource?: string; field?: string; code?: string; message?: string };
+
+/** GitHub's two words for "see errors[]" — they say nothing on their own. */
+const GENERIC_422 = /^(?:Validation Failed|Unprocessable Entity)\.?$/i;
+
+/**
+ * The 422 reasons that describe the repository or the account as they stand,
+ * not a request we built wrong. Each is something the user can be in the
+ * middle of with a perfectly formed payload. Matched on GitHub's English,
+ * which is the only language its API speaks.
+ */
+const VALIDATION_STATES: readonly RegExp[] = [
+  // Create pull request: one is already open for this head, or the head has
+  // nothing the base does not.
+  /\bA pull request already exists for\b/i,
+  /\bNo commits between\b/i,
+  // Review: GitHub's rules about whose pull request you are reviewing, and
+  // a pending review the user started on github.com.
+  /\bCan ?not (?:approve|request changes on) your own pull request\b/i,
+  /\bone pending review per pull request\b/i,
+  // Update branch: already up to date, or the merge would conflict.
+  /\bno new commits on the base branch\b/i,
+  /\bmerge conflict between base and head\b/i,
+];
+
+/** A reason as the sentence the user reads. */
+function reasonText(r: ValidationReason): string {
+  if (typeof r === "string") return r;
+  if (r.message) return r.message;
+  // A pull request whose head or base GitHub does not have: the branch was
+  // never pushed, or was deleted on the remote. GitHub says only
+  // "PullRequest head invalid", which the user cannot act on.
+  if (r.resource === "PullRequest" && r.code === "invalid" && r.field === "head") {
+    return l10n.t("GitHub doesn't have the branch to merge. Push it, then try again.");
+  }
+  if (r.resource === "PullRequest" && r.code === "invalid" && r.field === "base") {
+    return l10n.t("GitHub doesn't have the base branch. Pick another, or push it first.");
+  }
+  return [r.resource, r.field, r.code].filter(Boolean).join(" ");
+}
+
+/** Whether one reason is a state (see VALIDATION_STATES) rather than our payload. */
+function isValidationState(r: ValidationReason): boolean {
+  if (typeof r === "object" && r !== null) {
+    // Another resource already has this value — a label, a tag, a release.
+    if (r.code === "already_exists") return true;
+    if (r.resource === "PullRequest" && r.code === "invalid" && (r.field === "head" || r.field === "base")) {
+      return true;
+    }
+  }
+  const text = typeof r === "string" ? r : r?.message ?? "";
+  return VALIDATION_STATES.some((re) => re.test(text));
+}
+
+/**
+ * A 422 as the error the user sees: GitHub's reasons, not its "Validation
+ * Failed". Expected only when there ARE reasons and every one of them is a
+ * state; a 422 that names no reason at all is the payload's fault by default.
+ */
+function validationError(detail: string, raw: ValidationReason[]): Error {
+  const reasons = raw.filter((r) => typeof r === "string" || (typeof r === "object" && r !== null));
+  const texts = reasons.map(reasonText).filter((t) => t.trim().length > 0);
+  // Some 422s put the whole reason in `message` and send no errors[] — update
+  // branch's "There are no new commits on the base branch." is one.
+  const specific = detail && !GENERIC_422.test(detail.trim()) ? detail : "";
+  const message = texts.length
+    ? specific
+      ? `${specific}: ${texts.join("; ")}`
+      : texts.join("; ")
+    : specific || detail || l10n.t("GitHub request failed (HTTP {0}).", 422);
+  const states = reasons.length ? reasons : specific ? [specific] : [];
+  return states.length > 0 && states.every(isValidationState) ? new ExpectedError(message) : new Error(message);
 }
 
 /** One entry of a GraphQL response's `errors` array, as GitHub sends it. */

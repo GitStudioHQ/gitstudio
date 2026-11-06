@@ -1943,6 +1943,8 @@
  "GitHub didn't answer any of the work searches.": "GitHub nie odpowiedział na żadne z wyszukiwań pracy.",
  "GitHub didn't answer.": "GitHub nie odpowiedział.",
  "GitHub didn't give this run a link": "GitHub nie podał linku do tego przebiegu",
+ "GitHub doesn't have the base branch. Pick another, or push it first.": "GitHub nie ma gałęzi bazowej. Wybierz inną albo najpierw ją wypchnij.",
+ "GitHub doesn't have the branch to merge. Push it, then try again.": "GitHub nie ma gałęzi do scalenia. Wypchnij ją i spróbuj ponownie.",
  "GitHub doesn't say which: a team's name takes the read:org permission, which GitStudio's sign-in isn't given.": "GitHub nie mówi, który: nazwa zespołu wymaga uprawnienia read:org, którego logowanie GitStudio nie ma.",
  "GitHub has no log for this job right now. A job's log appears once the job starts running, and GitHub deletes old logs after a while.": "GitHub nie ma teraz logu dla tego zadania. Log zadania pojawia się, gdy zadanie zaczyna się wykonywać, a stare logi GitHub po pewnym czasie usuwa.",
  "GitHub has no pull request {0}#{1}": "GitHub nie ma pull requesta {0}#{1}",

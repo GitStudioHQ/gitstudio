@@ -1943,6 +1943,8 @@
  "GitHub didn't answer any of the work searches.": "GitHub не ответил ни на один из поисков по работе.",
  "GitHub didn't answer.": "GitHub не ответил.",
  "GitHub didn't give this run a link": "GitHub не дал ссылку для этого запуска",
+ "GitHub doesn't have the base branch. Pick another, or push it first.": "На GitHub нет базовой ветки. Выберите другую или сначала отправьте её.",
+ "GitHub doesn't have the branch to merge. Push it, then try again.": "На GitHub нет ветки для слияния. Отправьте её и повторите попытку.",
  "GitHub doesn't say which: a team's name takes the read:org permission, which GitStudio's sign-in isn't given.": "GitHub не говорит, какая: для имени команды нужно разрешение read:org, которого нет у входа GitStudio.",
  "GitHub has no log for this job right now. A job's log appears once the job starts running, and GitHub deletes old logs after a while.": "Сейчас у GitHub нет журнала для этого задания. Журнал задания появляется, когда задание начинает выполняться, а старые журналы GitHub через некоторое время удаляет.",
  "GitHub has no pull request {0}#{1}": "На GitHub нет pull request {0}#{1}",

@@ -1516,6 +1516,8 @@
  "GitHub did not return this file's diff.": "GitHub did not return this file's diff.",
  "GitHub didn't answer any of the work searches.": "GitHub didn't answer any of the work searches.",
  "GitHub didn't give this run a link": "GitHub didn't give this run a link",
+ "GitHub doesn't have the base branch. Pick another, or push it first.": "GitHub doesn't have the base branch. Pick another, or push it first.",
+ "GitHub doesn't have the branch to merge. Push it, then try again.": "GitHub doesn't have the branch to merge. Push it, then try again.",
  "GitHub doesn't say which: a team's name takes the read:org permission, which GitStudio's sign-in isn't given.": "GitHub doesn't say which: a team's name takes the read:org permission, which GitStudio's sign-in isn't given.",
  "GitHub has no log for this job right now. A job's log appears once the job starts running, and GitHub deletes old logs after a while.": "GitHub has no log for this job right now. A job's log appears once the job starts running, and GitHub deletes old logs after a while.",
  "GitHub has no repository {0} — or this sign-in can't see it.": "GitHub has no repository {0} — or this sign-in can't see it.",

@@ -1943,6 +1943,8 @@
  "GitHub didn't answer any of the work searches.": "GitHub 沒有響應任何工作搜尋。",
  "GitHub didn't answer.": "GitHub 沒有響應。",
  "GitHub didn't give this run a link": "GitHub 沒有為此執行提供連結",
+ "GitHub doesn't have the base branch. Pick another, or push it first.": "GitHub 上沒有基礎分支。請選擇其他分支，或先推送它。",
+ "GitHub doesn't have the branch to merge. Push it, then try again.": "GitHub 上沒有要合併的分支。請先推送，然後再試一次。",
  "GitHub doesn't say which: a team's name takes the read:org permission, which GitStudio's sign-in isn't given.": "GitHub 沒有說明是哪個團隊：讀取團隊名稱需要 read:org 許可權，而 GitStudio 的登入沒有該許可權。",
  "GitHub has no log for this job right now. A job's log appears once the job starts running, and GitHub deletes old logs after a while.": "GitHub 目前沒有此作業的日誌。作業開始執行後才會有日誌，而且 GitHub 會在一段時間後刪除舊日誌。",
  "GitHub has no pull request {0}#{1}": "GitHub 上沒有拉取請求 {0}#{1}",
