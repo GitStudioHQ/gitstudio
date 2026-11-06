@@ -22,6 +22,7 @@ import { computeGraphLayout } from "@gitstudio/engine/graph/layout";
 import type { GraphInputCommit } from "@gitstudio/engine/graph/layout";
 import { computeHunks, applySelectedChanges } from "@gitstudio/engine/staging/applyLineChanges";
 import { selectionTakes, type LineRange } from "@gitstudio/engine/staging/applyLineChanges";
+import { computeChangeBlocks } from "@gitstudio/engine/staging/blockStaging";
 import { toOriginalSelection } from "@gitstudio/engine/staging/selectionStaging";
 import { buildWireRows, wireRefs } from "@gitstudio/host-bridge/graphWire";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
@@ -3800,13 +3801,11 @@ export class GitBridge {
         let selection = ranges;
         if (req.reverse) {
           selection = toOriginalSelection(ranges, computeHunks(original, (await readWorking(ctx, rel)).text));
-          if (!selection.length) {
-            return { ok: false, changed: false, message: l10n.t("Nothing to apply in the selection.") };
-          }
+          if (!selection.length) return nothingToApply(ctx, rel, ranges, true);
         }
         const sideOf = (h: (typeof hunks)[number]): LineRange => (req.reverse ? h.original : h.modified);
         const selected = hunks.filter((h) => selection.some((r) => selectionTakes(sideOf(h), r)));
-        if (!selected.length) return { ok: false, changed: false, message: l10n.t("Nothing to apply in the selection.") };
+        if (!selected.length) return nothingToApply(ctx, rel, ranges, !!req.reverse);
         const content = applySelectedChanges(original, modified, selected.map((h) => h.modified));
         // …and report what actually happened. This discarded stageContent's
         // result and answered ok:true unconditionally, so a write that failed
@@ -4011,6 +4010,51 @@ export class GitBridge {
     }
     return this.serialize(() => run(ctx, this.repos.runnerOptions()));
   }
+}
+
+/**
+ * Why a line stage or unstage found nothing in the selection — and whether
+ * that is the user's situation or ours.
+ *
+ * "Nothing to apply in the selection." was kept reporting on purpose: it was
+ * once the symptom of a real bug (the selection matched against the wrong
+ * side of the diff, for a line plainly on screen — see stageLines). It fired
+ * again (two reports, 2.7.0), and nothing could tell a recurrence from the
+ * ordinary case of a selection that holds no change: lines selected in the
+ * unchanged part of the file, or a change that is already staged (or, to
+ * unstage, not staged at all). Those are now said as what they are, and
+ * `expected`. The original sentence — and its report — is left for the one
+ * case that should not happen: the selection is on a change the diff on
+ * screen shows (HEAD ↔ working tree) that is still there to stage or unstage.
+ */
+async function nothingToApply(
+  ctx: GitContext,
+  rel: string,
+  selection: LineRange[],
+  reverse: boolean,
+): Promise<{ ok: false; changed: false; expected?: true; message: string }> {
+  try {
+    const head = await headSideName(ctx, rel).then((name) => (name ? ctx.staging.headContent(name) : ""));
+    const working = (await readWorking(ctx, rel)).text;
+    const index = await ctx.staging.indexContent(rel);
+    // The changes on screen (HEAD ↔ working tree, in the working-tree numbers
+    // the selection arrives in), each with how much of it the index holds.
+    const touched = computeChangeBlocks(head, index, working).filter((b) =>
+      selection.some((r) => selectionTakes(b.working, r)),
+    );
+    if (!touched.length) {
+      return { ok: false, changed: false, expected: true, message: l10n.t("The selected lines have no changes.") };
+    }
+    if (!reverse && touched.every((b) => b.state === "staged")) {
+      return { ok: false, changed: false, expected: true, message: l10n.t("The selected changes are already staged.") };
+    }
+    if (reverse && touched.every((b) => b.state === "unstaged")) {
+      return { ok: false, changed: false, expected: true, message: l10n.t("Nothing in the selection is staged.") };
+    }
+  } catch {
+    // Fall through to the sentence that reports: better a report than a guess.
+  }
+  return { ok: false, changed: false, message: l10n.t("Nothing to apply in the selection.") };
 }
 
 /** 1-based line numbers whose preceding EDGE a selection reached, as the empty

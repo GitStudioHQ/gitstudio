@@ -26,6 +26,7 @@ import { rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { IpcEvents, OkResult, UpdateCheckResult } from "../shared/ipc";
 import { netFetch } from "./netFetch";
+import { networkReason } from "@gitstudio/ai/networkReason";
 
 export interface AutoUpdateOptions {
   isDev: boolean;
@@ -346,7 +347,7 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
     } catch (e) {
       state = "available";
       void unlink(tmp).catch(() => {});
-      return { ok: false, message: e instanceof Error ? e.message : l10n.t("The download failed.") };
+      return downloadFailure(e);
     }
   };
 
@@ -439,7 +440,7 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
       return { ok: true };
     } catch (e) {
       state = "available";
-      return { ok: false, message: e instanceof Error ? e.message : l10n.t("The download failed.") };
+      return downloadFailure(e);
     }
   };
 
@@ -501,3 +502,22 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
 
   return manager;
 }
+
+/**
+ * A download that failed. When the network did not carry it — offline, a
+ * timeout, a dropped or refused connection ("The operation was aborted due to
+ * timeout", "fetch failed": reports #61, #62) — that is the user's network, and
+ * the answer is `expected`: shown, retried by the user, never crash-reported.
+ * Anything else (a file we could not write, a release with no asset) reports.
+ */
+export function downloadFailure(e: unknown): OkResult {
+  const message = e instanceof Error ? e.message : l10n.t("The download failed.");
+  const reason = networkReason(e);
+  const network =
+    (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError" || e.message === "fetch failed")) ||
+    (reason !== undefined && /^(?:ENOTFOUND|ECONNRESET|ECONNREFUSED|ECONNABORTED|ETIMEDOUT|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH|ENETDOWN|EPIPE|UND_ERR_[A-Z_]+|ERR_(?:NETWORK|INTERNET|NAME|CONNECTION|TIMED|PROXY|SSL|CERT|ADDRESS)[A-Z0-9_]*|TimeoutError)$/.test(reason));
+  return network
+    ? { ok: false, expected: true, message: l10n.t("The download didn't finish — check your connection and try again. ({0})", reason ?? message) }
+    : { ok: false, message };
+}
+

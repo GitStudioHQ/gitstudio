@@ -38,6 +38,7 @@ import {
   squashQuestion,
 } from "@gitstudio/engine/rebase/many";
 import * as l10n from "@vscode/l10n";
+import { userStateOutcome } from "@gitstudio/host-bridge/gitOutcomes";
 
 /** The commit actions as plain items for the IN-GRAPH popover (no vscode types
  * / codicon markup) — the webview renders these; ids match runCommitAction.
@@ -1309,8 +1310,13 @@ async function showGitError(
   // "GitStudio: Cherry-pick failed — <git's reason>", as every failure reads.
   void vscode.window.showErrorMessage(failed(action, stderr));
   // Anonymous, scrubbed crash report so we hear about failures during beta
-  // (no-op if the user turned reporting off or VS Code telemetry is off).
-  ErrorReporter.current?.captureGitError(op, stderr);
+  // (no-op if the user turned reporting off or VS Code telemetry is off) —
+  // unless git's words are about the user's situation: a name already taken,
+  // a branch not merged, credentials, the network, another git holding the
+  // index. The rule is shared with the desktop's reporter (gitOutcomes.ts).
+  if (!userStateOutcome(stderr)) {
+    ErrorReporter.current?.captureGitError(op, stderr);
+  }
 }
 
 function flash(message: string): void {

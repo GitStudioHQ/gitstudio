@@ -118,7 +118,7 @@ export class ErrorReporter {
   }
 
   private send(event: string, fields: Record<string, string>): void {
-    if (!this.enabled || !this.endpoint) {
+    if (!this.enabled || !this.endpoint || !isShippedBuild(this.meta.appVersion)) {
       return;
     }
     if (this.sent >= MAX_EVENTS_PER_SESSION) {
@@ -174,6 +174,17 @@ async function persist(state: Persisted): Promise<void> {
   } catch {
     // Consent still applies in-memory this session even if the write fails.
   }
+}
+
+/**
+ * Whether this is a build users run. A test that loads the main process under
+ * plain Node with a stand-in `app` (no Electron, a "0.0.0-…" version) posted a
+ * real report to the collector — "app.exit is not a function", from version
+ * "0.0.0-quit-test" on "Electron ?" (report #78). Nothing that is not a
+ * released app may reach it.
+ */
+export function isShippedBuild(appVersion: string, electron = process.versions.electron): boolean {
+  return !!electron && !/^0\.0\.0(?:[-+.]|$)/.test(appVersion);
 }
 
 function safeAppVersion(): string {
