@@ -4,6 +4,22 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Open a changed file itself from the commit details.** Each changed file's
+  row in the graph's details pane has an Open working tree file button beside
+  the diff its click opens: the file as it is on disk now, in the editor VS
+  Code gives it (an image opens as an image). It shows on the row's hover. A
+  file the commit touched that has since been deleted or renamed is said so.
+- **Where GitStudio's comparison starts.** `gitstudio.diff.whitespace` (Do not
+  ignore, Trim whitespaces, Ignore whitespaces) and `gitstudio.diff.highlight`
+  (Highlight words, Highlight lines) preset the comparison's two toolbar
+  choices for every diff it opens; the toolbar still changes them for one
+  diff. VS Code's own diff editor keeps `diffEditor.ignoreTrimWhitespace`.
+  Thanks to [@Albelt](https://github.com/Albelt)
+  ([#146](https://github.com/GitStudioHQ/gitstudio/pull/146)).
+
 ## [1.23.0] - 2026-11-02
 
 ### Added

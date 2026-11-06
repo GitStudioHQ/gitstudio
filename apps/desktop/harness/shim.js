@@ -1195,6 +1195,8 @@
     customSeq: 0,
     /** Every editor id an `editors:open` asked for, in order. */
     opened: [],
+    /** Every working-tree file an `editors:openFile` asked for, in order. */
+    openedFiles: [],
   };
   window.__GS_EDITORS = editorsState;
   const editorsView = () => {
@@ -1907,6 +1909,11 @@
     "editors:open": ({ id }) => {
       editorsState.opened.push(id);
       return { ok: true };
+    },
+    "editors:openFile": ({ path }) => {
+      editorsState.openedFiles.push(path);
+      const fav = editorsView().editors.find((e) => e.isDefault);
+      return fav ? { ok: true, editor: fav.name } : { ok: true };
     },
     "editors:setShown": ({ id, shown }) => {
       editorsState.hidden = editorsState.hidden.filter((h) => h !== id);

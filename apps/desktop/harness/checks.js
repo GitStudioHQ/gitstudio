@@ -1287,6 +1287,67 @@
      * `?ws=1` adds a file whose only change is a re-indent and some trailing
      * spaces; `.jb-stage-tick` is one per change block and is plain DOM.
      */
+    /**
+     * Settings > Code and comparisons sets where every comparison starts
+     * (#146) - and the Changes view's kept panel, open before the change,
+     * follows it: the toggle reads on, and the whitespace-only file is clean.
+     * Then back, so the stored choice does not leak into other cases.
+     */
+    "settings-sets-where-comparisons-start": async (f) => {
+      const c = check(f);
+      const ticks = () => $$(".jb-stage-tick").length;
+      c.ok(ticks() > 0, "precondition: with whitespace shown, the re-indent is a change");
+      const pick = async (value) => {
+        $('[data-view="settings"]')?.click();
+        await settle(500);
+        const b = $$('.settings-seg-btn[data-diff-default="' + value + '"]')[0];
+        c.ok(!!b, "Settings offers " + value);
+        b?.click();
+        await settle(100);
+        c.eq(b?.getAttribute("aria-pressed"), "true", "and " + value + " reads as chosen");
+        $('[data-view="changes"]')?.click();
+        await settle(1600);
+      };
+      await pick("trailing");
+      c.eq($(".dc-ws")?.getAttribute("aria-pressed"), "true", "back in Changes, the toggle says whitespace is ignored");
+      c.eq(ticks(), 0, "and the whitespace-only file has no changes left");
+      await pick("none");
+      c.eq($(".dc-ws")?.getAttribute("aria-pressed"), "false", "set back, the toggle follows");
+      c.ok(ticks() > 0, "and the re-indent is a change again");
+    },
+
+    /**
+     * The commit details' working-tree button (#146) opens the file itself in
+     * your favourite editor; the row's own click still opens its diff.
+     */
+    "a-changed-file-opens-in-your-editor": async (f) => {
+      const c = check(f);
+      noAnimation();
+      await settle(600);
+      const sr = $("gitstudio-graph")?.shadowRoot;
+      if (!sr) return c.ok(false, "the graph is mounted");
+      // A commit the shim has details for (the Shift-click stack's newest).
+      sr.querySelector('.row[data-sha="3c0ffee1a2b3c4d5e6f7"]')
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true }));
+      await settle(800);
+      const psr = $(".graph-details gitstudio-commit-details")?.shadowRoot;
+      const row = psr && $$(".file", psr).find((r) => !!r.querySelector(".fopen"));
+      c.ok(!!row, "a changed file's row offers its working-tree copy");
+      if (!row) return;
+      c.eq($$(".file.deleted .fopen", psr).length, 0, "a deleted file offers none");
+      // The shadow root carries a hand-picked codicon subset: a glyph missing
+      // from it is a blank button that still passes every other assertion.
+      const glyph = getComputedStyle(row.querySelector(".fopen .codicon"), "::before").content;
+      c.ok(glyph !== "none" && glyph !== "", `the button draws its icon (content: ${glyph})`);
+      const path = (row.getAttribute("title") || "").split(" → ").pop();
+      const before = window.__GS_EDITORS.openedFiles.length;
+      row.querySelector(".fopen").click();
+      await settle(300);
+      c.eq(window.__GS_EDITORS.openedFiles.slice(before).join(","), path, "the file is asked for, by its path in the repository");
+      c.match($$(".toast-msg").map((t) => text(t)).join(" | "), /Opening in VSCode/, "and it says where it is opening");
+      c.eq($$(".graph-details .jb-app").length, 0, "the button opened no diff");
+    },
+
     "whitespace-toggle-agrees-across-diff-views": async (f) => {
       const c = check(f);
       const ws = $(".dc-ws");

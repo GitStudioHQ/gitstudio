@@ -16,6 +16,7 @@ import { ensureNativeTheme, nativeFontOptions } from "@gitstudio/webview-ui/them
 import type { DiffInitPayload, MergeInitPayload } from "@gitstudio/host-bridge/protocol";
 import type { ConflictModel, FileDiff } from "../shared/ipc";
 import { bootMonaco } from "./monacoBoot";
+import { DIFF_DEFAULTS_CHANGED, diffDefaults } from "./diffDefaults";
 import { host } from "./bridge";
 import { confirmDialog, toast } from "./dialogs";
 import { whileSameRepo } from "./repoEpoch";
@@ -94,7 +95,7 @@ export class DiffPanel {
   private seg?: HTMLElement;
   /** Whitespace / granularity, so a newly built editor starts where the last
    *  one left off — and so BOTH modes answer to the same setting. */
-  private renderOpts: { whitespace: "none" | "trailing"; showInner?: boolean } = { whitespace: "none" };
+  private renderOpts: { whitespace: "none" | "trailing"; showInner?: boolean } = diffDefaults();
   /** The last-shown file, so the mode toggle can re-render it. */
   private lastFile?: FileDiff;
   /** The mode actually on screen. Diverges from the stored preference whenever
@@ -127,6 +128,20 @@ export class DiffPanel {
 
   constructor(private readonly container: HTMLElement) {
     bootMonaco();
+    // Settings changed where comparisons start: an open one follows — the
+    // Changes view keeps its panel alive (detached while you are in Settings),
+    // so "the next comparison you open" would have been never.
+    window.addEventListener(DIFF_DEFAULTS_CHANGED, this.followDefaults);
+  }
+
+  private readonly followDefaults = (): void => {
+    if (this.disposed) return;
+    this.setRenderOptions(diffDefaults());
+  };
+
+  /** The whitespace mode on screen — what the Changes toolbar's toggle shows. */
+  get whitespace(): "none" | "trailing" {
+    return this.renderOpts.whitespace;
   }
 
   /** Disposed panels are never reused (the Changes view keeps one across repaints). */
@@ -955,6 +970,7 @@ export class DiffPanel {
 
   dispose(): void {
     this.disposed = true;
+    window.removeEventListener(DIFF_DEFAULTS_CHANGED, this.followDefaults);
     this.teardown();
   }
 

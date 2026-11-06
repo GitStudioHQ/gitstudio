@@ -630,6 +630,7 @@
  "Copy {0} to Changes": "將 {0} 複製到“更改”",
  "Copy: bring {0} back {1}, and keep {2} in the stash": "複製：將 {0} 取回{1}，並在儲藏中保留{2}",
  "Could not finish loading — see the GitStudio Output channel for the error": "無法完成載入 — 請檢視 GitStudio 輸出通道中的錯誤",
+ "Could not open working tree file: {0}": "無法開啟工作樹檔案：{0}",
  "Could not write the rebase plan": "無法寫入變基計劃",
  "Couldn't abort the rebase.": "無法中止變基。",
  "Couldn't bring the conflict in {0} back.": "無法恢復 {0} 中的衝突。",
@@ -1425,6 +1426,7 @@
  "No labels match": "沒有匹配的標籤",
  "No line comments yet. In Files, open a file and click + beside a changed line to add one.": "還沒有行評論。在“檔案”中開啟一個檔案，點選已更改行旁邊的 + 即可新增。",
  "No local branches": "沒有本地分支",
+ "No longer in the working tree: {0}": "已不在工作樹中：{0}",
  "No match — Enter uses what you typed": "沒有匹配項 — 按 Enter 使用你輸入的內容",
  "No matches": "沒有匹配項",
  "No merge method is allowed": "不允許任何合併方式",
@@ -1587,6 +1589,7 @@
  "Open this change in the diff": "在差異中開啟此更改",
  "Open this conversation again": "重新開啟此對話",
  "Open this pull request on GitHub": "在 GitHub 上開啟此拉取請求",
+ "Open working tree file": "開啟工作樹檔案",
  "Open {0} at line {1}": "在第 {1} 行開啟 {0}",
  "Open {0} — the lines this was written on have changed since": "開啟 {0} — 這段內容所對應的行之後已發生變化",
  "Open {0}'s details": "開啟 {0} 的詳情",
@@ -3308,7 +3311,5 @@
  "“{0}” is not a stash git can read.": "“{0}”不是 git 可讀的儲藏。",
  "“{0}” is not a stash.": "“{0}”不是儲藏。",
  "✓ deleted": "✓ 已刪除",
- "✓ resolved": "✓ 已解決",
- "Open working tree file": "開啟工作樹檔案",
- "Could not open working tree file: {0}": "無法開啟工作樹檔案：{0}"
+ "✓ resolved": "✓ 已解決"
 }

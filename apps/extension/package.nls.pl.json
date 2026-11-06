@@ -249,11 +249,11 @@
  "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.description": "Przygotuj całe pliki albo zaznacz pojedyncze zmiany w jednym, w widoku **Changes**, a potem zatwierdź z jego pola commita (Amend, Sign-off, inny autor, Commit & Push). Gdy AI jest włączone, przycisk z iskierką w polu szkicuje treść z tego, co jest przygotowane. Twoje schowki są wylistowane pod Twoimi zmianami: otwórz jeden, aby zobaczyć każdy plik, który zawiera, i **Move to Changes** tylko te pliki, które chcesz z powrotem.\n[Open the Changes view](command:workbench.view.extension.gitstudio)\nW edytorze: wybierz linie i naciśnij __Ctrl/Cmd+Alt+G S__, aby przygotować zmiany, które dotykają.",
  "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.title": "Przygotuj zmiany i zatwierdź",
  "walkthrough.gitstudio.gettingStarted.title": "Rozpocznij z GitStudio",
- "config.gitstudio.diff.whitespace.description": "Domyślna obsługa białych znaków w widokach różnic GitStudio. Zamknij i ponownie otwórz widok różnic, aby zastosować zmiany.",
- "config.gitstudio.diff.highlight.description": "Domyślna szczegółowość podświetlania w widokach różnic GitStudio. Zamknij i ponownie otwórz widok różnic, aby zastosować zmiany.",
+ "config.gitstudio.diff.whitespace.markdownDescription": "Jak porównanie GitStudio traktuje białe znaki po otwarciu diffu; pasek narzędzi nadal może to zmienić dla danego diffu. Edytor różnic VS Code ma własne ustawienie, `#diffEditor.ignoreTrimWhitespace#`. Dotyczy diffów otwartych po zmianie.",
+ "config.gitstudio.diff.highlight.markdownDescription": "Czy porównanie GitStudio po otwarciu diffu wyróżnia zmienione słowa w wierszu, czy całe wiersze; pasek narzędzi nadal może to zmienić dla danego diffu. Dotyczy diffów otwartych po zmianie.",
  "config.gitstudio.diff.whitespace.enumItemLabels.0": "Nie ignoruj",
- "config.gitstudio.diff.whitespace.enumItemLabels.1": "Ignoruj białe znaki na końcu wiersza",
+ "config.gitstudio.diff.whitespace.enumItemLabels.1": "Przycinaj białe znaki",
  "config.gitstudio.diff.whitespace.enumItemLabels.2": "Ignoruj białe znaki",
  "config.gitstudio.diff.highlight.enumItemLabels.0": "Podświetlaj słowa",
- "config.gitstudio.diff.highlight.enumItemLabels.1": "Podświetlaj wiersze"
+ "config.gitstudio.diff.highlight.enumItemLabels.1": "Podświetlaj linie"
 }

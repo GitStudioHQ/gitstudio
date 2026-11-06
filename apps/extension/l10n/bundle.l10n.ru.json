@@ -630,6 +630,7 @@
  "Copy {0} to Changes": "Скопировать {0} в «Изменения»",
  "Copy: bring {0} back {1}, and keep {2} in the stash": "Копия: вернуть {0} {1}, и сохранить {2} в тайнике",
  "Could not finish loading — see the GitStudio Output channel for the error": "Не удалось завершить загрузку — см. ошибку в канале вывода GitStudio",
+ "Could not open working tree file: {0}": "Не удалось открыть файл рабочего дерева: {0}",
  "Could not write the rebase plan": "Не удалось записать план перебазирования",
  "Couldn't abort the rebase.": "Не удалось прервать перебазирование.",
  "Couldn't bring the conflict in {0} back.": "Не удалось вернуть конфликт в {0}.",
@@ -1425,6 +1426,7 @@
  "No labels match": "Нет подходящих меток",
  "No line comments yet. In Files, open a file and click + beside a changed line to add one.": "Пока нет комментариев к строкам. В разделе «Файлы» откройте файл и нажмите + рядом с изменённой строкой, чтобы добавить.",
  "No local branches": "Нет локальных веток",
+ "No longer in the working tree: {0}": "Больше нет в рабочем дереве: {0}",
  "No match — Enter uses what you typed": "Нет совпадений — Enter использует то, что вы ввели",
  "No matches": "Нет совпадений",
  "No merge method is allowed": "Ни один способ слияния не разрешён",
@@ -1587,6 +1589,7 @@
  "Open this change in the diff": "Открыть это изменение в различиях",
  "Open this conversation again": "Открыть это обсуждение снова",
  "Open this pull request on GitHub": "Открыть этот pull request на GitHub",
+ "Open working tree file": "Открыть файл рабочего дерева",
  "Open {0} at line {1}": "Открыть {0} на строке {1}",
  "Open {0} — the lines this was written on have changed since": "Открыть {0} — строки, на которых это было написано, с тех пор изменились",
  "Open {0}'s details": "Открыть подробности {0}",
@@ -3308,7 +3311,5 @@
  "“{0}” is not a stash git can read.": "«{0}» — не тайник, который может прочитать git.",
  "“{0}” is not a stash.": "«{0}» — не тайник.",
  "✓ deleted": "✓ удалено",
- "✓ resolved": "✓ разрешено",
- "Open working tree file": "Открыть файл рабочего дерева",
- "Could not open working tree file: {0}": "Не удалось открыть файл рабочего дерева: {0}"
+ "✓ resolved": "✓ разрешено"
 }

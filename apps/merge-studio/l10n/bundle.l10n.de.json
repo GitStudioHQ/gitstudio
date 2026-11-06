@@ -794,6 +794,7 @@
  "Open the pull request's page": "Die Seite des Pull Requests öffnen",
  "Open this conversation again": "Diese Unterhaltung erneut öffnen",
  "Open this pull request on GitHub": "Diesen Pull Request auf GitHub öffnen",
+ "Open working tree file": "Datei im Arbeitsverzeichnis öffnen",
  "Open {0} at line {1}": "{0} bei Zeile {1} öffnen",
  "Open {0} — the lines this was written on have changed since": "{0} öffnen — die Zeilen, auf die sich das bezog, haben sich seitdem geändert",
  "Open {0}'s details": "Details von {0} öffnen",

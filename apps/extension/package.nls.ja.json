@@ -249,11 +249,11 @@
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.description": "**変更** ビューでファイル全体をステージするか、その中の個々の変更にチェックを付けます。その後、コミットボックス（修正、Sign-off、別の作成者、コミット＆プッシュ）からコミットします。AIがオンの場合、ボックスのきらめくボタンがステージした内容からメッセージを作成します。スタッシュは変更の下に一覧表示されます: 開くとそこに含まれるすべてのファイルを確認でき、戻したいファイルだけを **変更へ移動** できます。\n[変更ビューを開く](command:workbench.view.extension.gitstudio)\nエディター内: 行を選択して __Ctrl/Cmd+Alt+G S__ を押すと、その行が触れている変更をステージできます。",
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.title": "変更をステージしてコミット",
   "walkthrough.gitstudio.gettingStarted.title": "GitStudioを始める",
-  "config.gitstudio.diff.whitespace.description": "GitStudio の差分ビューでの空白文字の既定の処理方法です。変更を適用するには差分ビューを閉じて開き直してください。",
-  "config.gitstudio.diff.highlight.description": "GitStudio の差分ビューでの既定の強調表示の単位です。変更を適用するには差分ビューを閉じて開き直してください。",
+  "config.gitstudio.diff.whitespace.markdownDescription": "差分を開いたときに GitStudio の比較が空白文字をどう扱うかです。その差分ではツールバーから引き続き変更できます。VS Code の差分エディターには独自の設定 `#diffEditor.ignoreTrimWhitespace#` があります。変更後に開いた差分に適用されます。",
+  "config.gitstudio.diff.highlight.markdownDescription": "差分を開いたときに GitStudio の比較が行内の変更された単語を強調表示するか、行全体を強調表示するかです。その差分ではツールバーから引き続き変更できます。変更後に開いた差分に適用されます。",
   "config.gitstudio.diff.whitespace.enumItemLabels.0": "無視しない",
-  "config.gitstudio.diff.whitespace.enumItemLabels.1": "行末の空白を無視",
-  "config.gitstudio.diff.whitespace.enumItemLabels.2": "空白文字を無視",
-  "config.gitstudio.diff.highlight.enumItemLabels.0": "単語を強調表示",
-  "config.gitstudio.diff.highlight.enumItemLabels.1": "行を強調表示"
+  "config.gitstudio.diff.whitespace.enumItemLabels.1": "空白をトリム",
+  "config.gitstudio.diff.whitespace.enumItemLabels.2": "空白を無視",
+  "config.gitstudio.diff.highlight.enumItemLabels.0": "単語をハイライト",
+  "config.gitstudio.diff.highlight.enumItemLabels.1": "行をハイライト"
 }

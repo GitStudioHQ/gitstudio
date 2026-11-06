@@ -141,6 +141,7 @@ export class CommitDetails extends LitElement {
     details: { attribute: false },
     selection: { attribute: false },
     refMenu: { attribute: false },
+    openWorkspaceFile: { attribute: false },
   };
 
   declare details: CommitDetailsPayload | null;
@@ -152,6 +153,12 @@ export class CommitDetails extends LitElement {
    * graph to filter leaves it off, and the chips stay labels.
    */
   declare refMenu: boolean;
+  /**
+   * Whether the host can open a changed file's working-tree copy — then each
+   * file row offers it beside the diff its click opens (`gs-workspace-file-open`).
+   * A host that cannot leaves it off, and the rows carry no such button.
+   */
+  declare openWorkspaceFile: boolean;
 
   /** Containment ("in N branches") is per-commit and lazily fetched. */
   private containsState: "idle" | "loading" | "done" = "idle";
@@ -187,6 +194,7 @@ export class CommitDetails extends LitElement {
     this.details = null;
     this.selection = null;
     this.refMenu = false;
+    this.openWorkspaceFile = false;
   }
 
   /** Selecting a different commit invalidates the containment answer. */
@@ -802,6 +810,14 @@ export class CommitDetails extends LitElement {
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         direction: rtl; text-align: left;
       }
+      /* Open the working-tree file: a quiet inline action, shown on the
+         row's hover or focus so it does not repeat down every row at rest. */
+      .file .fopen {
+        width: 20px; height: 20px; flex: 0 0 auto; border-radius: 4px;
+        opacity: 0; transition: opacity 120ms, background 120ms, color 120ms;
+      }
+      .file .fopen .codicon { font-size: 14px; }
+      .file:hover .fopen, .file:focus-visible .fopen, .file .fopen:focus-visible { opacity: 1; }
       .fnums {
         flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px;
         font-family: var(--vscode-editor-font-family, monospace);
@@ -1608,9 +1624,6 @@ export class CommitDetails extends LitElement {
    * folder it is in beside its name; the tree already says that, so there the
    * gray text is where a renamed file came from.
    */
-  /** Enabled by the VS Code graph host only. */
-  openWorkspaceFile = false;
-
   private fileRow(f: CommitFileChange, wip: boolean, place: FileRow, tree: boolean) {
     const st = statusColor(f.status);
     const slash = f.path.lastIndexOf("/");
@@ -1646,11 +1659,18 @@ export class CommitDetails extends LitElement {
         : dir
           ? html`<span class="fdir"><bdi dir="ltr">${dir}</bdi></span>`
           : html`<span class="fdir"></span>`}
-      ${this.openWorkspaceFile && f.status !== "D" ? html`<button class="icon-btn"
-        title=${l10n.t("Open working tree file")} aria-label=${l10n.t("Open working tree file")}
-        @keydown=${(e: KeyboardEvent) => e.stopPropagation()}
-        @click=${(e: MouseEvent) => { e.stopPropagation(); this.emit("gs-workspace-file-open", { path: f.path }); }}>
-        <span class="codicon codicon-link-external" aria-hidden="true"></span></button>` : nothing}
+      ${this.openWorkspaceFile && f.status !== "D"
+        ? // Out of the tab order: the row is one stop in a roving tree, and a
+          // button in every row made a long commit's list a Tab per file. It
+          // shows on the row's hover and focus, as VS Code's own inline
+          // list actions do.
+          html`<button class="icon-btn fopen" tabindex="-1"
+            title=${l10n.t("Open working tree file")} aria-label=${l10n.t("Open working tree file")}
+            @click=${(e: MouseEvent) => {
+              e.stopPropagation();
+              this.emit("gs-workspace-file-open", { path: f.path });
+            }}><span class="codicon codicon-go-to-file" aria-hidden="true"></span></button>`
+        : nothing}
       <span class="fnums">
         ${binary
           ? html`<span class="bin">bin</span>`

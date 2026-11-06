@@ -119,6 +119,8 @@ const CASES = [
   ["an-opened-file-fills-its-pane", "code~text:README.md"],
   ["a-lap-of-the-app-does-not-re-measure-every-node", "changes", { extra: "perf=1&many=1" }],
   ["whitespace-toggle-agrees-across-diff-views", "changes~text:spacing.ts", { extra: "ws=1" }],
+  ["settings-sets-where-comparisons-start", "changes~text:spacing.ts", { extra: "ws=1" }],
+  ["a-changed-file-opens-in-your-editor", "graph", { extra: "stack=1" }],
   ["ignoring-whitespace-keeps-real-changes", "changes~text:prs.ts", { extra: "ws=1" }],
   ["ignoring-whitespace-stops-at-the-ends-of-a-line", "changes~text:spacing-inner.ts", { extra: "ws=1" }],
   ["compare-no-self-compare", "compare"],

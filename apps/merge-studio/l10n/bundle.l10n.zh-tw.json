@@ -794,6 +794,7 @@
  "Open the pull request's page": "開啟該拉取請求的頁面",
  "Open this conversation again": "重新開啟此對話",
  "Open this pull request on GitHub": "在 GitHub 上開啟此拉取請求",
+ "Open working tree file": "開啟工作樹檔案",
  "Open {0} at line {1}": "在第 {1} 行開啟 {0}",
  "Open {0} — the lines this was written on have changed since": "開啟 {0} — 這段內容所對應的行之後已發生變化",
  "Open {0}'s details": "開啟 {0} 的詳情",

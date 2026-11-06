@@ -249,10 +249,10 @@
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.description": "Coloque arquivos inteiros em stage, ou marque alterações individuais dentro de um, na visualização de **Changes**, depois commite pela caixa de commit dela (Amend, Sign-off, um autor diferente, Commit & Push). Com a IA ativada, o botão de brilho na caixa rascunha uma mensagem a partir do que você colocou em stage. Seus stashes são listados abaixo das suas alterações: abra um para ver todo arquivo que ele contém, e **Move to Changes** apenas os arquivos que você quer de volta.\n[Abrir a visualização de Changes](command:workbench.view.extension.gitstudio)\nNo editor: selecione linhas e pressione __Ctrl/Cmd+Alt+G S__ para colocar em stage as alterações que elas tocam.",
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.title": "Coloque alterações em stage e commite",
   "walkthrough.gitstudio.gettingStarted.title": "Primeiros Passos com o GitStudio",
-  "config.gitstudio.diff.whitespace.description": "Tratamento padrão de espaços em branco nas visualizações de diferenças do GitStudio. Feche e reabra a visualização para aplicar as alterações.",
-  "config.gitstudio.diff.highlight.description": "Granularidade padrão do destaque nas visualizações de diferenças do GitStudio. Feche e reabra a visualização para aplicar as alterações.",
+  "config.gitstudio.diff.whitespace.markdownDescription": "Como a comparação do GitStudio trata espaços em branco ao abrir um diff; a barra de ferramentas ainda pode mudar isso para esse diff. O editor de diferenças do VS Code tem a própria configuração, `#diffEditor.ignoreTrimWhitespace#`. Vale para diffs abertos depois da alteração.",
+  "config.gitstudio.diff.highlight.markdownDescription": "Se a comparação do GitStudio destaca as palavras alteradas em uma linha ou linhas inteiras ao abrir um diff; a barra de ferramentas ainda pode mudar isso para esse diff. Vale para diffs abertos depois da alteração.",
   "config.gitstudio.diff.whitespace.enumItemLabels.0": "Não ignorar",
-  "config.gitstudio.diff.whitespace.enumItemLabels.1": "Ignorar espaços no fim da linha",
+  "config.gitstudio.diff.whitespace.enumItemLabels.1": "Remover espaços em branco",
   "config.gitstudio.diff.whitespace.enumItemLabels.2": "Ignorar espaços em branco",
   "config.gitstudio.diff.highlight.enumItemLabels.0": "Destacar palavras",
   "config.gitstudio.diff.highlight.enumItemLabels.1": "Destacar linhas"

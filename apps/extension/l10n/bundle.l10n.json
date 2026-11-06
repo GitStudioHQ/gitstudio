@@ -630,6 +630,7 @@
  "Copy {0} to Changes": "Copy {0} to Changes",
  "Copy: bring {0} back {1}, and keep {2} in the stash": "Copy: bring {0} back {1}, and keep {2} in the stash",
  "Could not finish loading — see the GitStudio Output channel for the error": "Could not finish loading — see the GitStudio Output channel for the error",
+ "Could not open working tree file: {0}": "Could not open working tree file: {0}",
  "Could not write the rebase plan": "Could not write the rebase plan",
  "Couldn't abort the rebase.": "Couldn't abort the rebase.",
  "Couldn't bring the conflict in {0} back.": "Couldn't bring the conflict in {0} back.",
@@ -1425,6 +1426,7 @@
  "No labels match": "No labels match",
  "No line comments yet. In Files, open a file and click + beside a changed line to add one.": "No line comments yet. In Files, open a file and click + beside a changed line to add one.",
  "No local branches": "No local branches",
+ "No longer in the working tree: {0}": "No longer in the working tree: {0}",
  "No match — Enter uses what you typed": "No match — Enter uses what you typed",
  "No matches": "No matches",
  "No merge method is allowed": "No merge method is allowed",
@@ -1587,6 +1589,7 @@
  "Open this change in the diff": "Open this change in the diff",
  "Open this conversation again": "Open this conversation again",
  "Open this pull request on GitHub": "Open this pull request on GitHub",
+ "Open working tree file": "Open working tree file",
  "Open {0} at line {1}": "Open {0} at line {1}",
  "Open {0} — the lines this was written on have changed since": "Open {0} — the lines this was written on have changed since",
  "Open {0}'s details": "Open {0}'s details",
@@ -3308,7 +3311,5 @@
  "“{0}” is not a stash git can read.": "“{0}” is not a stash git can read.",
  "“{0}” is not a stash.": "“{0}” is not a stash.",
  "✓ deleted": "✓ deleted",
- "✓ resolved": "✓ resolved",
- "Open working tree file": "Open working tree file",
- "Could not open working tree file: {0}": "Could not open working tree file: {0}"
+ "✓ resolved": "✓ resolved"
 }

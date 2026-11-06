@@ -63,7 +63,7 @@ import type { Change } from "../git/git";
 import { notifyPaused } from "../git/pauseNotice";
 import type { RepoChangeEvent } from "../git/repoChange";
 import { planGraphRefresh } from "./refreshPlan";
-import { notifyCopied } from "../ui/notify";
+import { notice, notifyCopied } from "../ui/notify";
 import * as l10n from "@vscode/l10n";
 
 
@@ -337,16 +337,9 @@ export class CommitGraphPanel {
         void (t.kind === "many" ? this.runMultiMenuAction(t.shas, msg.id) : this.runCommitMenuAction(msg.sha, msg.id));
         break;
       }
-      case "openWorkspaceFile": {
-        const active = this.repos.getActive();
-        if (active) {
-          const uri = vscode.Uri.joinPath(vscode.Uri.file(active.root), msg.path);
-          void vscode.window.showTextDocument(uri, { preview: false }).then(undefined, (error) => {
-            void vscode.window.showWarningMessage(l10n.t("Could not open working tree file: {0}", String(error)));
-          });
-        }
+      case "openWorkspaceFile":
+        void this.openWorkspaceFile(msg.path);
         break;
-      }
       case "openFile":
         void this.doOpenFile(msg.sha, msg.path, !!msg.wip, msg.oldPath, msg.status);
         break;
@@ -1508,6 +1501,35 @@ export class CommitGraphPanel {
   }
 
   /** Open a changed file as a diff (commit vs first parent, or WIP vs HEAD). */
+  /**
+   * A changed file's working-tree copy, opened as itself (not as a diff).
+   * Through `vscode.open`, so an image or a binary gets the editor VS Code
+   * would give it from the Explorer; a text-only open refused those. A file
+   * the commit touched may be gone from the working tree since (deleted or
+   * renamed later), which is said in words rather than as a raw fs error.
+   */
+  private async openWorkspaceFile(path: string): Promise<void> {
+    const active = this.repos.getActive();
+    if (!active || !path) return;
+    const root = vscode.Uri.file(active.root);
+    const uri = vscode.Uri.joinPath(root, path);
+    // The path comes from the webview: never let `..` walk out of the repository.
+    if (uri.path !== root.path && !uri.path.startsWith(root.path.replace(/\/+$/, "") + "/")) return;
+    try {
+      await vscode.workspace.fs.stat(uri);
+    } catch {
+      void vscode.window.showInformationMessage(notice(l10n.t("No longer in the working tree: {0}", path)));
+      return;
+    }
+    try {
+      await vscode.commands.executeCommand("vscode.open", uri, { preview: false });
+    } catch (error) {
+      void vscode.window.showWarningMessage(
+        notice(l10n.t("Could not open working tree file: {0}", error instanceof Error ? error.message : String(error))),
+      );
+    }
+  }
+
   private async doOpenFile(
     sha: string,
     path: string,

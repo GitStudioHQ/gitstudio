@@ -65,3 +65,33 @@ test("a renamed file's row asks for its diff with the old path; a plain one with
   `, { css: "#root{height:720px;width:1280px}", prelude: PRELUDE, rootAttrs: 'data-layout="side"', width: 1280, height: 720 });
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
+
+/**
+ * The working-tree button (#146): the file's own copy, opened beside the diff
+ * its row opens. Quiet at rest and out of the Tab order — the row is the stop
+ * — and absent on a deletion, which has no working-tree copy to open.
+ */
+test("a file row's working-tree button opens the file itself, not its diff; a deletion has none", { skip }, async () => {
+  const v = await runInChrome(CHROME!, ENTRY, MOUNT.replace(
+    `{ path: "src/plain.ts", status: "M", additions: 1, deletions: 0 },`,
+    `{ path: "src/plain.ts", status: "M", additions: 1, deletions: 0 },
+      { path: "src/gone.ts", status: "D", additions: 0, deletions: 3 },`,
+  ) + `
+    const btn = rowFor("src/plain.ts").querySelector(".fopen");
+    expect(!!btn, "a changed file offers its working-tree copy");
+    expect(!rowFor("src/gone.ts").querySelector(".fopen"), "a deleted file offers none");
+    expect(btn && btn.tabIndex === -1, "the button is not a Tab stop of its own");
+    expect(btn && getComputedStyle(btn).opacity === "0", "quiet at rest (opacity " + (btn && getComputedStyle(btn).opacity) + ")");
+    expect(btn && btn.getAttribute("aria-label") === "Open working tree file", "it is named");
+    // The shadow root has a hand-picked codicon subset (styles/codicons.ts):
+    // a glyph missing from it is a blank button.
+    const glyph = btn && getComputedStyle(btn.querySelector(".codicon"), "::before").content;
+    expect(glyph && glyph !== "none", "it draws its icon (content: " + glyph + ")");
+    btn.click();
+    await tick();
+    const asks = window.__posted.filter((m) => m.type === "openWorkspaceFile");
+    expect(asks.length === 1 && asks[0].path === "src/plain.ts", "the host is asked for the file (" + JSON.stringify(asks) + ")");
+    expect(window.__posted.filter((m) => m.type === "openFile").length === 0, "and not for its diff");
+  `, { css: "#root{height:720px;width:1280px}", prelude: PRELUDE, rootAttrs: 'data-layout="side"', width: 1280, height: 720 });
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});

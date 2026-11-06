@@ -630,6 +630,7 @@
  "Copy {0} to Changes": "Copiar {0} para Alterações",
  "Copy: bring {0} back {1}, and keep {2} in the stash": "Copiar: trazer {0} de volta {1}, e manter {2} no stash",
  "Could not finish loading — see the GitStudio Output channel for the error": "Não foi possível terminar de carregar — veja o canal de Output do GitStudio para o erro",
+ "Could not open working tree file: {0}": "Não foi possível abrir o arquivo da árvore de trabalho: {0}",
  "Could not write the rebase plan": "Não foi possível gravar o plano de rebase",
  "Couldn't abort the rebase.": "Não foi possível abortar o rebase.",
  "Couldn't bring the conflict in {0} back.": "Não foi possível trazer de volta o conflito em {0}.",
@@ -1425,6 +1426,7 @@
  "No labels match": "Nenhum rótulo corresponde",
  "No line comments yet. In Files, open a file and click + beside a changed line to add one.": "Ainda não há comentários de linha. Em Files, abra um arquivo e clique em + ao lado de uma linha alterada para adicionar um.",
  "No local branches": "Nenhum branch local",
+ "No longer in the working tree: {0}": "Não está mais na árvore de trabalho: {0}",
  "No match — Enter uses what you typed": "Sem correspondência — Enter usa o que você digitou",
  "No matches": "Nenhuma correspondência",
  "No merge method is allowed": "Nenhum método de mesclagem é permitido",
@@ -1587,6 +1589,7 @@
  "Open this change in the diff": "Abrir esta alteração no diff",
  "Open this conversation again": "Abrir esta conversa de novo",
  "Open this pull request on GitHub": "Abrir esta pull request no GitHub",
+ "Open working tree file": "Abrir arquivo da árvore de trabalho",
  "Open {0} at line {1}": "Abrir {0} na linha {1}",
  "Open {0} — the lines this was written on have changed since": "Abrir {0} — as linhas em que isso foi escrito mudaram desde então",
  "Open {0}'s details": "Abrir os detalhes de {0}",
@@ -3308,7 +3311,5 @@
  "“{0}” is not a stash git can read.": "“{0}” não é um stash que o git possa ler.",
  "“{0}” is not a stash.": "“{0}” não é um stash.",
  "✓ deleted": "✓ excluído",
- "✓ resolved": "✓ resolvido",
- "Open working tree file": "Abrir arquivo da árvore de trabalho",
- "Could not open working tree file: {0}": "Não foi possível abrir o arquivo da árvore de trabalho: {0}"
+ "✓ resolved": "✓ resolvido"
 }

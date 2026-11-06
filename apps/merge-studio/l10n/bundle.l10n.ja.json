@@ -794,6 +794,7 @@
  "Open the pull request's page": "プルリクエストのページを開く",
  "Open this conversation again": "この会話を再度開く",
  "Open this pull request on GitHub": "このプルリクエストを GitHub で開く",
+ "Open working tree file": "作業ツリーのファイルを開く",
  "Open {0} at line {1}": "{0} を {1} 行目で開く",
  "Open {0} — the lines this was written on have changed since": "{0} を開く — これが書かれた行はその後変更されています",
  "Open {0}'s details": "{0} の詳細を開く",
