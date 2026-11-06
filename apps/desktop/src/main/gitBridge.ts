@@ -1338,12 +1338,31 @@ export class GitBridge {
       // An explicit ALLOW-LIST, not `:!` exclusions: verified against real git,
       // `add -A -- . ':!path'` stages the excluded path anyway, so the exclusion
       // would have been silent and this guard would have done nothing at all.
+      //
+      // And only paths with something LEFT to stage — a row with an unstaged
+      // half (`staged: false`: a worktree edit, an untracked file, a resolved
+      // conflict). A path whose change is already wholly in the index is
+      // nothing to add, and one of them is not a pathspec git can match at
+      // all: a staged deletion ("D ") is in neither the index nor the
+      // worktree. A merge stages exactly that for every file the other side
+      // deleted, so "Stage all" over any conflict whose merge also deleted a
+      // file died with "fatal: pathspec '<file>' did not match any files"
+      // (git exits 128 and stages NOTHING) — and filed it as a crash.
+      //
+      // `--literal-pathspecs`: these are file names, not patterns. A name
+      // with `*` or `[…]` in it would otherwise also match its neighbours —
+      // a held-back file among them — and one starting with `:` reads as
+      // pathspec magic.
       const hold = new Set(unresolved);
-      const allow = [...new Set(parsePorcelainStatus(st.stdout).map((f) => f.path))].filter(
-        (p) => !hold.has(p),
-      );
+      const allow = [
+        ...new Set(
+          parsePorcelainStatus(st.stdout)
+            .filter((f) => !f.staged)
+            .map((f) => f.path),
+        ),
+      ].filter((p) => !hold.has(p));
       if (allow.length > 0) {
-        const add = await ctx.process.run(["add", "-A", "--", ...allow]);
+        const add = await ctx.process.run(["--literal-pathspecs", "add", "-A", "--", ...allow]);
         if (add.code !== 0) return add;
       }
       // Two different reasons to hold a file back, needing two different things
