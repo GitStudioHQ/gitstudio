@@ -100,14 +100,15 @@ const noop = (): void => {};
 
 const CELLS: Cell[] = [
   {
-    door: "graph: Cherry-Pick a merge commit",
-    press: async ({ dir, git }) => {
-      git("checkout", "-q", "-b", "elsewhere", "HEAD~2");
+    // (A merge commit is no longer a failure here: the pick asks which side
+    // to apply and runs with -m — commitActions.single.test.ts.)
+    door: "graph: Cherry-Pick a commit the repository does not have",
+    press: async ({ dir }) => {
       const { ctx } = reposOf(dir);
-      await runCommitAction("cherryPick", ctx, { sha: git("rev-parse", "main").trim(), subject: "merge side" } as never);
+      await runCommitAction("cherryPick", ctx, { sha: "f".repeat(40), subject: "gone" } as never);
     },
     kind: "error",
-    says: /^GitStudio: Cherry-pick failed — error: commit [0-9a-f]{40} is a merge but no -m option was given\./,
+    says: /^GitStudio: Cherry-pick failed — fatal: bad object f{40}\.$/,
   },
   {
     door: "graph: Create Branch… with a name that is taken",

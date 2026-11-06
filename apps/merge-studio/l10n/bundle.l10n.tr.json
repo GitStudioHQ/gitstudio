@@ -702,6 +702,7 @@
  "No one yet": "Henüz hiç kimse yok",
  "No open pull requests": "Açık çekme isteği yok",
  "No pull requests yet": "Henüz çekme isteği yok",
+ "No rebase is in progress — it has already finished or was abandoned.": "Yeniden temellendirme sürmüyor — zaten bitti ya da bırakıldı.",
  "No remote matches": "Hiçbir uzak konum eşleşmiyor",
  "No repository matches": "Hiçbir depo eşleşmiyor",
  "No repository open": "Açık depo yok",

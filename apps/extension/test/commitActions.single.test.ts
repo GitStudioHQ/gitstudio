@@ -17,6 +17,13 @@ import { GitContext } from "@gitstudio/git-service/GitContext";
 /* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any */
 const { runCommitAction, runMultiCommitAction, commitActionItems, refMenuItems, commitMenuItemsFor } =
   require("../src/graph/commitActions") as typeof import("../src/graph/commitActions");
+const { ErrorReporter } = require("../src/reporting/errorReporter") as typeof import("../src/reporting/errorReporter");
+
+// Every failure the menu files, as the crash reporter would receive it.
+const filed: { label: string; stderr: string }[] = [];
+(ErrorReporter as unknown as { current: unknown }).current = {
+  captureGitError: (label: string, stderr: string) => void filed.push({ label, stderr }),
+};
 
 const live: { dispose(): void }[] = [];
 afterEach(() => {
@@ -282,6 +289,35 @@ test("Create Branch / Tag Here: a cancelled name creates nothing; a name creates
   assert.deepEqual(status(), ["$(check) Created branch topic", "$(check) Created tag rel-1"]);
 });
 
+test("Create Tag / Branch on a commit this repository does not have asks nothing, runs nothing, files nothing", async () => {
+  // Crash report "git tag failed": "cannot update ref 'refs/tags/…': trying to
+  // write ref … with nonexistent object …" — git tag does not check a full sha.
+  const r = repo();
+  r.commit("a");
+  const missing = "1234567890abcdef1234567890abcdef12345678";
+  filed.length = 0;
+  kit.dialog.input = "rel-1";
+  assert.equal(await runCommitAction("tag", r.ctx as never, { sha: missing, subject: "gone" }), true, "the graph refreshes");
+  assert.equal(await runCommitAction("branch", r.ctx as never, { sha: missing, subject: "gone" }), true);
+  assert.equal(kit.asked.length, 0, "no name is asked for a commit that cannot be tagged");
+  assert.equal(r.git("tag", "--list"), "");
+  assert.equal(r.git("branch", "--list", "rel-1"), "");
+  assert.deepEqual(filed, [], "never a crash");
+  assert.equal(told("error").length, 0);
+  const warn = told("warning");
+  assert.equal(warn.length, 2);
+  assert.match(warn[0], /Commit 1234567 isn't in this repository's local history/);
+});
+
+test("Create Tag on an abbreviated sha tags the full commit", async () => {
+  const r = repo();
+  const a = r.commit("a");
+  r.commit("b");
+  kit.dialog.input = "rel-2";
+  assert.equal(await runCommitAction("tag", r.ctx as never, { sha: a.slice(0, 9), subject: "a" }), true);
+  assert.equal(r.git("rev-parse", "rel-2^{commit}"), a);
+});
+
 test("a branch name git refuses is shown with git's reason", async () => {
   const r = repo();
   const a = r.commit("a");
@@ -343,6 +379,42 @@ test("an octopus merge offers every parent by number", async () => {
   await runCommitAction("revert", r.ctx as never, { sha: head(r), subject: "octopus" });
   assert.equal(kit.asked[0].text, "This merge has 3 parents. Which one should be kept as the mainline?");
   assert.deepEqual(kit.asked[0].choices!.map((c) => c.label), ["Keep parent 1", "Keep parent 2", "Keep parent 3"]);
+});
+
+// ── Cherry-pick ─────────────────────────────────────────────────────────────
+
+test("cherry-picking a merge asks which side's changes to apply; Cancel picks nothing", async () => {
+  // Crash report "Cherry-pick failed": "commit … is a merge but no -m option
+  // was given."
+  const { r, merge } = merged();
+  r.git("checkout", "-q", "-b", "other", "main~1");
+  const before = head(r);
+  filed.length = 0;
+  kit.dialog.pick = undefined;
+  assert.equal(await runCommitAction("cherryPick", r.ctx as never, { sha: merge, subject: "merge side" }), false);
+  assert.equal(head(r), before, "nothing picked");
+  const q = kit.asked[0];
+  assert.equal(q.title, `Cherry-pick the merge ${merge.slice(0, 7)}`);
+  assert.equal(q.text, "A merge has two sides, so git needs to know which side's changes to apply.");
+  assert.deepEqual(q.choices!.map((c) => [c.id, c.label]), [
+    ["1", "Apply the changes that were merged in"],
+    ["2", "Apply the changes of the branch it was merged into"],
+  ]);
+  assert.deepEqual(filed, []);
+});
+
+test("cherry-picking a merge against its first parent applies what was merged in, and files nothing", async () => {
+  const { r, merge } = merged();
+  // A branch off the base: it has neither side yet.
+  r.git("checkout", "-q", "-b", "other", "main~1~1");
+  filed.length = 0;
+  kit.dialog.pick = "1";
+  assert.equal(await runCommitAction("cherryPick", r.ctx as never, { sha: merge, subject: "merge side" }), true);
+  assert.equal(r.git("ls-files"), "base.txt\ns1.txt", "the merged-in side's change, not the mainline's");
+  assert.equal(r.git("log", "-1", "--format=%s"), "merge side");
+  assert.deepEqual(status(), [`$(check) Cherry-picked ${merge.slice(0, 7)}`]);
+  assert.equal(told("error").length, 0);
+  assert.deepEqual(filed, []);
 });
 
 test("reverting a change that is already undone says so, rather than a reasonless failure", async () => {

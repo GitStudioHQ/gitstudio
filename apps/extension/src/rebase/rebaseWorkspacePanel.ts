@@ -245,6 +245,18 @@ export class RebaseWorkspacePanel {
     if (this.disposed) {
       return;
     }
+    if (outcome.status === "failed" && outcome.gone) {
+      // The rebase this banner was stopped in has ended elsewhere (a
+      // terminal, VS Code's own git, the Changes view). Its plan describes
+      // commits that have since been rewritten or put back, so there is
+      // nothing left here to continue: read the state again, say so quietly,
+      // and close — the way a Skip that finished the rebase closes.
+      const entry = this.repos.getActive();
+      void entry?.repo?.status?.();
+      vscode.window.setStatusBarMessage(l10n.t("$(info) {0}", outcome.message), 4000);
+      this.dispose();
+      return;
+    }
     const stop = outcome.status === "stopped" ? await this.stopInfo() : undefined;
     this.post({ type: "result", outcome, stop });
     if (outcome.status === "done") {

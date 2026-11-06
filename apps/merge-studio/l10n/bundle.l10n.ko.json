@@ -702,6 +702,7 @@
  "No one yet": "아직 없음",
  "No open pull requests": "열린 풀 리퀘스트 없음",
  "No pull requests yet": "아직 풀 리퀘스트가 없습니다",
+ "No rebase is in progress — it has already finished or was abandoned.": "진행 중인 리베이스가 없습니다. 이미 끝났거나 중단되었습니다.",
  "No remote matches": "일치하는 원격 없음",
  "No repository matches": "일치하는 리포지토리 없음",
  "No repository open": "열린 리포지토리 없음",

@@ -3254,6 +3254,10 @@ export class GitBridge {
     if ((req.action === "cherry-pick" || req.action === "revert") && Array.isArray(req.shas) && req.shas.length > 1) {
       return this.applyMany(ctx, req.action, req);
     }
+    const refused = await commitActionRefusal(ctx, req);
+    if (refused) {
+      return refused;
+    }
     const args = actionArgs(req);
     if (!args) {
       // copy-sha is handled entirely in the renderer; nothing to run here.
@@ -3789,11 +3793,14 @@ export class GitBridge {
         const out = await run(root, this.repos.runnerOptions());
         if (out.status === "done") return { ok: true, changed: true };
         // A stop is not a failure — the rebase is still live and the view says
-        // so. `expected` keeps it out of the crash reporter.
+        // so. `expected` keeps it out of the crash reporter. So does a
+        // refusal the runner marks expected: a Continue or Skip pressed after
+        // the rebase ended elsewhere (`gone`) is a stale banner, not a defect,
+        // and `changed` has the views read the state again.
         return {
           ok: false,
           changed: true,
-          expected: out.status === "stopped",
+          expected: out.status === "stopped" || (out.status === "failed" && !!out.expected),
           message: out.message ?? (out.status === "stopped" ? l10n.t("Rebase paused.") : l10n.t("Rebase failed.")),
         };
       } catch (err) {
@@ -4379,6 +4386,51 @@ function stashRequest(req: unknown): { ref: unknown; stashFirst?: unknown } {
     return { ref: r.ref, stashFirst: r.stashFirst };
   }
   return { ref: undefined };
+}
+
+/**
+ * A commit action git would refuse for a reason that is the commit's, said
+ * before git runs — `expected`, so it is never crash-reported. Undefined when
+ * the action may go ahead.
+ *
+ *   · Tag / branch on a commit the object store does not have. `git tag
+ *     <name> <full sha>` never reads the object and fails writing the ref
+ *     ("trying to write ref … with nonexistent object"); a graph row can name
+ *     such a commit while the view is out of date. `^{commit}` makes git read
+ *     it: a bare full sha "verifies" without that.
+ *   · Cherry-pick / revert of ONE merge commit. git refuses without `-m` ("is
+ *     a merge but no -m option was given"), and this app has no side picker
+ *     for it yet (the extension asks); git's way is named instead.
+ */
+async function commitActionRefusal(ctx: GitContext, req: CommitActionRequest): Promise<CommitActionResult | undefined> {
+  const short = req.sha.slice(0, 7);
+  if (req.action === "tag" || req.action === "branch") {
+    const r = await ctx.process.run(["rev-parse", "--verify", "--quiet", `${req.sha}^{commit}`]);
+    if (r.code === 0 && r.stdout.trim()) return undefined;
+    return {
+      ok: false,
+      changed: true,
+      expected: true,
+      message: l10n.t(
+        "Commit {0} isn't in this repository's local history — the view may be out of date, or the commit exists only on a remote. Refresh or fetch, then try again.",
+        short,
+      ),
+    };
+  }
+  if (req.action === "cherry-pick" || req.action === "revert") {
+    const merges = await mergesAmong(ctx.process, [req.sha]);
+    if (!merges || merges.length === 0) return undefined; // an unreadable commit: git's own words
+    return {
+      ok: false,
+      changed: false,
+      expected: true,
+      message:
+        req.action === "cherry-pick"
+          ? l10n.t("{0} is a merge commit, and cherry-picking a merge needs the side to apply. From a terminal, git cherry-pick -m 1 {0} applies the changes that were merged in.", short)
+          : l10n.t("{0} is a merge commit, and reverting a merge needs the side to keep. From a terminal, git revert -m 1 {0} keeps the branch it was merged into.", short),
+    };
+  }
+  return undefined;
 }
 
 /** The commit-applying actions of commit:action, as the one door runs them. */

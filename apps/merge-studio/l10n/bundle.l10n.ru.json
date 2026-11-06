@@ -702,6 +702,7 @@
  "No one yet": "Пока никого",
  "No open pull requests": "Нет открытых pull request",
  "No pull requests yet": "Пока нет pull request",
+ "No rebase is in progress — it has already finished or was abandoned.": "Перебазирование не выполняется — оно уже завершено или прервано.",
  "No remote matches": "Нет подходящих удалённых репозиториев",
  "No repository matches": "Нет подходящих репозиториев",
  "No repository open": "Нет открытого репозитория",

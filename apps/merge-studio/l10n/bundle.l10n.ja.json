@@ -702,6 +702,7 @@
  "No one yet": "まだいません",
  "No open pull requests": "オープンなプルリクエストはありません",
  "No pull requests yet": "まだプルリクエストはありません",
+ "No rebase is in progress — it has already finished or was abandoned.": "リベースは進行中ではありません。すでに完了したか、中止されています。",
  "No remote matches": "一致するリモートはありません",
  "No repository matches": "一致するリポジトリはありません",
  "No repository open": "開いているリポジトリはありません",

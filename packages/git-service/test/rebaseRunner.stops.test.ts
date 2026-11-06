@@ -144,13 +144,20 @@ test("a successful boolean abort also sweeps up a staging queue a run left behin
   }
 });
 
-test("continue and skip with no rebase in progress fail with git's reason", async () => {
+test("continue and skip with no rebase in progress run no git and say the rebase is gone, expected", async () => {
+  // Crash reports "git rebase --continue failed" / "fatal: no rebase in
+  // progress": a stop banner offering Continue after the rebase had ended
+  // elsewhere. A stale view, never a crash — and the host refreshes on `gone`.
   const { r } = fourCommits("none");
   try {
     for (const verb of [continueRebase, skipRebase]) {
-      const out = await verb(r.root);
+      const ran: string[][] = [];
+      const out = await verb(r.root, { onRun: (e) => ran.push(e.args) });
       assert.equal(out.status, "failed");
-      assert.match(out.status === "failed" ? out.message : "", /no rebase in progress/i);
+      assert.equal(out.status === "failed" && out.expected, true, "never crash-reported");
+      assert.equal(out.status === "failed" && out.gone, true);
+      assert.match(out.status === "failed" ? out.message : "", /No rebase is in progress/);
+      assert.equal(ran.some((a) => a.includes("--continue") || a.includes("--skip")), false, "git was not asked to resume");
     }
   } finally {
     r.cleanup();

@@ -103,8 +103,11 @@ test("a rebase that fails without a word, with nothing left in progress, says wh
     const opts = { gitPath: fake.gitPath };
     const run = await runRebasePlan(r.root, { base: sha.base, todo: `pick ${sha.two} two\npick ${sha.one} one\n`, rewords: [] }, opts);
     assert.deepEqual(run, { status: "failed", message: "Rebase failed." });
-    assert.deepEqual(await continueRebase(r.root, opts), { status: "failed", message: "Continue failed." });
-    assert.deepEqual(await skipRebase(r.root, opts), { status: "failed", message: "Skip failed." });
+    // With nothing in progress, Continue and Skip no longer run git at all
+    // (see the stops tests): they say the rebase is gone.
+    const gone = { status: "failed", message: "No rebase is in progress — it has already finished or was abandoned.", expected: true, gone: true };
+    assert.deepEqual(await continueRebase(r.root, opts), gone);
+    assert.deepEqual(await skipRebase(r.root, opts), gone);
   } finally {
     r.cleanup();
     removeTempRepo(fake.dir);

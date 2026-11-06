@@ -702,6 +702,7 @@
  "No one yet": "Jeszcze nikt",
  "No open pull requests": "Brak otwartych pull requestów",
  "No pull requests yet": "Jeszcze brak pull requestów",
+ "No rebase is in progress — it has already finished or was abandoned.": "Rebase nie jest w toku — już się zakończył albo został porzucony.",
  "No remote matches": "Żadne zdalne repozytorium nie odpowiada",
  "No repository matches": "Żadne repozytorium nie odpowiada",
  "No repository open": "Żadne repozytorium nie jest otwarte",

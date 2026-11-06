@@ -79,6 +79,43 @@ test("branch and tag from the commit menu are made at that commit", async () => 
   assert.match(bad.message ?? "", /not a valid branch name/);
 });
 
+test("tag and branch on a commit the repository does not have are refused before git, expected", async () => {
+  // git tag never reads a full sha's object: it failed writing the ref, with
+  // "trying to write ref … with nonexistent object", and was crash-reported.
+  const t = repo();
+  threeCommits(t);
+  const ghost = "f".repeat(40);
+  for (const action of ["tag", "branch"] as const) {
+    const res = await t.bridge.commitAction({ action, sha: ghost, name: "ghost-ref" });
+    assert.equal(res.ok, false);
+    assert.equal(res.expected, true, "not a crash");
+    assert.match(res.message ?? "", /isn't in this repository's local history/);
+  }
+  assert.equal(t.git("tag", "--list").trim(), "");
+  assert.equal(t.git("branch", "--list", "ghost-ref").trim(), "");
+});
+
+test("cherry-pick or revert of one merge commit is refused with git's way, expected, before git runs", async () => {
+  const t = repo();
+  const [first] = separateCommits(t);
+  t.git("checkout", "-q", "-b", "side", first);
+  t.write("side.txt", "side\n");
+  t.commitAll("side");
+  t.git("checkout", "-q", "main");
+  t.git("merge", "-q", "--no-ff", "--no-edit", "side");
+  const merge = head(t);
+  t.git("checkout", "-q", "-b", "target", first);
+  const before = head(t);
+  const pick = await t.bridge.commitAction({ action: "cherry-pick", sha: merge });
+  assert.equal(pick.ok, false);
+  assert.equal(pick.expected, true);
+  assert.match(pick.message ?? "", new RegExp(`git cherry-pick -m 1 ${merge.slice(0, 7)}`));
+  const back = await t.bridge.commitAction({ action: "revert", sha: merge });
+  assert.equal(back.expected, true);
+  assert.match(back.message ?? "", /git revert -m 1/);
+  assert.equal(head(t), before, "nothing ran");
+});
+
 test("the commit menu refuses option-shaped values and runs nothing for copy-sha", async () => {
   const t = repo();
   const [first] = threeCommits(t);
@@ -441,8 +478,11 @@ test("continuing a rebase when none is running is a stated failure, not a crash"
   threeCommits(t);
   const res = await t.bridge.rebaseContinue();
   assert.equal(res.ok, false);
-  assert.ok((res.message ?? "").length > 0);
-  assert.equal(res.expected, false, "not stopped — nothing is waiting on the user");
+  assert.match(res.message ?? "", /No rebase is in progress/);
+  // A Continue pressed after the rebase ended elsewhere is a stale banner,
+  // not a defect: never crash-reported, and `changed` has the views re-read.
+  assert.equal(res.expected, true, "not a crash");
+  assert.equal(res.changed, true);
 });
 
 test("a rebase runner that throws is reported with its message", async () => {
