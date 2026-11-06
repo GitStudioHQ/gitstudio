@@ -170,7 +170,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     blurb: l10n.t("Grok models from xAI."),
     wire: "openai-compat",
     baseUrl: "https://api.x.ai/v1",
-    models: { fast: "grok-4.3", mid: "grok-4.3", deep: "grok-4.7" },
+    models: { fast: "grok-3-mini", mid: "grok-3", deep: "grok-4" },
     needsKey: true,
     keyUrl: "https://console.x.ai",
     icon: "sparkle",
@@ -275,7 +275,7 @@ export const KNOWN_MODELS: Record<string, string[]> = {
   "gemini-cli": ["gemini-2.5-pro", "gemini-2.5-flash"],
   groq: ["openai/gpt-oss-120b", "openai/gpt-oss-20b"],
   mistral: ["mistral-large-latest", "mistral-small-latest", "codestral-latest"],
-  xai: ["grok-4.7", "grok-4.3"],
+  xai: ["grok-4", "grok-3", "grok-3-mini"],
   deepseek: ["deepseek-flash", "deepseek-v4-pro"],
   together: ["openai/gpt-oss-120b", "deepseek-ai/DeepSeek-V4-Pro-0813"],
   lmstudio: ["local-model"],
@@ -299,8 +299,6 @@ export const RETIRED_DEFAULTS: Record<string, ReadonlyArray<Record<ModelTier, st
   google: [{ fast: "gemini-2.5-flash", mid: "gemini-2.5-flash", deep: "gemini-2.5-pro" }],
   // Shut down 2026-08-16 for free and developer tiers.
   groq: [{ fast: "llama-3.1-8b-instant", mid: "llama-3.3-70b-versatile", deep: "llama-3.3-70b-versatile" }],
-  // grok-3 and grok-4-0709 retired 2026-05-15 (redirected to grok-4.3).
-  xai: [{ fast: "grok-3-mini", mid: "grok-3", deep: "grok-4" }],
   // Retired 2026-07-24.
   deepseek: [{ fast: "deepseek-chat", mid: "deepseek-chat", deep: "deepseek-reasoner" }],
   // Llama 3.3 Turbo left serverless 2026-10-22; DeepSeek-V3 is a redirect.
