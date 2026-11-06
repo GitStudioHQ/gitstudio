@@ -14005,6 +14005,10 @@
       const code = $('pre > code[class*="language-"]');
       c.ok(!!code, "the issue body has a highlighted fence");
       if (!code) return;
+      // Highlighting lands after the body paints (Monaco's colorizer is
+      // async); asserting at once raced it — a few KB more bundle made this
+      // fail one run in two on an unrelated change. Wait for it, bounded.
+      for (let i = 0; i < 30 && code.querySelectorAll("span").length <= 4; i++) await settle(100);
       c.ok(code.querySelectorAll("span").length > 4, "and it really was tokenized");
       const t = code.textContent || "";
       c.eq((t.match(/\u00a0/g) || []).length, 0, "no non-breaking spaces survive into the text");
