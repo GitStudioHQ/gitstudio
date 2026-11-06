@@ -34,7 +34,7 @@ const uploaded = (os: string, names: string[]): string[] =>
 /** What electron-builder leaves at the top of release/ on each runner. */
 const V = "2.4.0";
 const BUILT: Record<string, string[]> = {
-  "macos-14": [`GitStudio-${V}-arm64.dmg`, `GitStudio-${V}-arm64.zip`, `GitStudio-${V}-arm64.dmg.blockmap`, "latest-mac.yml", "builder-debug.yml", "builder-effective-config.yaml"],
+  "macos-15": [`GitStudio-${V}-arm64.dmg`, `GitStudio-${V}-arm64.zip`, `GitStudio-${V}-arm64.dmg.blockmap`, "latest-mac.yml", "builder-debug.yml", "builder-effective-config.yaml"],
   "macos-15-intel": [`GitStudio-${V}-x64.dmg`, `GitStudio-${V}-x64.zip`, "latest-mac.yml", "builder-debug.yml", "builder-effective-config.yaml"],
   "windows-latest": [`GitStudio-Setup-${V}.exe`, `GitStudio-Setup-${V}.exe.blockmap`, "latest.yml", "builder-debug.yml", "builder-effective-config.yaml"],
   "ubuntu-22.04": [
@@ -63,7 +63,7 @@ test("no leg uploads electron-builder's debug or effective-config files", () => 
 test("…while every installer and the feeds electron-updater reads still ship", () => {
   assert.deepEqual(uploaded("windows-latest", BUILT["windows-latest"]), [`GitStudio-Setup-${V}.exe`, `GitStudio-Setup-${V}.exe.blockmap`, "latest.yml"]);
   assert.deepEqual(uploaded("ubuntu-22.04", BUILT["ubuntu-22.04"]), BUILT["ubuntu-22.04"].slice(0, 5));
-  for (const os of ["macos-14", "macos-15-intel"]) {
+  for (const os of ["macos-15", "macos-15-intel"]) {
     // No mac feed: both arch runners write latest-mac.yml and would clobber
     // each other's (autoUpdate.ts polls the GitHub API on macOS instead).
     assert.deepEqual(uploaded(os, BUILT[os]), BUILT[os].filter((n) => /\.(dmg|zip)$/.test(n)), os);
