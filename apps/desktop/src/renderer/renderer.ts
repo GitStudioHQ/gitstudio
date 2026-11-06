@@ -188,6 +188,7 @@ import type {
   FileDiff,
   GitOpState,
   CommitActionResult,
+  PushActionResult,
   RepoTabsState,
 } from "../shared/ipc";
 
@@ -9005,7 +9006,9 @@ class App {
             l10n.t("Committed, not pushed. {0}", p.message ?? "").trim(),
             "info",
             undefined,
-            p.pullFirst ? { label: l10n.t("Pull"), onClick: () => void this.doSync("pull") } : undefined,
+            p.pullFirst
+              ? { label: l10n.t("Pull"), onClick: () => void this.doSync("pull") }
+              : this.detachedPushAction(p),
           );
         } else if (!p.ok) {
           toast(l10n.t("Committed, but push failed: {0}", p.message ?? l10n.t("unknown error")), "error");
@@ -9456,13 +9459,22 @@ class App {
       if (action === "pull") {
         const out = await this.pullAsking();
         const v = pullVerdict(out, l10n.t("Pull failed."));
+        // A branch that tracks nothing: nothing ran, and the way on is to
+        // publish it — the same Publish the top bar offers such a branch.
+        if (v.kind === "failed" && out.result.noUpstream) {
+          toast(v.message, v.tone, undefined, {
+            label: l10n.t("Publish branch"),
+            onClick: () => void this.doSync("publish"),
+          });
+          return;
+        }
         if (v.kind !== "pulled") {
           await this.settleUnpulled(v);
           return;
         }
         toast(v.message, "success");
       } else {
-        const r: CommitActionResult =
+        const r: PushActionResult =
           action === "fetch"
             ? await host.invoke("sync:fetch", { prune: this.pruneOnFetchPref })
             : action === "push"
@@ -9475,7 +9487,10 @@ class App {
               : action === "publish"
                 ? l10n.t("Publish failed.")
                 : l10n.t("Push failed.");
-          toast(r.message ?? failMsg, r.expected ? "info" : "error");
+          // A push refused because HEAD is detached: the way on is a branch
+          // here, and the New branch dialog already knows how to make one from
+          // a detached HEAD.
+          toast(r.message ?? failMsg, r.expected ? "info" : "error", undefined, this.detachedPushAction(r));
           return;
         }
         const successMsg =
@@ -9510,6 +9525,12 @@ class App {
       // it via updateSync; this covers the failure path).
       this.renderSyncWidget?.(this.syncStatus);
     }
+  }
+
+  /** "New branch…" for a push the bridge refused over a detached HEAD
+   *  (`PushActionResult.detached`) — the one door onto the way on. */
+  private detachedPushAction(r: PushActionResult): { label: string; onClick: () => void } | undefined {
+    return r.detached ? { label: l10n.t("New branch…"), onClick: () => this.newBranch() } : undefined;
   }
 
   private openSyncMenu(anchor: HTMLElement): void {

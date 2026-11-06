@@ -32,10 +32,11 @@ import { optionLikeCheckout, planRefCheckout, refShortName } from "@gitstudio/gi
 import { checkedOutElsewhere, checkedOutElsewhereMessage } from "@gitstudio/git-service/branchElsewhere";
 import { branchNameOf, remoteBranchOf } from "@gitstudio/git-service/BranchOps";
 import { headBranchName } from "@gitstudio/git-service/RefProvider";
+import { fetchPrBranch, isSafeBranchName, isSafeRemoteName } from "@gitstudio/git-service/prBranch";
 import { listUnstagedHunks, stageHunks } from "@gitstudio/git-service/hunkStaging";
 import { setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
-import { stoppedIn } from "@gitstudio/git-service/stoppedOperation";
+import { operationInTheWayMessage, pick, stoppedIn } from "@gitstudio/git-service/stoppedOperation";
 import { applyManyArgs, mergesAmong, orderCommits } from "@gitstudio/git-service/multiCommit";
 import { headBranch } from "@gitstudio/git-service/refRestore";
 import { applyManyMessage } from "@gitstudio/engine/rebase/many";
@@ -2277,7 +2278,43 @@ export class GitBridge {
     let stopped: PullStopInfo | undefined;
     let blocked: PullBlockInfo | undefined;
     let dirty: PullDirtyInfo | undefined;
+    let noUpstream = false;
     const r = await this.staged(async (ctx) => {
+      // A branch that tracks nothing has nothing to pull from. git's answer is
+      // terminal advice — "There is no tracking information for the current
+      // branch… git pull <remote> <branch>… git branch --set-upstream-to=" —
+      // which reached the user in red and the crash tracker as "Pull". The
+      // top bar offers Publish rather than Pull for such a branch, but ⌘K's
+      // Pull is always there, and a widget painted before the upstream went
+      // away is still showing Pull. So it is asked here, before git runs, and
+      // said as the state it is; `noUpstream` lets the renderer offer Publish.
+      //
+      // By the tracking CONFIG, not `@{u}`: a branch whose remote branch was
+      // deleted still has `branch.<name>.merge`, and that is a different
+      // answer (the upstream is gone) that this sentence would get wrong.
+      // Only on a branch (a detached HEAD has its own sentence, below), and
+      // only with nothing stopped: a paused merge or rebase is what is in the
+      // way then, and the door below says so. Not on a Stash & Retry either:
+      // that is the second press of a pull this already let through, and the
+      // door's own refusals (another repository open now) come first there.
+      const head = await ctx.process.run(["symbolic-ref", "-q", "HEAD"]);
+      const full = head.code === 0 ? head.stdout.trim() : "";
+      if (opts?.stashFirst === undefined && full.startsWith("refs/heads/")) {
+        const name = full.slice("refs/heads/".length);
+        const merge = await ctx.process.run(["config", "--get", `branch.${name}.merge`]);
+        if (merge.code === 1 && !(await stoppedIn(ctx.process))) {
+          noUpstream = true;
+          return {
+            ok: false,
+            changed: false,
+            expected: true,
+            message: l10n.t(
+              "'{0}' has no upstream branch, so there is nothing to pull from. Publish it to start tracking a remote branch, or choose one with Set upstream… in Branches.",
+              name,
+            ),
+          };
+        }
+      }
       // Through the one door for commands that apply commits (main/inTheWay.ts):
       // the user's uncommitted work in the pull's way answers which files,
       // `expected`, and the renderer offers Stash & Retry — which sends this
@@ -2340,6 +2377,7 @@ export class GitBridge {
         ...note,
       };
     });
+    if (noUpstream) return { ...r, noUpstream: true };
     if (stopped) return { ...r, stopped };
     if (blocked) return { ...r, blocked };
     if (dirty) return { ...r, dirty };
@@ -2356,7 +2394,44 @@ export class GitBridge {
     opts: { setUpstream?: boolean; force?: boolean } | undefined,
   ): Promise<PushActionResult> {
     let pullFirst = false;
+    let detached = false;
     const r = await this.staged(async (ctx) => {
+      // HEAD on no branch: a commit or a tag checked out. Every push door ends
+      // up here with nothing to name — the top bar's Push, ⌘K's Push, and
+      // Commit & Push, which asks for `setUpstream` because a detached HEAD
+      // has no upstream either — and SyncOps.push, finding no branch to
+      // resolve, fell through to a bare `git push`. git's answer is terminal
+      // advice ("You are not currently on a branch. To push the history
+      // leading to the current (detached HEAD) state now, use git push origin
+      // HEAD:<name-of-remote-branch>"), which reached the user in red and the
+      // crash tracker as "Push". It is the user's state, not a failure: said
+      // in the app's words, before git runs, and `detached` lets the renderer
+      // offer what is actually the way on — a branch here (createBranchFlow).
+      //
+      // Exit 1 from `symbolic-ref -q` is "detached" and nothing else (the
+      // test SyncOps.pull makes for the same state). A stopped REBASE
+      // detaches HEAD too, and there the way on is to finish it, not to put a
+      // new branch in the middle of it — so that one is said as the stop.
+      if ((await ctx.process.run(["symbolic-ref", "-q", "HEAD"])).code === 1) {
+        const stop = await stoppedIn(ctx.process);
+        if (stop?.operation === "rebase") {
+          return {
+            ok: false,
+            changed: false,
+            expected: true,
+            message: operationInTheWayMessage({ kind: "push", ...pick(stop) }),
+          };
+        }
+        detached = true;
+        return {
+          ok: false,
+          changed: false,
+          expected: true,
+          message: l10n.t(
+            "You're not on a branch — HEAD is detached, so there is no branch to push. Create a branch here, then push it.",
+          ),
+        };
+      }
       // A force push is offered for ONE situation: we rewrote commits the
       // remote already has (an amend, a rebase), so a plain push is refused.
       // The same refusal comes back when somebody ELSE pushed — and once their
@@ -2386,6 +2461,7 @@ export class GitBridge {
       }
       return pushed;
     });
+    if (detached) return { ...r, detached: true };
     return pullFirst ? { ...r, pullFirst: true } : r;
   }
 
@@ -3365,7 +3441,78 @@ export class GitBridge {
     const name = localBranchOf(req.fullName);
     if (!name) return notABranch("set the upstream of");
     if (!safeArg(req.upstream)) return unsafeRefResult();
-    return this.staged((ctx) => ctx.branches.setUpstream(name, req.upstream));
+    return this.staged(async (ctx) => {
+      // `--set-upstream-to` only takes a ref this repository already HAS. Set
+      // upstream… is a typed name ("origin/<branch>" is the prompt's hint), and
+      // the branch someone means is very often one that exists on the remote
+      // and has not been fetched yet — a colleague just pushed it. git refused
+      // that with "fatal: the requested upstream branch '…' does not exist" and
+      // six lines of hints, in red, and the crash tracker filed it as "Branch
+      // setUpstream". git's own hint is the fix: fetch it first. So a name
+      // that resolves to nothing here, but reads as <remote>/<branch> for a
+      // remote this repository has, is fetched into its remote-tracking ref
+      // (fetchPrBranch: the one ref git's own fetch keeps for it) and then set
+      // — and one the remote does not have either is said as that, expected.
+      const known = await ctx.process.run(["rev-parse", "--verify", "--quiet", `${req.upstream}^{commit}`]);
+      if (known.code !== 0) {
+        const refused = await this.fetchUpstreamFirst(ctx, req.upstream);
+        if (refused) return refused;
+      }
+      return ctx.branches.setUpstream(name, req.upstream);
+    });
+  }
+
+  /**
+   * Fetch `<remote>/<branch>` (or `refs/remotes/<remote>/<branch>`) so it can
+   * be set as an upstream — undefined once it is here, or the answer to give
+   * when it cannot be. The remote is matched against the repository's own,
+   * LONGEST first: a remote may have a slash in its name ("team/eu"), and so
+   * may a branch ("feature/x"), so splitting on the first slash guesses.
+   */
+  private async fetchUpstreamFirst(
+    ctx: GitContext,
+    upstream: string,
+  ): Promise<{ ok: false; changed: false; expected?: true; message: string } | undefined> {
+    const spelled = upstream.startsWith("refs/remotes/") ? upstream.slice("refs/remotes/".length) : upstream;
+    const remotes = (await ctx.remotes.list()).map((r) => r.name).sort((a, b) => b.length - a.length);
+    const remote = remotes.find((r) => spelled.startsWith(`${r}/`) && spelled.length > r.length + 1);
+    if (!remote) {
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        message: l10n.t(
+          "There is no remote branch called {0}. Name one as remote/branch — origin/main, for example.",
+          upstream,
+        ),
+      };
+    }
+    const branch = spelled.slice(remote.length + 1);
+    // A remote name git takes but fetchPrBranch's stricter rule does not:
+    // nothing to guess about, so git answers as it did before.
+    if (!isSafeRemoteName(remote)) return undefined;
+    // The branch half is TYPED, so a name git would never take is the user's
+    // input, not our defect — said before anything runs.
+    if (!isSafeBranchName(branch)) {
+      return { ok: false, changed: false, expected: true, message: l10n.t("\"{0}\" isn't a branch name git takes.", branch) };
+    }
+    const fetched = await fetchPrBranch(ctx.process, { remote, headRef: branch });
+    if ("sha" in fetched) return undefined;
+    if (fetched.gone) {
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        message: l10n.t(
+          "{0} has no branch called '{1}'. Push the branch to publish it there, or pick a branch {0} has.",
+          remote,
+          branch,
+        ),
+      };
+    }
+    // The fetch itself failed — the network, credentials, a name git would not
+    // take. git's words, reported as any fetch's are (remoteOutcome decides).
+    return { ok: false, changed: false, message: fetched.error };
   }
 
   async branchDeleteRemote(
