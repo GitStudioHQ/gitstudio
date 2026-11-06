@@ -7,6 +7,7 @@ import {
   setBlockStaged,
 } from "@gitstudio/git-service/blockStaging";
 import type { Baselines, ChangeBlock } from "@gitstudio/git-service/blockStaging";
+import { stagingMath, Superseded } from "@gitstudio/git-service/stagingMath";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { relativePath } from "./changesView";
 import { blockAtLine } from "./blockAtLine";
@@ -250,6 +251,10 @@ export class StagedGutter implements vscode.Disposable {
     if (document.uri.scheme !== "file") return;
     const key = document.uri.toString();
     if (readGit) this.readGit.add(key);
+    // A diff still running for this document is of a text that is already
+    // stale: stop it rather than wait out a file-sized diff nobody will see
+    // painted (#145). Its refresh returns without painting; this one follows.
+    if (this.running.has(key)) stagingMath().cancel?.(key);
     const existing = this.timers.get(key);
     if (existing) clearTimeout(existing);
     this.timers.set(
@@ -297,9 +302,9 @@ export class StagedGutter implements vscode.Disposable {
     }
 
     const version = document.version;
-    const blocks = await this.readBlocks(target, document, reuseBaselines);
+    const blocks = await this.readBlocks(target, document, reuseBaselines, true);
     // A newer refresh started while git was answering; its answer wins.
-    if (this.generation.get(key) !== gen) return;
+    if (this.generation.get(key) !== gen || blocks === undefined) return;
 
     this.blocksByDoc.set(key, blocks);
     if (typeof version === "number") this.paintedVersion.set(key, version);
@@ -430,7 +435,7 @@ export class StagedGutter implements vscode.Disposable {
     // state decides the DIRECTION — a change staged elsewhere but still
     // painted unstaged was "staged" again, which does nothing, and the toggle
     // looked dead (seen in VS Code for #87).
-    const blocks = await this.readBlocks(target, document);
+    const blocks = (await this.readBlocks(target, document)) ?? [];
 
     const block = blockAtLine(blocks, line);
     if (!block) {
@@ -471,12 +476,15 @@ export class StagedGutter implements vscode.Disposable {
    * The document's change blocks as git has them NOW; none for a conflicted
    * file. `reuseBaselines`: git was read for this document since anything but
    * its text changed, so diff the text against what it said then.
+   * `supersedable`: a background refresh, whose diff a newer edit may stop
+   * (schedule); undefined then means it was stopped, and nothing is painted.
    */
   private async readBlocks(
     target: { entry: RepoEntry; rel: string },
     document: vscode.TextDocument,
     reuseBaselines = false,
-  ): Promise<ChangeBlock[]> {
+    supersedable = false,
+  ): Promise<ChangeBlock[] | undefined> {
     const key = document.uri.toString();
     // Binary or huge: no ticks, and no reason to ask git anything.
     if (!isStageableText(document.getText())) return [];
@@ -493,8 +501,11 @@ export class StagedGutter implements vscode.Disposable {
         this.baselines.set(key, known);
       }
       // The text as it is now, after git answered — not as it was when asked.
-      return known.conflicted ? [] : changeBlocksFrom(known.baselines, document.getText());
-    } catch {
+      // The diff itself runs off the extension host's thread (stagingMath).
+      if (known.conflicted) return [];
+      return await changeBlocksFrom(known.baselines, document.getText(), supersedable ? key : undefined);
+    } catch (e) {
+      if (e instanceof Superseded) return undefined;
       this.baselines.delete(key);
       return [];
     }

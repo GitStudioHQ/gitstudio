@@ -210,3 +210,50 @@ test("typing re-diffs the buffer against what git said, without asking git again
   assert.ok(t.conflictChecks() > checks);
   t.gutter.dispose();
 });
+
+test("an edit stops a diff still running for an older text, and only the new text is painted (#145)", async () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const { setStagingMath, inProcessMath, Superseded } =
+    require("@gitstudio/git-service/stagingMath") as typeof import("@gitstudio/git-service/stagingMath");
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  // A diff that takes as long as the test says: a stand-in for the 5 s one a
+  // file-sized change costs, on the worker the extension installs.
+  const held: { key?: string; working: string; release: () => void; reject: (e: unknown) => void }[] = [];
+  const cancelled: string[] = [];
+  const previous = setStagingMath({
+    ...inProcessMath,
+    changeBlocks: (head, index, working, key) =>
+      new Promise((resolve, reject) => {
+        held.push({
+          key,
+          working,
+          release: () => void inProcessMath.changeBlocks(head, index, working).then(resolve),
+          reject,
+        });
+      }),
+    cancel: (key) => {
+      cancelled.push(key);
+      for (const h of held.splice(0)) if (h.key === key) h.reject(new Superseded());
+    },
+  });
+  try {
+    const t = setup("gutter-supersede");
+    await until(() => held.length === 1, "the first paint's diff is running");
+    held.shift()!.release();
+    await until(() => t.painted.get(1) === "unstaged", "painted from git at the start");
+    t.type("a\nB\nc\nd\nE\nstale\n");
+    await until(() => held.length === 1, "the edit's diff is running");
+    const key = String(held[0].key);
+    assert.match(key, /f\.txt$/, "the background diff is keyed by its document");
+    t.type("a\nB\nc\nD\nE\n"); // typed again while that diff runs
+    assert.deepEqual(cancelled, [key], "the running diff is stopped at once, not waited out");
+    await until(() => held.length === 1, "the newer text's diff runs");
+    assert.equal(held[0].working, "a\nB\nc\nD\nE\n");
+    held.shift()!.release();
+    await until(() => t.painted.get(3) === "unstaged", "the newer text is painted");
+    assert.equal(t.painted.has(5), false, "the stopped diff's text never was");
+    t.gutter.dispose();
+  } finally {
+    setStagingMath(previous);
+  }
+});

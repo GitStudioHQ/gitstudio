@@ -20,6 +20,18 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   Thanks to [@Albelt](https://github.com/Albelt)
   ([#146](https://github.com/GitStudioHQ/gitstudio/pull/146)).
 
+### Fixed
+- **Editing a heavily changed file no longer freezes the window.** With every
+  line of a large file changed (a 3,000-line file rewritten, or emptied to be
+  rewritten), each pause in typing, and each stage, froze VS Code for up to
+  five seconds while GitStudio worked out which changes are staged. That work
+  now runs on a background thread, and an edit stops it for the text it has
+  replaced; the editor stays responsive however large the change
+  ([#145](https://github.com/GitStudioHQ/gitstudio/issues/145)).
+- A long commit message no longer runs under the Review changes with AI
+  button: the text wraps before both of the box's buttons
+  ([#147](https://github.com/GitStudioHQ/gitstudio/issues/147)).
+
 ## [1.23.0] - 2026-11-02
 
 ### Added
