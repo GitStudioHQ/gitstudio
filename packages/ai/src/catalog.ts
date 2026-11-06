@@ -65,10 +65,10 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: "openai",
     label: "OpenAI",
-    blurb: l10n.t("GPT-4o / o-series via the OpenAI API."),
+    blurb: l10n.t("GPT models via the OpenAI API."),
     wire: "openai-compat",
     baseUrl: "https://api.openai.com/v1",
-    models: { fast: "gpt-4o-mini", mid: "gpt-4o", deep: "gpt-4o" },
+    models: { fast: "gpt-6-luna", mid: "gpt-6.1-terra", deep: "gpt-6.1-sol" },
     needsKey: true,
     keyUrl: "https://platform.openai.com/api-keys",
     icon: "sparkle",
@@ -130,10 +130,10 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: "google",
     label: l10n.t("Google Gemini"),
-    blurb: l10n.t("Gemini 2.5 Pro & Flash via the OpenAI-compatible endpoint."),
+    blurb: l10n.t("Gemini Flash models via the OpenAI-compatible endpoint."),
     wire: "openai-compat",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
-    models: { fast: "gemini-2.5-flash", mid: "gemini-2.5-flash", deep: "gemini-2.5-pro" },
+    models: { fast: "gemini-3.5-flash-lite", mid: "gemini-3.6-flash", deep: "gemini-3.8-flash" },
     needsKey: true,
     keyUrl: "https://aistudio.google.com/apikey",
     icon: "sparkle",
@@ -145,9 +145,9 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     wire: "openai-compat",
     baseUrl: "https://api.groq.com/openai/v1",
     models: {
-      fast: "llama-3.1-8b-instant",
-      mid: "llama-3.3-70b-versatile",
-      deep: "llama-3.3-70b-versatile",
+      fast: "openai/gpt-oss-20b",
+      mid: "openai/gpt-oss-120b",
+      deep: "openai/gpt-oss-120b",
     },
     needsKey: true,
     keyUrl: "https://console.groq.com/keys",
@@ -170,7 +170,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     blurb: l10n.t("Grok models from xAI."),
     wire: "openai-compat",
     baseUrl: "https://api.x.ai/v1",
-    models: { fast: "grok-3-mini", mid: "grok-3", deep: "grok-4" },
+    models: { fast: "grok-4.3", mid: "grok-4.3", deep: "grok-4.7" },
     needsKey: true,
     keyUrl: "https://console.x.ai",
     icon: "sparkle",
@@ -178,10 +178,10 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: "deepseek",
     label: "DeepSeek",
-    blurb: l10n.t("DeepSeek-V3 chat & R1 reasoning."),
+    blurb: l10n.t("DeepSeek's Flash and Pro models."),
     wire: "openai-compat",
     baseUrl: "https://api.deepseek.com",
-    models: { fast: "deepseek-chat", mid: "deepseek-chat", deep: "deepseek-reasoner" },
+    models: { fast: "deepseek-flash", mid: "deepseek-flash", deep: "deepseek-v4-pro" },
     needsKey: true,
     keyUrl: "https://platform.deepseek.com/api_keys",
     icon: "sparkle",
@@ -193,9 +193,9 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     wire: "openai-compat",
     baseUrl: "https://api.together.xyz/v1",
     models: {
-      fast: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
-      mid: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
-      deep: "deepseek-ai/DeepSeek-V3",
+      fast: "openai/gpt-oss-120b",
+      mid: "openai/gpt-oss-120b",
+      deep: "deepseek-ai/DeepSeek-V4-Pro-0813",
     },
     needsKey: true,
     keyUrl: "https://api.together.xyz/settings/api-keys",
@@ -268,19 +268,47 @@ export function presetById(id: string): ProviderPreset {
 export const KNOWN_MODELS: Record<string, string[]> = {
   anthropic: ["claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"],
   "claude-code": ["opus", "sonnet", "haiku"],
-  openai: ["gpt-4o", "gpt-4o-mini", "o3", "o3-mini"],
+  openai: ["gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna", "gpt-6-astra"],
   codex: ["gpt-5-codex", "o3", "o4-mini"],
   openrouter: ["anthropic/claude-sonnet-4-6", "anthropic/claude-opus-4-8", "openai/gpt-4o"],
-  google: ["gemini-2.5-pro", "gemini-2.5-flash"],
+  google: ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite"],
   "gemini-cli": ["gemini-2.5-pro", "gemini-2.5-flash"],
-  groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
+  groq: ["openai/gpt-oss-120b", "openai/gpt-oss-20b"],
   mistral: ["mistral-large-latest", "mistral-small-latest", "codestral-latest"],
-  xai: ["grok-4", "grok-3", "grok-3-mini"],
-  deepseek: ["deepseek-chat", "deepseek-reasoner"],
-  together: ["meta-llama/Llama-3.3-70B-Instruct-Turbo", "deepseek-ai/DeepSeek-V3"],
+  xai: ["grok-4.7", "grok-4.3"],
+  deepseek: ["deepseek-flash", "deepseek-v4-pro"],
+  together: ["openai/gpt-oss-120b", "deepseek-ai/DeepSeek-V4-Pro-0813"],
   lmstudio: ["local-model"],
 };
 
 export function knownModels(preset: string): string[] {
   return KNOWN_MODELS[preset] ?? [];
 }
+
+/**
+ * Earlier defaults of a preset whose provider has since retired or deprecated
+ * them. A connection copies its preset's models when it is made, so without
+ * this a retired default would answer 404 for that user forever (the Gemini
+ * and Groq "Ai test" reports). Only a tier still holding EXACTLY the old
+ * default for that tier is moved on — an id the user chose is theirs.
+ */
+export const RETIRED_DEFAULTS: Record<string, ReadonlyArray<Record<ModelTier, string>>> = {
+  // Deprecated 2026-10-14, removed 2027-01-14; replacement gpt-6-luna.
+  openai: [{ fast: "gpt-4o-mini", mid: "gpt-4o", deep: "gpt-4o" }],
+  // Deprecated; no longer served to new users, shut down 2026-12-01.
+  google: [{ fast: "gemini-2.5-flash", mid: "gemini-2.5-flash", deep: "gemini-2.5-pro" }],
+  // Shut down 2026-08-16 for free and developer tiers.
+  groq: [{ fast: "llama-3.1-8b-instant", mid: "llama-3.3-70b-versatile", deep: "llama-3.3-70b-versatile" }],
+  // grok-3 and grok-4-0709 retired 2026-05-15 (redirected to grok-4.3).
+  xai: [{ fast: "grok-3-mini", mid: "grok-3", deep: "grok-4" }],
+  // Retired 2026-07-24.
+  deepseek: [{ fast: "deepseek-chat", mid: "deepseek-chat", deep: "deepseek-reasoner" }],
+  // Llama 3.3 Turbo left serverless 2026-10-22; DeepSeek-V3 is a redirect.
+  together: [
+    {
+      fast: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+      mid: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+      deep: "deepseek-ai/DeepSeek-V3",
+    },
+  ],
+};

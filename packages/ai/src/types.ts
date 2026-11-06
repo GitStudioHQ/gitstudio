@@ -139,6 +139,13 @@ export class AiError extends Error {
     readonly status?: number,
     /** True when retrying later might succeed (429 / 5xx / network). */
     readonly retryable = false,
+    /**
+     * True when the provider's own answer says the cause is the user's key,
+     * account or region — not the request we built (e.g. Gemini's HTTP 400
+     * "API key not valid" or FAILED_PRECONDITION "User location is not
+     * supported"). Its status alone would read as our defect.
+     */
+    readonly configuration = false,
   ) {
     super(message);
     this.name = "AiError";

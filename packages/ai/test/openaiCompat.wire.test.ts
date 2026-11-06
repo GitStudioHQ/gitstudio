@@ -452,3 +452,93 @@ test("openai-compat says why the endpoint was unreachable (#133)", async () => {
     message: "Couldn't reach api.openai.com (ERR_PROXY_CONNECTION_FAILED) — is the endpoint reachable?",
   });
 });
+
+// ── reasoning models: the token cap and the effort ──────────────────────────
+
+test("openai-compat sends OpenAI's reasoning models max_completion_tokens, which they require", async () => {
+  // o-series and gpt-5+ answer `max_tokens` with HTTP 400.
+  for (const model of ["gpt-6-luna", "gpt-6.1-sol", "gpt-5", "o3", "o4-mini"]) {
+    const { fetchImpl, seen } = scriptedFetch([ok]);
+    await provider(fetchImpl, { resolveModel: () => model }).chat(user, { model: "fast" });
+    assert.equal(seen[0].body.max_completion_tokens, 512, model);
+    assert.equal("max_tokens" in seen[0].body, false, model);
+  }
+  // Everyone else — and a router naming OpenAI's model — keeps max_tokens.
+  for (const model of ["gpt-4o", "gemini-3.6-flash", "openai/gpt-5", "omni-moderation-latest", "llama3.2"]) {
+    const { fetchImpl, seen } = scriptedFetch([ok]);
+    await provider(fetchImpl, { resolveModel: () => model }).chat(user, { model: "fast" });
+    assert.equal(seen[0].body.max_tokens, 512, model);
+    assert.equal("max_completion_tokens" in seen[0].body, false, model);
+  }
+});
+
+test("openai-compat keeps a reasoning model's thinking low unless asked, where the API documents the field", async () => {
+  const sent = async (model: string, thinking?: "off" | "auto" | "extended", baseUrl = "https://api.example.com/v1") => {
+    const { fetchImpl, seen } = scriptedFetch([ok]);
+    await provider(fetchImpl, { resolveModel: () => model, baseUrl }).chat(user, { thinking });
+    return seen[0].body.reasoning_effort;
+  };
+  assert.equal(await sent("gpt-6-luna"), "low");
+  assert.equal(await sent("gpt-6-luna", "off"), "low");
+  assert.equal(await sent("gpt-6-luna", "auto"), undefined, "the model's own default");
+  assert.equal(await sent("gpt-6-luna", "extended"), "high");
+  assert.equal(await sent("openai/gpt-oss-20b", "off", "https://api.groq.com/openai/v1"), "low");
+  assert.equal(await sent("gpt-oss:20b"), "low", "a local server's tag");
+  // OpenRouter takes a `reasoning` object, not this field; other models never get it.
+  assert.equal(await sent("openai/gpt-oss-20b", "off", "https://openrouter.ai/api/v1"), undefined);
+  assert.equal(await sent("gemini-3.6-flash", "off"), undefined);
+  assert.equal(await sent("gpt-4o", "extended"), undefined);
+});
+
+// ── Google's 400s that are about the user, not the request ──────────────────
+
+test("openai-compat reads Gemini's 400 for a bad key as a refused key, a condition of the user's", async () => {
+  // Google wraps the error in an array, and answers a bad key with 400 — the
+  // status a request we built wrong also gets.
+  const badKey = [
+    {
+      error: {
+        code: 400,
+        message: "API key not valid. Please pass a valid API key.",
+        status: "INVALID_ARGUMENT",
+        details: [{ "@type": "type.googleapis.com/google.rpc.ErrorInfo", reason: "API_KEY_INVALID" }],
+      },
+    },
+  ];
+  const base = "https://generativelanguage.googleapis.com/v1beta/openai";
+  for (const call of ["chat", "streamText", "streamChat"] as const) {
+    const { fetchImpl } = scriptedFetch([json(badKey, 400)]);
+    const p = provider(fetchImpl, { baseUrl: base });
+    const run =
+      call === "chat" ? () => p.chat(user) : call === "streamText" ? () => p.streamText(user, () => {}) : () => p.streamChat(user, () => {});
+    await assert.rejects(run, (e: unknown) => {
+      assert.ok(e instanceof AiError);
+      assert.match(e.message, /^generativelanguage\.googleapis\.com rejected the API key \(HTTP 400\)/);
+      assert.equal(e.status, 400);
+      assert.equal(e.configuration, true, call);
+      return true;
+    });
+  }
+});
+
+test("openai-compat passes on Gemini's FAILED_PRECONDITION reason (an unserved region), and nothing else is excused", async () => {
+  const region = [{ error: { code: 400, message: "User location is not supported for the API use.", status: "FAILED_PRECONDITION" } }];
+  const { fetchImpl } = scriptedFetch([json(region, 400)]);
+  await assert.rejects(provider(fetchImpl).chat(user), (e: unknown) => {
+    assert.ok(e instanceof AiError);
+    assert.equal(e.message, "api.example.com refused the request: User location is not supported for the API use.");
+    assert.equal(e.configuration, true);
+    return true;
+  });
+  // A 400 about the request itself — or one with no readable body — stays ours.
+  const unknownField = { error: { code: 400, message: 'Invalid JSON payload received. Unknown name "top_k"', status: "INVALID_ARGUMENT" } };
+  for (const reply of [json(unknownField, 400), json([unknownField], 400), () => new Response("not json", { status: 400 })]) {
+    const { fetchImpl: f } = scriptedFetch([reply]);
+    await assert.rejects(provider(f).chat(user), (e: unknown) => {
+      assert.ok(e instanceof AiError);
+      assert.match(e.message, /request failed \(HTTP 400\)/);
+      assert.equal(e.configuration, false);
+      return true;
+    });
+  }
+});

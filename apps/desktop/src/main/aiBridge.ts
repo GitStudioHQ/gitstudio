@@ -33,8 +33,10 @@ import {
   generatePrDescription,
   explainDiff,
   isConnectionUsable,
+  isUserEdited,
   knownModels,
   makeProvider,
+  migrateRetiredModels,
   pickConnection,
   resolveModelId,
   reviewDiff,
@@ -131,6 +133,15 @@ export class AiBridge {
       }
     } catch {
       // No settings yet — start empty.
+    }
+    // A connection keeps the models it was made with, so a default its
+    // provider has since retired would 404 for that user forever.
+    let migrated = false;
+    for (const conn of this.settings.connections) {
+      if (conn && typeof conn === "object" && migrateRetiredModels(conn)) migrated = true;
+    }
+    if (migrated) {
+      await this.persist();
     }
   }
 
@@ -427,16 +438,21 @@ export class AiBridge {
           };
     }
     const provider = this.providerFor(conn);
+    const model = resolveModelId(conn, "fast");
     try {
       const r = await provider.chat(
         // Sent to the MODEL as a connectivity probe, never shown to a person —
         // must stay literal English regardless of the app's language.
         [{ role: "user", content: "Reply with exactly: OK" }],
-        { model: "fast", maxTokens: 16 },
+        // Room for a reasoning model to think before it answers, and as little
+        // thinking as the API allows. 16 tokens went entirely on hidden
+        // reasoning (Gemini, gpt-oss, o-series) and a working key read as broken.
+        { model: "fast", maxTokens: 256, thinking: "off" },
       );
-      const model = resolveModelId(conn, "fast") ?? "model";
-      if (r.text.trim().length > 0 || r.stopReason === "stop") {
-        return { ok: true, message: l10n.t("Connected — {0} responded.", model), model };
+      // A 200 that stopped at the cap is still the model answering: the key,
+      // URL and model id all work, which is what this button asks.
+      if (r.text.trim().length > 0 || r.stopReason === "stop" || r.stopReason === "length") {
+        return { ok: true, message: l10n.t("Connected — {0} responded.", model ?? "model"), model: model ?? "model" };
       }
       return { ok: false, message: l10n.t("The model returned an empty response.") };
     } catch (err) {
@@ -446,7 +462,9 @@ export class AiBridge {
       // button exists to give, and it arrived in the crash tracker as
       // "Ai test" (reports #28, #29). Anything else keeps reporting: a 400 or a
       // 404 may be a request or a URL we built wrong, and a non-AiError is ours.
-      return connectionAnswer(err) ? { ok: false, expected: true, message } : { ok: false, message };
+      return connectionAnswer(err, isUserEdited(conn, model))
+        ? { ok: false, expected: true, message }
+        : { ok: false, message };
     }
   }
 
@@ -918,12 +936,18 @@ function asList(v: unknown): string {
  * "couldn't reach") — a refused key (401/403), a rate limit (429), or the
  * provider's own trouble (5xx).
  *
- * Not 404. It is what a wrong base URL or model id gets, and also what a URL
- * our endpoint() joined wrong gets (it has, once: "…/gpt//chat/completions"),
- * and the two cannot be told apart from here.
+ * Also a 400 whose body says it is the key, account or region (`configuration`:
+ * Gemini answers a bad key and an unserved country with 400).
+ *
+ * A 404 only when the user changed the base URL or typed the model id
+ * (`userEdited`). On our own preset URL and model it is what a URL our
+ * endpoint() joined wrong gets (it has, once: "…/gpt//chat/completions") and
+ * what a default the provider retired gets — both ours to hear about.
  */
-export function connectionAnswer(err: unknown): boolean {
+export function connectionAnswer(err: unknown, userEdited = false): boolean {
   if (!(err instanceof AiError)) return false;
+  if (err.configuration) return true;
   const s = err.status;
+  if (s === 404) return userEdited;
   return s === undefined || s === 401 || s === 403 || s === 429 || s >= 500;
 }

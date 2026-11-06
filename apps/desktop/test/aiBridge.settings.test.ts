@@ -161,6 +161,101 @@ test("Test: the provider's answer about the connection is a condition; a request
   }
 });
 
+test("Test: a 404 from the user's own base URL or model id is their configuration; from our preset defaults it reports", async () => {
+  const { bridge } = await makeBridge();
+  const id = (await bridge.addConnection("groq")).connections[0].id;
+  await bridge.setKey(id, "gsk-k");
+  // Our URL, our default model: a 404 is a default the provider retired (the
+  // Groq/Gemini reports) or a path we joined wrong — ours to hear about.
+  model.replies.push(new Response("{}", { status: 404 }));
+  const ours = await bridge.test(id);
+  assert.equal(ours.expected, undefined, ours.message);
+  assert.equal(reportableResultMessage(ours), ours.message);
+
+  // A model id the user typed.
+  await bridge.updateConnection({ id, models: { fast: "my-finetune", mid: "", deep: "" } });
+  model.replies.push(new Response("{}", { status: 404 }));
+  const typed = await bridge.test(id);
+  assert.equal(typed.expected, true, typed.message);
+  assert.match(typed.message, /api\.groq\.com returned 404/);
+  assert.equal(reportableResultMessage(typed), undefined);
+
+  // A base URL the user changed, with our default model.
+  await bridge.updateConnection({ id, baseUrl: "https://llm-proxy.example.com/v1", models: { fast: "openai/gpt-oss-20b", mid: "", deep: "" } });
+  model.replies.push(new Response("{}", { status: 404 }));
+  const moved = await bridge.test(id);
+  assert.equal(moved.expected, true, moved.message);
+  assert.equal(reportableResultMessage(moved), undefined);
+});
+
+test("Test: Gemini's 400 for a bad key or an unserved region is the user's condition, in Google's words", async () => {
+  const { bridge } = await makeBridge();
+  const id = (await bridge.addConnection("google")).connections[0].id;
+  await bridge.setKey(id, "AIza-wrong");
+  const google = (error: Record<string, unknown>) =>
+    new Response(JSON.stringify([{ error: { code: 400, ...error } }]), { status: 400 });
+
+  model.replies.push(
+    google({
+      message: "API key not valid. Please pass a valid API key.",
+      status: "INVALID_ARGUMENT",
+      details: [{ reason: "API_KEY_INVALID" }],
+    }),
+  );
+  const key = await bridge.test(id);
+  assert.equal(key.expected, true, key.message);
+  assert.match(key.message, /generativelanguage\.googleapis\.com rejected the API key \(HTTP 400\)/);
+
+  model.replies.push(google({ message: "User location is not supported for the API use.", status: "FAILED_PRECONDITION" }));
+  const region = await bridge.test(id);
+  assert.equal(region.expected, true, region.message);
+  assert.match(region.message, /User location is not supported/);
+  assert.equal(reportableResultMessage(region), undefined);
+
+  // A 400 about the request we sent keeps reporting.
+  model.replies.push(google({ message: "Invalid JSON payload received.", status: "INVALID_ARGUMENT" }));
+  const ours = await bridge.test(id);
+  assert.equal(ours.expected, undefined, ours.message);
+});
+
+test("a stored connection on a default its provider retired is moved to the current one on load", async () => {
+  writeFileSync(
+    join(userData, "ai-settings.json"),
+    JSON.stringify({
+      defaultId: "g",
+      connections: [
+        {
+          id: "g", label: "Google Gemini", preset: "google", wire: "openai-compat",
+          baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+          models: { fast: "gemini-2.5-flash", mid: "gemini-2.5-flash", deep: "gemini-2.5-pro" }, needsKey: true,
+        },
+        {
+          id: "q", label: "Groq", preset: "groq", wire: "openai-compat",
+          baseUrl: "https://api.groq.com/openai/v1",
+          models: { fast: "llama-3.1-8b-instant", mid: "my-own-model", deep: "llama-3.3-70b-versatile" }, needsKey: true,
+        },
+        {
+          id: "p", label: "Proxy", preset: "groq", wire: "openai-compat",
+          baseUrl: "https://llm-proxy.example.com/v1",
+          models: { fast: "llama-3.1-8b-instant", mid: "", deep: "" }, needsKey: false,
+        },
+      ],
+    }),
+  );
+  const { bridge } = await makeBridge();
+  const [g, q, p] = (await bridge.getSettings()).connections;
+  assert.deepEqual(g.models, { fast: "gemini-3.5-flash-lite", mid: "gemini-3.6-flash", deep: "gemini-3.8-flash" });
+  assert.deepEqual(q.models, { fast: "openai/gpt-oss-20b", mid: "my-own-model", deep: "openai/gpt-oss-120b" }, "the user's own id stays");
+  assert.deepEqual(p.models, { fast: "llama-3.1-8b-instant", mid: "", deep: "" }, "another URL's models are the user's");
+  assert.deepEqual(settingsFile().connections[0].models, g.models, "persisted");
+
+  // And the Test asks the current model.
+  await bridge.setKey("g", "AIza-k");
+  model.replies.push({ content: "OK" });
+  await bridge.test("g");
+  assert.equal(model.chats[0].body.model, "gemini-3.5-flash-lite");
+});
+
 test("a pre-1.4 keyring blob is never read, and is deleted on the way", async () => {
   const { bridge } = await makeBridge();
   const id = (await bridge.addConnection("openai")).connections[0].id;
@@ -293,17 +388,30 @@ test("Test on an HTTP connection asks the fast model for a one-word reply", asyn
   const req = model.chats[0];
   assert.equal(req.url, "http://localhost:11434/v1/chat/completions");
   assert.equal(req.body.model, "llama3.2", "the fast tier");
-  assert.equal(req.body.max_tokens, 16);
+  // Room for a reasoning model to think before its one word (see the next test).
+  assert.equal(req.body.max_tokens, 256);
   assert.match(String(req.body.messages?.[0].content), /Reply with exactly: OK/);
 });
 
 test("Test reports an empty reply, and a model that stopped cleanly with no text still counts", async () => {
   const { bridge } = await makeBridge();
   const id = (await bridge.addConnection("ollama")).connections[0].id;
-  model.replies.push({ content: "", finish: "length" });
+  model.replies.push({ content: "", finish: "content_filter" });
   assert.deepEqual(await bridge.test(id), { ok: false, message: "The model returned an empty response." });
   model.replies.push({ content: "", finish: "stop" });
   assert.equal((await bridge.test(id)).ok, true);
+});
+
+test("Test: a reasoning model that spent the whole cap thinking still answered — the connection works", async () => {
+  // "The model returned an empty response." (two users): Gemini, gpt-oss and
+  // the o-series think before they write, and a 200 with no text and a
+  // `length` stop is the key, URL and model id all working.
+  const { bridge } = await makeBridge();
+  const id = (await bridge.addConnection("ollama")).connections[0].id;
+  model.replies.push({ content: "", finish: "length" });
+  const r = await bridge.test(id);
+  assert.deepEqual(r, { ok: true, message: "Connected — llama3.2 responded.", model: "llama3.2" });
+  assert.equal(model.chats[0].body.max_tokens, 256);
 });
 
 test("Test explains a rejected key in the provider's words", async () => {
@@ -332,10 +440,11 @@ test("the model picker offers configured models, then live ones, then known ones
   const { bridge } = await makeBridge();
   const id = (await bridge.addConnection("openai")).connections[0].id;
   await bridge.setKey(id, "sk-k");
-  model.models = new Response(JSON.stringify({ data: [{ id: "gpt-4o" }, { id: "gpt-live-1" }, { name: "named-model" }, {}] }));
+  model.models = new Response(JSON.stringify({ data: [{ id: "gpt-6-luna" }, { id: "gpt-live-1" }, { name: "named-model" }, {}] }));
   const ids = (await bridge.listModels(id)).map((m) => m.id);
-  // configured: mid gpt-4o, deep gpt-4o (dup), fast gpt-4o-mini
-  assert.deepEqual(ids, ["gpt-4o", "gpt-4o-mini", "gpt-live-1", "named-model", "o3", "o3-mini"]);
+  // configured: mid gpt-6.1-terra, deep gpt-6.1-sol, fast gpt-6-luna (also live: once);
+  // then live, then the known ones not already listed
+  assert.deepEqual(ids, ["gpt-6.1-terra", "gpt-6.1-sol", "gpt-6-luna", "gpt-live-1", "named-model", "gpt-6-astra"]);
   const listing = model.all.find((r) => r.url.endsWith("/models"))!;
   assert.equal(listing.url, "https://api.openai.com/v1/models");
   assert.equal(listing.headers.Authorization, "Bearer sk-k");

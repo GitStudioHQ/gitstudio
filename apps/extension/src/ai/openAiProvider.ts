@@ -56,6 +56,8 @@ interface OpenAiRequestBody {
 
 export class OpenAiProvider implements AiProvider {
   readonly id = "openai";
+  /** finish_reason of the last complete() answer (see AiProvider.lastStop). */
+  lastStop: string | undefined;
 
   constructor(private readonly opts: OpenAiProviderOptions) {}
 
@@ -167,6 +169,7 @@ export class OpenAiProvider implements AiProvider {
   }
 
   async complete(req: CompleteRequest): Promise<string | null> {
+    this.lastStop = undefined;
     const cfg = this.opts.config();
     const model = this.modelFor(cfg, req.model ?? "fast");
     if (!model) {
@@ -185,6 +188,7 @@ export class OpenAiProvider implements AiProvider {
         return null;
       }
       const json = (await res.json()) as OpenAiChatResponse;
+      this.lastStop = json.choices?.[0]?.finish_reason;
       return extractOpenAiText(json);
     } catch (err) {
       if (isAbort(err)) {

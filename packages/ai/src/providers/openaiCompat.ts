@@ -105,8 +105,15 @@ export class OpenAiCompatProvider implements Provider {
     const body: Record<string, unknown> = {
       model,
       messages: this.toWire(messages),
-      max_tokens: opts.maxTokens ?? (opts.model === "fast" ? 512 : 1024),
     };
+    const cap = opts.maxTokens ?? (opts.model === "fast" ? 512 : 1024);
+    // OpenAI's reasoning models answer `max_tokens` with HTTP 400; they take
+    // `max_completion_tokens`. Everyone else keeps the field they all accept.
+    body[isOpenAiReasoningModel(model) ? "max_completion_tokens" : "max_tokens"] = cap;
+    const effort = reasoningEffort(model, opts.thinking, this.opts.baseUrl);
+    if (effort) {
+      body.reasoning_effort = effort;
+    }
     if (typeof opts.temperature === "number") {
       body.temperature = opts.temperature;
     }
@@ -146,7 +153,7 @@ export class OpenAiCompatProvider implements Provider {
       throw unreachable(this.opts.baseUrl, err);
     }
     if (!res.ok) {
-      throw httpError(res.status, hostOf(this.opts.baseUrl));
+      throw await httpFailure(res, hostOf(this.opts.baseUrl));
     }
     const json = (await res.json()) as OpenAiResponse;
     const choice = json.choices?.[0];
@@ -191,7 +198,7 @@ export class OpenAiCompatProvider implements Provider {
       throw unreachable(this.opts.baseUrl, err);
     }
     if (!res.ok) {
-      throw httpError(res.status, hostOf(this.opts.baseUrl));
+      throw await httpFailure(res, hostOf(this.opts.baseUrl));
     }
     const reader = res.body?.getReader();
     if (!reader) {
@@ -254,7 +261,7 @@ export class OpenAiCompatProvider implements Provider {
       throw unreachable(this.opts.baseUrl, err);
     }
     if (!res.ok) {
-      throw httpError(res.status, hostOf(this.opts.baseUrl));
+      throw await httpFailure(res, hostOf(this.opts.baseUrl));
     }
     const reader = res.body?.getReader();
     if (!reader) {
@@ -379,6 +386,85 @@ function mapFinish(reason: string | undefined, hadTools: boolean): StopReason {
     default:
       return reason ? "unknown" : "stop";
   }
+}
+
+/**
+ * OpenAI's reasoning families — o1/o3/o4…, gpt-5 and later — by the bare id
+ * OpenAI and Azure use. They refuse `max_tokens`, and the cap they take counts
+ * their hidden reasoning too. A router's "openai/gpt-5" is translated by the
+ * router, so it is deliberately not matched.
+ */
+export function isOpenAiReasoningModel(model: string): boolean {
+  return /^(o\d|gpt-([5-9]|\d{2,}))/i.test(model.trim());
+}
+
+/**
+ * The `reasoning_effort` to send, if any. A reasoning model spends its token
+ * cap on hidden thinking first, so a short task left at the default effort can
+ * come back empty with a `length` stop. Sent only where it is documented:
+ * OpenAI's reasoning ids and gpt-oss (Groq, Together, local servers) — not via
+ * OpenRouter, which takes a `reasoning` object instead.
+ */
+export function reasoningEffort(
+  model: string,
+  thinking: ChatOptions["thinking"],
+  baseUrl: string,
+): "low" | "high" | undefined {
+  const gptOss = /(^|\/)gpt-oss\b/i.test(model) && !/openrouter\.ai/i.test(baseUrl);
+  if (!gptOss && !isOpenAiReasoningModel(model)) {
+    return undefined;
+  }
+  if (thinking === "auto") {
+    return undefined; // the model's own default
+  }
+  return thinking === "extended" ? "high" : "low";
+}
+
+/** The provider's own error body: `{error}` (OpenAI) or `[{error}]` (Google). */
+interface ProviderErrorBody {
+  message?: string;
+  status?: string;
+  details?: Array<{ reason?: string }>;
+}
+
+async function readErrorBody(res: Response): Promise<ProviderErrorBody | undefined> {
+  try {
+    const raw = (await res.json()) as unknown;
+    const first = Array.isArray(raw) ? raw[0] : raw;
+    const err = (first as { error?: unknown } | null)?.error;
+    return err && typeof err === "object" ? (err as ProviderErrorBody) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A non-2xx answer as an AiError. Google answers a bad key, and a request from
+ * a region or project it does not serve, with HTTP 400 — the status a request
+ * WE built wrong also gets — so its body is what tells them apart.
+ */
+async function httpFailure(res: Response, host: string): Promise<AiError> {
+  if (res.status === 400) {
+    const body = await readErrorBody(res);
+    const reasons = (body?.details ?? []).map((d) => d?.reason);
+    if (reasons.includes("API_KEY_INVALID") || /API key not valid/i.test(body?.message ?? "")) {
+      return new AiError(
+        l10n.t("{0} rejected the API key (HTTP {1}). Check the key in Settings ▸ AI.", host, res.status),
+        res.status,
+        false,
+        true,
+      );
+    }
+    if (body?.status === "FAILED_PRECONDITION" && typeof body.message === "string" && body.message.trim()) {
+      return new AiError(
+        l10n.t("{0} refused the request: {1}", host, body.message.trim().slice(0, 200)),
+        res.status,
+        false,
+        true,
+      );
+    }
+  }
+  return httpError(res.status, host);
 }
 
 function httpError(status: number, host: string): AiError {
