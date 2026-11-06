@@ -1333,7 +1333,7 @@
               "all"
             ],
             "default": "none",
-            "description": "%config.gitstudio.diff.whitespace.description%",
+            "markdownDescription": "%config.gitstudio.diff.whitespace.markdownDescription%",
             "enumItemLabels": [
               "%config.gitstudio.diff.whitespace.enumItemLabels.0%",
               "%config.gitstudio.diff.whitespace.enumItemLabels.1%",
@@ -1348,7 +1348,7 @@
               "lines"
             ],
             "default": "words",
-            "description": "%config.gitstudio.diff.highlight.description%",
+            "markdownDescription": "%config.gitstudio.diff.highlight.markdownDescription%",
             "enumItemLabels": [
               "%config.gitstudio.diff.highlight.enumItemLabels.0%",
               "%config.gitstudio.diff.highlight.enumItemLabels.1%"

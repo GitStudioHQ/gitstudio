@@ -98,6 +98,9 @@ import {
 import { registerPrFeature } from "./pr/prFeature";
 import { promptConfirm, promptPick, registerDialogHost } from "./ui/dialogs";
 import * as l10n from "@vscode/l10n";
+import { Worker } from "node:worker_threads";
+import { setStagingMath } from "@gitstudio/git-service/stagingMath";
+import { WorkerStagingMath } from "./changes/workerStagingMath";
 
 // GitStudio extension entry point.
 //
@@ -527,6 +530,20 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
     // constructed before runStagingRefresh (what stagingRefresh runs), which
     // closes over them: declaring them after it would leave a temporal dead
     // zone that any refresh fired during activation would fall into.
+    // The staging diffs (the gutter's after every edit, a tick's, a hover
+    // link's) run on a worker thread: a file whose every line changed costs
+    // vscode-diff its whole 5 s budget, and on the extension host's thread that
+    // froze the window after each pause in typing (#145).
+    const workerMath = new WorkerStagingMath(
+      () => new Worker(vscode.Uri.joinPath(context.extensionUri, "dist", "stagingWorker.js").fsPath),
+    );
+    setStagingMath(workerMath);
+    context.subscriptions.push({
+      dispose: () => {
+        setStagingMath(undefined);
+        workerMath.dispose();
+      },
+    });
     const stagedGutter = new StagedGutter(context, repos, (uri) =>
       blame.ownsGutterStrip(uri),
     );

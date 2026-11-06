@@ -4,6 +4,34 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Open a changed file itself from the commit details.** Each changed file's
+  row in the graph's details pane has an Open working tree file button beside
+  the diff its click opens: the file as it is on disk now, in the editor VS
+  Code gives it (an image opens as an image). It shows on the row's hover. A
+  file the commit touched that has since been deleted or renamed is said so.
+- **Where GitStudio's comparison starts.** `gitstudio.diff.whitespace` (Do not
+  ignore, Trim whitespaces, Ignore whitespaces) and `gitstudio.diff.highlight`
+  (Highlight words, Highlight lines) preset the comparison's two toolbar
+  choices for every diff it opens; the toolbar still changes them for one
+  diff. VS Code's own diff editor keeps `diffEditor.ignoreTrimWhitespace`.
+  Thanks to [@Albelt](https://github.com/Albelt)
+  ([#146](https://github.com/GitStudioHQ/gitstudio/pull/146)).
+
+### Fixed
+- **Editing a heavily changed file no longer freezes the window.** With every
+  line of a large file changed (a 3,000-line file rewritten, or emptied to be
+  rewritten), each pause in typing, and each stage, froze VS Code for up to
+  five seconds while GitStudio worked out which changes are staged. That work
+  now runs on a background thread, and an edit stops it for the text it has
+  replaced; the editor stays responsive however large the change
+  ([#145](https://github.com/GitStudioHQ/gitstudio/issues/145)).
+- A long commit message no longer runs under the Review changes with AI
+  button: the text wraps before both of the box's buttons
+  ([#147](https://github.com/GitStudioHQ/gitstudio/issues/147)).
+
 ## [1.23.0] - 2026-11-02
 
 ### Added

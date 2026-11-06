@@ -19,7 +19,7 @@ import { session,
 } from "electron";
 import type { IpcMainInvokeEvent, MenuItemConstructorOptions, WebContents } from "electron";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { join, basename, extname, dirname, resolve as resolvePath } from "node:path";
+import { join, basename, extname, dirname, resolve as resolvePath, sep } from "node:path";
 import { readFile, writeFile, mkdir, stat, readdir, rename, rmdir, rm } from "node:fs/promises";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { DEFAULT_DARK_STYLE, parseDarkStyle, windowBackgroundFor, type DarkStyle } from "../shared/darkStyle";
@@ -1179,6 +1179,28 @@ function registerIpc(): void {
     const target = root ?? repos.current()?.root;
     if (!target) return { ok: false, expected: true, message: l10n.t("Open a repository first.") };
     return openEditor(id, target, appSettings.editorPrefs());
+  });
+  handle("editors:openFile", async ({ path: rel }) => {
+    const root = repos.current()?.root;
+    if (!root) return { ok: false, expected: true, message: l10n.t("Open a repository first.") };
+    const file = resolvePath(root, rel);
+    // The path comes from the renderer: never let `..` walk out of the repository.
+    if (!rel || !file.startsWith(resolvePath(root) + sep)) {
+      return { ok: false, expected: true, message: l10n.t("{0} is not in the working tree any more.", String(rel)) };
+    }
+    // A file the commit touched can be gone since (deleted or renamed later):
+    // said in words, not as the editor's own "no such file".
+    const there = await stat(file).then((s) => s.isFile(), () => false);
+    if (!there) return { ok: false, expected: true, message: l10n.t("{0} is not in the working tree any more.", rel) };
+    const prefs = appSettings.editorPrefs();
+    const view = editorsView(prefs);
+    const editor = view.editors.find((e) => e.id === view.defaultId);
+    if (!editor) {
+      const failed = await shell.openPath(file);
+      return failed ? { ok: false, message: failed } : { ok: true };
+    }
+    const r = await openEditor(editor.id, file, prefs);
+    return r.ok ? { ok: true, editor: editor.name } : r;
   });
   handle("editors:setShown", async ({ id, shown }) => {
     await appSettings.setEditorShown(id, shown);

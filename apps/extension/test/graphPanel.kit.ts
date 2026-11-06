@@ -11,7 +11,7 @@
 
 import Module from "node:module";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitContext } from "@gitstudio/git-service/GitContext";
@@ -361,6 +361,10 @@ const stub: Record<string, unknown> = {
     },
     textDocuments: [],
     workspaceFolders: [],
+    // The real disk under the test repository: what is there, is there.
+    fs: {
+      stat: async (u: FakeUri) => statSync(u.fsPath),
+    },
   },
   languages: {
     registerHoverProvider: (_sel: unknown, provider: unknown) => {

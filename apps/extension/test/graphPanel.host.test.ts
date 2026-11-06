@@ -778,6 +778,24 @@ test("opening an uncommitted file: HEAD against the file on disk, nothing on the
   assert.match(ren.args[0].query, /at=was\.txt/, "HEAD's side of a rename is read under its old name");
 });
 
+test("a file's working-tree copy opens as itself; one gone from the working tree since is said in words", async () => {
+  const { r, entry } = history();
+  const g = track(open(entry));
+  await g.nth("graphInit", 1);
+  g.w.send({ type: "openWorkspaceFile", path: "one.txt" });
+  const openedFile = await kit.until(() => kit.ran.find((c) => c.command === "vscode.open"), "opened");
+  assert.equal(normalize((openedFile.args[0] as any).fsPath), join(r.dir, "one.txt"));
+  assert.deepEqual(openedFile.args[1], { preview: false });
+  assert.equal(kit.ran.filter((c) => c.command === "vscode.diff").length, 0, "the file itself, not a diff");
+
+  r.git("rm", "-q", "one.txt");
+  g.w.send({ type: "openWorkspaceFile", path: "one.txt" });
+  const note = await kit.until(() => kit.said.find((s) => s.text.includes("in the working tree")), "said");
+  assert.equal(note.kind, "info");
+  assert.match(note.text, /: one\.txt\.$/, "the path as it is, not capitalised into a sentence");
+  assert.equal(kit.ran.filter((c) => c.command === "vscode.open").length, 1, "nothing opened for a file that is gone");
+});
+
 // ── Revealing ────────────────────────────────────────────────────────────────
 
 test("a reveal before the rows land waits for them; the details dock opens on it", async () => {

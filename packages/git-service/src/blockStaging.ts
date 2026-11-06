@@ -12,13 +12,12 @@
 // engine, and writes back through the same stageContent primitive.
 
 import {
-  computeChangeBlocks,
   rangesToStage,
   rangesToUnstage,
   sameBlock,
   type ChangeBlock,
 } from "@gitstudio/engine/staging/blockStaging";
-import { computeHunks, applySelectedChanges } from "@gitstudio/engine/staging/applyLineChanges";
+import { stagingMath } from "./stagingMath";
 import type { StagingProvider } from "./StagingProvider";
 import * as l10n from "@vscode/l10n";
 
@@ -102,13 +101,21 @@ export async function listChangeBlocks(
   return changeBlocksFrom(await readBaselines(host, rel), workingText);
 }
 
-/** listChangeBlocks over baselines already read (readBaselines). */
-export function changeBlocksFrom(baselines: Baselines, workingText: string): ChangeBlock[] {
+/**
+ * listChangeBlocks over baselines already read (readBaselines). The diffs run
+ * where stagingMath() runs them — off the caller's thread once a host installs
+ * a worker. `key` lets a newer job for the same thing supersede this one.
+ */
+export async function changeBlocksFrom(
+  baselines: Baselines,
+  workingText: string,
+  key?: string,
+): Promise<ChangeBlock[]> {
   const { head, index } = baselines;
   if (!isStageableText(workingText) || !isStageableText(head) || !isStageableText(index)) {
     return [];
   }
-  return computeChangeBlocks(head, index, workingText);
+  return stagingMath().changeBlocks(head, index, workingText, key);
 }
 
 /** What a refused write says, and why the caller should not treat it as failure. */
@@ -149,29 +156,30 @@ export async function setBlockStaged(
   if (!isStageableText(head) || !isStageableText(index)) {
     return { ok: false, expected: true, stderr: NOT_STAGEABLE };
   }
-  const current = computeChangeBlocks(head, index, workingText);
+  const math = stagingMath();
+  const current = await math.changeBlocks(head, index, workingText);
   const match = current.find((b) => sameBlock(b, block));
   if (!match) {
     return { ok: false, expected: true, stderr: GONE };
   }
 
   if (staged) {
-    const ranges = rangesToStage(match, computeHunks(index, workingText));
+    const ranges = rangesToStage(match, await math.hunks(index, workingText));
     if (ranges.length === 0) {
       // Already fully staged — the tick and the index agree, so there is
       // nothing to do and nothing to report.
       return { ok: true, stderr: "" };
     }
-    const content = applySelectedChanges(index, workingText, ranges);
+    const content = await math.apply(index, workingText, ranges);
     const r = await host.staging.stageContent(rel, content);
     return { ok: r.ok, stderr: r.stderr };
   }
 
-  const ranges = rangesToUnstage(match, computeHunks(index, head));
+  const ranges = rangesToUnstage(match, await math.hunks(index, head));
   if (ranges.length === 0) {
     return { ok: true, stderr: "" };
   }
-  const content = applySelectedChanges(index, head, ranges);
+  const content = await math.apply(index, head, ranges);
 
   // Rolling the last staged block of an ADDED file back to HEAD leaves ""
   // content — but writing an empty blob would leave a zero-length file staged

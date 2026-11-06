@@ -630,6 +630,7 @@
  "Copy {0} to Changes": "将 {0} 复制到“更改”",
  "Copy: bring {0} back {1}, and keep {2} in the stash": "复制：将 {0} 取回{1}，并在贮藏中保留{2}",
  "Could not finish loading — see the GitStudio Output channel for the error": "无法完成加载 — 请查看 GitStudio 输出通道中的错误",
+ "Could not open working tree file: {0}": "无法打开工作区文件：{0}",
  "Could not write the rebase plan": "无法写入变基计划",
  "Couldn't abort the rebase.": "无法中止变基。",
  "Couldn't bring the conflict in {0} back.": "无法恢复 {0} 中的冲突。",
@@ -1425,6 +1426,7 @@
  "No labels match": "没有匹配的标签",
  "No line comments yet. In Files, open a file and click + beside a changed line to add one.": "还没有行评论。在“文件”中打开一个文件，点击已更改行旁边的 + 即可添加。",
  "No local branches": "没有本地分支",
+ "No longer in the working tree: {0}": "已不在工作树中：{0}",
  "No match — Enter uses what you typed": "没有匹配项 — 按 Enter 使用你输入的内容",
  "No matches": "没有匹配项",
  "No merge method is allowed": "不允许任何合并方式",
@@ -1587,6 +1589,7 @@
  "Open this change in the diff": "在差异中打开此更改",
  "Open this conversation again": "重新打开此对话",
  "Open this pull request on GitHub": "在 GitHub 上打开此拉取请求",
+ "Open working tree file": "打开工作区文件",
  "Open {0} at line {1}": "在第 {1} 行打开 {0}",
  "Open {0} — the lines this was written on have changed since": "打开 {0} — 这段内容所对应的行之后已发生变化",
  "Open {0}'s details": "打开 {0} 的详情",
@@ -3308,7 +3311,5 @@
  "“{0}” is not a stash git can read.": "“{0}”不是 git 可读的贮藏。",
  "“{0}” is not a stash.": "“{0}”不是贮藏。",
  "✓ deleted": "✓ 已删除",
- "✓ resolved": "✓ 已解决",
- "Open working tree file": "打开工作区文件",
- "Could not open working tree file: {0}": "无法打开工作区文件：{0}"
+ "✓ resolved": "✓ 已解决"
 }

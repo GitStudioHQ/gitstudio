@@ -9,6 +9,22 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [Unreleased]
+
+### Added
+- **Open a changed file in your editor from the commit details.** Each changed
+  file's row in the graph's details pane has an Open working tree file button:
+  the file as it is on disk now, in your favourite editor from Settings →
+  Editors (the app your system opens it with when none is installed). A file
+  the commit touched that has since been deleted or renamed is said so.
+- **Where every comparison starts.** Settings → Code and comparisons sets the
+  whitespace handling (Do not ignore, Trim whitespaces) and the highlight
+  (Highlight words, Highlight lines) of every comparison in the app. It
+  applies at once; the whitespace button in Changes still flips it for the
+  file on screen. Both arrive from the extension, where
+  [@Albelt](https://github.com/Albelt) added them
+  ([#146](https://github.com/GitStudioHQ/gitstudio/pull/146)).
+
 ## [2.8.0] - 2026-11-02
 
 ### Added

@@ -630,6 +630,7 @@
  "Copy {0} to Changes": "{0} を変更にコピー",
  "Copy: bring {0} back {1}, and keep {2} in the stash": "コピー: {0} を {1} に戻し、{2} はスタッシュに残す",
  "Could not finish loading — see the GitStudio Output channel for the error": "読み込みを完了できませんでした — エラーの詳細は GitStudio の出力チャンネルを確認してください",
+ "Could not open working tree file: {0}": "作業ツリーのファイルを開けませんでした: {0}",
  "Could not write the rebase plan": "リベースプランを書き込めませんでした",
  "Couldn't abort the rebase.": "リベースを中止できませんでした。",
  "Couldn't bring the conflict in {0} back.": "{0} のコンフリクトを元に戻せませんでした。",
@@ -1425,6 +1426,7 @@
  "No labels match": "一致するラベルはありません",
  "No line comments yet. In Files, open a file and click + beside a changed line to add one.": "行コメントはまだありません。ファイルを開き、変更された行の横にある + をクリックして追加してください。",
  "No local branches": "ローカルブランチはありません",
+ "No longer in the working tree: {0}": "作業ツリーにもうありません: {0}",
  "No match — Enter uses what you typed": "一致なし — Enter で入力した内容を使用します",
  "No matches": "一致なし",
  "No merge method is allowed": "許可されているマージ方法はありません",
@@ -1587,6 +1589,7 @@
  "Open this change in the diff": "この変更を差分で開く",
  "Open this conversation again": "この会話を再度開く",
  "Open this pull request on GitHub": "このプルリクエストを GitHub で開く",
+ "Open working tree file": "作業ツリーのファイルを開く",
  "Open {0} at line {1}": "{0} を {1} 行目で開く",
  "Open {0} — the lines this was written on have changed since": "{0} を開く — これが書かれた行はその後変更されています",
  "Open {0}'s details": "{0} の詳細を開く",
@@ -3308,7 +3311,5 @@
  "“{0}” is not a stash git can read.": "「{0}」はgitが読み取れるスタッシュではありません。",
  "“{0}” is not a stash.": "「{0}」はスタッシュではありません。",
  "✓ deleted": "✓ 削除済み",
- "✓ resolved": "✓ 解決済み",
- "Open working tree file": "作業ツリーのファイルを開く",
- "Could not open working tree file: {0}": "作業ツリーのファイルを開けませんでした: {0}"
+ "✓ resolved": "✓ 解決済み"
 }

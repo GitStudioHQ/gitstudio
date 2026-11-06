@@ -630,6 +630,7 @@
  "Copy {0} to Changes": "{0}'ı Değişiklikler'e Kopyala",
  "Copy: bring {0} back {1}, and keep {2} in the stash": "Kopyala: {0}'ı {1} geri getir ve {2}'ı zulada tut",
  "Could not finish loading — see the GitStudio Output channel for the error": "Yükleme bitirilemedi — hata için GitStudio Çıkış kanalına bakın",
+ "Could not open working tree file: {0}": "Çalışma ağacındaki dosya açılamadı: {0}",
  "Could not write the rebase plan": "Yeniden temellendirme planı yazılamadı",
  "Couldn't abort the rebase.": "Yeniden temellendirme iptal edilemedi.",
  "Couldn't bring the conflict in {0} back.": "{0}'daki çakışma geri getirilemedi.",
@@ -1425,6 +1426,7 @@
  "No labels match": "Hiçbir etiket eşleşmiyor",
  "No line comments yet. In Files, open a file and click + beside a changed line to add one.": "Henüz satır yorumu yok. Dosyalar'da bir dosya açıp bir eklemek için değiştirilen bir satırın yanındaki +'ya tıklayın.",
  "No local branches": "Yerel dal yok",
+ "No longer in the working tree: {0}": "Artık çalışma ağacında değil: {0}",
  "No match — Enter uses what you typed": "Eşleşme yok — Enter yazdığınızı kullanır",
  "No matches": "Eşleşme yok",
  "No merge method is allowed": "Hiçbir birleştirme yöntemine izin verilmiyor",
@@ -1587,6 +1589,7 @@
  "Open this change in the diff": "Bu değişikliği farkta aç",
  "Open this conversation again": "Bu konuşmayı yeniden aç",
  "Open this pull request on GitHub": "Bu çekme isteğini GitHub'da aç",
+ "Open working tree file": "Çalışma ağacındaki dosyayı aç",
  "Open {0} at line {1}": "{0}'ı {1}. satırda aç",
  "Open {0} — the lines this was written on have changed since": "{0}'ı aç — bunun yazıldığı satırlar o zamandan sonra değişti",
  "Open {0}'s details": "{0}'ın ayrıntılarını aç",
@@ -3308,7 +3311,5 @@
  "“{0}” is not a stash git can read.": "“{0}”, git'in okuyabileceği bir zula değil.",
  "“{0}” is not a stash.": "“{0}” bir zula değil.",
  "✓ deleted": "✓ silindi",
- "✓ resolved": "✓ çözüldü",
- "Open working tree file": "Çalışma ağacındaki dosyayı aç",
- "Could not open working tree file: {0}": "Çalışma ağacındaki dosya açılamadı: {0}"
+ "✓ resolved": "✓ çözüldü"
 }

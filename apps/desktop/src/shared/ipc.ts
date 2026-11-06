@@ -2486,6 +2486,12 @@ export interface IpcChannels {
   "editors:refresh": [void, EditorsView];
   /** Open a folder (the current repository when `root` is absent). */
   "editors:open": [{ id: string; root?: string }, OkResult];
+  /**
+   * A file of the current repository's working tree (`path` relative to its
+   * root), in the favourite editor — or, with no editor installed, the app
+   * the OS opens that kind of file with. `editor` names what it opened in.
+   */
+  "editors:openFile": [{ path: string }, OkResult & { editor?: string }];
   "editors:setShown": [{ id: string; shown: boolean }, EditorsView];
   "editors:setDefault": [{ id: string | null }, EditorsView];
   "editors:addCustom": [{ name: string; command: string }, EditorsView];

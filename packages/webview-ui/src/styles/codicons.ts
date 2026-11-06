@@ -50,6 +50,7 @@ export const codiconStyles = css`
   .codicon-circle-filled::before { content: "\\ea71"; }
   .codicon-copy::before { content: "\\ebcc"; }
   .codicon-link-external::before { content: "\\eb14"; }
+  .codicon-go-to-file::before { content: "\\ea94"; }
   .codicon-history::before { content: "\\ea82"; }
   .codicon-discard::before { content: "\\eae2"; }
   /* Drop Commit… in the graph context menu (issue #32). */

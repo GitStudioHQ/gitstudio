@@ -249,11 +249,11 @@
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.description": "Indexez des fichiers entiers, ou cochez des modifications isolées à l'intérieur d'un fichier, dans la vue **Changes**, puis validez depuis sa boîte de commit (Amend, Sign-off, un auteur différent, Commit & Push). Avec l'IA activée, le bouton étincelle de la boîte rédige un message à partir de ce que vous avez indexé. Vos stashs sont listés sous vos modifications : ouvrez-en un pour voir chaque fichier qu'il contient, et **Déplacer vers Changes** seulement les fichiers que vous voulez récupérer.\n[Ouvrir la vue Changes](command:workbench.view.extension.gitstudio)\nDans l'éditeur : sélectionnez des lignes et appuyez sur __Ctrl/Cmd+Alt+G S__ pour indexer les modifications qu'elles touchent.",
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.title": "Indexer les modifications et valider",
   "walkthrough.gitstudio.gettingStarted.title": "Démarrer avec GitStudio",
-  "config.gitstudio.diff.whitespace.description": "Traitement par défaut des espaces dans les vues de différences GitStudio. Fermez puis rouvrez la vue pour appliquer les modifications.",
-  "config.gitstudio.diff.highlight.description": "Granularité par défaut du surlignage dans les vues de différences GitStudio. Fermez puis rouvrez la vue pour appliquer les modifications.",
+  "config.gitstudio.diff.whitespace.markdownDescription": "La façon dont la comparaison de GitStudio traite les espaces à l'ouverture d'un diff ; sa barre d'outils peut toujours le changer pour ce diff. L'éditeur de différences de VS Code a son propre paramètre, `#diffEditor.ignoreTrimWhitespace#`. S'applique aux diffs ouverts après la modification.",
+  "config.gitstudio.diff.highlight.markdownDescription": "Si la comparaison de GitStudio met en évidence les mots modifiés dans une ligne ou des lignes entières à l'ouverture d'un diff ; sa barre d'outils peut toujours le changer pour ce diff. S'applique aux diffs ouverts après la modification.",
   "config.gitstudio.diff.whitespace.enumItemLabels.0": "Ne pas ignorer",
-  "config.gitstudio.diff.whitespace.enumItemLabels.1": "Ignorer les espaces en fin de ligne",
+  "config.gitstudio.diff.whitespace.enumItemLabels.1": "Supprimer les espaces superflus",
   "config.gitstudio.diff.whitespace.enumItemLabels.2": "Ignorer les espaces",
-  "config.gitstudio.diff.highlight.enumItemLabels.0": "Surligner les mots",
-  "config.gitstudio.diff.highlight.enumItemLabels.1": "Surligner les lignes"
+  "config.gitstudio.diff.highlight.enumItemLabels.0": "Mettre les mots en surbrillance",
+  "config.gitstudio.diff.highlight.enumItemLabels.1": "Mettre les lignes en surbrillance"
 }

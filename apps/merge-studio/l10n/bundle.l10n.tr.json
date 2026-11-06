@@ -794,6 +794,7 @@
  "Open the pull request's page": "Çekme isteğinin sayfasını aç",
  "Open this conversation again": "Bu konuşmayı yeniden aç",
  "Open this pull request on GitHub": "Bu çekme isteğini GitHub'da aç",
+ "Open working tree file": "Çalışma ağacındaki dosyayı aç",
  "Open {0} at line {1}": "{0}'ı {1}. satırda aç",
  "Open {0} — the lines this was written on have changed since": "{0}'ı aç — bunun yazıldığı satırlar o zamandan sonra değişti",
  "Open {0}'s details": "{0}'ın ayrıntılarını aç",

@@ -90,6 +90,17 @@ async function main() {
     loader: { ".css": "text" },
   });
 
+  // The staging diffs' worker thread (src/changes/stagingWorker.ts, #145):
+  // the engine's pure diff functions only — loaded with new Worker() from
+  // dist/, beside extension.js.
+  const stagingWorkerCtx = await esbuild.context({
+    ...base,
+    entryPoints: [path.resolve(__dirname, "src/changes/stagingWorker.ts")],
+    outfile: path.resolve(__dirname, "dist/stagingWorker.js"),
+    platform: "node",
+    format: "cjs",
+  });
+
   // Shared webview front-end (browser / IIFE). Monaco pulls in .css and .ttf;
   // inline the font as a data URL so it needs no dynamic webview path.
   const webviewCtx = await esbuild.context({
@@ -225,6 +236,7 @@ async function main() {
 
   const contexts = [
     extensionCtx,
+    stagingWorkerCtx,
     webviewCtx,
     workerCtx,
     graphCtx,

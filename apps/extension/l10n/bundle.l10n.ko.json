@@ -630,6 +630,7 @@
  "Copy {0} to Changes": "{0}을 변경 내용으로 복사",
  "Copy: bring {0} back {1}, and keep {2} in the stash": "복사: {0}을 {1}로 되돌리고 {2}은 스태시에 유지",
  "Could not finish loading — see the GitStudio Output channel for the error": "로드를 완료할 수 없습니다 — 오류는 GitStudio 출력 채널을 확인하세요",
+ "Could not open working tree file: {0}": "작업 트리 파일을 열 수 없습니다: {0}",
  "Could not write the rebase plan": "리베이스 계획을 쓸 수 없었습니다",
  "Couldn't abort the rebase.": "리베이스를 중단할 수 없었습니다.",
  "Couldn't bring the conflict in {0} back.": "{0}의 충돌을 되돌릴 수 없었습니다.",
@@ -1425,6 +1426,7 @@
  "No labels match": "일치하는 라벨 없음",
  "No line comments yet. In Files, open a file and click + beside a changed line to add one.": "아직 줄 댓글이 없습니다. 파일에서 파일을 열고 변경된 줄 옆의 +를 클릭해 추가하세요.",
  "No local branches": "로컬 브랜치 없음",
+ "No longer in the working tree: {0}": "더 이상 작업 트리에 없음: {0}",
  "No match — Enter uses what you typed": "일치 없음 — Enter를 누르면 입력한 내용을 사용합니다",
  "No matches": "일치 없음",
  "No merge method is allowed": "허용된 병합 방법이 없습니다",
@@ -1587,6 +1589,7 @@
  "Open this change in the diff": "diff에서 이 변경 내용 열기",
  "Open this conversation again": "이 대화 다시 열기",
  "Open this pull request on GitHub": "GitHub에서 이 풀 리퀘스트 열기",
+ "Open working tree file": "작업 트리 파일 열기",
  "Open {0} at line {1}": "{0}을 줄 {1}에서 열기",
  "Open {0} — the lines this was written on have changed since": "{0} 열기 — 이것이 작성된 줄이 이후 변경되었습니다",
  "Open {0}'s details": "{0}의 세부 정보 열기",
@@ -3308,7 +3311,5 @@
  "“{0}” is not a stash git can read.": "“{0}”은 git이 읽을 수 있는 스태시가 아닙니다.",
  "“{0}” is not a stash.": "“{0}”은 스태시가 아닙니다.",
  "✓ deleted": "✓ 삭제됨",
- "✓ resolved": "✓ 해결됨",
- "Open working tree file": "작업 트리 파일 열기",
- "Could not open working tree file: {0}": "작업 트리 파일을 열 수 없습니다: {0}"
+ "✓ resolved": "✓ 해결됨"
 }

@@ -249,10 +249,10 @@
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.description": "Přidávejte do stage celé soubory, nebo zaškrtněte jednotlivé změny v nich, v zobrazení **Změny**, a potom commitněte z jeho pole commitu (Amend, Sign-off, jiný autor, Commit & Push). Se zapnutou AI vytvoří tlačítko se jiskrou v poli návrh zprávy z toho, co jste dali do stage. Vaše stashe jsou uvedeny pod vašimi změnami: otevřete jeden a zobrazíte každý soubor, který obsahuje, a **Move to Changes** přesune zpět jen soubory, které chcete.\n[Otevřít zobrazení Změny](command:workbench.view.extension.gitstudio)\nV editoru: vyberte řádky a stiskněte __Ctrl/Cmd+Alt+G S__, abyste přidali do stage změny, kterých se dotýkají.",
   "walkthrough.gitstudio.gettingStarted.gitstudio.walkthrough.stage.title": "Přidejte změny do stage a commitněte",
   "walkthrough.gitstudio.gettingStarted.title": "Začínáme s GitStudiem",
-  "config.gitstudio.diff.whitespace.description": "Výchozí zpracování bílých znaků v porovnání GitStudio. Změny se projeví po zavření a opětovném otevření porovnání.",
-  "config.gitstudio.diff.highlight.description": "Výchozí podrobnost zvýraznění v porovnání GitStudio. Změny se projeví po zavření a opětovném otevření porovnání.",
+  "config.gitstudio.diff.whitespace.markdownDescription": "Jak porovnání GitStudio zachází s bílými znaky při otevření rozdílu; panel nástrojů to pro daný rozdíl stále může změnit. Editor rozdílů VS Code má vlastní nastavení `#diffEditor.ignoreTrimWhitespace#`. Platí pro rozdíly otevřené po změně.",
+  "config.gitstudio.diff.highlight.markdownDescription": "Zda porovnání GitStudio při otevření rozdílu zvýrazní změněná slova v řádku, nebo celé řádky; panel nástrojů to pro daný rozdíl stále může změnit. Platí pro rozdíly otevřené po změně.",
   "config.gitstudio.diff.whitespace.enumItemLabels.0": "Neignorovat",
-  "config.gitstudio.diff.whitespace.enumItemLabels.1": "Ignorovat koncové bílé znaky",
+  "config.gitstudio.diff.whitespace.enumItemLabels.1": "Odstranit bílé znaky",
   "config.gitstudio.diff.whitespace.enumItemLabels.2": "Ignorovat bílé znaky",
   "config.gitstudio.diff.highlight.enumItemLabels.0": "Zvýraznit slova",
   "config.gitstudio.diff.highlight.enumItemLabels.1": "Zvýraznit řádky"

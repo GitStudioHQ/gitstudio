@@ -42,6 +42,22 @@ async function open(id: string, root?: string, name?: string): Promise<void> {
   }
 }
 
+/**
+ * One file of the current repository's working tree, in the favourite editor
+ * (the OS's own app for it when no editor is installed) — the commit details'
+ * "Open working tree file" button. A file gone from the working tree since is
+ * a state, said as a note rather than an error.
+ */
+export async function openWorkingFile(path: string): Promise<void> {
+  try {
+    const r = await host.invoke("editors:openFile", { path });
+    if (!r.ok) toast(r.message ?? l10n.t("Couldn't open the editor."), r.expected ? "info" : "error");
+    else if (r.editor) toast(l10n.t("Opening in {0}…", r.editor), "info");
+  } catch (e) {
+    toast(e instanceof Error ? e.message : l10n.t("Couldn't open the editor."), "error");
+  }
+}
+
 const isMac = navigator.platform.toLowerCase().includes("mac");
 const isWin = navigator.platform.toLowerCase().startsWith("win");
 export const REVEAL_LABEL = isMac

@@ -74,7 +74,9 @@ import { ReadonlyFileView } from "./readonlyFileView";
 import { renderMarkdown } from "./markdown";
 import { renderAssistant, seedAssistantGoal } from "./assistant";
 import { aiModelsCard, agentAccessCard } from "./aiSettings";
-import { openInButton, REVEAL_LABEL } from "./openIn";
+import { openInButton, openWorkingFile, REVEAL_LABEL } from "./openIn";
+import { diffDefaults, setDiffDefaults } from "./diffDefaults";
+import type { DiffWhitespace } from "./diffDefaults";
 import { waitForGit } from "./noGit";
 import { editorsCard } from "./views/editorsCard";
 import { aiChip, openAssistantTab, registerAssistantTab, streamInto, aiEnabled } from "./aiAssist";
@@ -5950,8 +5952,69 @@ class App {
     void shellHost.invoke("settings:get", undefined).then(apply).catch((e) => {
       toast(cleanErr(e) || l10n.t("Couldn't load the setting."), "error");
     });
-    body.append(label, sub, reset);
+    body.append(label, sub, reset, ...this.diffDefaultsFields());
     return card;
+  }
+
+  /**
+   * Where every comparison starts (#146): whitespace, and changed words or
+   * whole lines. The extension's `gitstudio.diff.whitespace` / `.highlight`,
+   * with the labels of the comparison toolbars they preset.
+   */
+  private diffDefaultsFields(): HTMLElement[] {
+    const field = <T,>(
+      title: string,
+      note: HTMLElement,
+      modes: Array<{ value: T; label: string }>,
+      current: () => T,
+      choose: (value: T) => void,
+    ): HTMLElement[] => {
+      const label = el("div", "settings-field-label");
+      label.textContent = title;
+      const seg = el("div", "settings-seg");
+      const btns: HTMLElement[] = [];
+      for (const m of modes) {
+        const b = el("button", "settings-seg-btn" + (current() === m.value ? " active" : ""));
+        b.dataset.diffDefault = String(m.value);
+        b.append(span(m.label));
+        b.addEventListener("click", () => {
+          choose(m.value);
+          btns.forEach((x) => x.classList.toggle("active", x === b));
+        });
+        btns.push(b);
+        seg.appendChild(b);
+      }
+      markSegment(seg, label);
+      return [label, note, seg];
+    };
+    const sub = el("div", "settings-sub");
+    sub.textContent = l10n.t(
+      "Applies right away to every comparison in the app. The whitespace button in Changes still flips it for the file on screen.",
+    );
+    const hlSub = el("div", "settings-sub");
+    hlSub.textContent = l10n.t("Mark the changed words inside a line, or only the lines that changed.");
+    return [
+      ...field<DiffWhitespace>(
+        l10n.t("Whitespace handling"),
+        sub,
+        [
+          { value: "none", label: l10n.t("Do not ignore") },
+          { value: "trailing", label: l10n.t("Trim whitespaces") },
+        ],
+        () => diffDefaults().whitespace,
+        (whitespace) => setDiffDefaults({ whitespace }),
+      ),
+      ...field<boolean>(
+        l10n.t("Highlight granularity"),
+        hlSub,
+        [
+          { value: true, label: l10n.t("Highlight words") },
+          { value: false, label: l10n.t("Highlight lines") },
+        ],
+        () => diffDefaults().showInner,
+        (showInner) => setDiffDefaults({ showInner }),
+      ),
+    ];
   }
 
   private settingsRepositoriesCard(): HTMLElement {
@@ -7454,6 +7517,10 @@ class App {
       diffPanel.showEmpty(l10n.t("Select a file to view its diff."));
     }
     this.activeMonacoView = diffPanel;
+    // The toggle says what the panel does: Settings sets where comparisons
+    // start, and a kept panel remembers what it was flipped to.
+    whitespaceIgnored = diffPanel.whitespace === "trailing";
+    syncWs();
 
     // Paint from what we already know, and only rebuild if the tree ACTUALLY
     // moved. Before this, the file list was a 6-row skeleton on every entry and
@@ -10811,6 +10878,12 @@ class App {
           d.kind === "wip" ? undefined : d.sha,
         );
       }
+    });
+    // Each changed file's row also opens the file itself, from the working
+    // tree, in your editor — the diff is what the row's own click opens (#146).
+    panel.openWorkspaceFile = true;
+    panel.addEventListener("gs-workspace-file-open", (e) => {
+      void openWorkingFile((e as CustomEvent<{ path: string }>).detail.path);
     });
     panel.addEventListener("gs-copy", (e) => {
       const detail = (e as CustomEvent).detail as { text: string };

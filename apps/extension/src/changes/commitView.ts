@@ -4233,6 +4233,10 @@ export class CommitViewProvider
        Generate), so at most two buttons ever appear. */
     .sparkle.review { right: 35px; }
     .sparkle.connect { color: var(--gs-accent-text); }
+    /* The text keeps clear of every button showing (#147). The textarea's own
+       right padding fits ONE button; with Review beside Generate a long subject
+       ran under Review. 35px + 24px + the 5px the single slot leaves. */
+    .message-wrap:has(.sparkle.review.visible) textarea { padding-right: 64px; }
     .sparkle svg { width: 15px; height: 15px; display: block; }
     .sparkle .spinner { display: none; }
     .sparkle.loading .glyph { display: none; }

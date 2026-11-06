@@ -630,6 +630,7 @@
  "Copy {0} to Changes": "Kopírovat {0} do Změn",
  "Copy: bring {0} back {1}, and keep {2} in the stash": "Kopírovat: vrátit {0} zpět {1} a zachovat {2} ve stash",
  "Could not finish loading — see the GitStudio Output channel for the error": "Nedokončilo se načítání — chybu najdete v kanálu Output GitStudio",
+ "Could not open working tree file: {0}": "Nelze otevřít soubor pracovního stromu: {0}",
  "Could not write the rebase plan": "Nepodařilo se zapsat plán rebase",
  "Couldn't abort the rebase.": "Rebase se nepodařilo zrušit.",
  "Couldn't bring the conflict in {0} back.": "Nepodařilo se vrátit konflikt v {0} zpět.",
@@ -1425,6 +1426,7 @@
  "No labels match": "Žádné štítky neodpovídají",
  "No line comments yet. In Files, open a file and click + beside a changed line to add one.": "Zatím žádné komentáře k řádkům. V Souborech otevřete soubor a klikněte na + vedle změněného řádku pro jeho přidání.",
  "No local branches": "Žádné lokální větve",
+ "No longer in the working tree: {0}": "Už není v pracovním stromu: {0}",
  "No match — Enter uses what you typed": "Žádná shoda — Enter použije to, co jste napsali",
  "No matches": "Žádné shody",
  "No merge method is allowed": "Není povolena žádná metoda slučování",
@@ -1587,6 +1589,7 @@
  "Open this change in the diff": "Otevřít tuto změnu v diffu",
  "Open this conversation again": "Otevřít tuto konverzaci znovu",
  "Open this pull request on GitHub": "Otevřít tento pull request na GitHubu",
+ "Open working tree file": "Otevřít soubor pracovního stromu",
  "Open {0} at line {1}": "Otevřít {0} na řádku {1}",
  "Open {0} — the lines this was written on have changed since": "Otevřít {0} — řádky, na kterých to bylo napsáno, se od té doby změnily",
  "Open {0}'s details": "Otevřít podrobnosti {0}",
@@ -3308,7 +3311,5 @@
  "“{0}” is not a stash git can read.": "„{0}“ není stash, který git umí přečíst.",
  "“{0}” is not a stash.": "„{0}“ není stash.",
  "✓ deleted": "✓ smazáno",
- "✓ resolved": "✓ vyřešeno",
- "Open working tree file": "Otevřít soubor pracovního stromu",
- "Could not open working tree file: {0}": "Nelze otevřít soubor pracovního stromu: {0}"
+ "✓ resolved": "✓ vyřešeno"
 }

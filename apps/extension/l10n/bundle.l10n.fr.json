@@ -630,6 +630,7 @@
  "Copy {0} to Changes": "Copier {0} dans Modifications",
  "Copy: bring {0} back {1}, and keep {2} in the stash": "Copier : restaurer {0} {1}, et garder {2} dans le stash",
  "Could not finish loading — see the GitStudio Output channel for the error": "Le chargement n'a pas pu se terminer — consultez le canal de sortie GitStudio pour l'erreur",
+ "Could not open working tree file: {0}": "Impossible d’ouvrir le fichier de l’arbre de travail : {0}",
  "Could not write the rebase plan": "Le plan de rebase n'a pas pu être écrit",
  "Couldn't abort the rebase.": "Le rebase n'a pas pu être abandonné.",
  "Couldn't bring the conflict in {0} back.": "Le conflit dans {0} n'a pas pu être restauré.",
@@ -1425,6 +1426,7 @@
  "No labels match": "Aucun libellé ne correspond",
  "No line comments yet. In Files, open a file and click + beside a changed line to add one.": "Aucun commentaire de ligne pour l'instant. Dans Fichiers, ouvrez un fichier et cliquez sur + à côté d'une ligne modifiée pour en ajouter un.",
  "No local branches": "Aucune branche locale",
+ "No longer in the working tree: {0}": "N'est plus dans l'arbre de travail : {0}",
  "No match — Enter uses what you typed": "Aucune correspondance — Entrée utilise ce que vous avez saisi",
  "No matches": "Aucune correspondance",
  "No merge method is allowed": "Aucune méthode de fusion n'est autorisée",
@@ -1587,6 +1589,7 @@
  "Open this change in the diff": "Ouvrir cette modification dans le diff",
  "Open this conversation again": "Rouvrir cette conversation",
  "Open this pull request on GitHub": "Ouvrir cette pull request sur GitHub",
+ "Open working tree file": "Ouvrir le fichier de l’arbre de travail",
  "Open {0} at line {1}": "Ouvrir {0} à la ligne {1}",
  "Open {0} — the lines this was written on have changed since": "Ouvrir {0} — les lignes sur lesquelles cela a été écrit ont changé depuis",
  "Open {0}'s details": "Ouvrir les détails de {0}",
@@ -3308,7 +3311,5 @@
  "“{0}” is not a stash git can read.": "« {0} » n'est pas un stash que git peut lire.",
  "“{0}” is not a stash.": "« {0} » n'est pas un stash.",
  "✓ deleted": "✓ supprimé",
- "✓ resolved": "✓ résolu",
- "Open working tree file": "Ouvrir le fichier de l’arbre de travail",
- "Could not open working tree file: {0}": "Impossible d’ouvrir le fichier de l’arbre de travail : {0}"
+ "✓ resolved": "✓ résolu"
 }
