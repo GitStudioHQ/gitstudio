@@ -94,3 +94,13 @@ test("isUserEdited: our URL with our model is ours; a changed URL or a typed mod
   assert.equal(isUserEdited(stored("custom", { baseUrl: "http://my-server:8000/v1" }), "x"), true, "custom is always the user's");
   assert.equal(isUserEdited(groq, undefined), false);
 });
+
+test("no OpenAI model is chosen for you: its preset (and Azure's) seeds none, and a retirement picks none either", () => {
+  for (const id of ["openai", "azure"]) {
+    assert.deepEqual(presetById(id).models, { fast: "", mid: "", deep: "" }, id);
+  }
+  assert.equal(RETIRED_DEFAULTS.openai, undefined);
+  const onFormerDefaults = stored("openai", { models: { fast: "gpt-4o-mini", mid: "gpt-4o", deep: "gpt-4o" } });
+  assert.equal(migrateRetiredModels(onFormerDefaults), false);
+  assert.deepEqual(onFormerDefaults.models, { fast: "gpt-4o-mini", mid: "gpt-4o", deep: "gpt-4o" }, "kept, never blanked");
+});

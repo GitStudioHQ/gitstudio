@@ -103,6 +103,18 @@ export const ANTHROPIC_KEY_SECRET = "gitstudio.ai.anthropicApiKey";
 /** Storage key for the OpenAI-compatible API key (optional). */
 export const OPENAI_KEY_SECRET = "gitstudio.ai.openaiApiKey";
 
+/**
+ * What the OpenAI model settings defaulted to until they became blank (you
+ * choose the model now). See AiFeatures.keepFormerOpenAiDefaults.
+ */
+export const FORMER_OPENAI_DEFAULTS: Readonly<Record<ModelTier, string>> = {
+  fast: "gpt-4o-mini",
+  mid: "gpt-4o-mini",
+  deep: "gpt-4o",
+};
+/** globalState key: the former OpenAI defaults were kept for this user. */
+const FORMER_OPENAI_DEFAULTS_KEPT = "gitstudio.ai.formerOpenAiDefaultsKept";
+
 /** globalState key remembering the user's chosen vscode.lm model id. */
 export const LM_MODEL_STATE_KEY = "gitstudio.ai.lmModelId";
 
@@ -284,6 +296,44 @@ export class AiFeatures implements vscode.Disposable {
     if (mid) overrides.mid = mid;
     if (deep) overrides.deep = deep;
     return overrides;
+  }
+
+  /**
+   * Keep an existing OpenAI setup on the models it was already using.
+   *
+   * The OpenAI model settings used to DEFAULT to gpt-4o-mini / gpt-4o, so a
+   * user who stored a key and never touched them was running on our pick.
+   * Those defaults are blank now — you choose the model — and without this
+   * that user's AI would switch off on update. So, once: for each tier they
+   * never set, the old default is written as their own value. Nothing changes
+   * for them, and the setting now shows the model they are on, theirs to
+   * change. Only for someone the defaults were serving: an OpenAI key stored,
+   * or the provider set to OpenAI.
+   */
+  async keepFormerOpenAiDefaults(): Promise<void> {
+    const state = this.context.globalState;
+    if (state.get<boolean>(FORMER_OPENAI_DEFAULTS_KEPT)) {
+      return;
+    }
+    if (this.secrets.has(OPENAI_KEY_SECRET) || this.providerChoice() === "openai") {
+      const cfg = this.config();
+      for (const [tier, key] of [
+        ["fast", "openai.modelFast"],
+        ["mid", "openai.modelMid"],
+        ["deep", "openai.modelDeep"],
+      ] as const) {
+        const set = cfg.inspect<string>(key);
+        const unset =
+          set !== undefined &&
+          set.globalValue === undefined &&
+          set.workspaceValue === undefined &&
+          set.workspaceFolderValue === undefined;
+        if (unset) {
+          await cfg.update(key, FORMER_OPENAI_DEFAULTS[tier], vscode.ConfigurationTarget.Global);
+        }
+      }
+    }
+    await state.update(FORMER_OPENAI_DEFAULTS_KEPT, true);
   }
 
   /** Read the OpenAI-compatible base URL + per-tier model IDs from settings. */

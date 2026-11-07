@@ -136,6 +136,7 @@ import { runManyAction } from "./multiCommit";
 import { askPullMode, pullWithChoice, pullVerdict, type PullOutcome, type PullVerdict } from "./pullFlow";
 import { resetItemLabel, resetToUpstream } from "./resetToUpstream";
 import { installInTheWayAsker } from "./inTheWayAsk";
+import { installMergeSideAsker } from "./mergeSideAsk";
 import { refCheckoutRequest, refDisplay, type RowRef } from "./refMenuItems";
 import { branchName, isRemoteHead, remoteRefParts, tagName, upstreamLabel, upstreamParts } from "./branchRequests";
 import { explainRefusedCheckout } from "./optionLikeRename";
@@ -11544,6 +11545,9 @@ class TabShell {
     // asks Stash & Retry or Cancel for all of them (bridge.ts). It holds its
     // question while the tab it was asked in stays in front.
     installInTheWayAsker(() => currentSession()?.root);
+    // And the side a merge commit's cherry-pick or revert takes, asked the
+    // same way for every door.
+    installMergeSideAsker(() => currentSession()?.root);
     // Catch-all error boundary: a rejected promise or thrown render should never
     // leave the app silently broken — surface it as a toast. BUT skip the benign
     // Monaco worker noise (it asks the base worker for TS language-service methods

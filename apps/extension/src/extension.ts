@@ -413,7 +413,12 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
     // — and never leaves the host (the commit box only gets the result text).
     const brain = new AiFeatures(context);
     context.subscriptions.push(brain);
-    void brain.refreshEnabled();
+    // Before the first availability probe: an OpenAI setup that ran on the
+    // former model defaults keeps them as its own (they are blank now).
+    void brain
+      .keepFormerOpenAiDefaults()
+      .catch(() => undefined)
+      .then(() => brain.refreshEnabled());
     context.subscriptions.push(
       vscode.commands.registerCommand("gitstudio.ai.setApiKey", () =>
         setApiKey(context, brain),

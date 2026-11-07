@@ -1457,19 +1457,19 @@
           },
           "gitstudio.ai.openai.modelFast": {
             "type": "string",
-            "default": "gpt-4o-mini",
+            "default": "",
             "description": "%config.gitstudio.ai.openai.modelFast.description%",
             "order": 10
           },
           "gitstudio.ai.openai.modelMid": {
             "type": "string",
-            "default": "gpt-4o-mini",
+            "default": "",
             "description": "%config.gitstudio.ai.openai.modelMid.description%",
             "order": 11
           },
           "gitstudio.ai.openai.modelDeep": {
             "type": "string",
-            "default": "gpt-4o",
+            "default": "",
             "description": "%config.gitstudio.ai.openai.modelDeep.description%",
             "order": 12
           }

@@ -427,3 +427,37 @@ export class OpenAiSseParser {
 interface OpenAiStreamChunk {
   choices?: Array<{ delta?: { content?: string }; finish_reason?: string }>;
 }
+
+/**
+ * OpenAI's reasoning families — o1/o3/o4…, gpt-5 and later — by the bare id
+ * OpenAI and Azure use. They refuse `max_tokens` (HTTP 400) and take
+ * `max_completion_tokens`, a cap that counts their hidden reasoning too. A
+ * router's "openai/gpt-5" is translated by the router, so it is deliberately
+ * not matched. Shared by the desktop's provider (packages/ai) and the
+ * extension's, which used to send `max_tokens` to every model.
+ */
+export function isOpenAiReasoningModel(model: string): boolean {
+  return /^(o\d|gpt-([5-9]|\d{2,}))/i.test(model.trim());
+}
+
+/**
+ * The `reasoning_effort` to send, if any. A reasoning model spends its token
+ * cap on hidden thinking first, so a short task left at the default effort can
+ * come back empty with a `length` stop. Sent only where it is documented:
+ * OpenAI's reasoning ids and gpt-oss (Groq, Together, local servers) — not via
+ * OpenRouter, which takes a `reasoning` object instead.
+ */
+export function openAiReasoningEffort(
+  model: string,
+  thinking: "off" | "auto" | "extended" | undefined,
+  baseUrl: string,
+): "low" | "high" | undefined {
+  const gptOss = /(^|\/)gpt-oss\b/i.test(model) && !/openrouter\.ai/i.test(baseUrl);
+  if (!gptOss && !isOpenAiReasoningModel(model)) {
+    return undefined;
+  }
+  if (thinking === "auto") {
+    return undefined; // the model's own default
+  }
+  return thinking === "extended" ? "high" : "low";
+}

@@ -51,9 +51,10 @@ const SHIPPED: Record<string, unknown> = {
   "gitstudio.worktrees.prefixWithProjectName": false,
   "gitstudio.ai.provider": "auto",
   "gitstudio.ai.openai.baseUrl": "https://api.openai.com/v1",
-  "gitstudio.ai.openai.modelFast": "gpt-4o-mini",
-  "gitstudio.ai.openai.modelMid": "gpt-4o-mini",
-  "gitstudio.ai.openai.modelDeep": "gpt-4o",
+  // Blank: no OpenAI model is chosen for you (aiChooseModel.test.ts).
+  "gitstudio.ai.openai.modelFast": "",
+  "gitstudio.ai.openai.modelMid": "",
+  "gitstudio.ai.openai.modelDeep": "",
   "gitstudio.ai.anthropicModelFast": "claude-haiku-4-5",
   "gitstudio.ai.anthropicModelMid": "claude-sonnet-4-6",
   "gitstudio.ai.anthropicModelDeep": "claude-opus-4-8",

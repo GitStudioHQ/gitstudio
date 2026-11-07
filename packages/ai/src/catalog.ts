@@ -68,7 +68,9 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     blurb: l10n.t("GPT models via the OpenAI API."),
     wire: "openai-compat",
     baseUrl: "https://api.openai.com/v1",
-    models: { fast: "gpt-6-luna", mid: "gpt-6.1-terra", deep: "gpt-6.1-sol" },
+    // No model is chosen for you: the editor lists the models your key can
+    // use (ai:models — live /models, then KNOWN_MODELS) and you pick one.
+    models: { fast: "", mid: "", deep: "" },
     needsKey: true,
     keyUrl: "https://platform.openai.com/api-keys",
     icon: "sparkle",
@@ -233,7 +235,8 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     blurb: l10n.t("OpenAI models hosted in your Azure tenant."),
     wire: "openai-compat",
     baseUrl: "https://YOUR-RESOURCE.openai.azure.com/openai/deployments/YOUR-DEPLOYMENT",
-    models: { fast: "gpt-4o-mini", mid: "gpt-4o", deep: "gpt-4o" },
+    // A deployment's model is whatever you deployed: yours to name.
+    models: { fast: "", mid: "", deep: "" },
     needsKey: true,
     keyUrl: "https://portal.azure.com",
     icon: "azure",
@@ -293,8 +296,9 @@ export function knownModels(preset: string): string[] {
  * default for that tier is moved on — an id the user chose is theirs.
  */
 export const RETIRED_DEFAULTS: Record<string, ReadonlyArray<Record<ModelTier, string>>> = {
-  // Deprecated 2026-10-14, removed 2027-01-14; replacement gpt-6-luna.
-  openai: [{ fast: "gpt-4o-mini", mid: "gpt-4o", deep: "gpt-4o" }],
+  // NOT openai: no OpenAI model is chosen for you any more (its preset seeds
+  // none), so none is chosen for you on a retirement either — a connection
+  // keeps the model it is on until you pick another.
   // Deprecated; no longer served to new users, shut down 2026-12-01.
   google: [{ fast: "gemini-2.5-flash", mid: "gemini-2.5-flash", deep: "gemini-2.5-pro" }],
   // Shut down 2026-08-16 for free and developer tiers.
