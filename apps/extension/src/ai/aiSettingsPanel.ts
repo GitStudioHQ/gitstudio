@@ -7,6 +7,10 @@ import { getNonce } from "../webview/html";
 import tokensCss from "../../../../packages/webview-ui/src/styles/tokens.css";
 import * as l10n from "@vscode/l10n";
 import { l10nWebviewScript } from "@gitstudio/l10n/index";
+import { PROVIDER_DEFAULT_MODELS } from "@gitstudio/engine/ai/providerDefaults";
+
+/** A card's model to start on: its provider's own default (the desktop's too). */
+const seed = (id: keyof typeof PROVIDER_DEFAULT_MODELS): string => JSON.stringify(PROVIDER_DEFAULT_MODELS[id].mid);
 
 /** The panel's providers that speak /chat/completions, and so need a model. */
 const OPENAI_COMPATIBLE_KINDS = new Set(["openai", "openrouter", "groq", "custom", "ollama", "lmstudio"]);
@@ -172,9 +176,10 @@ export class AiSettingsPanel {
     const model = (m.model ?? "").trim();
     const key = (m.key ?? "").trim();
     const baseUrl = (m.baseUrl ?? "").trim();
-    // No model is chosen for you on an OpenAI-compatible connection. The panel
-    // asks before it sends; this is for any other sender — an empty model
-    // would blank every tier and leave AI off.
+    // An OpenAI-compatible connection is made with the model in the field
+    // (each card starts on its provider's default). The panel asks before it
+    // sends an empty one; this is for any other sender — on a custom server
+    // an empty model would leave AI off.
     if (OPENAI_COMPATIBLE_KINDS.has(kind) && !model) {
       await this.postResult(false, l10n.t("Choose a model to connect — pick one from the list or type its ID."));
       return;
@@ -441,17 +446,17 @@ export class AiSettingsPanel {
         blurb:"Drive the Gemini CLI you're signed into." },
       { id:"copilot", icon:"github", name:"Editor AI", badge:"No key", badgeCls:"is-ready", group:"nokey", fields:[], needsCopilot:true,
         blurb:"Use Copilot / Cursor's built-in models. Nothing to configure." },
-      { id:"ollama", icon:"vm", name:"Ollama", badge:"Local", badgeCls:"is-local", group:"nokey", fields:["model"], baseUrl:"http://localhost:11434/v1", model:"llama3.1",
+      { id:"ollama", icon:"vm", name:"Ollama", badge:"Local", badgeCls:"is-local", group:"nokey", fields:["model"], baseUrl:"http://localhost:11434/v1", model:${seed("ollama")},
         blurb:"Run open models on your machine — fully private." },
       { id:"lmstudio", icon:"vm", name:"LM Studio", badge:"Local", badgeCls:"is-local", group:"nokey", fields:["model"], baseUrl:"http://localhost:1234/v1", model:"",
         blurb:"Local model server. Private, no API key." },
-      { id:"anthropic", icon:"sparkle", name:"Anthropic", group:"key", fields:["key","model"], model:"claude-sonnet-4-6", keyUrl:"https://console.anthropic.com/settings/keys",
+      { id:"anthropic", icon:"sparkle", name:"Anthropic", group:"key", fields:["key","model"], model:${seed("anthropic")}, keyUrl:"https://console.anthropic.com/settings/keys",
         blurb:"Claude models. Bring your own API key." },
-      { id:"openai", icon:"sparkle", name:"OpenAI", group:"key", fields:["key","model"], baseUrl:"https://api.openai.com/v1", model:"", keyUrl:"https://platform.openai.com/api-keys",
+      { id:"openai", icon:"sparkle", name:"OpenAI", group:"key", fields:["key","model"], baseUrl:"https://api.openai.com/v1", model:${seed("openai")}, keyUrl:"https://platform.openai.com/api-keys",
         blurb:"GPT models. Bring your own API key." },
-      { id:"openrouter", icon:"globe", name:"OpenRouter", group:"key", fields:["key","model"], baseUrl:"https://openrouter.ai/api/v1", model:"anthropic/claude-sonnet-4-6", keyUrl:"https://openrouter.ai/keys",
+      { id:"openrouter", icon:"globe", name:"OpenRouter", group:"key", fields:["key","model"], baseUrl:"https://openrouter.ai/api/v1", model:${seed("openrouter")}, keyUrl:"https://openrouter.ai/keys",
         blurb:"One key, hundreds of models from every provider." },
-      { id:"groq", icon:"zap", name:"Groq", group:"key", fields:["key","model"], baseUrl:"https://api.groq.com/openai/v1", model:"openai/gpt-oss-120b", keyUrl:"https://console.groq.com/keys",
+      { id:"groq", icon:"zap", name:"Groq", group:"key", fields:["key","model"], baseUrl:"https://api.groq.com/openai/v1", model:${seed("groq")}, keyUrl:"https://console.groq.com/keys",
         blurb:"Extremely fast inference. Bring your own key." },
       { id:"custom", icon:"settings-gear", name:"Custom", group:"key", fields:["baseUrl","key","model"], baseUrl:"", model:"",
         blurb:"Any OpenAI-compatible endpoint." },
@@ -521,8 +526,8 @@ export class AiSettingsPanel {
       const actions = el("div", "settings-actions");
       const connect = el("button", "btn-primary"); connect.append(glyph("plug"), el("span", null, "Connect"));
       connect.addEventListener("click", () => {
-        // No model is chosen FOR you: an OpenAI-compatible connection needs the
-        // one you pick (Anthropic's blank keeps Claude's per-task defaults).
+        // A card starts on its provider's default; a field you emptied asks
+        // (Anthropic's blank keeps Claude's per-task defaults).
         if (needsModel(p) && inputs.model && !inputs.model.value.trim()) {
           note = { ok:false, message:"Choose a model to connect — pick one from the list or type its ID." };
           renderNote(); inputs.model.focus();
@@ -549,8 +554,9 @@ export class AiSettingsPanel {
       conn.append(head, editor);
       return conn;
     }
-    /** Whether Connect needs a model typed or picked: every OpenAI-compatible
-     *  provider. Anthropic falls back to Claude's own per-task defaults. */
+    /** Whether Connect needs a model in the field: every OpenAI-compatible
+     *  provider (a blank would blank every tier). Anthropic falls back to
+     *  Claude's own per-task defaults. */
     function needsModel(p) { return p.fields.includes("model") && p.id !== "anthropic"; }
     // Model field: an input with a datalist of DISCOVERED models. Detection is
     // automatic (local servers on open, cloud on key-blur); a plain text link
@@ -733,10 +739,18 @@ export class AiSettingsPanel {
         if (editorInputs && editorInputs._list) {
           editorInputs._list.replaceChildren();
           for (const id of m.list) { const o = document.createElement("option"); o.value = id; editorInputs._list.append(o); }
-          // Filled in only when there is nothing to choose between — a local
-          // server with one model loaded. It used to take the FIRST of any
-          // list: alphabetically, an OpenAI key got "babbage-002".
-          if (!editorInputs.model.value && m.list.length === 1) editorInputs.model.value = m.list[0];
+          // A cloud card keeps its provider's default; the list is there to
+          // change it. It used to take the FIRST of any list: alphabetically,
+          // an OpenAI key got "babbage-002". A LOCAL server's default is what
+          // it has: its first model, unless the one in the field is among them
+          // (Ollama lists "qwen2.5-coder:latest" for "qwen2.5-coder") — the
+          // card's seed may never have been pulled. Anything else only when
+          // there is nothing to choose between.
+          const cur = editorInputs.model.value.trim();
+          const has = (id) => m.list.some((x) => x === id || x === id + ":latest");
+          const local = m.kind === "ollama" || m.kind === "lmstudio";
+          const seeded = byId(m.kind) && cur === (byId(m.kind).model || "");
+          if (m.list.length && (local ? !cur || (seeded && !has(cur)) : !cur && m.list.length === 1)) editorInputs.model.value = m.list[0];
           setDetectStatus(m.list.length
             ? (m.list.length + " model" + (m.list.length === 1 ? "" : "s") + " found — pick one or type.")
             : "No models found — is the server running / key valid?");

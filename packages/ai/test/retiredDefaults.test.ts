@@ -8,6 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { PROVIDER_PRESETS, RETIRED_DEFAULTS, presetById } from "../src/catalog";
+import { PROVIDER_DEFAULT_MODELS } from "@gitstudio/engine/ai/providerDefaults";
 import { connectionFromPreset, isUserEdited, migrateRetiredModels, type Connection } from "../src/connections";
 
 test("no preset seeds a model id its provider has retired", () => {
@@ -95,12 +96,18 @@ test("isUserEdited: our URL with our model is ours; a changed URL or a typed mod
   assert.equal(isUserEdited(groq, undefined), false);
 });
 
-test("no OpenAI model is chosen for you: its preset (and Azure's) seeds none, and a retirement picks none either", () => {
-  for (const id of ["openai", "azure"]) {
-    assert.deepEqual(presetById(id).models, { fast: "", mid: "", deep: "" }, id);
+test("every provider with a model of its own seeds its defaults, from the one table both products share", () => {
+  for (const [id, models] of Object.entries(PROVIDER_DEFAULT_MODELS)) {
+    assert.deepEqual(presetById(id).models, models, id);
+    for (const tier of ["fast", "mid", "deep"] as const) assert.ok(models[tier], `${id} ${tier}`);
   }
-  assert.equal(RETIRED_DEFAULTS.openai, undefined);
+  assert.ok(!Object.values(presetById("openai").models).some((m) => /gpt-4o/.test(m)), "never gpt-4o");
+  // A connection still on OpenAI's former defaults moves to the current ones.
   const onFormerDefaults = stored("openai", { models: { fast: "gpt-4o-mini", mid: "gpt-4o", deep: "gpt-4o" } });
-  assert.equal(migrateRetiredModels(onFormerDefaults), false);
-  assert.deepEqual(onFormerDefaults.models, { fast: "gpt-4o-mini", mid: "gpt-4o", deep: "gpt-4o" }, "kept, never blanked");
+  assert.equal(migrateRetiredModels(onFormerDefaults), true);
+  assert.deepEqual(onFormerDefaults.models, { ...PROVIDER_DEFAULT_MODELS.openai });
+  // Editing a connection's copy never touches the table.
+  const conn = connectionFromPreset("openai", "x");
+  conn.models.mid = "mine";
+  assert.equal(PROVIDER_DEFAULT_MODELS.openai.mid, "gpt-6.1-terra");
 });

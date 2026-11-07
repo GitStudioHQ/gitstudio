@@ -206,9 +206,9 @@ function buildEditor(editor: HTMLElement, c: AiConnectionView, refresh: () => Pr
   // CLI connections have no base URL or API key — they use the local binary's own
   // login. They just take optional model overrides (mapped to `--model`).
   const urlF = settingsField(l10n.t("API base URL"), c.baseUrl, "https://api.example.com/v1");
-  // An HTTP connection's models are CHOSEN, never seeded for you where the
-  // preset has none (OpenAI, Azure, Custom): each field offers what the
-  // provider lists for this connection (ai:models — live, then known ids).
+  // An HTTP connection starts on its provider's own defaults (Custom has
+  // none), and they are yours to change: each field offers what the provider
+  // lists for this connection (ai:models — live, then known ids).
   const choosePlaceholder = l10n.t("Choose from the list, or type a model ID");
   const fastF = settingsField(
     isCli ? l10n.t("Quick model (optional)") : l10n.t("Fast model"),
@@ -391,9 +391,8 @@ async function openGallery(body: HTMLElement, refresh: () => Promise<void>): Pro
     // one did not, and it is the only way to connect the providers that need no
     // key at all. Their users could never lift the Assistant's gate.
     announceAiChanged();
-    // What is left to do. A preset that seeds no model (OpenAI, Azure,
-    // Custom) needs one chosen — "Ready to use" was said of Custom, which
-    // was not.
+    // What is left to do. A preset that seeds no model (Custom) needs one
+    // chosen — "Ready to use" was said of Custom, which was not.
     const needsModel = p.wire !== "cli" && !p.models.fast && !p.models.mid && !p.models.deep;
     const todo = p.needsKey
       ? needsModel

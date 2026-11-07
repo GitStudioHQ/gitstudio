@@ -154,7 +154,7 @@
   "config.gitstudio.ai.commitStyle.enumDescriptions.2": "Rozkazovací předmět plus krátké vysvětlující tělo.",
   "config.gitstudio.ai.openai.baseUrl.markdownDescription": "Základní URL pro koncový bod kompatibilní s OpenAI (přidá se `/chat/completions`). Příklady: `https://api.openai.com/v1` (OpenAI), `https://openrouter.ai/api/v1` (OpenRouter), `http://localhost:11434/v1` (Ollama), `http://localhost:1234/v1` (LM Studio).",
   "config.gitstudio.ai.openai.modelDeep.description": "ID modelu kompatibilního s OpenAI pro volitelné hluboké uvažování.",
-  "config.gitstudio.ai.openai.modelFast.description": "ID modelu kompatibilního s OpenAI pro rychlé/levné úlohy (zprávy commitů). U místního serveru použijte jeho název modelu, např. llama3.1 nebo qwen2.5-coder.",
+  "config.gitstudio.ai.openai.modelFast.description": "ID modelu kompatibilního s OpenAI pro rychlé/levné úlohy (zprávy commitů). Když necháte všechna tři nastavení modelu prázdná, použijí se výchozí modely vašeho poskytovatele. U místního serveru použijte jeho název modelu, např. llama3.1 nebo qwen2.5-coder.",
   "config.gitstudio.ai.openai.modelMid.description": "ID modelu kompatibilního s OpenAI pro úlohy střední úrovně (vysvětlení diffu, shrnutí).",
   "config.gitstudio.ai.provider.enumDescriptions.0": "Preferovat jazykový model VS Code bez klíče (GitHub Copilot / Cursor), pokud je dostupný; jinak Anthropic (pokud je nastaven klíč), potom koncový bod kompatibilní s OpenAI (pokud je nakonfigurován model).",
   "config.gitstudio.ai.provider.enumDescriptions.1": "Použít API jazykového modelu VS Code — modely GitHub Copilot nebo Cursor, bez klíče. Konkrétní model vyberte přes „GitStudio: Select AI Model…“.",

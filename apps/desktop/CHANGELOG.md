@@ -19,12 +19,11 @@ but they share the same engine, so most Git behaviour lands in both at once.
   command to run instead.
 
 ### Changed
-- **You choose the OpenAI model.** A new OpenAI or Azure OpenAI connection no
-  longer comes with models filled in; each model field lists what the
-  provider offers for it, and the connection is ready once you pick. A
-  connection keeps the model it is on — none is swapped for you when OpenAI
-  retires one. Adding a Custom connection no longer says "Ready to use" before
-  it has a model.
+- **Change a connection's models from the provider's list.** Each model
+  field lists what the provider offers for that connection; a new connection
+  still starts on its provider's defaults. Azure OpenAI now starts on
+  OpenAI's current models instead of gpt-4o. Adding a Custom connection no
+  longer says "Ready to use" before it has a model.
 
 ## [2.9.0] - 2026-11-07
 

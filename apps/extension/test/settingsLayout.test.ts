@@ -51,7 +51,7 @@ const SHIPPED: Record<string, unknown> = {
   "gitstudio.worktrees.prefixWithProjectName": false,
   "gitstudio.ai.provider": "auto",
   "gitstudio.ai.openai.baseUrl": "https://api.openai.com/v1",
-  // Blank: no OpenAI model is chosen for you (aiChooseModel.test.ts).
+  // Blank: the defaults of the provider the base URL points at (aiProviderDefaults.test.ts).
   "gitstudio.ai.openai.modelFast": "",
   "gitstudio.ai.openai.modelMid": "",
   "gitstudio.ai.openai.modelDeep": "",

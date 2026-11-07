@@ -37,9 +37,7 @@ test("connectionFromPreset copies preset defaults and the supplied id", () => {
 });
 
 test("isConnectionUsable requires base URL, a model, and (for remote) a key", () => {
-  // OpenAI's preset seeds no model (you choose it): pick one first.
-  const remote: Connection = { ...connectionFromPreset("openai", "1"), models: { fast: "", mid: "gpt-6.1-terra", deep: "" } };
-  assert.equal(isConnectionUsable(connectionFromPreset("openai", "0"), true), false, "no model chosen yet");
+  const remote = connectionFromPreset("openai", "1");
   assert.equal(isConnectionUsable(remote, false), false, "remote needs a key");
   assert.equal(isConnectionUsable(remote, true), true, "remote with key ok");
 

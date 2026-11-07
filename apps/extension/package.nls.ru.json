@@ -154,7 +154,7 @@
   "config.gitstudio.ai.commitStyle.enumDescriptions.2": "Повелительная тема плюс короткое пояснительное тело.",
   "config.gitstudio.ai.openai.baseUrl.markdownDescription": "Базовый URL для совместимой с OpenAI конечной точки (`/chat/completions` добавляется автоматически). Примеры: `https://api.openai.com/v1` (OpenAI), `https://openrouter.ai/api/v1` (OpenRouter), `http://localhost:11434/v1` (Ollama), `http://localhost:1234/v1` (LM Studio).",
   "config.gitstudio.ai.openai.modelDeep.description": "ID совместимой с OpenAI модели для дополнительного глубокого рассуждения.",
-  "config.gitstudio.ai.openai.modelFast.description": "ID совместимой с OpenAI модели для быстрых/дешёвых задач (сообщения коммитов). Для локального сервера используйте имя его модели, например llama3.1 или qwen2.5-coder.",
+  "config.gitstudio.ai.openai.modelFast.description": "ID совместимой с OpenAI модели для быстрых/дешёвых задач (сообщения коммитов). Оставьте все три настройки модели пустыми, чтобы использовать модели вашего провайдера по умолчанию. Для локального сервера используйте имя его модели, например llama3.1 или qwen2.5-coder.",
   "config.gitstudio.ai.openai.modelMid.description": "ID совместимой с OpenAI модели для задач среднего уровня (объяснение различий, резюме).",
   "config.gitstudio.ai.provider.enumDescriptions.0": "Предпочитать языковую модель VS Code без ключа (GitHub Copilot / Cursor), если доступна; иначе Anthropic (если задан ключ), затем совместимую с OpenAI конечную точку (если настроена модель).",
   "config.gitstudio.ai.provider.enumDescriptions.1": "Использовать API языковой модели VS Code — модели GitHub Copilot или Cursor, без ключа. Выберите конкретную модель через «GitStudio: Выбрать модель AI…».",
