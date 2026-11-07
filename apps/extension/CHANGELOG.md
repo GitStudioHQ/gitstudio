@@ -4,7 +4,7 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.25.0] - 2026-11-07
 
 ### Changed
 - **Every provider starts on its own default model, and you can change it.**
