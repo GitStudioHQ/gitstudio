@@ -79,8 +79,20 @@ export function connectionFromPreset(presetId: string, id: string): Connection {
 
 /** A base URL compared the way the providers join it: trimmed, no trailing slash. */
 function sameBaseUrl(a: unknown, b: string): boolean {
-  const norm = (u: unknown) => (typeof u === "string" ? u : "").trim().replace(/\/+$/, "");
-  return norm(a) === norm(b);
+  return withoutTrailingSlashes(a) === withoutTrailingSlashes(b);
+}
+
+/**
+ * `u` trimmed, with its trailing slashes cut — by walking back from the end,
+ * not with /\/+$/: a stored base URL is the user's input, and that pattern
+ * backtracks quadratically over a long run of slashes that is not at the end
+ * (CodeQL js/polynomial-redos).
+ */
+function withoutTrailingSlashes(u: unknown): string {
+  const s = (typeof u === "string" ? u : "").trim();
+  let end = s.length;
+  while (end > 0 && s.charCodeAt(end - 1) === 47 /* "/" */) end--;
+  return s.slice(0, end);
 }
 
 /**
