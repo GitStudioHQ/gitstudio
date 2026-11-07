@@ -8,6 +8,9 @@ import tokensCss from "../../../../packages/webview-ui/src/styles/tokens.css";
 import * as l10n from "@vscode/l10n";
 import { l10nWebviewScript } from "@gitstudio/l10n/index";
 
+/** The panel's providers that speak /chat/completions, and so need a model. */
+const OPENAI_COMPATIBLE_KINDS = new Set(["openai", "openrouter", "groq", "custom", "ollama", "lmstudio"]);
+
 /** Real brand marks (from the app's Lobehub icon set, MIT) — monochrome inline
  * SVG using currentColor. Keyed by our provider ids; injected into the webview.
  * Providers without a mark fall back to a codicon. */
@@ -169,6 +172,13 @@ export class AiSettingsPanel {
     const model = (m.model ?? "").trim();
     const key = (m.key ?? "").trim();
     const baseUrl = (m.baseUrl ?? "").trim();
+    // No model is chosen for you on an OpenAI-compatible connection. The panel
+    // asks before it sends; this is for any other sender — an empty model
+    // would blank every tier and leave AI off.
+    if (OPENAI_COMPATIBLE_KINDS.has(kind) && !model) {
+      await this.postResult(false, l10n.t("Choose a model to connect — pick one from the list or type its ID."));
+      return;
+    }
     try {
       switch (kind) {
         case "copilot":
@@ -437,7 +447,7 @@ export class AiSettingsPanel {
         blurb:"Local model server. Private, no API key." },
       { id:"anthropic", icon:"sparkle", name:"Anthropic", group:"key", fields:["key","model"], model:"claude-sonnet-4-6", keyUrl:"https://console.anthropic.com/settings/keys",
         blurb:"Claude models. Bring your own API key." },
-      { id:"openai", icon:"sparkle", name:"OpenAI", group:"key", fields:["key","model"], baseUrl:"https://api.openai.com/v1", model:"gpt-4o", keyUrl:"https://platform.openai.com/api-keys",
+      { id:"openai", icon:"sparkle", name:"OpenAI", group:"key", fields:["key","model"], baseUrl:"https://api.openai.com/v1", model:"", keyUrl:"https://platform.openai.com/api-keys",
         blurb:"GPT models. Bring your own API key." },
       { id:"openrouter", icon:"globe", name:"OpenRouter", group:"key", fields:["key","model"], baseUrl:"https://openrouter.ai/api/v1", model:"anthropic/claude-sonnet-4-6", keyUrl:"https://openrouter.ai/keys",
         blurb:"One key, hundreds of models from every provider." },
@@ -504,10 +514,20 @@ export class AiSettingsPanel {
       if (p.fields.includes("model") && (p.id === "ollama" || p.id === "lmstudio")) requestDetect(p, inputs);
       if (inputs.key && p.fields.includes("model")) {
         inputs.key.addEventListener("blur", () => { if (inputs.key.value.trim()) requestDetect(p, inputs); });
+        // A key already stored: list the models now, so there is something to
+        // pick from without retyping the key.
+        if (keyPresent(p)) requestDetect(p, inputs);
       }
       const actions = el("div", "settings-actions");
       const connect = el("button", "btn-primary"); connect.append(glyph("plug"), el("span", null, "Connect"));
       connect.addEventListener("click", () => {
+        // No model is chosen FOR you: an OpenAI-compatible connection needs the
+        // one you pick (Anthropic's blank keeps Claude's per-task defaults).
+        if (needsModel(p) && inputs.model && !inputs.model.value.trim()) {
+          note = { ok:false, message:"Choose a model to connect — pick one from the list or type its ID." };
+          renderNote(); inputs.model.focus();
+          return;
+        }
         connect.disabled = true; note = { ok:true, message:"Connecting…" };
         vscode.postMessage({ type:"connect", kind:p.id,
           baseUrl: inputs.baseUrl ? inputs.baseUrl.value.trim() : (p.baseUrl||""),
@@ -529,6 +549,9 @@ export class AiSettingsPanel {
       conn.append(head, editor);
       return conn;
     }
+    /** Whether Connect needs a model typed or picked: every OpenAI-compatible
+     *  provider. Anthropic falls back to Claude's own per-task defaults. */
+    function needsModel(p) { return p.fields.includes("model") && p.id !== "anthropic"; }
     // Model field: an input with a datalist of DISCOVERED models. Detection is
     // automatic (local servers on open, cloud on key-blur); a plain text link
     // re-runs it. No icon button — just a suggestion list you can also type into.
@@ -538,7 +561,8 @@ export class AiSettingsPanel {
       const input = document.createElement("input");
       input.className = "settings-input";
       input.value = (editing && editing.model) || p.model || "";
-      input.placeholder = "model name (auto-detected below)"; input.setAttribute("list", "gs-models");
+      input.placeholder = needsModel(p) ? "Choose a model — pick from the list or type its ID" : "model name (auto-detected below)";
+      input.setAttribute("list", "gs-models");
       const list = document.createElement("datalist"); list.id = "gs-models";
       row.append(input, list);
       const hint = el("div", "field-hint"); hint.id = "model-hint";
@@ -709,7 +733,10 @@ export class AiSettingsPanel {
         if (editorInputs && editorInputs._list) {
           editorInputs._list.replaceChildren();
           for (const id of m.list) { const o = document.createElement("option"); o.value = id; editorInputs._list.append(o); }
-          if (!editorInputs.model.value && m.list.length) editorInputs.model.value = m.list[0];
+          // Filled in only when there is nothing to choose between — a local
+          // server with one model loaded. It used to take the FIRST of any
+          // list: alphabetically, an OpenAI key got "babbage-002".
+          if (!editorInputs.model.value && m.list.length === 1) editorInputs.model.value = m.list[0];
           setDetectStatus(m.list.length
             ? (m.list.length + " model" + (m.list.length === 1 ? "" : "s") + " found — pick one or type.")
             : "No models found — is the server running / key valid?");

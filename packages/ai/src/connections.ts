@@ -114,7 +114,9 @@ export function migrateRetiredModels(conn: Connection): boolean {
   for (const tier of ["fast", "mid", "deep"] as const) {
     const raw: unknown = conn.models[tier];
     const id = typeof raw === "string" ? raw.trim() : "";
-    if (id && retired.some((old) => old[tier] === id)) {
+    // Never onto a blank: a preset that seeds no model has no replacement to
+    // offer, and blanking a working id would switch the connection off.
+    if (id && preset.models[tier] && retired.some((old) => old[tier] === id)) {
       conn.models[tier] = preset.models[tier];
       changed = true;
     }

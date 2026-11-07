@@ -9,6 +9,23 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [Unreleased]
+
+### Added
+- **Cherry-pick and revert a merge commit.** The app asks which side, as the
+  extension does: for a cherry-pick, the changes that were merged in or those
+  of the branch it was merged into; for a revert, which branch to keep. Every
+  parent of an octopus merge is offered. It used to refuse and name the git
+  command to run instead.
+
+### Changed
+- **You choose the OpenAI model.** A new OpenAI or Azure OpenAI connection no
+  longer comes with models filled in; each model field lists what the
+  provider offers for it, and the connection is ready once you pick. A
+  connection keeps the model it is on — none is swapped for you when OpenAI
+  retires one. Adding a Custom connection no longer says "Ready to use" before
+  it has a model.
+
 ## [2.9.0] - 2026-11-07
 
 ### Added

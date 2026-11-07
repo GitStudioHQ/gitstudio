@@ -174,6 +174,30 @@ function connectionRow(c: AiConnectionView, isDefault: boolean, refresh: () => P
   return row;
 }
 
+/**
+ * Give `inputs` one suggestion list: the models this connection's provider
+ * offers (ai:models). Suggestions only — nothing is filled in for you, and an
+ * ID typed by hand is kept. A failed read leaves plain text fields.
+ */
+function offerModels(connectionId: string, inputs: HTMLInputElement[]): void {
+  const list = document.createElement("datalist");
+  list.id = `gs-ai-models-${connectionId}`;
+  for (const input of inputs) input.setAttribute("list", list.id);
+  inputs[0]?.parentElement?.append(list);
+  void host
+    .invoke("ai:models", { connectionId })
+    .then((models) => {
+      list.replaceChildren(
+        ...models.map((m) => {
+          const o = document.createElement("option");
+          o.value = m.id;
+          return o;
+        }),
+      );
+    })
+    .catch(() => undefined);
+}
+
 function buildEditor(editor: HTMLElement, c: AiConnectionView, refresh: () => Promise<void>): void {
   editor.replaceChildren();
   const isCli = c.wire === "cli";
@@ -182,21 +206,26 @@ function buildEditor(editor: HTMLElement, c: AiConnectionView, refresh: () => Pr
   // CLI connections have no base URL or API key — they use the local binary's own
   // login. They just take optional model overrides (mapped to `--model`).
   const urlF = settingsField(l10n.t("API base URL"), c.baseUrl, "https://api.example.com/v1");
+  // An HTTP connection's models are CHOSEN, never seeded for you where the
+  // preset has none (OpenAI, Azure, Custom): each field offers what the
+  // provider lists for this connection (ai:models — live, then known ids).
+  const choosePlaceholder = l10n.t("Choose from the list, or type a model ID");
   const fastF = settingsField(
     isCli ? l10n.t("Quick model (optional)") : l10n.t("Fast model"),
     c.models.fast,
-    l10n.t("e.g. haiku"),
+    isCli ? l10n.t("e.g. haiku") : choosePlaceholder,
   );
   const midF = settingsField(
     isCli ? l10n.t("Default model (optional)") : l10n.t("Standard model"),
     c.models.mid,
-    l10n.t("e.g. sonnet"),
+    isCli ? l10n.t("e.g. sonnet") : choosePlaceholder,
   );
   const deepF = settingsField(
     isCli ? l10n.t("Deep model (optional)") : l10n.t("Deep model"),
     c.models.deep,
-    l10n.t("e.g. opus"),
+    isCli ? l10n.t("e.g. opus") : choosePlaceholder,
   );
+  if (!isCli) offerModels(c.id, [fastF.input, midF.input, deepF.input]);
   editor.append(labelF.row);
   if (isCli) {
     const note = el("div", "settings-sub");
@@ -362,15 +391,18 @@ async function openGallery(body: HTMLElement, refresh: () => Promise<void>): Pro
     // one did not, and it is the only way to connect the providers that need no
     // key at all. Their users could never lift the Assistant's gate.
     announceAiChanged();
-    const ready = !p.needsKey;
-    toast(
-      l10n.t(
-        "Added {0}. {1}",
-        p.label,
-        ready ? l10n.t("Ready to use.") : l10n.t("Add your API key to finish."),
-      ),
-      "success",
-    );
+    // What is left to do. A preset that seeds no model (OpenAI, Azure,
+    // Custom) needs one chosen — "Ready to use" was said of Custom, which
+    // was not.
+    const needsModel = p.wire !== "cli" && !p.models.fast && !p.models.mid && !p.models.deep;
+    const todo = p.needsKey
+      ? needsModel
+        ? l10n.t("Add your API key and choose a model to finish.")
+        : l10n.t("Add your API key to finish.")
+      : needsModel
+        ? l10n.t("Choose a model to finish.")
+        : l10n.t("Ready to use.");
+    toast(l10n.t("Added {0}. {1}", p.label, todo), "success");
     await refresh();
     // Auto-open the new connection's editor (to paste a key / pick a model).
     const editors = body.querySelectorAll<HTMLElement>(".ai-conn");

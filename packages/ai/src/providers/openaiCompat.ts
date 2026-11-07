@@ -9,7 +9,11 @@
 // the tool-calling path is non-streaming (simpler and reliable for the agent
 // loop, where we need the fully-assembled tool_calls before executing them).
 
-import { OpenAiSseParser } from "@gitstudio/engine/ai/aiCore";
+import {
+  OpenAiSseParser,
+  isOpenAiReasoningModel as isReasoningModel,
+  openAiReasoningEffort,
+} from "@gitstudio/engine/ai/aiCore";
 import {
   AiError,
   type ChatMessage,
@@ -388,36 +392,18 @@ function mapFinish(reason: string | undefined, hadTools: boolean): StopReason {
   }
 }
 
-/**
- * OpenAI's reasoning families — o1/o3/o4…, gpt-5 and later — by the bare id
- * OpenAI and Azure use. They refuse `max_tokens`, and the cap they take counts
- * their hidden reasoning too. A router's "openai/gpt-5" is translated by the
- * router, so it is deliberately not matched.
- */
+/** Shared with the extension's provider: see @gitstudio/engine/ai/aiCore. */
 export function isOpenAiReasoningModel(model: string): boolean {
-  return /^(o\d|gpt-([5-9]|\d{2,}))/i.test(model.trim());
+  return isReasoningModel(model);
 }
 
-/**
- * The `reasoning_effort` to send, if any. A reasoning model spends its token
- * cap on hidden thinking first, so a short task left at the default effort can
- * come back empty with a `length` stop. Sent only where it is documented:
- * OpenAI's reasoning ids and gpt-oss (Groq, Together, local servers) — not via
- * OpenRouter, which takes a `reasoning` object instead.
- */
+/** The `reasoning_effort` to send, if any (see openAiReasoningEffort). */
 export function reasoningEffort(
   model: string,
   thinking: ChatOptions["thinking"],
   baseUrl: string,
 ): "low" | "high" | undefined {
-  const gptOss = /(^|\/)gpt-oss\b/i.test(model) && !/openrouter\.ai/i.test(baseUrl);
-  if (!gptOss && !isOpenAiReasoningModel(model)) {
-    return undefined;
-  }
-  if (thinking === "auto") {
-    return undefined; // the model's own default
-  }
-  return thinking === "extended" ? "high" : "low";
+  return openAiReasoningEffort(model, thinking, baseUrl);
 }
 
 /** The provider's own error body: `{error}` (OpenAI) or `[{error}]` (Google). */

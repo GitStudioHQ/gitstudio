@@ -436,7 +436,7 @@ async function configureOpenAi(
 
   const model = await promptInput({
     title: l10n.t("OpenAI-compatible Model"),
-    hint: l10n.t("Model ID for commit messages and explain — gpt-4o-mini, llama3.1, qwen2.5-coder."),
+    hint: l10n.t("Model ID for commit messages and explain — the one your provider lists, e.g. llama3.1 or qwen2.5-coder on a local server."),
     value: cfg.get<string>("openai.modelFast", ""),
     confirmLabel: l10n.t("Continue"),
   });

@@ -4,6 +4,23 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **You choose the OpenAI model.** The OpenAI model settings no longer
+  default to gpt-4o-mini / gpt-4o, and the AI panel's OpenAI card no longer
+  comes filled in with gpt-4o: the model field lists what your key can use,
+  and Connect asks for one until you pick it. A detected list is offered,
+  never picked from (it took the first, alphabetically, for some keys). A
+  setup already running on the old defaults keeps them as its own settings,
+  so nothing switches off on update.
+
+### Fixed
+- **OpenAI's reasoning models work.** The o-series and gpt-5 and later
+  answered every request with HTTP 400, because GitStudio sent them
+  `max_tokens`; they now get `max_completion_tokens`, with low reasoning
+  effort for these short tasks.
+
 ## [1.24.0] - 2026-11-07
 
 ### Added

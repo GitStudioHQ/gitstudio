@@ -1,6 +1,8 @@
 import {
   OpenAiSseParser,
   extractOpenAiText,
+  isOpenAiReasoningModel,
+  openAiReasoningEffort,
   type OpenAiChatResponse,
 } from "@gitstudio/engine/ai/aiCore";
 import type {
@@ -49,7 +51,11 @@ export interface OpenAiProviderOptions {
 
 interface OpenAiRequestBody {
   model: string;
-  max_tokens: number;
+  /** Every model but OpenAI's reasoning families (see buildBody). */
+  max_tokens?: number;
+  /** OpenAI's reasoning families: they answer `max_tokens` with HTTP 400. */
+  max_completion_tokens?: number;
+  reasoning_effort?: "low" | "high";
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
   stream?: boolean;
 }
@@ -114,11 +120,23 @@ export class OpenAiProvider implements AiProvider {
       messages.push({ role: "system", content: req.system });
     }
     messages.push({ role: "user", content: req.prompt });
-    const body: OpenAiRequestBody = {
-      model,
-      max_tokens: this.maxTokensFor(req),
-      messages,
-    };
+    const body: OpenAiRequestBody = { model, messages };
+    // OpenAI's reasoning models (o-series, gpt-5 and later) answer `max_tokens`
+    // with HTTP 400 and take `max_completion_tokens` — the same rule as the
+    // desktop's provider, from the one shared helper. Now that no OpenAI
+    // model is chosen for you, the one you pick is likely to be one of them.
+    const cap = this.maxTokensFor(req);
+    if (isOpenAiReasoningModel(model)) {
+      body.max_completion_tokens = cap;
+    } else {
+      body.max_tokens = cap;
+    }
+    // Their cap counts hidden thinking too: a short task at the default
+    // effort can come back empty. These features are short tasks — low.
+    const effort = openAiReasoningEffort(model, "off", cfg.baseUrl);
+    if (effort) {
+      body.reasoning_effort = effort;
+    }
     if (stream) {
       body.stream = true;
     }
