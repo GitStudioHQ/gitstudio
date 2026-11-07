@@ -87,8 +87,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Build each mac arch NATIVELY (macos-14 = Apple Silicon, macos-15-intel
-          # = x64; macos-13 was retired by GitHub in Dec 2025) so node-pty's
+          # Build each mac arch NATIVELY (macos-15 = Apple Silicon, macos-15-intel
+          # = x64; macos-13 was retired by GitHub in Dec 2025, and macos-14 in
+          # Nov 2026 — "The configuration 'macos-14-arm64-us-default' is not
+          # supported", the job cancelled in 1s with no steps) so node-pty's
           # per-arch prebuild loads without cross-compiling.
           #
           # NOTE: mac deliberately does NOT upload latest-mac.yml. Both arch runners
@@ -96,7 +98,7 @@ jobs:
           # leave the Release with ONE arch's feed and mis-update the other; the
           # app skips update checks on macOS instead (see autoUpdate.ts). Windows/
           # Linux are single-arch, so their feeds are safe.
-          - os: macos-14
+          - os: macos-15
             artifact: 'apps/desktop/release/*.dmg apps/desktop/release/*.zip'
           - os: macos-15-intel
             artifact: 'apps/desktop/release/*.dmg apps/desktop/release/*.zip'

@@ -26,7 +26,7 @@ jobs:
       matrix:
         include:
           - { os: ubuntu-latest, shard: all, label: all }
-          - { os: macos-14, shard: all, label: all }
+          - { os: macos-15, shard: all, label: all }
           - { os: windows-latest, shard: extension, label: extension }
           - { os: windows-latest, shard: desktop, label: desktop }
           - { os: windows-latest, shard: git, label: git-service }

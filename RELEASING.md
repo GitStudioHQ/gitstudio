@@ -75,7 +75,7 @@ git tag app-v1.0.0
 git push origin main app-v1.0.0
 ```
 
-A `create-release` job makes the Release once (so the matrix jobs never race each other), then a 4-way matrix (**macos-14** arm64, **macos-15-intel** x64, **windows-latest**, **ubuntu-22.04**) builds each installer **natively** — deliberate: the integrated terminal's `node-pty` is a native module, and building per-arch on its own OS avoids cross-compiling its prebuild. Linux builds pin **ubuntu-22.04** so the AppImage links an old-enough glibc for Ubuntu 22.04 / Debian 12 users. The installers upload to the Release for `app-v1.0.0`:
+A `create-release` job makes the Release once (so the matrix jobs never race each other), then a 4-way matrix (**macos-15** arm64, **macos-15-intel** x64, **windows-latest**, **ubuntu-22.04**) builds each installer **natively** — deliberate: the integrated terminal's `node-pty` is a native module, and building per-arch on its own OS avoids cross-compiling its prebuild. Linux builds pin **ubuntu-22.04** so the AppImage links an old-enough glibc for Ubuntu 22.04 / Debian 12 users. The installers upload to the Release for `app-v1.0.0`:
 
 - **macOS** — `GitStudio-1.0.0-arm64.dmg`, `GitStudio-1.0.0-x64.dmg` (+ `.zip`)
 - **Windows** — `GitStudio-Setup-1.0.0.exe` (NSIS, user-choosable install dir)
