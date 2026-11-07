@@ -209,9 +209,25 @@ test("a burst of writes collapses into ONE refresh", async () => {
     if (w.degraded) {
       return;
     }
+    // A recursive fs.watch arms asynchronously (FSEvents on macOS): writes made
+    // the instant it is constructed can go unseen, and on macos-15 runners they
+    // did — "fifty writes produced 0 refreshes". So first poke until it is
+    // demonstrably listening, let that refresh settle, and count from zero.
+    const deadline = Date.now() + 10_000;
+    while (calls === 0 && Date.now() < deadline) {
+      writeFileSync(join(dir, "probe.txt"), `${process.hrtime.bigint()}\n`);
+      await new Promise((r) => setTimeout(r, POKE_MS));
+    }
+    assert.ok(calls > 0, "the watcher never started listening");
+    await new Promise((r) => setTimeout(r, 1200));
+    calls = 0;
     for (let i = 0; i < 50; i++) {
       writeFileSync(join(dir, `f${i}.txt`), `x${i}\n`);
     }
+    // Up to a few seconds for the OS to deliver the batch on a loaded runner,
+    // then the debounce window again for any straggler.
+    const delivered = Date.now() + 5_000;
+    while (calls === 0 && Date.now() < delivered) await new Promise((r) => setTimeout(r, 50));
     await new Promise((r) => setTimeout(r, 1200));
     // One in practice; two only if the burst itself straddles the debounce window
     // on a loaded CI runner. Either way the claim being made — that a Save All is
