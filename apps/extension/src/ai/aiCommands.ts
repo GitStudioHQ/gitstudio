@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { defaultModelsForEndpoint } from "@gitstudio/engine/ai/providerDefaults";
 import { NO_REPOSITORY, notice } from "../ui/notify";
 import { promptInput, promptPick, type DialogChoice } from "../ui/dialogs";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
@@ -437,7 +438,10 @@ async function configureOpenAi(
   const model = await promptInput({
     title: l10n.t("OpenAI-compatible Model"),
     hint: l10n.t("Model ID for commit messages and explain — the one your provider lists, e.g. llama3.1 or qwen2.5-coder on a local server."),
-    value: cfg.get<string>("openai.modelFast", ""),
+    // Yours, else the default of the provider you just pointed it at.
+    value:
+      cfg.get<string>("openai.modelFast", "") ||
+      (defaultModelsForEndpoint(baseUrl.trim() || cfg.get<string>("openai.baseUrl", ""))?.fast ?? ""),
     confirmLabel: l10n.t("Continue"),
   });
   if (model === undefined) {

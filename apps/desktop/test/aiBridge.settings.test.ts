@@ -117,19 +117,9 @@ test("removing the default connection promotes the next one and deletes its key"
   assert.equal(v.defaultId, undefined, "nothing left to default to");
 });
 
-/**
- * An OpenAI connection with its models picked. The preset seeds none — you
- * choose the model — so a test that sends a request picks them first.
- */
-async function openAiPicked(bridge: Awaited<ReturnType<typeof makeBridge>>["bridge"]): Promise<string> {
-  const id = (await bridge.addConnection("openai")).connections[0].id;
-  await bridge.updateConnection({ id, models: { fast: "gpt-6-luna", mid: "gpt-6.1-terra", deep: "gpt-6.1-sol" } });
-  return id;
-}
-
 test("a key makes a keyed connection usable, and is never shown or written in plain text", async () => {
   const { bridge } = await makeBridge();
-  const id = await openAiPicked(bridge);
+  const id = (await bridge.addConnection("openai")).connections[0].id;
   const v = await bridge.setKey(id, "  sk-live-1234567890  ");
   assert.equal(v.connections[0].hasKey, true);
   assert.equal(v.connections[0].usable, true);
@@ -151,7 +141,7 @@ test("a key makes a keyed connection usable, and is never shown or written in pl
 
 test("Test: the provider's answer about the connection is a condition; a request it could not read still reports (#28, #29)", async () => {
   const { bridge } = await makeBridge();
-  const id = await openAiPicked(bridge);
+  const id = (await bridge.addConnection("openai")).connections[0].id;
   await bridge.setKey(id, "sk-wrong");
   // A refused key, a rate limit: the Test button's whole answer.
   for (const status of [401, 429]) {
@@ -426,7 +416,7 @@ test("Test: a reasoning model that spent the whole cap thinking still answered �
 
 test("Test explains a rejected key in the provider's words", async () => {
   const { bridge } = await makeBridge();
-  const id = await openAiPicked(bridge);
+  const id = (await bridge.addConnection("openai")).connections[0].id;
   await bridge.setKey(id, "sk-bad");
   model.replies.push(new Response("{}", { status: 401 }));
   const r = await bridge.test(id);
@@ -448,7 +438,7 @@ test("with no connection the model picker is empty", async () => {
 
 test("the model picker offers configured models, then live ones, then known ones — once each", async () => {
   const { bridge } = await makeBridge();
-  const id = await openAiPicked(bridge);
+  const id = (await bridge.addConnection("openai")).connections[0].id;
   await bridge.setKey(id, "sk-k");
   model.models = new Response(JSON.stringify({ data: [{ id: "gpt-6-luna" }, { id: "gpt-live-1" }, { name: "named-model" }, {}] }));
   const ids = (await bridge.listModels(id)).map((m) => m.id);

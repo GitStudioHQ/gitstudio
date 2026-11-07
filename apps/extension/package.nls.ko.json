@@ -154,7 +154,7 @@
   "config.gitstudio.ai.commitStyle.enumDescriptions.2": "명령형 제목과 짧은 설명 본문.",
   "config.gitstudio.ai.openai.baseUrl.markdownDescription": "OpenAI 호환 엔드포인트의 기본 URL입니다(`/chat/completions`가 덧붙여집니다). 예: `https://api.openai.com/v1`(OpenAI), `https://openrouter.ai/api/v1`(OpenRouter), `http://localhost:11434/v1`(Ollama), `http://localhost:1234/v1`(LM Studio).",
   "config.gitstudio.ai.openai.modelDeep.description": "선택적 심층 추론용 OpenAI 호환 모델 ID입니다.",
-  "config.gitstudio.ai.openai.modelFast.description": "빠르고 저렴한 작업(커밋 메시지)용 OpenAI 호환 모델 ID입니다. 로컬 서버라면 모델 이름을 사용하세요(예: llama3.1 또는 qwen2.5-coder).",
+  "config.gitstudio.ai.openai.modelFast.description": "빠르고 저렴한 작업(커밋 메시지)용 OpenAI 호환 모델 ID입니다. 세 가지 모델 설정을 모두 비워 두면 공급자의 기본 모델을 사용합니다. 로컬 서버라면 모델 이름을 사용하세요(예: llama3.1 또는 qwen2.5-coder).",
   "config.gitstudio.ai.openai.modelMid.description": "중간 수준 작업(diff 설명, 요약)용 OpenAI 호환 모델 ID입니다.",
   "config.gitstudio.ai.provider.enumDescriptions.0": "사용 가능하면 키가 필요 없는 VS Code 언어 모델(GitHub Copilot / Cursor)을 우선 사용하고, 그렇지 않으면 Anthropic(키가 설정된 경우), 그다음 OpenAI 호환 엔드포인트(모델이 설정된 경우)를 사용합니다.",
   "config.gitstudio.ai.provider.enumDescriptions.1": "VS Code 언어 모델 API를 사용합니다 — GitHub Copilot 또는 Cursor의 모델을 키 없이 사용합니다. “GitStudio: AI 모델 선택…”으로 특정 모델을 선택하세요.",

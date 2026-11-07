@@ -8,6 +8,7 @@
 // speaks openai-compat (Gemini exposes a compat endpoint; local servers too).
 
 import type { ModelTier } from "./types";
+import { PROVIDER_DEFAULT_MODELS } from "@gitstudio/engine/ai/providerDefaults";
 import * as l10n from "@vscode/l10n";
 
 /**
@@ -57,7 +58,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     blurb: l10n.t("Claude Opus, Sonnet & Haiku — strongest for code & agentic work."),
     wire: "anthropic",
     baseUrl: "https://api.anthropic.com",
-    models: { fast: "claude-haiku-4-5", mid: "claude-sonnet-4-6", deep: "claude-opus-4-8" },
+    models: PROVIDER_DEFAULT_MODELS.anthropic,
     needsKey: true,
     keyUrl: "https://console.anthropic.com/settings/keys",
     icon: "sparkle",
@@ -68,9 +69,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     blurb: l10n.t("GPT models via the OpenAI API."),
     wire: "openai-compat",
     baseUrl: "https://api.openai.com/v1",
-    // No model is chosen for you: the editor lists the models your key can
-    // use (ai:models — live /models, then KNOWN_MODELS) and you pick one.
-    models: { fast: "", mid: "", deep: "" },
+    models: PROVIDER_DEFAULT_MODELS.openai,
     needsKey: true,
     keyUrl: "https://platform.openai.com/api-keys",
     icon: "sparkle",
@@ -120,11 +119,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     blurb: l10n.t("One key, hundreds of models (Claude, GPT, Llama, Gemini, …)."),
     wire: "openai-compat",
     baseUrl: "https://openrouter.ai/api/v1",
-    models: {
-      fast: "anthropic/claude-haiku-4-5",
-      mid: "anthropic/claude-sonnet-4-6",
-      deep: "anthropic/claude-opus-4-8",
-    },
+    models: PROVIDER_DEFAULT_MODELS.openrouter,
     needsKey: true,
     keyUrl: "https://openrouter.ai/keys",
     icon: "globe",
@@ -135,7 +130,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     blurb: l10n.t("Gemini Flash models via the OpenAI-compatible endpoint."),
     wire: "openai-compat",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
-    models: { fast: "gemini-3.5-flash-lite", mid: "gemini-3.6-flash", deep: "gemini-3.8-flash" },
+    models: PROVIDER_DEFAULT_MODELS.google,
     needsKey: true,
     keyUrl: "https://aistudio.google.com/apikey",
     icon: "sparkle",
@@ -146,11 +141,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     blurb: l10n.t("Open models at very low latency."),
     wire: "openai-compat",
     baseUrl: "https://api.groq.com/openai/v1",
-    models: {
-      fast: "openai/gpt-oss-20b",
-      mid: "openai/gpt-oss-120b",
-      deep: "openai/gpt-oss-120b",
-    },
+    models: PROVIDER_DEFAULT_MODELS.groq,
     needsKey: true,
     keyUrl: "https://console.groq.com/keys",
     icon: "zap",
@@ -161,7 +152,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     blurb: l10n.t("Mistral & Codestral models."),
     wire: "openai-compat",
     baseUrl: "https://api.mistral.ai/v1",
-    models: { fast: "mistral-small-latest", mid: "mistral-large-latest", deep: "mistral-large-latest" },
+    models: PROVIDER_DEFAULT_MODELS.mistral,
     needsKey: true,
     keyUrl: "https://console.mistral.ai/api-keys",
     icon: "sparkle",
@@ -172,7 +163,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     blurb: l10n.t("Grok models from xAI."),
     wire: "openai-compat",
     baseUrl: "https://api.x.ai/v1",
-    models: { fast: "grok-3-mini", mid: "grok-3", deep: "grok-4" },
+    models: PROVIDER_DEFAULT_MODELS.xai,
     needsKey: true,
     keyUrl: "https://console.x.ai",
     icon: "sparkle",
@@ -183,7 +174,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     blurb: l10n.t("DeepSeek's Flash and Pro models."),
     wire: "openai-compat",
     baseUrl: "https://api.deepseek.com",
-    models: { fast: "deepseek-flash", mid: "deepseek-flash", deep: "deepseek-v4-pro" },
+    models: PROVIDER_DEFAULT_MODELS.deepseek,
     needsKey: true,
     keyUrl: "https://platform.deepseek.com/api_keys",
     icon: "sparkle",
@@ -194,11 +185,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     blurb: l10n.t("A broad catalog of open models."),
     wire: "openai-compat",
     baseUrl: "https://api.together.xyz/v1",
-    models: {
-      fast: "openai/gpt-oss-120b",
-      mid: "openai/gpt-oss-120b",
-      deep: "deepseek-ai/DeepSeek-V4-Pro-0813",
-    },
+    models: PROVIDER_DEFAULT_MODELS.together,
     needsKey: true,
     keyUrl: "https://api.together.xyz/settings/api-keys",
     icon: "globe",
@@ -209,7 +196,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     blurb: l10n.t("Run models on your own machine — fully private, no key."),
     wire: "openai-compat",
     baseUrl: "http://localhost:11434/v1",
-    models: { fast: "llama3.2", mid: "qwen2.5-coder", deep: "qwen2.5-coder:32b" },
+    models: PROVIDER_DEFAULT_MODELS.ollama,
     needsKey: false,
     local: true,
     keyUrl: "https://ollama.com/download",
@@ -222,7 +209,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     blurb: l10n.t("Local models via LM Studio's server — private, no key."),
     wire: "openai-compat",
     baseUrl: "http://localhost:1234/v1",
-    models: { fast: "local-model", mid: "local-model", deep: "local-model" },
+    models: PROVIDER_DEFAULT_MODELS.lmstudio,
     needsKey: false,
     local: true,
     keyUrl: "https://lmstudio.ai",
@@ -235,8 +222,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     blurb: l10n.t("OpenAI models hosted in your Azure tenant."),
     wire: "openai-compat",
     baseUrl: "https://YOUR-RESOURCE.openai.azure.com/openai/deployments/YOUR-DEPLOYMENT",
-    // A deployment's model is whatever you deployed: yours to name.
-    models: { fast: "", mid: "", deep: "" },
+    models: PROVIDER_DEFAULT_MODELS.azure,
     needsKey: true,
     keyUrl: "https://portal.azure.com",
     icon: "azure",
@@ -296,9 +282,8 @@ export function knownModels(preset: string): string[] {
  * default for that tier is moved on — an id the user chose is theirs.
  */
 export const RETIRED_DEFAULTS: Record<string, ReadonlyArray<Record<ModelTier, string>>> = {
-  // NOT openai: no OpenAI model is chosen for you any more (its preset seeds
-  // none), so none is chosen for you on a retirement either — a connection
-  // keeps the model it is on until you pick another.
+  // Deprecated 2026-10-14, removed 2027-01-14; replacement gpt-6-luna.
+  openai: [{ fast: "gpt-4o-mini", mid: "gpt-4o", deep: "gpt-4o" }],
   // Deprecated; no longer served to new users, shut down 2026-12-01.
   google: [{ fast: "gemini-2.5-flash", mid: "gemini-2.5-flash", deep: "gemini-2.5-pro" }],
   // Shut down 2026-08-16 for free and developer tiers.

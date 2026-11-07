@@ -154,7 +154,7 @@
   "config.gitstudio.ai.commitStyle.enumDescriptions.2": "祈使句主题，加上简短说明正文。",
   "config.gitstudio.ai.openai.baseUrl.markdownDescription": "OpenAI 兼容端点的基础 URL（会追加 `/chat/completions`）。示例：`https://api.openai.com/v1`（OpenAI）、`https://openrouter.ai/api/v1`（OpenRouter）、`http://localhost:11434/v1`（Ollama）、`http://localhost:1234/v1`（LM Studio）。",
   "config.gitstudio.ai.openai.modelDeep.description": "用于选择性深度推理的 OpenAI 兼容模型 ID。",
-  "config.gitstudio.ai.openai.modelFast.description": "用于快速/低成本任务（提交信息）的 OpenAI 兼容模型 ID。使用本地服务器时填它的模型名称，例如 llama3.1 或 qwen2.5-coder。",
+  "config.gitstudio.ai.openai.modelFast.description": "用于快速/低成本任务（提交信息）的 OpenAI 兼容模型 ID。三个模型设置都留空时，使用你的服务商的默认模型。使用本地服务器时填它的模型名称，例如 llama3.1 或 qwen2.5-coder。",
   "config.gitstudio.ai.openai.modelMid.description": "用于中等复杂度任务（解释差异、总结）的 OpenAI 兼容模型 ID。",
   "config.gitstudio.ai.provider.enumDescriptions.0": "优先使用免密钥的 VS Code 语言模型（GitHub Copilot / Cursor）（如果可用）；否则使用 Anthropic（如果已设置密钥），再否则使用 OpenAI 兼容端点（如果已配置模型）。",
   "config.gitstudio.ai.provider.enumDescriptions.1": "使用 VS Code 语言模型 API — GitHub Copilot 或 Cursor 的模型，无需密钥。可通过“GitStudio：选择 AI 模型…”指定具体模型。",

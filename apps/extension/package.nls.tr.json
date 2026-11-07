@@ -154,7 +154,7 @@
   "config.gitstudio.ai.commitStyle.enumDescriptions.2": "Emir kipinde bir konu artı kısa bir açıklayıcı gövde.",
   "config.gitstudio.ai.openai.baseUrl.markdownDescription": "OpenAI uyumlu uç nokta için temel URL (`/chat/completions` eklenir). Örnekler: `https://api.openai.com/v1` (OpenAI), `https://openrouter.ai/api/v1` (OpenRouter), `http://localhost:11434/v1` (Ollama), `http://localhost:1234/v1` (LM Studio).",
   "config.gitstudio.ai.openai.modelDeep.description": "İsteğe bağlı derin akıl yürütme için OpenAI uyumlu model kimliği.",
-  "config.gitstudio.ai.openai.modelFast.description": "Hızlı/ucuz görevler (işleme mesajları) için OpenAI uyumlu model kimliği. Yerel bir sunucu için model adını kullanın, örn. llama3.1 veya qwen2.5-coder.",
+  "config.gitstudio.ai.openai.modelFast.description": "Hızlı/ucuz görevler (işleme mesajları) için OpenAI uyumlu model kimliği. Sağlayıcınızın varsayılan modellerini kullanmak için üç model ayarını da boş bırakın. Yerel bir sunucu için model adını kullanın, örn. llama3.1 veya qwen2.5-coder.",
   "config.gitstudio.ai.openai.modelMid.description": "Orta seviye görevler (farkı açıklama, özetler) için OpenAI uyumlu model kimliği.",
   "config.gitstudio.ai.provider.enumDescriptions.0": "Mevcut olduğunda anahtarsız VS Code Dil Modelini (GitHub Copilot / Cursor) tercih eder; yoksa Anthropic'i (bir anahtar ayarlıysa), sonra OpenAI uyumlu bir uç noktayı (bir model yapılandırılmışsa).",
   "config.gitstudio.ai.provider.enumDescriptions.1": "VS Code Dil Modeli API'sini kullan — GitHub Copilot veya Cursor'ın modelleri, anahtarsız. “GitStudio: Yapay Zeka Modeli Seç…” ile belirli bir model seçin.",

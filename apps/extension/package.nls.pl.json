@@ -154,7 +154,7 @@
  "config.gitstudio.ai.commitStyle.enumDescriptions.2": "Rozkazujący temat plus krótka treść wyjaśniająca.",
  "config.gitstudio.ai.openai.baseUrl.markdownDescription": "Bazowy URL dla punktu końcowego zgodnego z OpenAI (dołączane jest `/chat/completions`). Przykłady: `https://api.openai.com/v1` (OpenAI), `https://openrouter.ai/api/v1` (OpenRouter), `http://localhost:11434/v1` (Ollama), `http://localhost:1234/v1` (LM Studio).",
  "config.gitstudio.ai.openai.modelDeep.description": "ID modelu zgodnego z OpenAI do opcjonalnego głębokiego rozumowania.",
- "config.gitstudio.ai.openai.modelFast.description": "ID modelu zgodnego z OpenAI do szybkich/tanich zadań (treści commitów). Dla lokalnego serwera użyj jego nazwy modelu, np. llama3.1 albo qwen2.5-coder.",
+ "config.gitstudio.ai.openai.modelFast.description": "ID modelu zgodnego z OpenAI do szybkich/tanich zadań (treści commitów). Zostaw wszystkie trzy ustawienia modelu puste, aby użyć domyślnych modeli dostawcy. Dla lokalnego serwera użyj jego nazwy modelu, np. llama3.1 albo qwen2.5-coder.",
  "config.gitstudio.ai.openai.modelMid.description": "ID modelu zgodnego z OpenAI do zadań średniego poziomu (wyjaśnianie diffów, podsumowania).",
  "config.gitstudio.ai.provider.enumDescriptions.0": "Preferuj model językowy VS Code bez klucza (GitHub Copilot / Cursor), gdy jest dostępny; w innym przypadku Anthropic (jeśli ustawiono klucz), potem punkt końcowy zgodny z OpenAI (jeśli skonfigurowano model).",
  "config.gitstudio.ai.provider.enumDescriptions.1": "Użyj API modelu językowego VS Code — modeli GitHub Copilot albo Cursor, bez klucza. Wybierz konkretny model za pomocą „GitStudio: Select AI Model…”.",

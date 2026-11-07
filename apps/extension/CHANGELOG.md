@@ -7,13 +7,16 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 ## [Unreleased]
 
 ### Changed
-- **You choose the OpenAI model.** The OpenAI model settings no longer
-  default to gpt-4o-mini / gpt-4o, and the AI panel's OpenAI card no longer
-  comes filled in with gpt-4o: the model field lists what your key can use,
-  and Connect asks for one until you pick it. A detected list is offered,
-  never picked from (it took the first, alphabetically, for some keys). A
-  setup already running on the old defaults keeps them as its own settings,
-  so nothing switches off on update.
+- **Every provider starts on its own default model, and you can change it.**
+  The model settings used to default to OpenAI's gpt-4o-mini / gpt-4o for
+  every endpoint, so Groq, OpenRouter or a local server was sent OpenAI's
+  model. Left empty, they now mean the defaults of the provider your base URL
+  points at — the same ones the desktop app uses (OpenAI's are now
+  gpt-6-luna / gpt-6.1-terra / gpt-6.1-sol). Each card in the AI panel
+  starts on its provider's default and lists the models you can switch to. A
+  detected list no longer replaces a cloud default (it took the first,
+  alphabetically — "babbage-002" for an OpenAI key); for Ollama or LM Studio
+  the default becomes a model the server actually has.
 
 ### Fixed
 - **OpenAI's reasoning models work.** The o-series and gpt-5 and later

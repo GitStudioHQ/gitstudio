@@ -5,6 +5,7 @@ import {
   openAiReasoningEffort,
   type OpenAiChatResponse,
 } from "@gitstudio/engine/ai/aiCore";
+import { defaultModelsForEndpoint } from "@gitstudio/engine/ai/providerDefaults";
 import type {
   AiProvider,
   CompleteRequest,
@@ -32,6 +33,22 @@ export interface OpenAiConfig {
   baseUrl: string;
   /** Per-tier model IDs (empty string ⇒ that tier is unconfigured). */
   models: Record<ModelTier, string>;
+}
+
+/**
+ * The models to use: yours, or — when you have set none at all — the defaults
+ * of the provider the base URL points at (OpenAI's for api.openai.com, Groq's
+ * for api.groq.com, Ollama's for localhost:11434, …), from the table the
+ * desktop app seeds its connections with. The settings used to default to
+ * gpt-4o for EVERY endpoint, so someone on Groq or a local server was sent
+ * OpenAI's model. One tier of your own is kept for every tier (modelFor falls
+ * back across tiers) rather than mixed with a provider default. An endpoint we
+ * do not know (a custom server) has no default: its model is yours to name.
+ */
+export function withProviderDefaults(cfg: OpenAiConfig): OpenAiConfig {
+  const blank = (["fast", "mid", "deep"] as const).every((t) => !cfg.models[t]?.trim());
+  const defaults = blank ? defaultModelsForEndpoint(cfg.baseUrl) : undefined;
+  return defaults ? { baseUrl: cfg.baseUrl, models: { ...defaults } } : cfg;
 }
 
 export interface OpenAiProviderOptions {

@@ -154,7 +154,7 @@
   "config.gitstudio.ai.commitStyle.enumDescriptions.2": "Asunto en modo imperativo más un breve cuerpo explicativo.",
   "config.gitstudio.ai.openai.baseUrl.markdownDescription": "URL base para el endpoint compatible con OpenAI (se añade `/chat/completions`). Ejemplos: `https://api.openai.com/v1` (OpenAI), `https://openrouter.ai/api/v1` (OpenRouter), `http://localhost:11434/v1` (Ollama), `http://localhost:1234/v1` (LM Studio).",
   "config.gitstudio.ai.openai.modelDeep.description": "ID del modelo compatible con OpenAI para razonamiento profundo opcional.",
-  "config.gitstudio.ai.openai.modelFast.description": "ID del modelo compatible con OpenAI para tareas rápidas/económicas (mensajes de commit). Para un servidor local usa su nombre de modelo, p. ej. llama3.1 o qwen2.5-coder.",
+  "config.gitstudio.ai.openai.modelFast.description": "ID del modelo compatible con OpenAI para tareas rápidas/económicas (mensajes de commit). Deja vacíos los tres ajustes de modelo para usar los modelos predeterminados de tu proveedor. Para un servidor local usa su nombre de modelo, p. ej. llama3.1 o qwen2.5-coder.",
   "config.gitstudio.ai.openai.modelMid.description": "ID del modelo compatible con OpenAI para tareas de nivel medio (explicar diff, resúmenes).",
   "config.gitstudio.ai.provider.enumDescriptions.0": "Prefiere el Modelo de lenguaje de VS Code sin clave (GitHub Copilot / Cursor) cuando esté disponible; si no, Anthropic (si hay una clave configurada), y luego un endpoint compatible con OpenAI (si hay un modelo configurado).",
   "config.gitstudio.ai.provider.enumDescriptions.1": "Usa la API del Modelo de lenguaje de VS Code — los modelos de GitHub Copilot o Cursor, sin clave. Elige un modelo específico con “GitStudio: Select AI Model…”.",

@@ -154,7 +154,7 @@
   "config.gitstudio.ai.commitStyle.enumDescriptions.2": "命令形の件名と短い説明の本文。",
   "config.gitstudio.ai.openai.baseUrl.markdownDescription": "OpenAI互換エンドポイントのベースURL（`/chat/completions` が付加されます）。例: `https://api.openai.com/v1` (OpenAI)、`https://openrouter.ai/api/v1` (OpenRouter)、`http://localhost:11434/v1` (Ollama)、`http://localhost:1234/v1` (LM Studio)。",
   "config.gitstudio.ai.openai.modelDeep.description": "オプトインの深い推論用のOpenAI互換モデルID。",
-  "config.gitstudio.ai.openai.modelFast.description": "高速・低コストなタスク（コミットメッセージ）用のOpenAI互換モデルID。ローカルサーバーの場合は、そのモデル名（例: llama3.1 や qwen2.5-coder）を使用してください。",
+  "config.gitstudio.ai.openai.modelFast.description": "高速・低コストなタスク（コミットメッセージ）用のOpenAI互換モデルID。3つのモデル設定をすべて空のままにすると、プロバイダーの既定のモデルが使われます。ローカルサーバーの場合は、そのモデル名（例: llama3.1 や qwen2.5-coder）を使用してください。",
   "config.gitstudio.ai.openai.modelMid.description": "中位タスク（差分の説明、要約）用のOpenAI互換モデルID。",
   "config.gitstudio.ai.provider.enumDescriptions.0": "利用可能な場合はキー不要のVS Code言語モデル（GitHub Copilot / Cursor）を優先し、なければAnthropic（キーが設定されている場合）、次にOpenAI互換エンドポイント（モデルが設定されている場合）を使用します。",
   "config.gitstudio.ai.provider.enumDescriptions.1": "VS Code言語モデルAPIを使用します — GitHub CopilotまたはCursorのモデルで、キーは不要です。「GitStudio: AIモデルを選択…」から特定のモデルを選べます。",
