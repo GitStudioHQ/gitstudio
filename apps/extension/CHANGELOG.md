@@ -31,6 +31,19 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - A long commit message no longer runs under the Review changes with AI
   button: the text wraps before both of the box's buttons
   ([#147](https://github.com/GitStudioHQ/gitstudio/issues/147)).
+- **Cherry-pick a merge commit.** It asks which side is the mainline, as Revert
+  does, instead of failing with git's "is a merge but no -m option was given".
+- Continue or Skip in the Interactive Rebase panel, after the rebase was
+  finished elsewhere (a terminal, VS Code's Git), no longer runs git and fails:
+  the panel says the rebase is over and closes.
+- Create tag or branch on a commit that is not in the repository says so,
+  instead of git's "trying to write ref … with nonexistent object".
+- AI: the Test button no longer fails a reasoning model that spends its reply
+  thinking, and the OpenRouter and Groq defaults moved off models their
+  providers retired.
+- Crash reports no longer file the user's own situation — a push the remote
+  refused, credentials, the network, a conflict, a name already taken — only
+  failures GitStudio may have caused.
 
 ## [1.23.0] - 2026-11-02
 

@@ -25,6 +25,30 @@ but they share the same engine, so most Git behaviour lands in both at once.
   [@Albelt](https://github.com/Albelt) added them
   ([#146](https://github.com/GitStudioHQ/gitstudio/pull/146)).
 
+### Fixed
+- **Push, Pull and Set upstream answer before git does.** Push with no branch
+  checked out says so and offers New branch…; Pull on a branch that tracks
+  nothing offers Publish branch; Set upstream to a remote branch not fetched
+  yet fetches it first.
+- Stage all, with a conflict held back, no longer fails on a file the merge
+  deleted, and a file named like a pattern (`[f].txt`) can no longer stage the
+  conflicted file it matches.
+- Staging selected lines says what is there: no changes in the selection,
+  already staged, or nothing staged to unstage.
+- GitHub: creating a pull request or posting a review that GitHub refuses
+  shows GitHub's reason ("A pull request already exists…") instead of
+  "Validation Failed". My Work says why it couldn't reach GitHub.
+- AI: preset defaults moved off models their providers retired (Gemini 2.5,
+  Groq's Llama 3, DeepSeek chat/reasoner, Together's Llama 3.3, OpenAI's
+  GPT-4o), and connections still on an old default follow; the Test button no
+  longer fails reasoning models, and Gemini's key and region refusals say what
+  they are.
+- Cherry-pick or revert of a single merge commit is refused with how to do it,
+  instead of git's error.
+- Crash reports no longer file the user's own situation (a refused push,
+  credentials, the network, a conflict, an update download the network
+  dropped) — only failures GitStudio may have caused.
+
 ## [2.8.0] - 2026-11-02
 
 ### Added
