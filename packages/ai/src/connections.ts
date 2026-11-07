@@ -8,7 +8,7 @@
 // for everyday work and "Local Ollama" for offline/private work, mark one as the
 // default, and the agent/tasks resolve against whichever is active.
 
-import { presetById, type Wire } from "./catalog";
+import { RETIRED_DEFAULTS, knownModels, presetById, type Wire } from "./catalog";
 import type { ModelTier } from "./types";
 
 export interface Connection {
@@ -75,6 +75,69 @@ export function connectionFromPreset(presetId: string, id: string): Connection {
     needsKey: p.needsKey,
     local: p.local,
   };
+}
+
+/** A base URL compared the way the providers join it: trimmed, no trailing slash. */
+function sameBaseUrl(a: unknown, b: string): boolean {
+  return withoutTrailingSlashes(a) === withoutTrailingSlashes(b);
+}
+
+/**
+ * `u` trimmed, with its trailing slashes cut — by walking back from the end,
+ * not with /\/+$/: a stored base URL is the user's input, and that pattern
+ * backtracks quadratically over a long run of slashes that is not at the end
+ * (CodeQL js/polynomial-redos).
+ */
+function withoutTrailingSlashes(u: unknown): string {
+  const s = (typeof u === "string" ? u : "").trim();
+  let end = s.length;
+  while (end > 0 && s.charCodeAt(end - 1) === 47 /* "/" */) end--;
+  return s.slice(0, end);
+}
+
+/**
+ * Move a stored connection off a default its provider retired (see
+ * RETIRED_DEFAULTS). Only for a connection still on its preset's own base URL,
+ * and only the tiers that hold exactly that tier's old default. Mutates `conn`;
+ * returns whether anything changed, so the host knows to persist.
+ */
+export function migrateRetiredModels(conn: Connection): boolean {
+  const retired = RETIRED_DEFAULTS[conn.preset];
+  if (!retired || !conn.models) {
+    return false;
+  }
+  const preset = presetById(conn.preset);
+  if (preset.id !== conn.preset || !sameBaseUrl(conn.baseUrl, preset.baseUrl)) {
+    return false;
+  }
+  let changed = false;
+  for (const tier of ["fast", "mid", "deep"] as const) {
+    const raw: unknown = conn.models[tier];
+    const id = typeof raw === "string" ? raw.trim() : "";
+    if (id && retired.some((old) => old[tier] === id)) {
+      conn.models[tier] = preset.models[tier];
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/**
+ * Whether the user changed what a connection talks to: a base URL other than
+ * its preset's, or a model id the preset neither seeds nor suggests. A 404
+ * from such a connection is the user's configuration; a 404 from our own URL
+ * and model is ours to hear about (a retired default, a path joined wrong).
+ */
+export function isUserEdited(conn: Connection, modelId: string | undefined): boolean {
+  const preset = presetById(conn.preset);
+  if (preset.id !== conn.preset || !sameBaseUrl(conn.baseUrl, preset.baseUrl)) {
+    return true;
+  }
+  if (!modelId) {
+    return false;
+  }
+  const ours = new Set([...Object.values(preset.models), ...knownModels(preset.id)]);
+  return !ours.has(modelId.trim());
 }
 
 /**

@@ -11,6 +11,7 @@
 // once, under the most actionable heading.
 
 import { GitHubClient } from "../githubClient";
+import { ExpectedError, isExpectedError } from "../expectedError";
 import * as l10n from "@vscode/l10n";
 import type { MyWorkItem } from "../../shared/ipc";
 
@@ -41,6 +42,26 @@ async function search(client: GitHubClient, q: string): Promise<RawSearchIssue[]
   return res.items ?? [];
 }
 
+/**
+ * The error for "every search failed", carrying the searches' own verdict.
+ *
+ * All four failing is almost always one cause failing four times — offline, a
+ * proxy, an expired token, the search rate limiter — and each of those already
+ * arrived here as an ExpectedError. Swallowing them per bucket and throwing a
+ * fresh plain Error laundered a network state into a crash report
+ * ("ipc:github:myWork"), and told the user less than the first failure did.
+ * So: expected when every failure was, and in the first failure's words; when
+ * any of them was NOT expected (a query GitHub refused, say), that one is the
+ * message and it still reports.
+ */
+function allSearchesFailed(failures: readonly unknown[]): Error {
+  const fallback = l10n.t("GitHub didn't answer any of the work searches.");
+  const messageOf = (e: unknown): string => (e instanceof Error && e.message.trim() ? e.message : fallback);
+  const defect = failures.find((e) => !isExpectedError(e));
+  if (defect !== undefined) return new Error(messageOf(defect), { cause: defect });
+  return new ExpectedError(messageOf(failures[0]), { cause: failures[0] });
+}
+
 export async function myWork(
   client: GitHubClient,
   owner: string | undefined,
@@ -55,10 +76,10 @@ export async function myWork(
   // client used to resolve [] here, and Home then said a green "Nothing
   // waiting on you" about a question it never got answered. Total failure
   // throws, and the caller says "couldn't reach GitHub" like it means it.
-  let failures = 0;
+  const failures: unknown[] = [];
   const soft = (q: string): Promise<RawSearchIssue[]> =>
-    search(client, q).catch(() => {
-      failures++;
+    search(client, q).catch((err: unknown) => {
+      failures.push(err);
       return [] as RawSearchIssue[];
     });
   const [rev, assigned, mine, mentions] = await Promise.all([
@@ -67,9 +88,7 @@ export async function myWork(
     soft(`${scope} is:pr author:@me`),
     soft(`${scope} mentions:@me -author:@me`),
   ]);
-  if (failures === 4) {
-    throw new Error(l10n.t("GitHub didn't answer any of the work searches."));
-  }
+  if (failures.length === 4) throw allSearchesFailed(failures);
 
   const out: MyWorkItem[] = [];
   const seen = new Set<string>();

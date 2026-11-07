@@ -75,7 +75,18 @@ export type RebaseOutcome =
    * so is shown and never crash-reported. Every other failure is ours to hear
    * about: see `reportableRebaseFailure`.
    */
-  | { status: "failed"; message: string; expected?: true };
+  | {
+      status: "failed";
+      message: string;
+      expected?: true;
+      /**
+       * There was no rebase to resume: it had already finished or been
+       * abandoned — from a terminal, VS Code's own git, another GitStudio
+       * surface — while a stop banner still offered Continue. Always
+       * `expected`; the host refreshes its state rather than show a failure.
+       */
+      gone?: true;
+    };
 
 /**
  * The message a rebase outcome should be crash-reported with, or undefined when
@@ -533,6 +544,8 @@ export async function runRebasePlan(
 
 /** `git rebase --continue` (after resolving a conflict / finishing an edit). */
 export async function continueRebase(root: string, opts: RebaseRunOptions = {}): Promise<RebaseOutcome> {
+  const none = await noRebaseToResume(root, opts);
+  if (none) return none;
   // GIT_EDITOR was "true" here — a no-op — so every reword AFTER the stop point
   // committed with its original message, and the app said "Rebase continued."
   const { env, paths, commentChar } = await resumeEnv(root, opts);
@@ -563,6 +576,8 @@ export async function continueRebase(root: string, opts: RebaseRunOptions = {}):
  * the ones after it disappear.
  */
 export async function skipRebase(root: string, opts: RebaseRunOptions = {}): Promise<RebaseOutcome> {
+  const none = await noRebaseToResume(root, opts);
+  if (none) return none;
   const { env, paths, commentChar } = await resumeEnv(root, opts);
   const { code, stderr, stdout } = await spawnGit([...rebaseConfig(commentChar), "rebase", "--skip"], root, env, opts);
   if (code === 0) {
@@ -581,6 +596,28 @@ export async function skipRebase(root: string, opts: RebaseRunOptions = {}): Pro
   }
   clearRewordQueue(paths);
   return { status: "failed", message: firstLine(stderr, stdout) || l10n.t("Skip failed.") };
+}
+
+/**
+ * The outcome for a Continue or Skip with no rebase in progress, or undefined
+ * when there is one to resume.
+ *
+ * Crash reports arrived as "git rebase --continue failed" with git's own
+ * "fatal: no rebase in progress": a stop banner (the rebase workspace's, in
+ * those reports) still offered Continue after the rebase had ended somewhere
+ * else, and pressing it ran git anyway. Nothing was broken — the state the
+ * banner described was simply over. Asked of git's state directory, the same
+ * language-free fact `rebaseInProgress` reads (REBASE_HEAD can outlive a
+ * rebase and is no evidence either way), before git runs.
+ */
+async function noRebaseToResume(root: string, opts: RebaseRunOptions): Promise<RebaseOutcome | undefined> {
+  if (await rebaseInProgress(root, { ...process.env, GIT_OPTIONAL_LOCKS: "0" }, opts)) return undefined;
+  return {
+    status: "failed",
+    message: l10n.t("No rebase is in progress — it has already finished or was abandoned."),
+    expected: true,
+    gone: true,
+  };
 }
 
 /** `git rebase --abort`. */

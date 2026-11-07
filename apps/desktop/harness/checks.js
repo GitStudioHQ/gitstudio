@@ -10840,7 +10840,13 @@
       if (!row) return;
       c.eq(text(row), "Drop commit…", "its label");
       c.ok(row.classList.contains("ctx-danger"), "danger-styled like Reset (hard)");
-      c.eq(row.previousElementSibling?.dataset.action, "revert", "right after Revert");
+      // In Revert's group: right after it, or after Edit message… where that
+      // is offered too (contextMenu.ts puts reword, then drop, after revert).
+      const before = row.previousElementSibling?.dataset.action;
+      c.ok(
+        before === "revert" || (before === "reword" && row.previousElementSibling?.previousElementSibling?.dataset.action === "revert"),
+        `right after Revert (or Revert, then Edit message…) — after "${before}"`,
+      );
       c.eq(row.nextElementSibling?.dataset.action, "reset-soft", "and before the resets");
       const red = getComputedStyle(row).color;
       const plain = getComputedStyle($(".ctx-menu [data-action=revert]")).color;
@@ -14005,6 +14011,10 @@
       const code = $('pre > code[class*="language-"]');
       c.ok(!!code, "the issue body has a highlighted fence");
       if (!code) return;
+      // Highlighting lands after the body paints (Monaco's colorizer is
+      // async); asserting at once raced it — a few KB more bundle made this
+      // fail one run in two on an unrelated change. Wait for it, bounded.
+      for (let i = 0; i < 30 && code.querySelectorAll("span").length <= 4; i++) await settle(100);
       c.ok(code.querySelectorAll("span").length > 4, "and it really was tokenized");
       const t = code.textContent || "";
       c.eq((t.match(/\u00a0/g) || []).length, 0, "no non-breaking spaces survive into the text");

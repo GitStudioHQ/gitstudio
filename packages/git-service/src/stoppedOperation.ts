@@ -35,6 +35,8 @@ export type BlockedDoor =
   | "checkout"
   | "stash"
   | "pull"
+  /** Push with HEAD detached because a rebase is stopped (gitBridge.syncPush). */
+  | "push"
   | "reset"
   /** Drop Commit (issue #32) — a rebase, said as the action the user chose. */
   | "drop"
@@ -119,6 +121,7 @@ const BEFORE: Record<BlockedDoor, string> = {
   checkout: l10n.t("checking out"),
   stash: l10n.t("applying a stash"),
   pull: l10n.t("pulling again"),
+  push: l10n.t("pushing"),
   reset: l10n.t("resetting"),
   drop: l10n.t("dropping a commit"),
   "drop-many": l10n.t("dropping commits"),

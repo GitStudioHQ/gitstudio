@@ -237,3 +237,76 @@ test("a conflicted BINARY is held back by Stage all too", async () => {
     removeTempRepo(root);
   }
 });
+
+test("Stage all over a conflict stages everything else — a staged deletion, a rename, a non-ASCII name", async () => {
+  // Reported as "Stage all": `fatal: pathspec '<file>' did not match any
+  // files`, and git exits 128 having staged NOTHING. The allow-list Stage all
+  // builds while a conflict is held back named every path `status` listed —
+  // including a staged deletion, which is in neither the index nor the
+  // worktree, so no pathspec can match it. A merge stages exactly that for
+  // every file the other side deleted. Rebuilt here beside the other shapes
+  // the report could have meant (a rename, a name git would quote, a name
+  // that reads as a glob), so each is pinned whichever it was.
+  const root = mkdtempSync(`${tmpdir()}/gs-conflict-stageall-`);
+  const git = (...a: string[]): string => {
+    try {
+      return execFileSync("git", a, { cwd: root }).toString();
+    } catch (e) {
+      return String((e as { stdout?: Buffer }).stdout ?? "");
+    }
+  };
+  try {
+    git("init", "-q", "-b", "main");
+    git("config", "user.email", "t@t");
+    git("config", "user.name", "t");
+    git("config", "gc.auto", "0");
+    git("config", "core.autocrlf", "false");
+    writeFileSync(`${root}/f.txt`, "base\n");
+    writeFileSync(`${root}/gone.txt`, "the other side deletes this\n");
+    writeFileSync(`${root}/old-name.txt`, "renamed during the merge\n");
+    writeFileSync(`${root}/edited.txt`, "one\n");
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    git("checkout", "-q", "-b", "side");
+    writeFileSync(`${root}/f.txt`, "theirs\n");
+    git("rm", "-q", "gone.txt");
+    git("commit", "-qam", "theirs");
+    git("checkout", "-q", "main");
+    writeFileSync(`${root}/f.txt`, "ours\n");
+    git("commit", "-qam", "ours");
+    git("merge", "side");
+    // While the conflict is open: a rename, an edit, a new file with a name
+    // git quotes (core.quotePath), and one whose name is a glob that would
+    // match the held-back f.txt if it were read as a pattern.
+    git("mv", "old-name.txt", "new-name.txt");
+    writeFileSync(`${root}/edited.txt`, "two\n");
+    writeFileSync(`${root}/文件.txt`, "non-ASCII name\n");
+    writeFileSync(`${root}/[f].txt`, "a name that reads as a glob\n");
+
+    assert.match(git("status", "--porcelain"), /^D {2}gone\.txt$/m, "the merge staged the deletion");
+    assert.notEqual(git("ls-files", "-u", "--", "f.txt").trim(), "", "the fixture is conflicted");
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const b = new GitBridge(repos);
+    const r = await b.stageAll();
+
+    assert.equal(r.expected, true, `the held-back conflict is the only thing said (${r.message ?? ""})`);
+    assert.match(r.message ?? "", /^Staged everything else\. .*f\.txt/);
+    assert.notEqual(git("ls-files", "-u", "--", "f.txt").trim(), "", "the conflict is still unmerged");
+    // Everything else is staged — and nothing is left unstaged except f.txt.
+    const left = git("-c", "core.quotePath=false", "status", "--porcelain")
+      .split("\n")
+      .filter((l) => l && l[1] !== " ")
+      .map((l) => l.slice(3));
+    assert.deepEqual(left, ["f.txt"], "only the held-back conflict is left unstaged");
+    const staged = git("-c", "core.quotePath=false", "diff", "--cached", "--name-status", "-M", "HEAD");
+    assert.match(staged, /^D\tgone\.txt$/m);
+    assert.match(staged, /^R\d*\told-name\.txt\tnew-name\.txt$/m);
+    assert.match(staged, /^M\tedited\.txt$/m);
+    assert.match(staged, /^A\t文件\.txt$/m);
+    assert.match(staged, /^A\t\[f\]\.txt$/m);
+  } finally {
+    removeTempRepo(root);
+  }
+});

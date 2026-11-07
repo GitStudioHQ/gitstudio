@@ -276,12 +276,13 @@ for (const stop of ["merge", "rebase", "cherry-pick", "revert", "am", "stash"] a
 
 test("a genuine failure over a stop is still reported: a pick that fails at a plain rebase stop, for its own reason", async () => {
   // A rebase paused at an `edit`, clean tree: picking a commit in is ordinary
-  // git and runs — so when it fails, it failed for its own reason. A merge
-  // commit picked with no -m is refused for THAT.
+  // git and runs — so when it fails, it failed for its own reason. An object
+  // the repository does not have is refused for THAT. (A merge commit picked
+  // with no -m used to be the example; it is now refused before git runs, as
+  // the user's choice still to make — gitBridge.ops.test.ts.)
   const c = stopped("merge", false);
   git(c.dir, "merge", "--abort");
   git(c.dir, "merge", "--no-ff", "--no-edit", "other");
-  const mergeCommit = git(c.dir, "rev-parse", "HEAD").trim();
   // A NODE sequence editor (`edit` on the first pick): git runs the editor
   // through its shell, where the backslashes of a Windows path are escapes —
   // a `#!/bin/sh` script named by its path was never found there.
@@ -299,7 +300,7 @@ test("a genuine failure over a stop is still reported: a pick that fails at a pl
   const repos = new RepoStore([]);
   await repos.open(c.dir);
   const bridge = new GitBridge(repos);
-  const r = await bridge.commitAction({ action: "cherry-pick", sha: mergeCommit });
+  const r = await bridge.commitAction({ action: "cherry-pick", sha: "f".repeat(40) });
   assert.equal(r.ok, false);
   assert.ok(reportableResultMessage(r), `git's own failure, reported: ${r.message}`);
 });

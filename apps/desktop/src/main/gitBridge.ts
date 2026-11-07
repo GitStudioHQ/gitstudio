@@ -22,6 +22,7 @@ import { computeGraphLayout } from "@gitstudio/engine/graph/layout";
 import type { GraphInputCommit } from "@gitstudio/engine/graph/layout";
 import { computeHunks, applySelectedChanges } from "@gitstudio/engine/staging/applyLineChanges";
 import { selectionTakes, type LineRange } from "@gitstudio/engine/staging/applyLineChanges";
+import { computeChangeBlocks } from "@gitstudio/engine/staging/blockStaging";
 import { toOriginalSelection } from "@gitstudio/engine/staging/selectionStaging";
 import { buildWireRows, wireRefs } from "@gitstudio/host-bridge/graphWire";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
@@ -31,10 +32,11 @@ import { optionLikeCheckout, planRefCheckout, refShortName } from "@gitstudio/gi
 import { checkedOutElsewhere, checkedOutElsewhereMessage } from "@gitstudio/git-service/branchElsewhere";
 import { branchNameOf, remoteBranchOf } from "@gitstudio/git-service/BranchOps";
 import { headBranchName } from "@gitstudio/git-service/RefProvider";
+import { fetchPrBranch, isSafeBranchName, isSafeRemoteName } from "@gitstudio/git-service/prBranch";
 import { listUnstagedHunks, stageHunks } from "@gitstudio/git-service/hunkStaging";
 import { setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
-import { stoppedIn } from "@gitstudio/git-service/stoppedOperation";
+import { operationInTheWayMessage, pick, stoppedIn } from "@gitstudio/git-service/stoppedOperation";
 import { applyManyArgs, mergesAmong, orderCommits } from "@gitstudio/git-service/multiCommit";
 import { headBranch } from "@gitstudio/git-service/refRestore";
 import { applyManyMessage } from "@gitstudio/engine/rebase/many";
@@ -1337,12 +1339,31 @@ export class GitBridge {
       // An explicit ALLOW-LIST, not `:!` exclusions: verified against real git,
       // `add -A -- . ':!path'` stages the excluded path anyway, so the exclusion
       // would have been silent and this guard would have done nothing at all.
+      //
+      // And only paths with something LEFT to stage — a row with an unstaged
+      // half (`staged: false`: a worktree edit, an untracked file, a resolved
+      // conflict). A path whose change is already wholly in the index is
+      // nothing to add, and one of them is not a pathspec git can match at
+      // all: a staged deletion ("D ") is in neither the index nor the
+      // worktree. A merge stages exactly that for every file the other side
+      // deleted, so "Stage all" over any conflict whose merge also deleted a
+      // file died with "fatal: pathspec '<file>' did not match any files"
+      // (git exits 128 and stages NOTHING) — and filed it as a crash.
+      //
+      // `--literal-pathspecs`: these are file names, not patterns. A name
+      // with `*` or `[…]` in it would otherwise also match its neighbours —
+      // a held-back file among them — and one starting with `:` reads as
+      // pathspec magic.
       const hold = new Set(unresolved);
-      const allow = [...new Set(parsePorcelainStatus(st.stdout).map((f) => f.path))].filter(
-        (p) => !hold.has(p),
-      );
+      const allow = [
+        ...new Set(
+          parsePorcelainStatus(st.stdout)
+            .filter((f) => !f.staged)
+            .map((f) => f.path),
+        ),
+      ].filter((p) => !hold.has(p));
       if (allow.length > 0) {
-        const add = await ctx.process.run(["add", "-A", "--", ...allow]);
+        const add = await ctx.process.run(["--literal-pathspecs", "add", "-A", "--", ...allow]);
         if (add.code !== 0) return add;
       }
       // Two different reasons to hold a file back, needing two different things
@@ -2257,7 +2278,43 @@ export class GitBridge {
     let stopped: PullStopInfo | undefined;
     let blocked: PullBlockInfo | undefined;
     let dirty: PullDirtyInfo | undefined;
+    let noUpstream = false;
     const r = await this.staged(async (ctx) => {
+      // A branch that tracks nothing has nothing to pull from. git's answer is
+      // terminal advice — "There is no tracking information for the current
+      // branch… git pull <remote> <branch>… git branch --set-upstream-to=" —
+      // which reached the user in red and the crash tracker as "Pull". The
+      // top bar offers Publish rather than Pull for such a branch, but ⌘K's
+      // Pull is always there, and a widget painted before the upstream went
+      // away is still showing Pull. So it is asked here, before git runs, and
+      // said as the state it is; `noUpstream` lets the renderer offer Publish.
+      //
+      // By the tracking CONFIG, not `@{u}`: a branch whose remote branch was
+      // deleted still has `branch.<name>.merge`, and that is a different
+      // answer (the upstream is gone) that this sentence would get wrong.
+      // Only on a branch (a detached HEAD has its own sentence, below), and
+      // only with nothing stopped: a paused merge or rebase is what is in the
+      // way then, and the door below says so. Not on a Stash & Retry either:
+      // that is the second press of a pull this already let through, and the
+      // door's own refusals (another repository open now) come first there.
+      const head = await ctx.process.run(["symbolic-ref", "-q", "HEAD"]);
+      const full = head.code === 0 ? head.stdout.trim() : "";
+      if (opts?.stashFirst === undefined && full.startsWith("refs/heads/")) {
+        const name = full.slice("refs/heads/".length);
+        const merge = await ctx.process.run(["config", "--get", `branch.${name}.merge`]);
+        if (merge.code === 1 && !(await stoppedIn(ctx.process))) {
+          noUpstream = true;
+          return {
+            ok: false,
+            changed: false,
+            expected: true,
+            message: l10n.t(
+              "'{0}' has no upstream branch, so there is nothing to pull from. Publish it to start tracking a remote branch, or choose one with Set upstream… in Branches.",
+              name,
+            ),
+          };
+        }
+      }
       // Through the one door for commands that apply commits (main/inTheWay.ts):
       // the user's uncommitted work in the pull's way answers which files,
       // `expected`, and the renderer offers Stash & Retry — which sends this
@@ -2320,6 +2377,7 @@ export class GitBridge {
         ...note,
       };
     });
+    if (noUpstream) return { ...r, noUpstream: true };
     if (stopped) return { ...r, stopped };
     if (blocked) return { ...r, blocked };
     if (dirty) return { ...r, dirty };
@@ -2336,7 +2394,44 @@ export class GitBridge {
     opts: { setUpstream?: boolean; force?: boolean } | undefined,
   ): Promise<PushActionResult> {
     let pullFirst = false;
+    let detached = false;
     const r = await this.staged(async (ctx) => {
+      // HEAD on no branch: a commit or a tag checked out. Every push door ends
+      // up here with nothing to name — the top bar's Push, ⌘K's Push, and
+      // Commit & Push, which asks for `setUpstream` because a detached HEAD
+      // has no upstream either — and SyncOps.push, finding no branch to
+      // resolve, fell through to a bare `git push`. git's answer is terminal
+      // advice ("You are not currently on a branch. To push the history
+      // leading to the current (detached HEAD) state now, use git push origin
+      // HEAD:<name-of-remote-branch>"), which reached the user in red and the
+      // crash tracker as "Push". It is the user's state, not a failure: said
+      // in the app's words, before git runs, and `detached` lets the renderer
+      // offer what is actually the way on — a branch here (createBranchFlow).
+      //
+      // Exit 1 from `symbolic-ref -q` is "detached" and nothing else (the
+      // test SyncOps.pull makes for the same state). A stopped REBASE
+      // detaches HEAD too, and there the way on is to finish it, not to put a
+      // new branch in the middle of it — so that one is said as the stop.
+      if ((await ctx.process.run(["symbolic-ref", "-q", "HEAD"])).code === 1) {
+        const stop = await stoppedIn(ctx.process);
+        if (stop?.operation === "rebase") {
+          return {
+            ok: false,
+            changed: false,
+            expected: true,
+            message: operationInTheWayMessage({ kind: "push", ...pick(stop) }),
+          };
+        }
+        detached = true;
+        return {
+          ok: false,
+          changed: false,
+          expected: true,
+          message: l10n.t(
+            "You're not on a branch — HEAD is detached, so there is no branch to push. Create a branch here, then push it.",
+          ),
+        };
+      }
       // A force push is offered for ONE situation: we rewrote commits the
       // remote already has (an amend, a rebase), so a plain push is refused.
       // The same refusal comes back when somebody ELSE pushed — and once their
@@ -2366,6 +2461,7 @@ export class GitBridge {
       }
       return pushed;
     });
+    if (detached) return { ...r, detached: true };
     return pullFirst ? { ...r, pullFirst: true } : r;
   }
 
@@ -3158,6 +3254,10 @@ export class GitBridge {
     if ((req.action === "cherry-pick" || req.action === "revert") && Array.isArray(req.shas) && req.shas.length > 1) {
       return this.applyMany(ctx, req.action, req);
     }
+    const refused = await commitActionRefusal(ctx, req);
+    if (refused) {
+      return refused;
+    }
     const args = actionArgs(req);
     if (!args) {
       // copy-sha is handled entirely in the renderer; nothing to run here.
@@ -3345,7 +3445,78 @@ export class GitBridge {
     const name = localBranchOf(req.fullName);
     if (!name) return notABranch("set the upstream of");
     if (!safeArg(req.upstream)) return unsafeRefResult();
-    return this.staged((ctx) => ctx.branches.setUpstream(name, req.upstream));
+    return this.staged(async (ctx) => {
+      // `--set-upstream-to` only takes a ref this repository already HAS. Set
+      // upstream… is a typed name ("origin/<branch>" is the prompt's hint), and
+      // the branch someone means is very often one that exists on the remote
+      // and has not been fetched yet — a colleague just pushed it. git refused
+      // that with "fatal: the requested upstream branch '…' does not exist" and
+      // six lines of hints, in red, and the crash tracker filed it as "Branch
+      // setUpstream". git's own hint is the fix: fetch it first. So a name
+      // that resolves to nothing here, but reads as <remote>/<branch> for a
+      // remote this repository has, is fetched into its remote-tracking ref
+      // (fetchPrBranch: the one ref git's own fetch keeps for it) and then set
+      // — and one the remote does not have either is said as that, expected.
+      const known = await ctx.process.run(["rev-parse", "--verify", "--quiet", `${req.upstream}^{commit}`]);
+      if (known.code !== 0) {
+        const refused = await this.fetchUpstreamFirst(ctx, req.upstream);
+        if (refused) return refused;
+      }
+      return ctx.branches.setUpstream(name, req.upstream);
+    });
+  }
+
+  /**
+   * Fetch `<remote>/<branch>` (or `refs/remotes/<remote>/<branch>`) so it can
+   * be set as an upstream — undefined once it is here, or the answer to give
+   * when it cannot be. The remote is matched against the repository's own,
+   * LONGEST first: a remote may have a slash in its name ("team/eu"), and so
+   * may a branch ("feature/x"), so splitting on the first slash guesses.
+   */
+  private async fetchUpstreamFirst(
+    ctx: GitContext,
+    upstream: string,
+  ): Promise<{ ok: false; changed: false; expected?: true; message: string } | undefined> {
+    const spelled = upstream.startsWith("refs/remotes/") ? upstream.slice("refs/remotes/".length) : upstream;
+    const remotes = (await ctx.remotes.list()).map((r) => r.name).sort((a, b) => b.length - a.length);
+    const remote = remotes.find((r) => spelled.startsWith(`${r}/`) && spelled.length > r.length + 1);
+    if (!remote) {
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        message: l10n.t(
+          "There is no remote branch called {0}. Name one as remote/branch — origin/main, for example.",
+          upstream,
+        ),
+      };
+    }
+    const branch = spelled.slice(remote.length + 1);
+    // A remote name git takes but fetchPrBranch's stricter rule does not:
+    // nothing to guess about, so git answers as it did before.
+    if (!isSafeRemoteName(remote)) return undefined;
+    // The branch half is TYPED, so a name git would never take is the user's
+    // input, not our defect — said before anything runs.
+    if (!isSafeBranchName(branch)) {
+      return { ok: false, changed: false, expected: true, message: l10n.t("\"{0}\" isn't a branch name git takes.", branch) };
+    }
+    const fetched = await fetchPrBranch(ctx.process, { remote, headRef: branch });
+    if ("sha" in fetched) return undefined;
+    if (fetched.gone) {
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        message: l10n.t(
+          "{0} has no branch called '{1}'. Push the branch to publish it there, or pick a branch {0} has.",
+          remote,
+          branch,
+        ),
+      };
+    }
+    // The fetch itself failed — the network, credentials, a name git would not
+    // take. git's words, reported as any fetch's are (remoteOutcome decides).
+    return { ok: false, changed: false, message: fetched.error };
   }
 
   async branchDeleteRemote(
@@ -3622,11 +3793,14 @@ export class GitBridge {
         const out = await run(root, this.repos.runnerOptions());
         if (out.status === "done") return { ok: true, changed: true };
         // A stop is not a failure — the rebase is still live and the view says
-        // so. `expected` keeps it out of the crash reporter.
+        // so. `expected` keeps it out of the crash reporter. So does a
+        // refusal the runner marks expected: a Continue or Skip pressed after
+        // the rebase ended elsewhere (`gone`) is a stale banner, not a defect,
+        // and `changed` has the views read the state again.
         return {
           ok: false,
           changed: true,
-          expected: out.status === "stopped",
+          expected: out.status === "stopped" || (out.status === "failed" && !!out.expected),
           message: out.message ?? (out.status === "stopped" ? l10n.t("Rebase paused.") : l10n.t("Rebase failed.")),
         };
       } catch (err) {
@@ -3800,13 +3974,11 @@ export class GitBridge {
         let selection = ranges;
         if (req.reverse) {
           selection = toOriginalSelection(ranges, computeHunks(original, (await readWorking(ctx, rel)).text));
-          if (!selection.length) {
-            return { ok: false, changed: false, message: l10n.t("Nothing to apply in the selection.") };
-          }
+          if (!selection.length) return nothingToApply(ctx, rel, ranges, true);
         }
         const sideOf = (h: (typeof hunks)[number]): LineRange => (req.reverse ? h.original : h.modified);
         const selected = hunks.filter((h) => selection.some((r) => selectionTakes(sideOf(h), r)));
-        if (!selected.length) return { ok: false, changed: false, message: l10n.t("Nothing to apply in the selection.") };
+        if (!selected.length) return nothingToApply(ctx, rel, ranges, !!req.reverse);
         const content = applySelectedChanges(original, modified, selected.map((h) => h.modified));
         // …and report what actually happened. This discarded stageContent's
         // result and answered ok:true unconditionally, so a write that failed
@@ -4013,6 +4185,51 @@ export class GitBridge {
   }
 }
 
+/**
+ * Why a line stage or unstage found nothing in the selection — and whether
+ * that is the user's situation or ours.
+ *
+ * "Nothing to apply in the selection." was kept reporting on purpose: it was
+ * once the symptom of a real bug (the selection matched against the wrong
+ * side of the diff, for a line plainly on screen — see stageLines). It fired
+ * again (two reports, 2.7.0), and nothing could tell a recurrence from the
+ * ordinary case of a selection that holds no change: lines selected in the
+ * unchanged part of the file, or a change that is already staged (or, to
+ * unstage, not staged at all). Those are now said as what they are, and
+ * `expected`. The original sentence — and its report — is left for the one
+ * case that should not happen: the selection is on a change the diff on
+ * screen shows (HEAD ↔ working tree) that is still there to stage or unstage.
+ */
+async function nothingToApply(
+  ctx: GitContext,
+  rel: string,
+  selection: LineRange[],
+  reverse: boolean,
+): Promise<{ ok: false; changed: false; expected?: true; message: string }> {
+  try {
+    const head = await headSideName(ctx, rel).then((name) => (name ? ctx.staging.headContent(name) : ""));
+    const working = (await readWorking(ctx, rel)).text;
+    const index = await ctx.staging.indexContent(rel);
+    // The changes on screen (HEAD ↔ working tree, in the working-tree numbers
+    // the selection arrives in), each with how much of it the index holds.
+    const touched = computeChangeBlocks(head, index, working).filter((b) =>
+      selection.some((r) => selectionTakes(b.working, r)),
+    );
+    if (!touched.length) {
+      return { ok: false, changed: false, expected: true, message: l10n.t("The selected lines have no changes.") };
+    }
+    if (!reverse && touched.every((b) => b.state === "staged")) {
+      return { ok: false, changed: false, expected: true, message: l10n.t("The selected changes are already staged.") };
+    }
+    if (reverse && touched.every((b) => b.state === "unstaged")) {
+      return { ok: false, changed: false, expected: true, message: l10n.t("Nothing in the selection is staged.") };
+    }
+  } catch {
+    // Fall through to the sentence that reports: better a report than a guess.
+  }
+  return { ok: false, changed: false, message: l10n.t("Nothing to apply in the selection.") };
+}
+
 /** 1-based line numbers whose preceding EDGE a selection reached, as the empty
  *  0-based ranges the engine reads as boundaries (selectionTakes). */
 function boundariesToRanges(boundaries: number[] | undefined): LineRange[] {
@@ -4169,6 +4386,51 @@ function stashRequest(req: unknown): { ref: unknown; stashFirst?: unknown } {
     return { ref: r.ref, stashFirst: r.stashFirst };
   }
   return { ref: undefined };
+}
+
+/**
+ * A commit action git would refuse for a reason that is the commit's, said
+ * before git runs — `expected`, so it is never crash-reported. Undefined when
+ * the action may go ahead.
+ *
+ *   · Tag / branch on a commit the object store does not have. `git tag
+ *     <name> <full sha>` never reads the object and fails writing the ref
+ *     ("trying to write ref … with nonexistent object"); a graph row can name
+ *     such a commit while the view is out of date. `^{commit}` makes git read
+ *     it: a bare full sha "verifies" without that.
+ *   · Cherry-pick / revert of ONE merge commit. git refuses without `-m` ("is
+ *     a merge but no -m option was given"), and this app has no side picker
+ *     for it yet (the extension asks); git's way is named instead.
+ */
+async function commitActionRefusal(ctx: GitContext, req: CommitActionRequest): Promise<CommitActionResult | undefined> {
+  const short = req.sha.slice(0, 7);
+  if (req.action === "tag" || req.action === "branch") {
+    const r = await ctx.process.run(["rev-parse", "--verify", "--quiet", `${req.sha}^{commit}`]);
+    if (r.code === 0 && r.stdout.trim()) return undefined;
+    return {
+      ok: false,
+      changed: true,
+      expected: true,
+      message: l10n.t(
+        "Commit {0} isn't in this repository's local history — the view may be out of date, or the commit exists only on a remote. Refresh or fetch, then try again.",
+        short,
+      ),
+    };
+  }
+  if (req.action === "cherry-pick" || req.action === "revert") {
+    const merges = await mergesAmong(ctx.process, [req.sha]);
+    if (!merges || merges.length === 0) return undefined; // an unreadable commit: git's own words
+    return {
+      ok: false,
+      changed: false,
+      expected: true,
+      message:
+        req.action === "cherry-pick"
+          ? l10n.t("{0} is a merge commit, and cherry-picking a merge needs the side to apply. From a terminal, git cherry-pick -m 1 {0} applies the changes that were merged in.", short)
+          : l10n.t("{0} is a merge commit, and reverting a merge needs the side to keep. From a terminal, git revert -m 1 {0} keeps the branch it was merged into.", short),
+    };
+  }
+  return undefined;
 }
 
 /** The commit-applying actions of commit:action, as the one door runs them. */

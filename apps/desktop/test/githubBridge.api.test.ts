@@ -442,11 +442,15 @@ test("approving posts an APPROVE review; a refusal is a result", async (t) => {
   const { bridge, gh } = setup(t, { "POST /repos/acme/app/pulls/7/reviews": { id: 1 } });
   await signIn(bridge, gh);
   assert.deepEqual(await bridge.prApprove(7), { ok: true, changed: false });
-  gh.route("POST /repos/acme/app/pulls/7/reviews", () => reply(422, { message: "Can not approve your own pull request" }));
+  gh.route("POST /repos/acme/app/pulls/7/reviews", () =>
+    reply(422, { message: "Unprocessable Entity", errors: ["Review Can not approve your own pull request"] }),
+  );
+  // GitHub's rule about whose pull request it is — a state, not our payload.
   assert.deepEqual(await bridge.prApprove(7), {
     ok: false,
     changed: false,
-    message: "Can not approve your own pull request",
+    message: "Review Can not approve your own pull request",
+    expected: true,
   });
 });
 

@@ -459,13 +459,24 @@ test("line staging refuses an empty selection, a selection with no change under 
   const none = await t.bridge.stageLines({ path: "f.txt", lines: [0, -1, 1.5] });
   assert.deepEqual(none, { ok: false, changed: false, expected: true, message: "No lines selected." });
 
+  // A selection on unchanged lines is the user's situation, said as one and
+  // not crash-reported (two "Nothing to apply in the selection." reports,
+  // 2.7.0, could not be told from the bug that sentence once meant).
   const nothingThere = await t.bridge.stageLines({ path: "f.txt", lines: [1] });
-  assert.equal(nothingThere.ok, false);
-  assert.equal(nothingThere.message, "Nothing to apply in the selection.");
+  assert.deepEqual(nothingThere, { ok: false, changed: false, expected: true, message: "The selected lines have no changes." });
 
-  const nothingStaged = await t.bridge.stageLines({ path: "f.txt", lines: [1], reverse: true });
-  assert.equal(nothingStaged.ok, false);
-  assert.equal(nothingStaged.message, "Nothing to apply in the selection.");
+  const nothingThereToUnstage = await t.bridge.stageLines({ path: "f.txt", lines: [1], reverse: true });
+  assert.deepEqual(nothingThereToUnstage, { ok: false, changed: false, expected: true, message: "The selected lines have no changes." });
+
+  // On the change, but it is not staged: nothing to unstage.
+  const nothingStaged = await t.bridge.stageLines({ path: "f.txt", lines: [5], reverse: true });
+  assert.deepEqual(nothingStaged, { ok: false, changed: false, expected: true, message: "Nothing in the selection is staged." });
+
+  // On the change, and it is all staged already: nothing to stage.
+  t.git("add", "f.txt");
+  const alreadyStaged = await t.bridge.stageLines({ path: "f.txt", lines: [5] });
+  assert.deepEqual(alreadyStaged, { ok: false, changed: false, expected: true, message: "The selected changes are already staged." });
+  t.git("reset", "-q", "f.txt");
 
   // The index side is binary even though the working file is text again.
   t.write("blob.txt", Buffer.from([0, 1, 2, 3]));

@@ -400,6 +400,31 @@ test("an edit stop is stopped, not failed; Continue finishes it and closes the p
   assert.deepEqual(f.log(), ["B", "A", "base"]);
 });
 
+test("Continue after the rebase ended elsewhere runs no git, files nothing, says so quietly and closes", async () => {
+  // Crash reports: "git rebase --continue failed" with "fatal: no rebase in
+  // progress" — the banner kept offering Continue after the rebase it was
+  // stopped in had been finished from a terminal.
+  const f = fixture();
+  f.commit("base");
+  const a = f.commit("A");
+  f.commit("B");
+  const { p, data } = await open(f, a);
+  await p.send({ type: "apply", rows: rows(data.commits, (s) => (s === "A" ? "edit" : "pick")) });
+  assert.equal((p.posted.pop() as { outcome: { status: string } }).outcome.status, "stopped");
+  f.git("rebase", "--continue");
+  assert.equal(existsSync(join(f.dir, ".git", "rebase-merge")), false, "precondition: finished elsewhere");
+  filed.length = 0;
+  vscode.__said.length = 0;
+  const posted = p.posted.length;
+  await p.send({ type: "continue" });
+  assert.deepEqual(filed, [], "a stale Continue is not a crash");
+  assert.equal(p.posted.length, posted, "no failure is shown on the page");
+  assert.equal(said("error").length + said("warning").length, 0, "nothing loud");
+  assert.deepEqual(said("status"), ["$(info) No rebase is in progress — it has already finished or was abandoned."]);
+  assert.equal(p.disposed, true, "the stale banner closes");
+  assert.deepEqual(f.log(), ["B", "A", "base"]);
+});
+
 test("Skip goes through the shared operation verb, quietly, and reports what it came to", async () => {
   const f = fixture();
   f.commit("base");

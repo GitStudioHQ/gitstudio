@@ -287,14 +287,26 @@ test("Continue after an edit stop finishes the rebase; the runner sees it in pro
   assert.deepEqual(filed, [], "a finished rebase files nothing");
 });
 
-test("a Continue git refuses is filed with the crash reporter; the user's own state is not", async () => {
+test("a Continue with no rebase in progress runs nothing and files nothing; real failures are filed", async () => {
+  // Crash reports: "git rebase --continue failed" / "fatal: no rebase in
+  // progress" — a stop banner still offering Continue after the rebase ended
+  // elsewhere. That is a stale view, not a defect.
   const f = fixture();
   filed.length = 0;
   const outcome = await runner.continueRebase(f.dir);
   assert.equal(outcome.status, "failed");
-  assert.equal(filed.length, 1);
-  assert.equal(filed[0].label, "git rebase --continue failed");
-  assert.ok(filed[0].message.length > 0);
+  assert.equal(outcome.status === "failed" && outcome.gone, true, "it says the rebase is gone");
+  assert.equal(outcome.status === "failed" && outcome.expected, true);
+  assert.deepEqual(filed, [], "no rebase to continue is never a crash");
+
+  // The same after a stop that was finished from a terminal: REBASE_HEAD is
+  // left behind, and is no evidence of a rebase.
+  stopAtEdit(f);
+  f.git("rebase", "--continue");
+  assert.equal(await runner.isRebaseInProgress(f.dir), false);
+  const again = await runner.continueRebase(f.dir);
+  assert.equal(again.status === "failed" && again.gone, true);
+  assert.deepEqual(filed, []);
 
   filed.length = 0;
   runner.reportRebaseFailure("x", { status: "failed", message: "You have unstaged changes.", expected: true });

@@ -66,6 +66,8 @@ interface AnthropicRequestBody {
 
 export class AnthropicProvider implements AiProvider {
   readonly id = "anthropic";
+  /** stop_reason of the last complete() answer (see AiProvider.lastStop). */
+  lastStop: string | undefined;
 
   constructor(private readonly opts: AnthropicProviderOptions) {}
 
@@ -144,6 +146,7 @@ export class AnthropicProvider implements AiProvider {
   }
 
   async complete(req: CompleteRequest): Promise<string | null> {
+    this.lastStop = undefined;
     const headers = await this.headers();
     if (!headers) {
       return null;
@@ -161,6 +164,7 @@ export class AnthropicProvider implements AiProvider {
         return null;
       }
       const json = (await res.json()) as AnthropicMessageResponse;
+      this.lastStop = json.stop_reason;
       const text = extractAnthropicText(json);
       if (text === null && json.stop_reason === "refusal") {
         this.report(l10n.t("The model declined this request."));

@@ -753,6 +753,11 @@ export interface PullActionResult extends CommitActionResult {
   stopped?: PullStopInfo;
   blocked?: PullBlockInfo;
   dirty?: PullDirtyInfo;
+  /**
+   * The checked-out branch tracks nothing, so there is nothing to pull from.
+   * Refused before git ran; always `expected`. The renderer offers Publish.
+   */
+  noUpstream?: true;
 }
 
 /**
@@ -764,6 +769,12 @@ export interface PullActionResult extends CommitActionResult {
  */
 export interface PushActionResult extends CommitActionResult {
   pullFirst?: true;
+  /**
+   * The push was refused before git ran because HEAD is detached — a commit or
+   * a tag checked out, so there is no branch to push. Always `expected`; the
+   * renderer offers to create a branch here, which is the way on.
+   */
+  detached?: true;
 }
 
 /** A branch with remote-tracking context, for the Branches manager. */

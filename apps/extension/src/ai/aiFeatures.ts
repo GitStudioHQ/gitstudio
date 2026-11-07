@@ -34,6 +34,12 @@ interface LmChangeEvents {
 /** What every AI provider must implement. */
 export interface AiProvider {
   readonly id: string;
+  /**
+   * The stop reason of the last answer complete() got back, when the wire
+   * reports one ("length" / "max_tokens" = it stopped at the cap). Lets the
+   * connection test tell "answered, but spent the cap thinking" from "no answer".
+   */
+  readonly lastStop?: string;
   isAvailable(): Promise<boolean> | boolean;
   complete(req: CompleteRequest): Promise<string | null>;
   /** Optional streaming variant (explain/summaries prefer it). */
@@ -659,10 +665,14 @@ export class AiFeatures implements vscode.Disposable {
       const r = await provider.complete({
         prompt: "Reply with the single word: ok",
         model: "fast",
-        maxTokens: 8,
+        // Room for a reasoning model to think first: 8 tokens went entirely on
+        // hidden reasoning and a working connection read as broken.
+        maxTokens: 256,
         signal: controller.signal,
       });
-      if (r && r.trim().length > 0) {
+      // A reply that stopped at the cap is still the endpoint, key and model
+      // all answering — what this test asks.
+      if ((r && r.trim().length > 0) || provider.lastStop === "length" || provider.lastStop === "max_tokens") {
         return { ok: true, message: l10n.t("Success — the model replied. You're all set.") };
       }
       if (controller.signal.aborted) {

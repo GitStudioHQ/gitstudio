@@ -38,6 +38,7 @@ import {
   squashQuestion,
 } from "@gitstudio/engine/rebase/many";
 import * as l10n from "@vscode/l10n";
+import { userStateOutcome } from "@gitstudio/host-bridge/gitOutcomes";
 
 /** The commit actions as plain items for the IN-GRAPH popover (no vscode types
  * / codicon markup) — the webview renders these; ids match runCommitAction.
@@ -476,10 +477,44 @@ function detachAt(
   );
 }
 
+/**
+ * The commit's full sha in THIS repository's object store, or undefined (and
+ * the user told why) when it is not there.
+ *
+ * `git tag <name> <full sha>` does not check that the object exists: it fails
+ * only when writing the ref — "cannot update ref 'refs/tags/…': trying to write
+ * ref … with nonexistent object …" — which reached users as a red "Create tag
+ * failed" and was filed as a crash. A graph row can name a commit the store no
+ * longer (or never) had: a view not yet refreshed after history moved and was
+ * pruned, or one painted for a different repository than the active one. Asked
+ * as `<sha>^{commit}`, because a bare full sha "verifies" without git ever
+ * reading the object; this also turns an abbreviated sha into the full one.
+ */
+async function commitHere(ctx: GitContext, commit: CommitContext): Promise<string | undefined> {
+  const r = await ctx.process.run(["rev-parse", "--verify", "--quiet", `${commit.sha}^{commit}`]);
+  const sha = r.code === 0 ? r.stdout.trim() : "";
+  if (sha) {
+    return sha;
+  }
+  void vscode.window.showWarningMessage(
+    notice(
+      l10n.t(
+        "Commit {0} isn't in this repository's local history — the view may be out of date, or the commit exists only on a remote. Refresh or fetch, then try again.",
+        short(commit.sha),
+      ),
+    ),
+  );
+  return undefined;
+}
+
 async function createBranch(
   ctx: GitContext,
   commit: CommitContext,
 ): Promise<boolean> {
+  const target = await commitHere(ctx, commit);
+  if (!target) {
+    return true; // refresh: the row that offered this is out of date
+  }
   const name = await promptInput({
     title: l10n.t("Create branch at {0}", short(commit.sha)),
     hint: l10n.t("{0} — the branch starts here. You stay on the current branch.", commit.subject),
@@ -490,13 +525,17 @@ async function createBranch(
   if (!name) {
     return false;
   }
-  return runGit(ctx, ["branch", name, commit.sha], l10n.t("Created branch {0}", name), l10n.t("Create branch"));
+  return runGit(ctx, ["branch", name, target], l10n.t("Created branch {0}", name), l10n.t("Create branch"));
 }
 
 async function createTag(
   ctx: GitContext,
   commit: CommitContext,
 ): Promise<boolean> {
+  const target = await commitHere(ctx, commit);
+  if (!target) {
+    return true; // refresh: the row that offered this is out of date
+  }
   const name = await promptInput({
     title: l10n.t("Create tag at {0}", short(commit.sha)),
     hint: l10n.t("{0} — the tag stays local until you push it.", commit.subject),
@@ -507,7 +546,7 @@ async function createTag(
   if (!name) {
     return false;
   }
-  return runGit(ctx, ["tag", name, commit.sha], l10n.t("Created tag {0}", name), l10n.t("Create tag"));
+  return runGit(ctx, ["tag", name, target], l10n.t("Created tag {0}", name), l10n.t("Create tag"));
 }
 
 async function cherryPick(
@@ -515,13 +554,26 @@ async function cherryPick(
   commit: CommitContext,
   undo?: UndoRunner,
 ): Promise<boolean> {
+  // A merge needs its mainline, as a revert does: without `-m` git refuses with
+  // "commit X is a merge but no -m option was given", which reached users as a
+  // red "Cherry-pick failed" and was filed as a crash.
+  const mainline = await mainlineFor(ctx, commit, "cherry-pick");
+  if (mainline === null) {
+    return false;
+  }
   return withUndo(undo, l10n.t("Cherry-pick {0}", short(commit.sha)), async () => {
+    const args = ["cherry-pick"];
+    if (mainline !== undefined) {
+      args.push("-m", String(mainline));
+    }
+    args.push(commit.sha);
     // Through the one door every commit-applying action shares: uncommitted
     // work in the pick's way is said, with Stash & Retry, and never filed.
     const applied = await applyOrAsk(ctx, {
       kind: "cherry-pick",
       commit: commit.sha,
-      args: ["cherry-pick", commit.sha],
+      mainline,
+      args,
     });
     if (applied.cancelled || applied.settled) {
       return !applied.cancelled;
@@ -553,21 +605,24 @@ async function cherryPick(
 }
 
 /**
- * Reverting a MERGE needs to know which side to keep.
+ * Reverting or cherry-picking a MERGE needs to know which side to keep.
  *
  * A merge has two parents, so "undo this commit" is ambiguous — git refuses with
  * *"commit X is a merge but no -m option was given"* and stops. We used to hand
  * that sentence straight to the user, which reads as a defect in GitStudio and
  * offers nothing to do about it.
  *
- * Ask instead. `-m 1` keeps the branch the merge was made ON — the common intent
- * ("undo this merge, put my branch back") — and `-m 2` keeps the branch that was
- * merged in. Returns the mainline number, `undefined` for an ordinary commit, or
- * `null` if the user cancelled.
+ * Ask instead. For a revert, `-m 1` keeps the branch the merge was made ON — the
+ * common intent ("undo this merge, put my branch back") — and `-m 2` keeps the
+ * branch that was merged in. For a cherry-pick, `-m 1` applies what the merge
+ * brought in (its changes against the branch it was merged into) — again the
+ * usual intent, and the first choice. Returns the mainline number, `undefined`
+ * for an ordinary commit, or `null` if the user cancelled.
  */
 async function mainlineFor(
   ctx: GitContext,
   commit: CommitContext,
+  verb: "revert" | "cherry-pick" = "revert",
 ): Promise<number | undefined | null> {
   const r = await ctx.process.run(["rev-list", "--parents", "-n", "1", commit.sha]);
   if (r.code !== 0) {
@@ -587,18 +642,31 @@ async function mainlineFor(
   // Every parent, not just the first two — an octopus merge has three or more,
   // and offering a subset would silently make the others unrevertable.
   const pair = parents.length === 2;
+  const pick = verb === "cherry-pick";
   const chosen = await promptPick({
-    title: l10n.t("Revert the merge {0}", short(commit.sha)),
-    hint: pair
-      ? l10n.t("A merge has two sides, so git needs to know which one to keep.")
-      : l10n.t("This merge has {0} parents. Which one should be kept as the mainline?", parents.length),
+    title: pick
+      ? l10n.t("Cherry-pick the merge {0}", short(commit.sha))
+      : l10n.t("Revert the merge {0}", short(commit.sha)),
+    hint: pick
+      ? pair
+        ? l10n.t("A merge has two sides, so git needs to know which side's changes to apply.")
+        : l10n.t("This merge has {0} parents. Which one should its changes be taken against?", parents.length)
+      : pair
+        ? l10n.t("A merge has two sides, so git needs to know which one to keep.")
+        : l10n.t("This merge has {0} parents. Which one should be kept as the mainline?", parents.length),
     choices: parents.map((sha, i) => ({
       id: String(i + 1),
-      label: pair
-        ? i === 0
-          ? l10n.t("Keep the branch this was merged into")
-          : l10n.t("Keep the branch that was merged in")
-        : l10n.t("Keep parent {0}", i + 1),
+      label: pick
+        ? pair
+          ? i === 0
+            ? l10n.t("Apply the changes that were merged in")
+            : l10n.t("Apply the changes of the branch it was merged into")
+          : l10n.t("Against parent {0}", i + 1)
+        : pair
+          ? i === 0
+            ? l10n.t("Keep the branch this was merged into")
+            : l10n.t("Keep the branch that was merged in")
+          : l10n.t("Keep parent {0}", i + 1),
       icon: i === 0 ? "git-branch" : "git-merge",
       detail: short(sha),
       description:
@@ -1309,8 +1377,13 @@ async function showGitError(
   // "GitStudio: Cherry-pick failed — <git's reason>", as every failure reads.
   void vscode.window.showErrorMessage(failed(action, stderr));
   // Anonymous, scrubbed crash report so we hear about failures during beta
-  // (no-op if the user turned reporting off or VS Code telemetry is off).
-  ErrorReporter.current?.captureGitError(op, stderr);
+  // (no-op if the user turned reporting off or VS Code telemetry is off) —
+  // unless git's words are about the user's situation: a name already taken,
+  // a branch not merged, credentials, the network, another git holding the
+  // index. The rule is shared with the desktop's reporter (gitOutcomes.ts).
+  if (!userStateOutcome(stderr)) {
+    ErrorReporter.current?.captureGitError(op, stderr);
+  }
 }
 
 function flash(message: string): void {
