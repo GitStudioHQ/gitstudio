@@ -392,6 +392,22 @@ export interface CommitActionRequest {
    * revert) and refuses a merge among them. Only for "cherry-pick" and "revert".
    */
   shas?: string[];
+  /**
+   * For a cherry-pick or revert of ONE merge commit: git's `-m`, the parent
+   * (counted from 1) the merge is taken against. Main answers a merge sent
+   * without it with `mergeSides`, and the renderer asks which side and sends
+   * the request again with this (bridge.ts) — as the extension asks.
+   */
+  mainline?: number;
+}
+
+/**
+ * A cherry-pick or revert of one merge commit, sent without `mainline`: the
+ * merge's parents in git's order (parent 1 first), each with its subject, so
+ * the renderer can ask which side to take it against.
+ */
+export interface MergeSides {
+  parents: Array<{ sha: string; subject: string }>;
 }
 
 /**
@@ -423,6 +439,9 @@ export interface CommitActionResult {
    * and a Stash & Retry sends the same request again with `stashFirst: root`.
    */
   inTheWay?: InTheWayInfo;
+  /** A merge commit's cherry-pick or revert needs its side first: see
+   *  MergeSides. Always with `expected` and git's way in `message`. */
+  mergeSides?: MergeSides;
   /** After a Stash & Retry: what became of the stashed changes, when it is
    *  anything but "back where they were". Said in the neutral tone. Also a
    *  stash applied without the staging git could not restore (applyForDoor). */

@@ -18098,6 +18098,77 @@
       c.ok(!!t && t.classList.contains("toast-success"), "…and the revert is reported done");
       c.ok(!$(".toast-error"), "nothing red at any point");
     },
+    // A merge commit's cherry-pick or revert: main answers its parents
+    // (`mergeSides`) and bridge.ts asks which side — the extension's question,
+    // in its words — then sends the same request again with `mainline`. It
+    // used to refuse and name the git command. ?mergepick= makes the commit a
+    // merge (see the shim).
+    /** The question, both sides offered in git's order; the pick goes with -m. */
+    "a-merge-cherry-pick-asks-which-side-and-sends-it": async (f) => {
+      const c = check(f);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const sent = () =>
+        (window.__GS_INVOKED || []).filter((r) => r.channel === "commit:action" && r.payload?.action === "cherry-pick");
+      const more = $$(".det-tb-actions button").find((x) =>
+        /actions for this commit/i.test(x.getAttribute("aria-label") || ""),
+      );
+      if (!more) return c.ok(false, "no actions menu to press");
+      more.click();
+      await settle(250);
+      const item = $$(".dropdown-item").find((i) => /^Cherry-pick onto current branch/.test(text(i) || ""));
+      if (!item) return c.ok(false, "no Cherry-pick to press");
+      item.click();
+      await settle(700);
+      c.match(text(".modal-title"), /^Cherry-pick the merge [0-9a-f]{7}$/, "it asks which side");
+      c.match(text(".modal-message"), /two sides/, "…saying why");
+      const labels = $$(".modal-choice-label").map((e) => text(e));
+      c.eq(labels.slice(0, 2).join(" | "), "Apply the changes that were merged in | Apply the changes of the branch it was merged into", "both sides, parent 1 first");
+      const subs = $$(".modal-choice-sub").map((e) => text(e));
+      c.match(subs[1] || "", /^b2b2b2b · feat\(desktop\): the branch window$/, "each side names its parent");
+      c.ok(!$(".toast-error"), "nothing is red");
+      const second = $$(".modal-choice").find((r) => /branch it was merged into/.test(text(r) || ""));
+      if (!second) return;
+      second.click();
+      await settle(800);
+      c.eq(sent().length, 2, "the cherry-pick is sent again — once");
+      const [first, again] = sent().map((r) => r.payload);
+      c.eq(first?.mainline, undefined, "the first request carried no side");
+      c.eq(again?.mainline, 2, "…the second carries the one picked");
+      c.eq(again?.sha, first?.sha, "…for the same commit");
+      c.ok(!$(".modal-card"), "the question is answered and gone");
+      const t = $$("#toast-stack .toast").find((x) => /Cherry-picked/.test(text(x)));
+      c.ok(!!t && t.classList.contains("toast-success"), "…and the cherry-pick is reported done");
+    },
+    /** Revert asks its own question; Cancel runs nothing and says nothing. */
+    "a-merge-revert-asks-which-branch-to-keep-and-cancel-says-nothing": async (f) => {
+      const c = check(f);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const sent = () =>
+        (window.__GS_INVOKED || []).filter((r) => r.channel === "commit:action" && r.payload?.action === "revert");
+      const more = $$(".det-tb-actions button").find((x) =>
+        /actions for this commit/i.test(x.getAttribute("aria-label") || ""),
+      );
+      if (!more) return c.ok(false, "no actions menu to press");
+      more.click();
+      await settle(250);
+      const item = $$(".dropdown-item").find((i) => /^Revert this commit/.test(text(i) || ""));
+      if (!item) return c.ok(false, "no Revert to press");
+      item.click();
+      await settle(350);
+      $(".modal-ok")?.click(); // Revert confirms first, as it always has
+      await settle(700);
+      c.match(text(".modal-title"), /^Revert the merge [0-9a-f]{7}$/, "it asks which branch to keep");
+      const labels = $$(".modal-choice-label").map((e) => text(e));
+      c.eq(labels.slice(0, 2).join(" | "), "Keep the branch this was merged into | Keep the branch that was merged in", "the revert's own words");
+      c.eq(labels.length, 2, "only the sides are choices — Cancel is the dialog's button");
+      const cancel = $$(".modal-actions button").find((b) => /^Cancel$/.test(text(b) || ""));
+      if (!cancel) return c.ok(false, "no Cancel to press");
+      cancel.click();
+      await settle(700);
+      c.ok(!$(".modal-card"), "the question closes");
+      c.eq(sent().length, 1, "nothing is sent again");
+      c.eq($$("#toast-stack .toast").length, 0, `and nothing is said (${text("#toast-stack")})`);
+    },
     /** Cancel runs nothing, says nothing, and files nothing. */
     "cancelling-the-stash-question-runs-nothing-and-says-nothing": async (f) => {
       const c = check(f);

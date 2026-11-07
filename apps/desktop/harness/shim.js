@@ -2959,6 +2959,29 @@
           optionLike: { fullName: req.fullName, name, local: true },
         };
       }
+      // ?mergepick=1: the commit is a MERGE — a cherry-pick or revert sent
+      // without its side answers the merge's parents, as gitBridge's
+      // commitActionRefusal does, and the bridge asks which side.
+      if (
+        params.get("mergepick") &&
+        (req?.action === "cherry-pick" || req?.action === "revert") &&
+        req.mainline === undefined &&
+        !(Array.isArray(req.shas) && req.shas.length > 1)
+      ) {
+        const short = String(req.sha).slice(0, 7);
+        return {
+          ok: false,
+          changed: false,
+          expected: true,
+          message: `${short} is a merge commit, and ${req.action === "cherry-pick" ? "cherry-picking" : "reverting"} a merge needs the side.`,
+          mergeSides: {
+            parents: [
+              { sha: "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1", subject: "Merge pull request #142 from feat/branch-window" },
+              { sha: "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2", subject: "feat(desktop): the branch window" },
+            ],
+          },
+        };
+      }
       const done = () => ({ ok: true, changed: true, message: `${req?.action ?? "action"} ok` });
       const kind = { checkout: "checkout", "checkout-ref": "checkout", "cherry-pick": "cherry-pick", revert: "revert" }[
         req?.action

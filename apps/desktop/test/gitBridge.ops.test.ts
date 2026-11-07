@@ -95,25 +95,66 @@ test("tag and branch on a commit the repository does not have are refused before
   assert.equal(t.git("branch", "--list", "ghost-ref").trim(), "");
 });
 
-test("cherry-pick or revert of one merge commit is refused with git's way, expected, before git runs", async () => {
-  const t = repo();
+/** main with `side` merged into it (--no-ff); returns the merge and its parents. */
+function mergedSide(t: BridgeRepo): { first: string; merge: string; mainTip: string; sideTip: string } {
   const [first] = separateCommits(t);
+  const mainTip = head(t);
   t.git("checkout", "-q", "-b", "side", first);
   t.write("side.txt", "side\n");
-  t.commitAll("side");
+  const sideTip = t.commitAll("side work");
   t.git("checkout", "-q", "main");
   t.git("merge", "-q", "--no-ff", "--no-edit", "side");
-  const merge = head(t);
+  return { first, merge: head(t), mainTip, sideTip };
+}
+
+test("cherry-pick or revert of one merge commit without a side answers its parents, expected, before git runs", async () => {
+  const t = repo();
+  const { first, merge, mainTip, sideTip } = mergedSide(t);
   t.git("checkout", "-q", "-b", "target", first);
   const before = head(t);
   const pick = await t.bridge.commitAction({ action: "cherry-pick", sha: merge });
   assert.equal(pick.ok, false);
   assert.equal(pick.expected, true);
   assert.match(pick.message ?? "", new RegExp(`git cherry-pick -m 1 ${merge.slice(0, 7)}`));
+  // What the renderer asks with: git's parent order, each with its subject.
+  assert.deepEqual(pick.mergeSides?.parents.map((p) => p.sha), [mainTip, sideTip]);
+  assert.equal(pick.mergeSides?.parents[1]?.subject, "side work");
   const back = await t.bridge.commitAction({ action: "revert", sha: merge });
   assert.equal(back.expected, true);
+  assert.ok(back.mergeSides, "a revert asks the same question");
   assert.match(back.message ?? "", /git revert -m 1/);
   assert.equal(head(t), before, "nothing ran");
+  // An ordinary commit is never asked about.
+  const plain = await t.bridge.commitAction({ action: "cherry-pick", sha: sideTip });
+  assert.equal(plain.mergeSides, undefined);
+});
+
+test("with its side chosen, a merge commit is cherry-picked and reverted (-m)", async () => {
+  const t = repo();
+  const { first, merge } = mergedSide(t);
+  t.git("checkout", "-q", "-b", "target", first);
+  const pick = await t.bridge.commitAction({ action: "cherry-pick", sha: merge, mainline: 1 });
+  assert.equal(pick.ok, true, pick.message);
+  assert.equal(t.git("show", "HEAD:side.txt"), "side\n", "parent 1: the changes that were merged in");
+
+  t.git("checkout", "-q", "main");
+  const back = await t.bridge.commitAction({ action: "revert", sha: merge, mainline: 1 });
+  assert.equal(back.ok, true, back.message);
+  assert.equal(t.git("ls-tree", "--name-only", "HEAD", "side.txt").trim(), "", "parent 1 kept: the merge undone");
+});
+
+test("a side that is not one of the merge's parents is refused, never guessed at", async () => {
+  const t = repo();
+  const { first, merge } = mergedSide(t);
+  t.git("checkout", "-q", "-b", "target", first);
+  const before = head(t);
+  for (const mainline of [0, 3, 1.5]) {
+    const res = await t.bridge.commitAction({ action: "cherry-pick", sha: merge, mainline });
+    assert.equal(res.ok, false);
+    assert.equal(res.mergeSides, undefined, `mainline ${mainline}`);
+    assert.notEqual(res.expected, true, "our request was wrong: reported");
+  }
+  assert.equal(head(t), before);
 });
 
 test("the commit menu refuses option-shaped values and runs nothing for copy-sha", async () => {

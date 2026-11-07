@@ -4398,9 +4398,12 @@ function stashRequest(req: unknown): { ref: unknown; stashFirst?: unknown } {
  *     ("trying to write ref … with nonexistent object"); a graph row can name
  *     such a commit while the view is out of date. `^{commit}` makes git read
  *     it: a bare full sha "verifies" without that.
- *   · Cherry-pick / revert of ONE merge commit. git refuses without `-m` ("is
- *     a merge but no -m option was given"), and this app has no side picker
- *     for it yet (the extension asks); git's way is named instead.
+ *   · Cherry-pick / revert of ONE merge commit sent without `mainline`. git
+ *     refuses without `-m` ("is a merge but no -m option was given"), so the
+ *     answer carries the merge's parents (`mergeSides`) and the renderer asks
+ *     which side, as the extension does, then sends the request again with
+ *     `mainline`. git's way is in `message` too, for a door that cannot ask.
+ *     A `mainline` that is not one of the merge's parents is refused here.
  */
 async function commitActionRefusal(ctx: GitContext, req: CommitActionRequest): Promise<CommitActionResult | undefined> {
   const short = req.sha.slice(0, 7);
@@ -4420,10 +4423,22 @@ async function commitActionRefusal(ctx: GitContext, req: CommitActionRequest): P
   if (req.action === "cherry-pick" || req.action === "revert") {
     const merges = await mergesAmong(ctx.process, [req.sha]);
     if (!merges || merges.length === 0) return undefined; // an unreadable commit: git's own words
+    const parents = await parentsOf(ctx, req.sha);
+    if (req.mainline !== undefined) {
+      if (Number.isInteger(req.mainline) && req.mainline >= 1 && req.mainline <= parents.length) return undefined;
+      // Never guessed at: taking a merge against the wrong parent applies, or
+      // undoes, the other side's work. The renderer only offers real parents.
+      return {
+        ok: false,
+        changed: false,
+        message: l10n.t("{0} has no parent {1} to take the merge against.", short, String(req.mainline)),
+      };
+    }
     return {
       ok: false,
       changed: false,
       expected: true,
+      mergeSides: { parents },
       message:
         req.action === "cherry-pick"
           ? l10n.t("{0} is a merge commit, and cherry-picking a merge needs the side to apply. From a terminal, git cherry-pick -m 1 {0} applies the changes that were merged in.", short)
@@ -4433,15 +4448,41 @@ async function commitActionRefusal(ctx: GitContext, req: CommitActionRequest): P
   return undefined;
 }
 
+/**
+ * A merge commit's parents in git's order (parent 1 first), each with its
+ * subject — what the side question shows. Unreadable parents come back
+ * without a subject rather than failing the question.
+ */
+async function parentsOf(ctx: GitContext, sha: string): Promise<Array<{ sha: string; subject: string }>> {
+  const r = await ctx.process.run(["rev-list", "--parents", "-n", "1", sha]);
+  const shas = r.code === 0 ? r.stdout.trim().split(/\s+/).slice(1) : [];
+  if (shas.length === 0) return [];
+  const log = await ctx.process.run(["log", "--no-walk=unsorted", "--format=%H%x00%s", ...shas]);
+  const subjects = new Map<string, string>();
+  if (log.code === 0) {
+    for (const line of log.stdout.split("\n")) {
+      const [full, subject] = line.split("\0");
+      if (full) subjects.set(full.trim(), (subject ?? "").trim());
+    }
+  }
+  return shas.map((p) => ({ sha: p, subject: subjects.get(p) ?? "" }));
+}
+
+/** `-m <n>` for a merge's cherry-pick or revert, once the side is known. */
+function mainlineArgs(req: CommitActionRequest): string[] {
+  return req.mainline !== undefined ? ["-m", String(req.mainline)] : [];
+}
+
 /** The commit-applying actions of commit:action, as the one door runs them. */
 function applyOpFor(req: CommitActionRequest, args: string[]): ApplyOp | undefined {
+  const mainline = req.mainline !== undefined ? { mainline: req.mainline } : {};
   switch (req.action) {
     case "checkout":
       return checkoutOp(args);
     case "cherry-pick":
-      return { kind: "cherry-pick", commit: req.sha, args };
+      return { kind: "cherry-pick", commit: req.sha, ...mainline, args };
     case "revert":
-      return { kind: "revert", commit: req.sha, args };
+      return { kind: "revert", commit: req.sha, ...mainline, args };
     default:
       return undefined;
   }
@@ -4457,9 +4498,9 @@ function actionArgs(req: CommitActionRequest): string[] | undefined {
     case "tag":
       return req.name ? ["tag", req.name, req.sha] : undefined;
     case "cherry-pick":
-      return ["cherry-pick", req.sha];
+      return ["cherry-pick", ...mainlineArgs(req), req.sha];
     case "revert":
-      return ["revert", "--no-edit", req.sha];
+      return ["revert", "--no-edit", ...mainlineArgs(req), req.sha];
     case "reset-soft":
       return ["reset", "--soft", req.sha];
     case "reset-mixed":

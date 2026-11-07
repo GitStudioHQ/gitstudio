@@ -10,7 +10,7 @@
 // bridges the two — it pages via IPC and feeds the element host messages — so
 // the component itself needs no desktop-specific code.
 
-import type { GitStudioBridge, GraphRefFilter, InTheWayInfo, InvokeScope } from "../shared/ipc";
+import type { GitStudioBridge, GraphRefFilter, InTheWayInfo, InvokeScope, MergeSides } from "../shared/ipc";
 import type { GraphInitMessage, GraphAppendMessage } from "@gitstudio/host-bridge/graphProtocol";
 import { nextGraphMessage } from "../shared/graphAdapterCore";
 import * as l10n from "@vscode/l10n";
@@ -35,6 +35,22 @@ let sayStashNote: ((note: string) => void) | undefined;
 export function answerInTheWayWith(ask: InTheWayAsker, note: (note: string) => void): void {
   askInTheWay = ask;
   sayStashNote = note;
+}
+
+/**
+ * Asks which side of a merge commit a cherry-pick or revert takes: the parent
+ * number (from 1), or undefined for Cancel. Installed at boot (mergeSideAsk.ts)
+ * for the same reason as the in-the-way question.
+ */
+type MergeSideAsker = (
+  action: "cherry-pick" | "revert",
+  sha: string,
+  sides: MergeSides,
+) => Promise<number | undefined>;
+let askMergeSide: MergeSideAsker | undefined;
+
+export function answerMergeSidesWith(ask: MergeSideAsker): void {
+  askMergeSide = ask;
 }
 
 /** An object request, again, carrying `stashFirst`. */
@@ -82,7 +98,23 @@ async function invokeAsking(channel: string, payload: unknown): Promise<unknown>
   // modal, and no tab switch happens under a modal.
   const owner = activeSession;
   const send = (p: unknown): Promise<unknown> => owned(channel, owner, sendRaw(channel, p, owner));
-  const first = await send(payload);
+  let first = await send(payload);
+  // A merge commit's cherry-pick or revert: main answers with its parents, and
+  // the side is asked HERE, for every door at once, as the extension asks —
+  // then the same request goes again with `mainline`. Asked before the
+  // in-the-way question, which the request with its side can still meet.
+  const sides = channel === "commit:action" ? (first as { mergeSides?: MergeSides } | undefined)?.mergeSides : undefined;
+  if (sides && askMergeSide && payload && typeof payload === "object") {
+    const req = payload as { action?: string; sha?: string };
+    if ((req.action === "cherry-pick" || req.action === "revert") && typeof req.sha === "string") {
+      const mainline = await askMergeSide(req.action, req.sha, sides);
+      if (mainline === undefined) {
+        return { ok: false, changed: false, expected: true, cancelled: true };
+      }
+      payload = { ...(payload as object), mainline };
+      first = await send(payload);
+    }
+  }
   const way = (first as { inTheWay?: InTheWayInfo } | undefined)?.inTheWay;
   const retry = Object.hasOwn(STASH_AND_RETRY, channel) ? STASH_AND_RETRY[channel] : undefined;
   if (!way || !askInTheWay || !retry) return noted(first);
