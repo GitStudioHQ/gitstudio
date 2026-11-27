@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { GitProcess, type GitRunEvent } from "../src/GitProcess";
 import { makeRepo, type Repo } from "./opRepo";
 import { removeTempRepo } from "./tmpRepo";
+import { gitFailureOf, thrownReport } from "@gitstudio/host-bridge/reportShape";
 
 // GitProcess's contract with every provider: run() resolves with the exit code
 // (never throws on a refusal) and rejects only when git could not run or the
@@ -126,7 +127,18 @@ test("stream() of a failing command throws with git's exit code and stderr", asy
     const proc = new GitProcess({ cwd: r.root, onRun: (e) => events.push(e) });
     await assert.rejects(
       drain(proc.stream(["log", "no-such-branch"])),
-      (err: Error) => /^git log no-such-branch exited with code 128: /.test(err.message) && /no-such-branch/.test(err.message),
+      (err: Error) => {
+        assert.match(err.message, /^git log no-such-branch exited with code 128: .*no-such-branch/);
+        // The facts a crash report is built from ride along, unenumerated
+        // (reportShape.ts): the report says "git log <arg>", in any language.
+        const facts = gitFailureOf(err);
+        assert.deepEqual(facts?.args, ["log", "no-such-branch"]);
+        assert.equal(facts?.exitCode, 128);
+        assert.match(facts?.stderr ?? "", /no-such-branch/);
+        assert.deepEqual(Object.keys(err), []);
+        assert.match(thrownReport(err).message, /^git log <arg> exited with code 128: fatal: /);
+        return true;
+      },
     );
     assert.equal(events.at(-1)?.failed, true);
     assert.equal(events.at(-1)?.exitCode, 128);

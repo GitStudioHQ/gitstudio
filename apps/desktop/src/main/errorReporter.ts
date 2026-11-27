@@ -4,7 +4,9 @@ import { join } from "node:path";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { app } from "electron";
 import { netFetch } from "./netFetch";
-import { randomId, safeShort, scrub, scrubExtra, scrubGitMessage } from "@gitstudio/host-bridge/scrub";
+import { randomId, safeShort, scrubExtra } from "@gitstudio/host-bridge/scrub";
+import { gitVerdict, isReportableThrown, thrownReport } from "@gitstudio/host-bridge/reportShape";
+import { userStateOutcome } from "@gitstudio/host-bridge/gitOutcomes";
 
 /**
  * Anonymous, PII-scrubbed crash reporting for the desktop app — the Electron
@@ -16,11 +18,15 @@ import { randomId, safeShort, scrub, scrubExtra, scrubGitMessage } from "@gitstu
  * On by default, with a one-flip opt-out. Unlike the extension there's no VS
  * Code telemetry umbrella to defer to, so consent lives in our own persisted
  * `enabled` flag (default on), surfaced as a menu checkbox and documented in
- * PRIVACY.md. What's captured is only the SHAPE of a failure — a scrubbed error
- * name/message/stack, or a failed operation + scrubbed message — tagged with a
- * random install id and the OS/app/Electron versions. The scrub takes out file
- * and branch names, commit subjects, paths, emails, tokens and a remote's
- * org/repo (its host name is kept); never repo contents.
+ * PRIVACY.md. What's captured is only what helps fix a failure (host-bridge's
+ * reportShape.ts): an error's type, scrubbed message, call frames without
+ * folders and Node's error code, or a failed operation's title and git's
+ * verdict lines (a thrown git command also as its subcommand, options and
+ * exit code, never its arguments) — tagged with a random install id and the
+ * OS/app/Electron versions. The user's own situation is not reported. The scrub takes out file
+ * and branch names, commit subjects, paths, emails, tokens, a remote's
+ * org/repo, and every host name but a public service's (github.com stays, a
+ * company's server or proxy does not); never repo contents.
  */
 
 const DEFAULT_ENDPOINT = "https://gitstudio.dev/api/errors";
@@ -88,11 +94,20 @@ export class ErrorReporter {
   captureError(where: string, err: unknown, extra?: Record<string, string>): void {
     try {
       const e = err instanceof Error ? err : new Error(String(err));
+      // Not a defect: git's words about the user's remote, credentials or
+      // working tree, or a server that could not be reached (reportShape.ts).
+      if (!isReportableThrown(e)) return;
+      // Only what helps fix it: a failed git command as its subcommand,
+      // options, exit code and git's verdict lines; call frames without
+      // folders; Node's error code (thrownReport says why).
+      const r = thrownReport(e);
       this.send("error", {
         where: safeShort(where, 60),
-        name: safeShort(e.name || "Error", 60),
-        message: scrub(e.message || "").slice(0, 300),
-        stack: scrub(e.stack || "").slice(0, 1600),
+        name: r.name,
+        message: r.message,
+        stack: r.stack,
+        ...(r.code ? { code: r.code } : {}),
+        ...(r.syscall ? { syscall: r.syscall } : {}),
         ...scrubExtra(extra),
       });
     } catch {
@@ -103,14 +118,16 @@ export class ErrorReporter {
   /** Report an operation that failed with a message (e.g. a git command). */
   captureGitError(label: string, stderr: string): void {
     try {
+      // The same rule the call sites apply, here too, so no caller can file
+      // the user's situation as a defect.
+      if (userStateOutcome(stderr || "")) return;
       this.send("git-error", {
         op: safeShort(label, 80),
-        // scrubGitMessage, not scrub: git stderr names FILES and BRANCHES, which
-        // PRIVACY.md promises never leave the machine. scrub() only covers
-        // absolute paths, emails, URLs, tokens and SHAs — all of which are
-        // repo-INdependent — so a repo-relative path or a quoted ref sailed
-        // straight through.
-        stderr: scrubGitMessage(stderr || "").slice(0, 600),
+        // git's verdict lines only — fatal:, error:, a rejected ref and its
+        // reason, ssh's refusal — scrubbed as git output, which takes out the
+        // file and branch names PRIVACY.md promises never leave the machine.
+        // Not its progress, hints, banners or file lists (gitVerdict).
+        stderr: gitVerdict(stderr || ""),
       });
     } catch {
       // Crash reporting must never itself crash the app.

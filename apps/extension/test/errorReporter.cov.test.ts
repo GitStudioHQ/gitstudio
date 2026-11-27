@@ -155,6 +155,18 @@ test("a thrown error reaches the collector scrubbed, tagged with the install and
   assert.ok(!all.includes("alice"), `no user name or email leaves the machine: ${all}`);
   assert.ok(!all.includes("secret-project"), "no absolute path leaves the machine");
 
+  // A failed git command thrown by git-service is git output: its branch and
+  // folder names go, as they would from captureGitError (resweep, Nov 2026).
+  const gitErr = new Error("git push origin refs/heads/acme-billing exited with code 1: Cloning into 'acme-widgets'...");
+  gitErr.stack = `Error: ${gitErr.message}\n    at run (${EXT}/dist/extension.js:20:5)`;
+  r.captureError("git.push", gitErr);
+  await receivedCount(2);
+  const g = received[1];
+  assert.ok(!JSON.stringify(g).includes("acme"), `no branch or folder name: ${JSON.stringify(g)}`);
+  // "Cloning into …" is git's progress, not its verdict: only the command's shape is left.
+  assert.equal(g.message, "git push <args> exited with code 1");
+  received.splice(1, 1);
+
   // A non-Error thrown value is reported by its text.
   r.captureError("x", "plain string failure");
   await receivedCount(2);
@@ -174,6 +186,35 @@ test("a failed git op is reported by our own label, with git's words scrubbed of
   assert.equal(p.installId, "fixed-install-id", "an existing install id is reused");
   assert.ok(!p.stderr.includes("plan.md"), p.stderr);
   assert.ok(!p.stderr.includes("acme-merger"), p.stderr);
+  r.dispose();
+});
+
+test("a report carries only what helps fix it, and the user's situation is not reported", async () => {
+  // reportShape.ts, Nov 2026: frames without folders, Node's code, git's
+  // verdict lines — and nothing for git's words about the user's network.
+  reset();
+  const { r } = reporter();
+  const err = Object.assign(new Error("spawn /home/someone/bin/acme-edit ENOENT"), { code: "ENOENT", syscall: "spawn /home/someone/bin/acme-edit" });
+  err.stack = `Error: spawn /home/someone/bin/acme-edit ENOENT\n    at run (${EXT}/dist/extension.js:10:5)\n    at go (/home/someone/acme-tools/x.js:1:1)`;
+  r.captureError("editors.open", err);
+  await receivedCount(1);
+  const p = received[0];
+  assert.equal(p.stack, "    at run (extension.js:10:5)\n    at go (x.js:1:1)", "frames only, no folders, no message lines");
+  assert.equal(p.code, "ENOENT");
+  assert.equal(p.syscall, "spawn", "the call, never the program");
+  assert.ok(!JSON.stringify(p).includes("acme"), JSON.stringify(p));
+
+  // git's progress and advice go; its verdict stays.
+  r.captureGitError("git pull failed", "remote: Counting objects: 3\nhint: see the docs\nfatal: bad object refs/heads/acme\nerror: some error");
+  await receivedCount(2);
+  assert.equal(received[1].stderr, "fatal: bad object <ref>\nerror: some error");
+
+  // The user's network, thrown or returned: no report.
+  r.captureGitError("git fetch failed", "fatal: unable to access 'https://git.acme.example/x.git/': Could not resolve host: git.acme.example");
+  r.captureError("git.fetch", new Error("git fetch origin exited with code 128: fatal: unable to access 'https://x/': Could not resolve host: git.acme.example"));
+  r.captureError("ai.chat", new TypeError("fetch failed", { cause: Object.assign(new Error("x"), { code: "ECONNREFUSED" }) }));
+  await new Promise((done) => setTimeout(done, 50));
+  assert.equal(started.length, 2, "none of the three was sent");
   r.dispose();
 });
 
@@ -244,6 +285,14 @@ test("a process-wide rejection is reported only when its stack is ours; dispose 
   onRejection(proseOnly);
   onException(foreign);
   assert.deepEqual(started, [], "other extensions' failures pass through untouched");
+
+  // Report #100: VS Code's own Canceled — a request the window called off as
+  // it reloaded — with our frames in its stack. Nothing failed; nothing is filed.
+  const canceled = Object.assign(new Error("Canceled"), { name: "Canceled" });
+  canceled.stack = `Canceled: Canceled\n    at new OC (file:///x/workbench.js:1:1)\n    at s.updateHasRepoContext (${EXT}/dist/extension.js:119:27679)`;
+  onRejection(canceled);
+  onException(canceled);
+  assert.deepEqual(started, [], "a cancellation is not a crash");
 
   const ours = new Error("our bug");
   ours.stack = `Error: our bug\n    at y (${EXT}/dist/extension.js:2:2)`;
