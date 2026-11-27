@@ -16,6 +16,7 @@ import { replyToThread, setThreadResolved } from "@gitstudio/engine/forge/prPage
 import { PrListError, type GraphqlFn } from "@gitstudio/engine/forge/prList";
 import type { PrPendingReview, PrThread } from "@gitstudio/host-bridge/prProtocol";
 import * as l10n from "@vscode/l10n";
+import { setContext } from "../util/setContext";
 
 // Reviews of pull requests, in the editor (the VS Code Comments API). One
 // CommentController for the extension draws three kinds of thread on a pull
@@ -685,7 +686,7 @@ export class ReviewController implements vscode.Disposable {
     if (r && !r.started && r.threads.size === 0) this.reviews.delete(key);
     this.save();
     this.paintStatus();
-    void vscode.commands.executeCommand("setContext", "gitstudio.pr.reviewing", this.reviews.size > 0);
+    void setContext("gitstudio.pr.reviewing", this.reviews.size > 0);
     this.changed.fire(key);
   }
 
@@ -748,7 +749,7 @@ export class ReviewController implements vscode.Disposable {
       if (r.threads.size > 0 || r.started) this.reviews.set(key, r);
     }
     this.paintStatus();
-    void vscode.commands.executeCommand("setContext", "gitstudio.pr.reviewing", this.reviews.size > 0);
+    void setContext("gitstudio.pr.reviewing", this.reviews.size > 0);
   }
 
   /** "Reviewing #37 · 3 pending" in the status bar while a review is under way. */

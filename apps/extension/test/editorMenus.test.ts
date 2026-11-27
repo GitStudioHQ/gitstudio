@@ -215,7 +215,7 @@ test("Annotate with Git Blame shows whether it is on", () => {
   const cmd = gs.contributes.commands.find((c) => c.command === "gitstudio.toggleFileBlame");
   assert.equal(cmd?.toggled, "gitstudio.blameAnnotated");
   const src = readFileSync(join(__dirname, "..", "src", "blame", "blameController.ts"), "utf8");
-  assert.match(src, /"setContext",\s*"gitstudio\.blameAnnotated"/, "the key it reads is the one blame publishes");
+  assert.match(src, /setContext\(\s*"gitstudio\.blameAnnotated"/, "the key it reads is the one blame publishes");
 });
 
 test("every submenu a menu names is declared, and every declared one is used", () => {

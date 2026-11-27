@@ -22,6 +22,7 @@ import { PAGE_CAPS } from "./githubPaging";
 import type { CloneProgress, CloneRequest, CloneResult, GhRepoBrief } from "../shared/ipc";
 import type { GitHubClient } from "./githubClient";
 import { ALLOWED_PROTOCOLS, validateCloneUrl } from "./cloneUrl";
+import { userStateOutcome } from "@gitstudio/host-bridge/gitOutcomes";
 
 /** In-flight `git clone` children, so they can be killed on app/window teardown
  *  rather than orphaned (a long clone would otherwise keep running after quit). */
@@ -176,6 +177,12 @@ export async function startClone(
     // repository exists."). Reporting only the last line showed the clone
     // sheet "and the repository exists." with the reason cut off.
     let reason = "";
+    // …and the lines before it that are not progress. ssh says why it gave up
+    // ("git@host: Permission denied (publickey).", "Host key verification
+    // failed.") WITHOUT a prefix, and git's own line after it is only the
+    // generic "fatal: Could not read from remote repository." — which is all
+    // the sheet said (report #86).
+    const said: string[] = [];
     let settled = false;
     const finish = (r: CloneResult) => {
       if (settled) return;
@@ -191,6 +198,7 @@ export async function startClone(
       const text = line.trim();
       if (!text) return;
       lastStderr = text;
+      if (!PERCENT_RE.test(text) && !/^Cloning into\b/.test(text)) said.push(text);
       if (!reason && /^(fatal|error):/i.test(text)) {
         // The prefix off, as condenseGitOutput does for every other git error:
         // the toast already says it is one.
@@ -221,10 +229,34 @@ export async function startClone(
       if (code === 0) {
         finish({ ok: true, root: join(req.parentDir, name) });
       } else {
-        finish({ ok: false, message: reason || lastStderr || l10n.t("git clone exited {0}", String(code)) });
+        const message = cloneFailureMessage(reason, said) || lastStderr || l10n.t("git clone exited {0}", String(code));
+        // What a clone is handed is what the user typed (or GitHub's own
+        // clone URL), so git's answer about it — a credential refused, a host
+        // not found, a path that is no repository ("does not appear to be a
+        // git repository", #89; "repository '…' does not exist", #98) — is
+        // their situation, and the sheet already shows it. `expected` keeps it
+        // out of the crash reporter; the clone sheet's toast is the same.
+        // Judged on everything git said, not just the line shown.
+        const situation = userStateOutcome(said.join("\n") || message, "clone");
+        finish({ ok: false, message, ...(situation ? { expected: true } : {}) });
       }
     });
   });
+}
+
+/**
+ * What the clone sheet says when git refused: git's first `fatal:`/`error:`
+ * line — and, when that line is only git's generic closing words after a
+ * transport gave up ("Could not read from remote repository."), the line ssh
+ * printed just before it, which is the actual reason. OpenSSH's "** WARNING"
+ * banner (a key exchange that is not post-quantum) is never that reason.
+ */
+export function cloneFailureMessage(reason: string, said: readonly string[]): string {
+  if (!/^Could not read from remote repository\.?$/i.test(reason)) return reason;
+  const at = said.findIndex((l) => /^(fatal|error):/i.test(l));
+  const before = said.slice(0, at < 0 ? said.length : at).filter((l) => !/^\*\*/.test(l) && !/^warning:/i.test(l));
+  const why = before.at(-1);
+  return why ? `${why} ${reason}` : reason;
 }
 
 function messageOf(err: unknown): string {

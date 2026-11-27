@@ -29,7 +29,7 @@ import { Language } from "./language";
 import { DockAppearance } from "./dockAppearance";
 import { redactCredentials } from "@gitstudio/host-bridge/scrub";
 import { RepoStore, repoScope } from "./repoStore";
-import { cannotOpenNotice, droppedTabsNotice, gitMissingNotice, tabsFullNotice, missingFolderError, missingFolderResult, spawnDeniedError, spawnDeniedResult } from "./repoNotice";
+import { cannotOpenNotice, droppedTabsNotice, gitMissingError, gitMissingNotice, gitMissingResult, tabsFullNotice, missingFolderError, missingFolderResult, spawnDeniedError, spawnDeniedResult } from "./repoNotice";
 import { gitAvailability } from "./gitCheck";
 import { menuDelivery, type MenuCommand } from "./menuDelivery";
 import { supportMenuItems } from "./supportMenu";
@@ -765,9 +765,13 @@ function handle<C extends IpcChannel>(
         // A repository whose folder is gone fails at spawn with Node's
         // "spawn git ENOENT" — git-is-not-installed words (row 14).
         // …and one this account may not enter, or a git it may not run
-        // ("spawn git EACCES"): said as what it is, not filed.
+        // ("spawn git EACCES"): said as what it is, not filed. With the
+        // folder there, "spawn git ENOENT" is git itself not there (#90).
         result =
-          missingFolderResult(result, repos.scopedRoot()) ?? spawnDeniedResult(result, repos.scopedRoot()) ?? result;
+          missingFolderResult(result, repos.scopedRoot()) ??
+          spawnDeniedResult(result, repos.scopedRoot()) ??
+          gitMissingResult(result, repos.scopedRoot()) ??
+          result;
         // A handled failure carrying a message (e.g. a non-zero git command) is
         // the desktop analog of the extension's showGitError — report it too.
         //
@@ -790,7 +794,10 @@ function handle<C extends IpcChannel>(
         // Unless it is an answer rather than a fault: "you have not connected
         // GitHub" is a state the user is allowed to be in, and filing it as a
         // crash produced reports for people who had simply not signed in.
-        const gone = missingFolderError(err, repos.scopedRoot()) ?? spawnDeniedError(err, repos.scopedRoot());
+        const gone =
+          missingFolderError(err, repos.scopedRoot()) ??
+          spawnDeniedError(err, repos.scopedRoot()) ??
+          gitMissingError(err, repos.scopedRoot());
         if (gone) throw gone;
         if (!isExpectedError(err)) {
           ErrorReporter.current?.captureError(`ipc:${channel}`, err);

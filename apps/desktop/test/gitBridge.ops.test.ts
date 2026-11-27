@@ -4,6 +4,7 @@ import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { initRepo, bareRemote, gitIn, type BridgeRepo } from "./gitBridgeFixture";
+import { reportableResultMessage } from "../src/main/expectedError";
 
 // The graph's commit menu, the Branches view's tag and push verbs, the
 // operation banner's verbs, and the conflict dashboard's writes — each checked
@@ -201,6 +202,36 @@ test("a cherry-pick that stops on a conflict says so as a state, with the confli
   assert.equal(abort.ok, true, abort.message);
   assert.equal((await t.bridge.opState()).kind, null);
   assert.equal(readFileSync(join(t.repo, "a.txt"), "utf8"), "main\n");
+});
+
+// Report #94: picking a commit the branch already has. git stops with
+// "The previous cherry-pick is now empty…" and nothing unmerged, and the graph's
+// Cherry-pick filed that as a crash of "Commit action" on every press: staged()
+// knew the sentence, and commitAction never went through staged().
+test("a cherry-pick of a change the branch already has is a pause, not a crash", async () => {
+  const t = repo();
+  t.write("a.txt", "base\n");
+  t.commitAll("base");
+  t.git("checkout", "-q", "-b", "topic");
+  t.write("a.txt", "same\n");
+  const pick = t.commitAll("topic edit");
+  t.git("checkout", "-q", "main");
+  t.write("a.txt", "same\n");
+  t.commitAll("the same edit, made here too");
+  const res = await t.bridge.commitAction({ action: "cherry-pick", sha: pick });
+  assert.equal(res.ok, false);
+  assert.equal(res.expected, true, "the user's to decide: skip it, or commit it empty");
+  assert.equal(res.changed, true, "a cherry-pick is now in progress");
+  assert.match(res.message ?? "", /empty/i, "git's explanation, not a blank toast");
+  assert.equal(reportableResultMessage(res), undefined, "never filed");
+  assert.equal((await t.bridge.opState()).kind, "cherry-pick");
+  assert.equal((await t.bridge.cherryPickAbort()).ok, true);
+
+  // …while a pick git refuses outright, stopping nothing, still reports.
+  const gone = await t.bridge.commitAction({ action: "cherry-pick", sha: "0".repeat(40) });
+  assert.equal(gone.ok, false);
+  assert.notEqual(gone.expected, true);
+  assert.ok(reportableResultMessage(gone), "filed");
 });
 
 test("checkout of a ref refuses an option-shaped name and a request without its full name", async () => {

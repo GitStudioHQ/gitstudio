@@ -7,7 +7,7 @@
 // view sets these context keys when it stages and when it commits, and the
 // step's completionEvents listen for them (onContext:…).
 
-import * as vscode from "vscode";
+import { setContext } from "../util/setContext";
 
 export type WalkthroughMilestone = "staged" | "committed";
 
@@ -22,5 +22,5 @@ const reached = new Set<WalkthroughMilestone>();
 export function markWalkthrough(what: WalkthroughMilestone): void {
   if (reached.has(what)) return;
   reached.add(what);
-  void vscode.commands.executeCommand("setContext", walkthroughKey(what), true);
+  void setContext(walkthroughKey(what), true);
 }

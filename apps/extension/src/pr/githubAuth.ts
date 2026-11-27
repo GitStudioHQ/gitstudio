@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import type { SignInReach } from "@gitstudio/engine/forge/prList";
 import type { PrListMessage } from "@gitstudio/host-bridge/prProtocol";
 import * as l10n from "@vscode/l10n";
+import { setContext } from "../util/setContext";
 
 // GitHub authentication for the PR layer (M11). We lean entirely on VS Code's
 // built-in GitHub auth provider — no PAT to manage, no token stored by us. A
@@ -106,11 +107,7 @@ export class GitHubAuth implements vscode.Disposable {
       // makes any view that reads the token during its refresh loop forever
       // (refresh → getToken → onDidChange → refresh → …).
       if (nowConnected !== wasConnected) {
-        await vscode.commands.executeCommand(
-          "setContext",
-          "gitstudio.github.connected",
-          nowConnected,
-        );
+        await setContext("gitstudio.github.connected", nowConnected);
         this.changeEmitter.fire();
       }
       return session?.accessToken;
@@ -136,7 +133,7 @@ export class GitHubAuth implements vscode.Disposable {
       this.session = session;
       this.signInReach = { teams: true };
       if (!wasConnected) {
-        await vscode.commands.executeCommand("setContext", "gitstudio.github.connected", true);
+        await setContext("gitstudio.github.connected", true);
       }
       // Another token, whether or not "connected" changed: what was read
       // with the refused one is to be read again.
@@ -182,11 +179,7 @@ export class GitHubAuth implements vscode.Disposable {
         connected = false;
       }
     }
-    await vscode.commands.executeCommand(
-      "setContext",
-      "gitstudio.github.connected",
-      connected,
-    );
+    await setContext("gitstudio.github.connected", connected);
   }
 
   dispose(): void {

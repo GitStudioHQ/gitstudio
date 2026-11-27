@@ -210,3 +210,57 @@ test("Set upstream to a branch the remote does not have either is refused as the
   }
   assert.throws(() => git("rev-parse", "--abbrev-ref", "feature/x@{upstream}"), "and nothing was set");
 });
+
+// ── Publish or push with no remote to send it to ─────────────────────────────
+//
+// Reports #87 and #102: the app's OWN refusal — "No remote is configured, so
+// '…' can't be published." — returned as if it were git's stderr, so the IPC
+// wrapper filed it as a crash of "Push branch"; #102 is the same sentence in
+// Simplified Chinese. Our words are a state we said, so they are `expected`
+// where they are said, in every language — never matched afterwards.
+
+/** A repository with one commit on main and the given remotes (none pushed). */
+async function withRemotes(remotes: string[]): Promise<GitBridge> {
+  const work = mkdtempSync(join(scratch, "local-"));
+  const git = at(work);
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@example.com");
+  git("config", "user.name", "t");
+  git("config", "commit.gpgsign", "false");
+  writeFileSync(join(work, "a.txt"), "a\n");
+  git("add", ".");
+  git("commit", "-qm", "a");
+  git("branch", "feature/x");
+  git("tag", "v1");
+  for (const r of remotes) git("remote", "add", r, join(scratch, `${r}-nowhere.git`));
+  return bridgeOn(work);
+}
+
+test("Publish and tag Push with no remote, or several to choose from, are the user's state in any language", async () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- the module's own state, configured for this process
+  const l10n = require("@vscode/l10n") as typeof import("@vscode/l10n");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- the shipped catalog
+  const zh = require("../../../l10n/zh-cn.json") as Record<string, string>;
+  try {
+    for (const lang of ["en", "zh-cn"]) {
+      l10n.config({ contents: lang === "en" ? {} : zh });
+      for (const remotes of [[], ["upstream", "fork"]]) {
+        const bridge = await withRemotes(remotes);
+        for (const [what, run] of [
+          ["publish", () => bridge.branchPush("refs/heads/feature/x")],
+          ["tag push", () => bridge.tagPush({ name: "v1" })],
+        ] as const) {
+          const r = await run();
+          const where = `${lang}, ${remotes.length} remotes, ${what}`;
+          assert.equal(r.ok, false, where);
+          assert.equal(r.expected, true, `${where}: a state, said by us`);
+          assert.ok(r.message, `${where}: and said`);
+          if (lang === "zh-cn") assert.match(r.message ?? "", /[一-鿿]/, `${where}: in the user's language`);
+          assert.equal(await filed(run), undefined, `${where}: never filed`);
+        }
+      }
+    }
+  } finally {
+    l10n.config({ contents: {} });
+  }
+});
