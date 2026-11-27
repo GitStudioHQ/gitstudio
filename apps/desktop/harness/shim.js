@@ -3674,6 +3674,29 @@
       squash: shas.length > 1 && m.contiguous,
     };
   };
+  // The files a selection changed, as one change (#161): a run of commits on
+  // the rewritable line is one change from the oldest one's parent to the
+  // newest; anything else is combined file by file. In path order, as git lists them.
+  dynamic["commits:files"] = (req) => {
+    const shas = (req && req.shas) || [];
+    const m = manyOf(shas);
+    const tip = shas[0];
+    const below = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+    if (m.contiguous) {
+      return {
+        kind: "stack",
+        files: [
+          { path: "apps/desktop/src/renderer/graphMount.ts", oldPath: "apps/desktop/src/renderer/graphHost.ts", status: "R", additions: 3, deletions: 2, from: below, to: tip },
+          { path: "packages/webview-ui/src/graph/multiSelect.ts", status: "M", additions: 42, deletions: 9, from: below, to: tip },
+          { path: "packages/webview-ui/src/graph/selectionSummary.ts", status: "A", additions: 61, deletions: 0, from: below, to: tip },
+        ],
+      };
+    }
+    return {
+      kind: "pieces",
+      files: [{ path: "packages/webview-ui/src/graph/multiSelect.ts", status: "M", additions: 0, deletions: 0, from: below, to: tip }],
+    };
+  };
   dynamic["commits:plan"] = (req) => {
     const verb = req && req.verb === "squash" ? "squash" : "drop";
     const shas = (req && req.shas) || [];

@@ -35,6 +35,7 @@ import type {
   CommitFileChange,
   WireRef,
 } from "@gitstudio/host-bridge/commitDetailsProtocol";
+import type { CombinedChanges, CombinedFileChange } from "@gitstudio/host-bridge/git";
 import * as l10n from "@vscode/l10n";
 
 interface ActionDef {
@@ -127,7 +128,49 @@ export interface SelectionSummary {
   /** Newest first, as the graph lists them. */
   commits: SelectionCommit[];
   actions?: SelectionAction[];
+  /**
+   * The files they changed, as one change (#161): "loading" while the host
+   * works it out, "failed" when git could not say. Absent from a host that
+   * does not offer it, and the summary has no Files section.
+   */
+  files?: CombinedChanges | "loading" | "failed";
 }
+
+/** `gs-selection-file-open`'s detail: a file of the selection's combined change, to open as a diff. */
+export interface SelectionFileRequest {
+  /** The selection (selectionKey): the host names it back while this diff is open. */
+  key: string;
+  path: string;
+  oldPath?: string;
+  status: string;
+  from: string;
+  to: string;
+  preserveFocus?: boolean;
+}
+
+/**
+ * The name a selection's open file is known by (#158, #161): what the host
+ * hands back to `setActiveFile` as its sha while that diff is open. Only the
+ * selection on screen has to match it, so its size and two ends are enough.
+ */
+export function selectionKey(shas: readonly string[]): string {
+  // Every sha counts: two selections with the same ends and size (rows 1, 2, 4
+  // and rows 1, 3, 4) are two selections. FNV-1a, twice over, is plenty.
+  let a = 0x811c9dc5;
+  let b = 0x01000193;
+  for (const sha of shas) {
+    for (let i = 0; i < sha.length; i++) {
+      const c = sha.charCodeAt(i);
+      a = Math.imul(a ^ c, 0x01000193) >>> 0;
+      b = Math.imul(b ^ c, 0x811c9dc5 | 1) >>> 0;
+    }
+    a = Math.imul(a ^ 0x2c, 0x01000193) >>> 0;
+  }
+  return `selection:${shas.length}:${a.toString(16)}${b.toString(16)}`;
+}
+
+/** The Files list of the selection summary (#161): one group of its own. */
+const SELECTION_FILES = "selection";
 
 /** `gs-selection-action`'s detail: an action picked for these commits. */
 export interface SelectionActionRequest {
@@ -188,6 +231,8 @@ export class CommitDetails extends LitElement {
   private filesFocus = new Map<string, string>();
   /** The commit the two maps above belong to. */
   private filesSha: string | undefined;
+  /** The selection whose files the summary's list shows (selectionKey). */
+  private selectionFilesKey: string | undefined;
   /**
    * The file whose diff is open (#158): its row is lit, as the graph's
    * selected commit is, so a long list never loses which diff you are
@@ -220,6 +265,13 @@ export class CommitDetails extends LitElement {
       this.closedDirs.clear();
       this.filesFocus.clear();
     }
+    // Another selection's files (#161): the same, for the summary's list.
+    const sel = this.showsSelection() ? selectionKey(this.selection!.commits.map((c) => c.sha)) : undefined;
+    if (changed.has("selection") && sel !== this.selectionFilesKey) {
+      this.selectionFilesKey = sel;
+      this.closedDirs.delete(SELECTION_FILES);
+      this.filesFocus.delete(SELECTION_FILES);
+    }
     if (changed.has("details") && this.details?.sha !== this.containsSha) {
       this.containsState = "idle";
       this.containsList = [];
@@ -250,7 +302,10 @@ export class CommitDetails extends LitElement {
       // The same file again: keep the list it was clicked in (litGroupsFor).
       if (was?.sha === sha && was.path === path) return;
       this.activeFile = { sha, path };
-      if (sha === this.details?.sha && !this.matches(":focus-within")) this.filesFocus.clear();
+      if (!this.matches(":focus-within")) {
+        if (sha === this.details?.sha) this.filesFocus.clear();
+        else if (sha === this.selectionFilesKey) this.filesFocus.delete(SELECTION_FILES);
+      }
     }
     this.requestUpdate();
   }
@@ -994,6 +1049,8 @@ export class CommitDetails extends LitElement {
          said which actions apply, so nothing below it moves when they land. */
       .sum .actions { min-height: 35px; box-sizing: border-box; align-content: flex-start; }
       :host([compact]) .sum .actions { min-height: 31px; }
+      /* What the summary's Files list is (#161), when that needs saying. */
+      .sel-note { color: var(--gs-fg-muted); font-size: 11.5px; line-height: 1.45; margin: 2px 0 6px; }
     `,
   ];
 
@@ -1473,8 +1530,59 @@ export class CommitDetails extends LitElement {
                 class="act-label">${a.label}</span></button>`,
           )}
         </div>
+        ${this.selectionFilesHtml(s)}
       </div>
     </div>`;
+  }
+
+  /**
+   * The selection's Files changed (#161), as one commit's are: a list or a
+   * tree, a click opening the file's diff. A run of commits is one change
+   * with git's line counts; any other selection is combined file by file,
+   * which can take in commits between them, and the list says so.
+   */
+  private selectionFilesHtml(s: SelectionSummary) {
+    const f = s.files;
+    if (f === undefined) return nothing;
+    const title = l10n.t("Files changed");
+    const key = selectionKey(s.commits.map((c) => c.sha));
+    if (f === "loading" || f === "failed") {
+      this.litGroups = new Set();
+      return html`<div class="files-head" aria-busy=${f === "loading" ? "true" : "false"}>
+          <span class="files-title">${title}</span>
+        </div>
+        ${f === "failed"
+          ? html`<div class="sel-note" role="status">${l10n.t("Couldn't read the files these commits changed.")}</div>`
+          : nothing}`;
+    }
+    const files = f.files;
+    let add = 0, del = 0;
+    for (const x of files) {
+      if (x.additions > 0) add += x.additions;
+      if (x.deletions > 0) del += x.deletions;
+    }
+    const o = this.activeFile;
+    this.litGroups = new Set(o && o.sha === key && files.some((x) => x.path === o.path) ? [SELECTION_FILES] : []);
+    return html`<div class="files-head">
+        <span class="files-title">${title}</span>
+        <span class="files-count">${files.length}</span>
+        ${f.kind === "stack" && (add || del)
+          ? html`<span class="files-stat"><span class="add">+${add}</span><span class="del">−${del}</span></span>`
+          : nothing}
+        ${files.length ? this.filesLayoutButton() : nothing}
+      </div>
+      ${f.kind === "pieces" && files.length
+        ? html`<div class="sel-note">${f.divergent
+            ? l10n.t(
+                "These commits are on more than one line of history, so a file's diff can include commits that aren't selected and leave out a change made on another line.",
+              )
+            : l10n.t(
+                "Not one unbroken run of commits, so a file's diff can also include commits in between that aren't selected.",
+              )}</div>`
+        : nothing}
+      ${files.length
+        ? this.filesList(SELECTION_FILES, title, files, false)
+        : html`<div class="sel-note">${l10n.t("Together, these commits change no files.")}</div>`}`;
   }
 
   private filesHtml(d: CommitDetailsPayload) {
@@ -1708,6 +1816,10 @@ export class CommitDetails extends LitElement {
 
   /** A file row was clicked (or Enter / Space): it is the open file now, and the host opens its diff. */
   private openFileRow(f: CommitFileChange, wip: boolean, group: string): void {
+    if (group === SELECTION_FILES) {
+      this.openSelectionFile(f as CombinedFileChange);
+      return;
+    }
     const sha = this.details?.sha;
     if (sha !== undefined) {
       this.activeFile = { sha, path: f.path, group };
@@ -1720,6 +1832,24 @@ export class CommitDetails extends LitElement {
       wip,
       ...(this.keepFocusOnOpen ? { preserveFocus: true } : {}),
     });
+  }
+
+  /** A file of the selection's combined change: it is the open file now, and the host opens its diff (#161). */
+  private openSelectionFile(f: CombinedFileChange): void {
+    const s = this.selection;
+    if (!s) return;
+    const key = selectionKey(s.commits.map((c) => c.sha));
+    this.activeFile = { sha: key, path: f.path, group: SELECTION_FILES };
+    this.requestUpdate();
+    this.emit("gs-selection-file-open", {
+      key,
+      path: f.path,
+      ...(f.oldPath ? { oldPath: f.oldPath } : {}),
+      status: f.status,
+      from: f.from,
+      to: f.to,
+      ...(this.keepFocusOnOpen ? { preserveFocus: true } : {}),
+    } satisfies SelectionFileRequest);
   }
 
   /** Whether this row is the open file's (#158), in a list that lights it this paint. */

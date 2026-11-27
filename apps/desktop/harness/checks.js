@@ -11127,6 +11127,23 @@
       c.ok($$(".actions .act", pane3).some((b) => text(b) === "Squash 3 commits…"), "three next to each other can be squashed");
       c.ok(!$$(".actions .act", pane3).some((b) => /Compare/.test(text(b))), "compare is for exactly two");
 
+      // Their files, as one change (#161): asked of main for these commits,
+      // listed as one commit's are, and a row opens its diff across them —
+      // two-dot, between the revisions main named, lit while it is open.
+      await settle(300);
+      c.ok(sent("commits:files").some((r) => (r.payload?.shas || []).join() === S.join()), "it asked main for their files");
+      const fileRows = () => $$('.ftree [role="treeitem"]', pane3);
+      const fname = (r) => text(r?.querySelector(".fname"));
+      c.eq(fileRows().map(fname).join(", "), "graphMount.ts, multiSelect.ts, selectionSummary.ts", "the run's three files");
+      c.eq(text(pane3?.querySelector(".files-head")).replace(/\s+/g, " "), "Files changed 3 +106−11", "counted, with the run's line totals");
+      const diffsAsked = sent("compare:fileDiff").length;
+      fileRows().find((r) => fname(r) === "graphMount.ts")?.click();
+      await settle(500);
+      const fileAsked = sent("compare:fileDiff").slice(diffsAsked).at(-1)?.payload;
+      c.ok(fileAsked && fileAsked.mode === "two-dot" && fileAsked.head === S[0] && fileAsked.path === "apps/desktop/src/renderer/graphMount.ts"
+        && fileAsked.leftPath === "apps/desktop/src/renderer/graphHost.ts", `its diff across them is asked for (${JSON.stringify(fileAsked)})`);
+      c.eq($$(".file.active", pane3).map(fname).join(), "graphMount.ts", "and its row is lit");
+
       // Escape, where a person's would land: the focused list.
       const asked = sent("commit:details").length;
       const sc = sr.querySelector(".scroller");

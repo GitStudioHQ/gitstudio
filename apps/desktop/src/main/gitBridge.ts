@@ -25,6 +25,7 @@ import { selectionTakes, type LineRange } from "@gitstudio/engine/staging/applyL
 import { computeChangeBlocks } from "@gitstudio/engine/staging/blockStaging";
 import { toOriginalSelection } from "@gitstudio/engine/staging/selectionStaging";
 import { buildWireRows, wireRefs } from "@gitstudio/host-bridge/graphWire";
+import { combinedChanges } from "@gitstudio/git-service/combinedChanges";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
 import { restoreStash, stashStack, type StashPlace } from "@gitstudio/git-service/stashRestore";
@@ -115,7 +116,7 @@ import {
   refListSignature,
   sameRefFilter,
 } from "@gitstudio/host-bridge/graphRefFilter";
-import type { CommitFileChange } from "@gitstudio/host-bridge/git";
+import type { CombinedChanges, CommitFileChange } from "@gitstudio/host-bridge/git";
 import type { RepoStore } from "./repoStore";
 import { planBranchReset, resetBranchToUpstream, undoBranchReset } from "./branchReset";
 
@@ -1903,6 +1904,17 @@ export class GitBridge {
     // the list below is only the first page of it.
     const ahead = await this.revCount(ctx, `${base}..${head}`);
     return { commits, files, ahead, behind, commitsTruncated: ahead > commits.length };
+  }
+
+  /**
+   * The files several selected commits changed, as one change (#161): the
+   * "N commits selected" summary's Files list. Its rows open through
+   * compareFileDiff, two-dot, between the revisions each one names.
+   */
+  async commitsFiles(req: { shas: string[] }): Promise<CombinedChanges> {
+    const ctx = this.ctx();
+    if (!ctx) return { kind: "pieces", files: [] };
+    return combinedChanges(ctx.process, selectedCommits(req?.shas));
   }
 
   async compareFileDiff(req: {

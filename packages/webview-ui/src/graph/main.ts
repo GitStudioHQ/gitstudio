@@ -13,7 +13,7 @@ import "../commit-details";
 import { applyGraphInitRefs } from "./graphInit";
 import { setGravatarEnabled } from "./avatar";
 import type { CommitGraph, GraphAction } from "./commit-graph";
-import type { CommitDetails, RefMenuRequest, SelectionActionRequest } from "../commit-details";
+import type { CommitDetails, RefMenuRequest, SelectionActionRequest, SelectionFileRequest } from "../commit-details";
 import { summaryCommits } from "./selectionSummary";
 import { saveFilesLayout } from "../filesTree";
 import type {
@@ -95,10 +95,10 @@ function start(root: HTMLElement): void {
       case "selection":
         // Several commits (issue #32): the dock says so and offers what can
         // be done to all of them. The rows name them now; the host answers
-        // which actions apply (commitsSummary). None selected: the dock's
-        // empty state.
+        // which actions apply (commitsSummary), and the files they changed
+        // (commitsFiles, #161). None selected: the dock's empty state.
         if (action.shas.length > 1) {
-          details.selection = { commits: summaryCommits(graph, action.shas) };
+          details.selection = { commits: summaryCommits(graph, action.shas), files: "loading" };
           openDetails();
         } else {
           details.selection = null;
@@ -246,6 +246,11 @@ function start(root: HTMLElement): void {
     const d = (e as CustomEvent<SelectionActionRequest>).detail;
     if (d.shas.length < 2) return;
     vscode.postMessage({ type: "commitMenuAction", sha: d.shas[0], shas: d.shas, id: d.id });
+  });
+  // A file of the summary's combined change (#161): its diff across them.
+  details.addEventListener("gs-selection-file-open", (e) => {
+    const d = (e as CustomEvent<SelectionFileRequest>).detail;
+    vscode.postMessage({ type: "openCombinedFile", ...d });
   });
   // Clicking a parent sha jumps to that commit. This was emitted by the details
   // pane but only ever handled by the DESKTOP app — in the extension the click
@@ -446,6 +451,15 @@ function handle(
       const on = details.selection?.commits.map((c) => c.sha) ?? [];
       if (on.length === message.shas.length && on.every((sha, i) => sha === message.shas[i])) {
         details.selection = { ...details.selection!, actions: message.items };
+      }
+      break;
+    }
+    case "commitsFiles": {
+      // The files they changed (#161) — for the selection on screen only, as
+      // commitsSummary is.
+      const on = details.selection?.commits.map((c) => c.sha) ?? [];
+      if (on.length === message.shas.length && on.every((sha, i) => sha === message.shas[i])) {
+        details.selection = { ...details.selection!, files: message.files ?? "failed" };
       }
       break;
     }

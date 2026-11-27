@@ -682,6 +682,7 @@ function actionLabel(channel: string): string {
     "commit:drop": "Drop commit",
     "commit:undoDrop": "Undo drop",
     "commits:menu": "Check selected commits",
+    "commits:files": "Selected commits' files",
     "commits:plan": "Check selected commits",
     "commits:rewrite": "Rewrite selected commits",
     "commits:undo": "Undo on selected commits",
@@ -1043,6 +1044,7 @@ function registerIpc(): void {
   // Several commits at once (issue #32): Drop N and Squash N through the same
   // runner; Cherry-pick and Revert N are commit:action with `shas`.
   handle("commits:menu", (req) => rebase.commitsMenu(req));
+  handle("commits:files", (req) => bridge.commitsFiles(req));
   handle("commits:plan", (req) => rebase.commitsPlan(req));
   handle("commits:rewrite", (req) => rebase.commitsRewrite(req));
   handle("commits:undo", (req) => rebase.commitsUndo(req));

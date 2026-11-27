@@ -37,6 +37,40 @@ export interface CommitFileChange {
   deletions: number;
 }
 
+/**
+ * One file of several commits' combined change (#161): the file before the
+ * first of them that changed it (`from`, read under `oldPath` when it had
+ * another name there) and after the last (`to`). Each is a full commit sha,
+ * or git's empty tree when the commit before it all is a root.
+ */
+export interface CombinedFileChange extends CommitFileChange {
+  from: string;
+  to: string;
+}
+
+/**
+ * The files several selected commits changed, as one change (#161).
+ *
+ * `stack`: the commits are one unbroken run, each the first parent of the
+ * next, so this is the run's single change from the oldest one's parent to
+ * the newest: what squashing them would make. Line counts are git's.
+ *
+ * `pieces`: any other selection (a gap, or commits from more than one line).
+ * Each file runs from before the first selected commit that changed it to
+ * after the last, so its diff can include commits in between that are not
+ * selected, and its line counts are not known (both 0).
+ */
+export interface CombinedChanges {
+  kind: "stack" | "pieces";
+  /**
+   * `pieces` only: the commits are not one line of history (each an ancestor
+   * of the next), so a file's diff can also leave out a selected change made
+   * on another line — its last commit's side never had it.
+   */
+  divergent?: true;
+  files: CombinedFileChange[];
+}
+
 export type GitRefType = "head" | "remote" | "tag" | "stash";
 
 export interface GitRef {

@@ -45,13 +45,14 @@ import {
   runCommitAction,
   runMultiCommitAction,
 } from "./commitActions";
-import { menuTarget, selectedCommits } from "@gitstudio/host-bridge/graphSelection";
+import { isCommitSha, menuTarget, selectedCommits } from "@gitstudio/host-bridge/graphSelection";
 import { SettleLatest } from "@gitstudio/host-bridge/settleLatest";
 import { ComparePanel } from "../compare/comparePanel";
 import { pickCompareTarget } from "../compare/refCompare";
 import type { MenuRef } from "./checkoutTarget";
 import { rowStatsReply } from "./rowStatsReply";
 import { readRewritableChain } from "@gitstudio/git-service/rebaseChain";
+import { combinedChanges } from "@gitstudio/git-service/combinedChanges";
 import { buildRebasePlan } from "@gitstudio/git-service/rebasePlan";
 import { runRebasePlan, isRebaseInProgress, reportRebaseFailure } from "../rebase/rebaseRunner";
 import { promptPick } from "../ui/dialogs";
@@ -83,6 +84,8 @@ const ACTION_ID_MAP: Record<string, string> = {
 
 /** Commits per page. The first page lands fast; more stream in on scroll. */
 const PAGE_SIZE = 500;
+/** A full object name, sha-1 or sha-256: what a combined file's revisions must be (#161). */
+const FULL_SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 // The FIRST page is deliberately small so the graph paints fast on open (a
 // 500-commit log + full lane layout was the bulk of the first-paint cost);
 // deeper history streams in via loadMore as you scroll.
@@ -324,13 +327,17 @@ export class CommitGraphPanel {
         this.shown = msg.sha;
         // One commit now: a pending "N commits selected" answer is for a selection that is gone.
         this.summary.cancel();
+        this.summaryFiles.cancel();
         void this.pushCommitDetails(msg.sha);
         break;
-      case "selectCommits":
+      case "selectCommits": {
         // Several commits (or none) — issue #32. No one commit is showing.
         this.shown = undefined;
-        void this.pushCommitsSummary(selectedCommits(msg.shas));
+        const shas = selectedCommits(msg.shas);
+        void this.pushCommitsSummary(shas);
+        void this.pushCommitsFiles(shas);
         break;
+      }
       case "contextMenu": {
         // One commit's menu, or — with `shas` — the menu for a selection of
         // several (issue #32). graphSelection decides which, for every door.
@@ -351,6 +358,9 @@ export class CommitGraphPanel {
         break;
       case "openFile":
         void this.doOpenFile(msg.sha, msg.path, !!msg.wip, msg.oldPath, msg.status, !!msg.preserveFocus);
+        break;
+      case "openCombinedFile":
+        void this.openCombinedFile(msg);
         break;
       case "commitAction":
         void this.doCommitAction(msg.action, msg.sha);
@@ -1170,6 +1180,71 @@ export class CommitGraphPanel {
     if (items) this.post({ type: "commitsSummary", shas, items });
   }
 
+  /** Only the newest selection's files are read, once it settles, as its actions are. */
+  private readonly summaryFiles = new SettleLatest();
+
+  /**
+   * The files a multi-selection changed, as one change (#161), for the
+   * summary's Files list. Asked through its own SettleLatest, so a slow read
+   * never holds up the actions, and Shift+Down over twenty rows reads once.
+   */
+  private async pushCommitsFiles(shas: string[]): Promise<void> {
+    const active = this.repos.getActive();
+    if (!active || shas.length < 2) {
+      this.summaryFiles.cancel();
+      return;
+    }
+    const files = await this.summaryFiles.run(() =>
+      // A git failure is said in the pane, as one commit's unreadable files are.
+      combinedChanges(active.ctx.process, shas).then(
+        (files) => ({ files }),
+        () => ({ failed: true as const }),
+      ),
+    );
+    if (files) this.post({ type: "commitsFiles", shas, ...files });
+  }
+
+  /**
+   * Open a file of the selection's combined change (#161): the file before
+   * the first selected commit that changed it, against after the last. The
+   * revisions come back from the page, so only full shas (or the empty tree)
+   * are taken: anything else is not a revision this pane handed out.
+   */
+  private async openCombinedFile(msg: {
+    key: string;
+    path: string;
+    oldPath?: string;
+    status?: string;
+    from: string;
+    to: string;
+    preserveFocus?: boolean;
+  }): Promise<void> {
+    const active = this.repos.getActive();
+    if (!active || typeof msg.path !== "string" || msg.path === "" || typeof msg.key !== "string") return;
+    const full = (rev: unknown): boolean => isCommitSha(rev) && FULL_SHA.test(rev);
+    if (!full(msg.to) || !(msg.from === EMPTY_TREE || full(msg.from))) return;
+    const oldPath = typeof msg.oldPath === "string" && msg.oldPath !== "" ? msg.oldPath : undefined;
+    const fileName = msg.path.split("/").pop() || msg.path;
+    const sides = commitChangeSides({ sha: msg.to, parent: msg.from, path: msg.path, oldPath, status: msg.status });
+    const title =
+      msg.from === EMPTY_TREE
+        ? `${fileName} (${msg.to.slice(0, 7)})`
+        : `${fileName} (${msg.from.slice(0, 7)} ↔ ${msg.to.slice(0, 7)})`;
+    const original = revisionSideUri(active.root, msg.path, sides.left);
+    const modified = revisionSideUri(active.root, msg.path, sides.right);
+    // Lit in the summary's list while its tab is the open one (#158).
+    this.activeFile.open({
+      root: active.root,
+      sha: msg.key,
+      path: msg.path,
+      original: original.toString(),
+      modified: modified.toString(),
+      title,
+    });
+    this.postActiveFile();
+    await openDiff(original, modified, title, { preview: true, ...(msg.preserveFocus ? { preserveFocus: true } : {}) }, "graph");
+  }
+
   /** Run an item of the several-commit menu or summary. */
   private async runMultiMenuAction(shas: string[], id: string): Promise<void> {
     const active = this.repos.getActive();
@@ -1266,6 +1341,7 @@ export class CommitGraphPanel {
     // One commit now (issue #32): a pending "N commits selected" answer is for
     // a selection the reveal replaces — the webview selects this one alone.
     this.summary.cancel();
+    this.summaryFiles.cancel();
     // `ready` only means the webview booted — its first page of rows arrives
     // later, and revealing into an empty graph silently no-ops. Queue until
     // graphInit has actually landed (`initialized`), or a reveal issued during

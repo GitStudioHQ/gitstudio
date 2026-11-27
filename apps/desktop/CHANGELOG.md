@@ -11,6 +11,16 @@ but they share the same engine, so most Git behaviour lands in both at once.
 
 ## [Unreleased]
 
+### Added
+- **Files changed for several commits.** With two or more commits selected in
+  the graph, the "N commits selected" summary lists the files they
+  changed together, as a list or a tree, and a click opens a file's diff
+  across them. A run of consecutive commits is shown as one change, the way
+  squashing them would make it. For any other selection, each file's diff goes
+  from before the first selected commit that changed it to after the last, and
+  the summary says it can include commits in between.
+  ([#161](https://github.com/GitStudioHQ/gitstudio/issues/161))
+
 ### Changed
 - **The file whose diff is open stays highlighted in the commit's Files
   changed,** and closing the diff clears it.

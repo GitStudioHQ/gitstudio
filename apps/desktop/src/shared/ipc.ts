@@ -14,6 +14,7 @@ import type {
   RefPreset,
 } from "@gitstudio/host-bridge/graphProtocol";
 import type { CommitDetailsPayload } from "@gitstudio/host-bridge/commitDetailsProtocol";
+import type { CombinedChanges } from "@gitstudio/host-bridge/git";
 import type { WorktreeOperation } from "@gitstudio/host-bridge/worktreeRemoval";
 import type {
   ConflictShape,
@@ -2328,6 +2329,9 @@ export interface IpcChannels {
   // ── Several commits at once from the graph (issue #32). Cherry-pick and
   //    revert of several are commit:action with `shas`.
   "commits:menu": [{ shas: string[] }, CommitsMenuWire];
+  /** The files the selected commits changed, as one change (#161): newest
+   *  first, as the graph lists them (git-service/combinedChanges.ts). */
+  "commits:files": [{ shas: string[] }, CombinedChanges];
   "commits:plan": [CommitsPlanRequest, CommitsPlanWire];
   "commits:rewrite": [CommitsRewriteRequest, DropOutcomeWire];
   "commits:undo": [CommitsUndoRequest, CommitActionResult];

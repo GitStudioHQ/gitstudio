@@ -161,7 +161,11 @@ import { renderGists } from "./views/gists";
 import { renderRepositories } from "./views/repositories";
 import { renderDashboard } from "./views/dashboard";
 import { renderRebase } from "./views/rebase";
-import type { CommitDetails as CommitDetailsEl, RefMenuRequest } from "@gitstudio/webview-ui/commit-details";
+import type {
+  CommitDetails as CommitDetailsEl,
+  RefMenuRequest,
+  SelectionFileRequest,
+} from "@gitstudio/webview-ui/commit-details";
 import type {
   BranchInfo,
   ChangedFile,
@@ -258,6 +262,8 @@ class App {
   /** The "N commits selected" summary asks only once the selection settles,
    *  and only for the newest one — see showSelection. */
   private readonly selectionSummary = new SettleLatest();
+  /** The summary's files (#161), settled the same way, on their own so a slow read never holds the actions. */
+  private readonly selectionFiles = new SettleLatest();
   /** What waits for this tab to be in front again — see whenInFront. */
   private frontWaiters: Array<() => void> = [];
   /** Bumped per right-click; see openCommitMenu. */
@@ -10837,6 +10843,7 @@ class App {
   private async selectCommit(sha: string): Promise<void> {
     this.selectedSha = sha;
     this.selectionSummary.cancel(); // a pending "N commits selected" answer is for a selection that is gone
+    this.selectionFiles.cancel(); // and so are its files (#161)
     // Loading a commit's details is a round trip, and this pane used to sit
     // showing the PREVIOUS commit's files the whole time — so a slow load was
     // indistinguishable from a fast one, and a FAILED load was invisible: the
@@ -11158,8 +11165,16 @@ class App {
    */
   private lightOpenFile(path: string, sha?: string): void {
     const pane = this.detailsEl?.querySelector<CommitDetailsEl>("gitstudio-commit-details");
-    const shown = pane?.details;
-    if (!pane || !shown) return;
+    if (!pane) return;
+    // The "N commits selected" summary (#161): `sha` is then its selectionKey
+    // when the file is one of its own, and anything else lights nothing there.
+    if (pane.selection) {
+      if (sha?.startsWith("selection:")) pane.setActiveFile(sha, path);
+      else pane.setActiveFile();
+      return;
+    }
+    const shown = pane.details;
+    if (!shown) return;
     const same = sha
       ? shown.kind !== "wip" && sha.length >= 7 && (shown.sha.startsWith(sha) || sha.startsWith(shown.sha))
       : shown.kind === "wip";
@@ -11167,7 +11182,11 @@ class App {
     else pane.setActiveFile();
   }
 
-  private async openFile(file: ChangedFile, sha?: string): Promise<void> {
+  /**
+   * `range`: a file of the selection summary's combined change (#161) — read
+   * two-dot between those revisions, where `sha` is then the summary's key.
+   */
+  private async openFile(file: ChangedFile, sha?: string, range?: { from: string; to: string }): Promise<void> {
     // The diff opens in the BOTTOM DOCK, beside Terminal and Output.
     //
     // It used to open inside the commit-details column, and that was measurably
@@ -11215,11 +11234,19 @@ class App {
     const panel = this.diffPanel;
     if (!panel) return;
     const gen = ++this.diffGen;
-    const diff = await host.invoke("file:diff", {
-      path: file.path,
-      sha,
-      ...(sha && file.oldPath ? { oldPath: file.oldPath } : {}),
-    });
+    const diff = range
+      ? await host.invoke("compare:fileDiff", {
+          base: range.from,
+          head: range.to,
+          path: file.path,
+          ...(file.oldPath ? { leftPath: file.oldPath } : {}),
+          mode: "two-dot",
+        })
+      : await host.invoke("file:diff", {
+          path: file.path,
+          sha,
+          ...(sha && file.oldPath ? { oldPath: file.oldPath } : {}),
+        });
     if (gen !== this.diffGen || panel !== this.diffPanel) return;
     if (!diff) {
       // The FOURTH caller of this shape, and the last one still laundering a
@@ -11317,12 +11344,23 @@ class App {
     this.closeGraphDiff();
     if (shas.length < 2) {
       this.selectionSummary.cancel();
+      this.selectionFiles.cancel();
       this.showDetailsPlaceholder();
       return;
     }
     const panel = document.createElement("gitstudio-commit-details") as CommitDetailsEl;
     panel.className = "details-panel";
-    panel.selection = { commits: this.graph?.summaryCommits(shas) ?? [] };
+    panel.selection = { commits: this.graph?.summaryCommits(shas) ?? [], files: "loading" };
+    // A file of their combined change (#161): its diff across them, in the dock.
+    panel.addEventListener("gs-selection-file-open", (e) => {
+      const d = (e as CustomEvent<SelectionFileRequest>).detail;
+      void this.openFile({ path: d.path, status: d.status, oldPath: d.oldPath }, d.key, { from: d.from, to: d.to });
+    });
+    // Each row also opens the file itself from the working tree, as one commit's do (#146).
+    panel.openWorkspaceFile = true;
+    panel.addEventListener("gs-workspace-file-open", (e) => {
+      void openWorkingFile((e as CustomEvent<{ path: string }>).detail.path);
+    });
     panel.addEventListener("gs-selection-action", (e) => {
       const d = (e as CustomEvent<{ id: string; shas: string[] }>).detail;
       void this.runMany(d.id as ManyAction, d.shas);
@@ -11356,6 +11394,15 @@ class App {
           ...panel.selection,
           actions: manyMenuRows(shas.length, can).map((r) => ({ id: r.action, label: r.label, icon: r.icon, danger: r.danger })),
         };
+      });
+    void this.selectionFiles
+      .run(async () => {
+        await this.whenInFront();
+        return host.invoke("commits:files", { shas }).catch(() => "failed" as const);
+      })
+      .then((files) => {
+        if (!files || !panel.selection) return;
+        panel.selection = { ...panel.selection, files };
       });
   }
 

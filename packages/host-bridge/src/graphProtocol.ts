@@ -6,6 +6,7 @@
 // it too, and the engine/host-bridge purity guard depends on it staying pure.
 
 import type { CommitDetailsPayload } from "./commitDetailsProtocol";
+import type { CombinedChanges } from "./git";
 
 /** A ref decoration attached to a commit (a branch tip, remote, or tag). */
 export interface WireRef {
@@ -294,6 +295,19 @@ export interface GraphCommitsSummaryMessage {
   items: GraphMenuItem[];
 }
 
+/**
+ * The files a multi-selection changed, as one change (#161), for the "N
+ * commits selected" summary — or `failed` when git could not say. `shas` is
+ * echoed, as commitsSummary's is, so a late answer for a selection that has
+ * since changed is dropped.
+ */
+export interface GraphCommitsFilesMessage {
+  type: "commitsFiles";
+  shas: string[];
+  files?: CombinedChanges;
+  failed?: true;
+}
+
 export type GraphHostMessage =
   | GraphInitMessage
   | GraphAppendMessage
@@ -306,6 +320,7 @@ export type GraphHostMessage =
   | GraphActiveFileMessage
   | GraphCommitMenuMessage
   | GraphCommitsSummaryMessage
+  | GraphCommitsFilesMessage
   | GraphCommitContainsMessage
   | GraphRebaseChainMessage
   | GraphErrorMessage;
@@ -393,6 +408,22 @@ export type GraphWebviewMessage =
       oldPath?: string;
       status?: string;
       wip?: boolean;
+      preserveFocus?: boolean;
+    }
+  /**
+   * Open a file of the "N commits selected" summary's combined change (#161)
+   * as a diff: `oldPath` (else `path`) at `from` against `path` at `to` — both
+   * full shas, or git's empty tree. `key` names the selection, and the host
+   * hands it back in `activeFile` while that diff is the open one.
+   */
+  | {
+      type: "openCombinedFile";
+      key: string;
+      path: string;
+      oldPath?: string;
+      status?: string;
+      from: string;
+      to: string;
       preserveFocus?: boolean;
     }
   /** Open a changed file's working-tree copy itself, not its diff. `path` is

@@ -7,6 +7,14 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 ## [Unreleased]
 
 ### Added
+- **Files changed for several commits.** With two or more commits selected in
+  the Commit Graph, the "N commits selected" summary lists the files they
+  changed together, as a list or a tree, and a click opens a file's diff
+  across them. A run of consecutive commits is shown as one change, the way
+  squashing them would make it. For any other selection, each file's diff goes
+  from before the first selected commit that changed it to after the last, and
+  the summary says it can include commits in between.
+  ([#161](https://github.com/GitStudioHQ/gitstudio/issues/161))
 - **Highlight changed lines.** An option, off by default:
   `gitstudio.staging.highlightChangedLines` gives added and modified lines a
   full-width background in ordinary editor tabs, and marks where lines were
