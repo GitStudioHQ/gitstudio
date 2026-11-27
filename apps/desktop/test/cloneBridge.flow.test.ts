@@ -199,11 +199,12 @@ test("a clone of an address that is no repository is the user's, not a crash", a
   } finally {
     undo();
   }
-  // #98: a local path that is not there.
+  // #98: a local path that is not there. Git on Windows says it the way the
+  // server above does; elsewhere, that the path does not exist.
   const nowhere = join(temp("clonesrc"), "no-such-folder");
   const res = await startClone({ url: nowhere, parentDir: parent, name: "copy" }, () => undefined);
   assert.equal(res.ok, false);
-  assert.match(res.message ?? "", /does not exist/);
+  assert.match(res.message ?? "", /does not exist|does not appear to be a git repository/);
   assert.equal(res.expected, true);
   assert.equal(reportableResultMessage(res), undefined);
 });
