@@ -8,7 +8,7 @@
 // Test says why a connection does not work. Models are a fake fetch, the CLIs
 // scripted FakeChilds — nothing leaves the machine.
 
-import { onNextSpawn, resetSpawns, spawned } from "./aiBridge.fakes";
+import { fakeMachine, onNextSpawn, resetSpawns, spawned, useMachine } from "./aiBridge.fakes";
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
@@ -363,6 +363,56 @@ test("Test on a CLI connection only checks the binary — it spends no quota", a
   onNextSpawn((c) => void c.exit(0));
   assert.equal((await bridge.getSettings()).connections[0].usable, true, "getSettings probes again, and it is back");
   assert.equal(spawned.length, 4);
+});
+
+// A Windows machine whose CLI came from Yarn v1's global install: its bin
+// launcher hands over to the npm-style launcher in Yarn's own .bin, which
+// runs a script under Node.
+const YARN = "C:\\gs-fake-machine\\yarn";
+const YARN_BIN = `${YARN}\\bin`;
+const YARN_INNER = `${YARN}\\Data\\global\\node_modules\\.bin\\codex.cmd`;
+const YARN_SCRIPT = `${YARN}\\Data\\global\\node_modules\\@openai\\codex\\bin\\codex.js`;
+const NODE = "C:\\gs-fake-machine\\nodejs\\node.exe";
+const LAUNCHERS: Record<string, string> = {
+  [`${YARN_BIN}\\codex.cmd`.toLowerCase()]: '@"%~dp0\\..\\Data\\global\\node_modules\\.bin\\codex.cmd" %*\r\n',
+  [YARN_INNER.toLowerCase()]:
+    '@IF EXIST "%~dp0\\node.exe" (\r\n  "%~dp0\\node.exe"  "%~dp0\\..\\@openai\\codex\\bin\\codex.js" %*\r\n) ELSE (\r\n  @SET PATHEXT=%PATHEXT:;.JS;=;%\r\n  node  "%~dp0\\..\\@openai\\codex\\bin\\codex.js" %*\r\n)\r\n',
+};
+function yarnMachine(withNode: boolean) {
+  const files = new Set([`${YARN_BIN}\\codex.cmd`, YARN_INNER, YARN_SCRIPT, ...(withNode ? [NODE] : [])].map((f) => f.toLowerCase()));
+  return fakeMachine({
+    platform: "win32",
+    env: { Path: `C:\\Windows\\system32;${YARN_BIN};C:\\gs-fake-machine\\nodejs`, PATHEXT: ".COM;.EXE;.BAT;.CMD" },
+    home: "C:\\gs-fake-machine\\home",
+    isFile: (p) => files.has(p.toLowerCase()),
+    readText: (p) => LAUNCHERS[p.toLowerCase()],
+  });
+}
+
+test("Test on a Yarn-installed CLI follows its launchers to the script, and a real task runs it the same way", async () => {
+  // Yarn's bin launcher names ANOTHER launcher; read as "not a package shim",
+  // every task was refused while Settings said Ready.
+  useMachine(yarnMachine(true));
+  const { bridge } = await makeBridge();
+  const id = (await bridge.addConnection("codex")).connections[0].id;
+  onNextSpawn((c) => {
+    c.out("codex-cli 0.9\n");
+    void c.exit(0);
+  });
+  assert.deepEqual(await bridge.test(id), { ok: true, message: "Found `codex` (codex-cli 0.9)." });
+  assert.equal(spawned[0].file, NODE);
+  assert.deepEqual(spawned[0].args, [YARN_SCRIPT, "--version"]);
+});
+
+test("Test on a launcher whose Node.js is missing says that — not 'isn't installed' — as the user's setup", async () => {
+  useMachine(yarnMachine(false));
+  const { bridge } = await makeBridge();
+  const id = (await bridge.addConnection("codex")).connections[0].id;
+  const r = await bridge.test(id);
+  assert.equal(r.ok, false);
+  assert.match(r.message, /runs on Node\.js/);
+  assert.equal(r.expected, true);
+  assert.equal(spawned.length, 0);
 });
 
 test("Test on a CLI preset the app does not know says so", async () => {

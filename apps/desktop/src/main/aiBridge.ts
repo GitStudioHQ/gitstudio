@@ -52,7 +52,8 @@ import {
 } from "@gitstudio/ai/index";
 import { createGitToolHost } from "@gitstudio/git-service/index";
 import { mcpInfo, installMcp } from "./mcpConfig";
-import { CliProvider, cliSpecFor, detectCli, withThinking } from "./cliProvider";
+import { CliProvider, cliSpecFor, detectCli, recentTurns, withThinking } from "./cliProvider";
+import { isExpectedError } from "./expectedError";
 import { ConversationStore, type ChatSession } from "./assistantSessions";
 import type { RepoStore } from "./repoStore";
 import type {
@@ -422,20 +423,26 @@ export class AiBridge {
       if (!spec) {
         return { ok: false, message: l10n.t("Unknown local CLI.") };
       }
-      const { ok, version } = await detectCli(spec.command);
+      const { ok, version, reason } = await detectCli(spec.command, spec.install);
       this.cliDetect.set(conn.preset, ok);
-      return ok
-        ? {
-            ok: true,
-            message: version
-              ? l10n.t("Found `{0}` ({1}).", spec.command, version)
-              : l10n.t("Found `{0}`.", spec.command),
-          }
-        : {
-            ok: false,
-            expected: true,
-            message: l10n.t("`{0}` isn't installed or not on PATH. {1}", spec.command, spec.install),
-          };
+      if (ok) {
+        return {
+          ok: true,
+          message: version ? l10n.t("Found `{0}` ({1}).", spec.command, version) : l10n.t("Found `{0}`.", spec.command),
+        };
+      }
+      // What stopped it, as a real run would hit it — a launcher whose Node is
+      // missing is not "isn't installed", and one GitStudio cannot start is
+      // ours to hear about. A CLI that was found and whose --version failed
+      // keeps the old answer.
+      if (reason) {
+        return { ok: false, message: reason.message, ...(isExpectedError(reason) ? { expected: true } : {}) };
+      }
+      return {
+        ok: false,
+        expected: true,
+        message: l10n.t("`{0}` isn't installed or not on PATH. {1}", spec.command, spec.install),
+      };
     }
     const provider = this.providerFor(conn);
     const model = resolveModelId(conn, "fast");
@@ -580,12 +587,25 @@ export class AiBridge {
         default:
           return { requestId, ok: false, message: l10n.t("Unknown task: {0}", task) };
       }
+      // A local CLI that was cancelled before it said anything ends quietly
+      // with nothing — that is the user's Cancel, not an empty answer.
+      if (abort.signal.aborted) {
+        return { requestId, ok: false, expected: true, message: l10n.t("Request cancelled.") };
+      }
       if (text === null) {
         return { requestId, ok: false, message: l10n.t("The model returned nothing.") };
       }
       return { requestId, ok: true, text };
     } catch (err) {
-      return { requestId, ok: false, message: err instanceof Error ? err.message : String(err) };
+      // A local CLI that is not installed (CliUnavailableError) is the user's
+      // setup, said with how to install it, and a request the user cancelled
+      // is their choice — neither is a crash (chatSend below says the same).
+      return {
+        requestId,
+        ok: false,
+        message: err instanceof Error ? err.message : String(err),
+        ...(isExpectedError(err) || abort.signal.aborted ? { expected: true } : {}),
+      };
     } finally {
       this.aborts.delete(requestId);
     }
@@ -787,6 +807,30 @@ export class AiBridge {
     await this.chats.appendTurn(chatId, { role: "user", text: req.goal, at: Date.now() });
 
     try {
+      if (resolved.conn.wire === "cli" && resolved.conn.preset !== "claude-code") {
+        // Codex and the Gemini CLI have no long-lived stdin session like Claude
+        // Code's, so each turn is one run of THAT CLI with the conversation so
+        // far. This branch used to fall into the warm session below, which
+        // always starts `claude` — so a Codex chat answered "The `claude` CLI
+        // isn't installed" on a machine that had only ever installed Codex.
+        const model = req.modelId ?? resolveModelId(resolved.conn, cfg.model);
+        this.send("ai:agentEvent", { requestId, kind: "status", text: l10n.t("Loading the agent") });
+        let acc = "";
+        const text = await resolved.provider.streamText(
+          [...recentTurns(history), { role: "user", content: req.goal }],
+          (d) => {
+            acc += d;
+            this.send("ai:delta", { requestId, delta: d });
+          },
+          { signal: abort.signal, modelId: model, thinking: req.thinking ?? cfg.thinking },
+        );
+        if (abort.signal.aborted) {
+          return { requestId, ok: false, expected: true, message: l10n.t("Session cancelled.") };
+        }
+        const final = (text ?? acc).trim();
+        await this.chats.appendTurn(chatId, { role: "assistant", text: final, at: Date.now() });
+        return { requestId, ok: true, text: final };
+      }
       if (resolved.conn.wire === "cli") {
         const model = req.modelId ?? resolveModelId(resolved.conn, cfg.model);
         const warm = this.chats.warmFor(chatId, { cwd: ctx.root, model, resumeId: session.cliSessionId });
@@ -838,7 +882,14 @@ export class AiBridge {
       await this.chats.appendTurn(chatId, { role: "assistant", text: result.text, at: Date.now() });
       return { requestId, ok: result.stopped !== "error", text: result.text };
     } catch (err) {
-      return { requestId, ok: false, message: err instanceof Error ? err.message : String(err) };
+      // A CLI that is not installed is the user's setup (CliUnavailableError),
+      // and a turn the user stopped is their choice: neither is a crash.
+      return {
+        requestId,
+        ok: false,
+        message: err instanceof Error ? err.message : String(err),
+        ...(isExpectedError(err) || abort.signal.aborted ? { expected: true } : {}),
+      };
     } finally {
       this.aborts.delete(requestId);
     }

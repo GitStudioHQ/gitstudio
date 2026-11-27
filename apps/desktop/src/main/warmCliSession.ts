@@ -11,6 +11,15 @@
 
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import * as l10n from "@vscode/l10n";
+import { CLI_SPECS, cliStartError, launchCli } from "./cliProvider";
+import { ExpectedError } from "./expectedError";
+import { launchOptions, stopProcess } from "./launcher";
+
+/** A turn ended because the session was cancelled or disposed (Stop, a chat
+ *  deleted, the app quitting): the user's doing, never a crash to report. */
+function cancelled(): ExpectedError {
+  return new ExpectedError(l10n.t("Session cancelled."));
+}
 
 /** Idle a warm session for this long before disposing the process. */
 const IDLE_MS = 5 * 60 * 1000;
@@ -46,6 +55,9 @@ export class WarmCliSession {
   private buffer = "";
   private busy = false;
   private idleTimer?: NodeJS.Timeout;
+  /** Bumped by dispose(), so a start still looking for `claude` when the
+   *  session is disposed does not go on to leave a process behind. */
+  private epoch = 0;
   /** Resolver for the in-flight turn (resolved on the `result` event). */
   private active?: {
     onDelta: (t: string) => void;
@@ -69,19 +81,31 @@ export class WarmCliSession {
   }
 
   /** Send one user message; streams assistant text via onDelta; resolves on completion. */
-  send(text: string, handlers: SendHandlers): Promise<string> {
+  async send(text: string, handlers: SendHandlers): Promise<string> {
     if (this.busy) {
-      return Promise.reject(new Error(l10n.t("The session is still answering the previous message.")));
+      throw new Error(l10n.t("The session is still answering the previous message."));
     }
     this.clearIdle();
-    if (!this.warm) {
-      this.spawn();
-    }
-    const proc = this.proc;
-    if (!proc) {
-      return Promise.reject(new Error(l10n.t("Couldn't start the Claude Code session.")));
-    }
+    // Claimed before the first await: a second message while `claude` is still
+    // being found is refused like one sent while it answers.
     this.busy = true;
+    let proc: ChildProcessWithoutNullStreams | undefined;
+    try {
+      if (!this.warm) {
+        // Cancelled before anything started: start nothing.
+        if (handlers.signal?.aborted) throw cancelled();
+        await this.spawn();
+        if (handlers.signal?.aborted) {
+          this.dispose();
+          throw cancelled();
+        }
+      }
+      proc = this.proc;
+      if (!proc) throw new Error(l10n.t("Couldn't start the Claude Code session."));
+    } catch (err) {
+      this.busy = false;
+      throw err;
+    }
     return new Promise<string>((resolve, reject) => {
       this.active = { onDelta: handlers.onDelta, resolve, reject, text: "", streamed: false, final: "" };
       const onAbort = () => {
@@ -109,6 +133,7 @@ export class WarmCliSession {
   }
 
   dispose(): void {
+    this.epoch++;
     this.clearIdle();
     const p = this.proc;
     this.proc = undefined;
@@ -118,20 +143,22 @@ export class WarmCliSession {
       } catch {
         /* ignore */
       }
-      p.kill("SIGTERM");
+      // The whole tree on Windows (launcher.ts): node.exe under a launcher
+      // runs the program that holds the pipes.
+      stopProcess(p, "SIGTERM");
     }
     // Fail any in-flight turn.
     if (this.active && this.busy) {
       const { reject } = this.active;
       this.active = undefined;
       this.busy = false;
-      reject(new Error(l10n.t("Session cancelled.")));
+      reject(cancelled());
     }
   }
 
   // ── internals ──
 
-  private spawn(): void {
+  private async spawn(): Promise<void> {
     const args = [
       "-p",
       "--strict-mcp-config",
@@ -144,20 +171,34 @@ export class WarmCliSession {
       "--verbose",
       "--include-partial-messages",
     ];
-    const proc = spawn("claude", args, {
+    // Found the way the one-shot provider finds it (cliProvider.launchCli).
+    // The bare name on this GUI process's PATH is how a Claude Code that IS
+    // installed came back "isn't installed": a Dock-launched app's PATH has
+    // none of ~/.local/bin, Homebrew or npm's bin, and on Windows npm's
+    // `claude.cmd` cannot be run by a spawn without a shell.
+    const install = CLI_SPECS["claude-code"].install;
+    const epoch = this.epoch;
+    const launch = await launchCli("claude", args, install);
+    if (epoch !== this.epoch) throw cancelled();
+    const proc = spawn(launch.file, launch.args, {
       cwd: this.opts.cwd,
-      env: process.env,
+      ...launchOptions(launch),
       stdio: ["pipe", "pipe", "pipe"],
     });
     this.proc = proc;
     this.buffer = "";
+    // A `claude` that exits while a message is on its way closes the pipe
+    // under the write; that EPIPE is an event, and an unheard one is an
+    // uncaught exception in the main process. The exit itself is reported
+    // (below, on close).
+    proc.stdin.on("error", () => {});
     proc.stdout.setEncoding("utf8");
     proc.stdout.on("data", (d: string) => this.onStdout(d));
     proc.stderr.on("data", () => {
       /* swallow logs; failures surface via close code */
     });
     proc.on("error", (err: NodeJS.ErrnoException) => {
-      const e = err.code === "ENOENT" ? new Error(l10n.t("The `claude` CLI isn't installed or not on PATH.")) : err;
+      const e = cliStartError(err, "claude", install, this.opts.cwd);
       if (this.active && this.busy) this.settle(this.active.reject, e);
     });
     proc.on("close", () => {
