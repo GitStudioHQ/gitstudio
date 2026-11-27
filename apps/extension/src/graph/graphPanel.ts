@@ -56,7 +56,10 @@ import { buildRebasePlan } from "@gitstudio/git-service/rebasePlan";
 import { runRebasePlan, isRebaseInProgress, reportRebaseFailure } from "../rebase/rebaseRunner";
 import { promptPick } from "../ui/dialogs";
 // EMPTY_TREE: git's empty tree — the "parent" of a root commit's diff.
-import { commitChangeSides, EMPTY_TREE, openSidesDiff } from "../history/revisionContentProvider";
+import { commitChangeSides, EMPTY_TREE, revisionSideUri } from "../history/revisionContentProvider";
+import { openDiff } from "../merge/diffPlaces";
+import { ActiveFileTracker } from "./activeFile";
+import { followTabs } from "./activeFileTabs";
 import { commitWebUrlIn } from "../util/remoteUrl";
 import { relativePath, statusLetter } from "../changes/changesView";
 import type { Change } from "../git/git";
@@ -230,6 +233,8 @@ export class CommitGraphPanel {
   private repoRoot: string | undefined;
   /** A sha to reveal once the first page is loaded (from the Commits view). */
   private pendingReveal: string | undefined;
+  /** Which of the details pane's diffs is open, by its tabs (#158). */
+  private readonly activeFile = new ActiveFileTracker();
 
   private constructor(
     private readonly webview: vscode.Webview,
@@ -272,6 +277,10 @@ export class CommitGraphPanel {
       });
       this.disposables.push({ dispose: off });
     }
+    // The details pane lights the file whose diff is open (#158): switching
+    // to another of its diffs' tabs moves the light, closing the last puts it
+    // out. The Commits rail has no pane.
+    if (!sidebar) this.disposables.push(followTabs(this.activeFile, () => this.postActiveFile()));
     // View as Tree / View as List (#81) is one choice for every graph with a
     // details pane: a change made in one reaches the others' open panes. The
     // Commits rail has no pane, and is told nothing.
@@ -341,7 +350,7 @@ export class CommitGraphPanel {
         void this.openWorkspaceFile(msg.path);
         break;
       case "openFile":
-        void this.doOpenFile(msg.sha, msg.path, !!msg.wip, msg.oldPath, msg.status);
+        void this.doOpenFile(msg.sha, msg.path, !!msg.wip, msg.oldPath, msg.status, !!msg.preserveFocus);
         break;
       case "commitAction":
         void this.doCommitAction(msg.action, msg.sha);
@@ -406,6 +415,22 @@ export class CommitGraphPanel {
   private postFilesLayout(): void {
     const layout = this.sidebar ? undefined : getFilesLayoutStore()?.get();
     if (layout) this.post({ type: "filesLayout", layout });
+  }
+
+  /**
+   * Which file's diff is open, for the pane to light (#158) — in the
+   * repository the pane is showing: a working tree's changes have the same
+   * sha in every repository.
+   */
+  private postActiveFile(): void {
+    const a = this.activeFile.active(this.repos.getActive()?.root);
+    this.post(a ? { type: "activeFile", sha: a.sha, path: a.path } : { type: "activeFile" });
+  }
+
+  /** A commit's details, and which of its files' diff is open. */
+  private postDetails(details: CommitDetailsPayload | null): void {
+    this.post({ type: "commitDetails", details });
+    if (details) this.postActiveFile();
   }
 
   /** Tell the page whether it may look authors' pictures up (see avatarPrefs.ts). */
@@ -1047,10 +1072,10 @@ export class CommitGraphPanel {
     const rows = buildWireRows({
       rows: layout.rows,
       records: this.records,
-      // Chips follow the filter: a ref the graph is not walked from draws no
-      // chip — the current branch included, unless it is ticked. The details
-      // pane and the commit menu keep reading the full map — they describe
-      // the commit.
+      // Branch chips follow the filter: a branch the graph is not walked from
+      // draws no chip — the current one included, unless it is ticked. A tag
+      // on a drawn commit always does (#159). The details pane and the commit
+      // menu keep reading the full map — they describe the commit.
       refsBySha: chipRefsUnderFilter(this.refsBySha, this.walk.refs),
     });
     return { rows, totalColumns: layout.totalColumns };
@@ -1417,7 +1442,7 @@ export class CommitGraphPanel {
     }
     const record = await this.getRecord(active, sha);
     if (!record) {
-      this.post({ type: "commitDetails", details: null });
+      this.postDetails(null);
       return;
     }
     let files: CommitFileChange[];
@@ -1446,7 +1471,7 @@ export class CommitGraphPanel {
       files,
       hasRemote: this.hasAnyRemote,
     };
-    this.post({ type: "commitDetails", details: payload });
+    this.postDetails(payload);
   }
 
   /** Build the working-tree (WIP) details payload from the repo state. */
@@ -1498,6 +1523,8 @@ export class CommitGraphPanel {
         hasRemote: this.hasAnyRemote,
       },
     });
+    // A refresh of the working tree keeps its open file lit (#158).
+    this.postActiveFile();
   }
 
   /** Open a changed file as a diff (commit vs first parent, or WIP vs HEAD). */
@@ -1536,39 +1563,40 @@ export class CommitGraphPanel {
     wip: boolean,
     oldPath?: string,
     status?: string,
+    preserveFocus = false,
   ): Promise<void> {
     const active = this.repos.getActive();
     if (!active) {
       return;
     }
     const fileName = path.split("/").pop() || path;
-    if (wip) {
-      // Working-tree file: HEAD ↔ the live file on disk — HEAD under the old
-      // name for a rename, and nothing on the right for a deletion (the file
-      // URI of a path that is not on disk is not an empty file).
-      await openSidesDiff(
-        active.root,
-        path,
-        {
+    const parent = this.records.get(sha)?.parents[0] ?? EMPTY_TREE;
+    // Working-tree file: HEAD ↔ the live file on disk — HEAD under the old
+    // name for a rename, and nothing on the right for a deletion (the file
+    // URI of a path that is not on disk is not an empty file). A commit's: the
+    // parent side under the name the file had THERE — a rename commit's
+    // parent has no file at the new name, so it used to show as all-added.
+    const sides = wip
+      ? {
           left: status === "A" || status === "U" ? { rev: EMPTY_TREE } : { rev: "HEAD", path: oldPath || path },
           right: status === "D" ? { rev: EMPTY_TREE } : { rev: undefined },
-        },
-        l10n.t("{0} (HEAD ↔ Working Tree)", fileName),
-        "graph",
-      );
-      return;
-    }
-    const record = this.records.get(sha);
-    const parent = record?.parents[0] ?? EMPTY_TREE;
-    // The parent side under the name the file had THERE: a rename commit's
-    // parent has no file at the new name, so it used to show as all-added.
-    await openSidesDiff(
-      active.root,
+        }
+      : commitChangeSides({ sha, parent, path, oldPath, status });
+    const title = wip ? l10n.t("{0} (HEAD ↔ Working Tree)", fileName) : `${fileName} (${sha.slice(0, 7)})`;
+    const original = revisionSideUri(active.root, path, sides.left);
+    const modified = revisionSideUri(active.root, path, sides.right);
+    // Its file is the open one now (#158); the tab that shows it keeps it so.
+    this.activeFile.open({
+      root: active.root,
+      sha,
       path,
-      commitChangeSides({ sha, parent, path, oldPath, status }),
-      `${fileName} (${sha.slice(0, 7)})`,
-      "graph",
-    );
+      original: original.toString(),
+      modified: modified.toString(),
+      title,
+    });
+    this.postActiveFile();
+    // Space in the list keeps the keyboard there (preserveFocus).
+    await openDiff(original, modified, title, { preview: true, ...(preserveFocus ? { preserveFocus: true } : {}) }, "graph");
   }
 
   /** Run a details-panel toolbar action against the target commit. */

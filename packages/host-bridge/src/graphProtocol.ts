@@ -238,6 +238,21 @@ export interface GraphFilesLayoutMessage {
   layout: GraphFilesLayout;
 }
 
+/**
+ * Which of the details pane's files has its diff open (#158): `path` in
+ * commit `sha`, whose row the pane lights; neither, when none of the diffs
+ * the pane opened is open any more. Sent when the user switches to or closes
+ * one of those diffs' tabs, and after every `commitDetails`, so a commit
+ * shown again lights the file still open. A pane lights the file it opens
+ * itself, so a host that never sends this leaves the clicked row lit until
+ * another is clicked or another commit is shown.
+ */
+export interface GraphActiveFileMessage {
+  type: "activeFile";
+  sha?: string;
+  path?: string;
+}
+
 /** One item in the in-graph commit actions popover (host builds the list). */
 export interface GraphMenuItem {
   /** Action id posted back as `commitMenuAction` (empty for a separator). */
@@ -288,6 +303,7 @@ export type GraphHostMessage =
   | GraphAuthorAvatarsMessage
   | GraphAvatarPrefsMessage
   | GraphFilesLayoutMessage
+  | GraphActiveFileMessage
   | GraphCommitMenuMessage
   | GraphCommitsSummaryMessage
   | GraphCommitContainsMessage
@@ -368,9 +384,17 @@ export type GraphWebviewMessage =
    * Open a changed file from the details panel as a diff. `oldPath` is the
    * file's name in the parent when the commit renamed it (the parent side is
    * read under that name); `status` is git's letter (A has no parent side, D
-   * no commit side).
+   * no commit side). `preserveFocus`: the keyboard stays in the list (Space).
    */
-  | { type: "openFile"; sha: string; path: string; oldPath?: string; status?: string; wip?: boolean }
+  | {
+      type: "openFile";
+      sha: string;
+      path: string;
+      oldPath?: string;
+      status?: string;
+      wip?: boolean;
+      preserveFocus?: boolean;
+    }
   /** Open a changed file's working-tree copy itself, not its diff. `path` is
    *  relative to the repository root. */
   | { type: "openWorkspaceFile"; path: string }

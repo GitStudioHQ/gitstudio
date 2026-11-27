@@ -10982,6 +10982,8 @@ class App {
       this.activeMonacoView = undefined;
     }
     this.diffSurfaceEl = undefined;
+    // The pane lit the file whose diff this was (#158): no diff, no light.
+    this.detailsEl?.querySelector<CommitDetailsEl>("gitstudio-commit-details")?.setActiveFile();
     // Drops the Diff tab from the dock's tab strip and, if it was the tab on
     // screen, hands the dock back to Terminal. The dock itself stays where the
     // user put it — closing a diff is not a reason to close their terminal.
@@ -11148,6 +11150,23 @@ class App {
     await this.runAction({ action, sha } as Parameters<App["runAction"]>[0]);
   }
 
+  /**
+   * The details pane lights the file the dock's diff now shows (#158) when it
+   * is that pane's commit (`sha`, or the working tree when there is none),
+   * and nothing when it is another commit's: a file opened from elsewhere
+   * (a commit peek) must not leave the pane lighting the one before it.
+   */
+  private lightOpenFile(path: string, sha?: string): void {
+    const pane = this.detailsEl?.querySelector<CommitDetailsEl>("gitstudio-commit-details");
+    const shown = pane?.details;
+    if (!pane || !shown) return;
+    const same = sha
+      ? shown.kind !== "wip" && sha.length >= 7 && (shown.sha.startsWith(sha) || sha.startsWith(shown.sha))
+      : shown.kind === "wip";
+    if (same) pane.setActiveFile(shown.sha, path);
+    else pane.setActiveFile();
+  }
+
   private async openFile(file: ChangedFile, sha?: string): Promise<void> {
     // The diff opens in the BOTTOM DOCK, beside Terminal and Output.
     //
@@ -11170,6 +11189,7 @@ class App {
     dock.openDetails();
     const surface = dock.detailsSurface();
     if (!surface) return;
+    this.lightOpenFile(file.path, sha);
     // NO header of our own. DiffPanel already draws one carrying the path and
     // the Inline/Split toggle, so adding a second printed the filename twice,
     // one line above itself. The file's identity goes on the TAB instead, which

@@ -1348,6 +1348,64 @@
       c.eq($$(".graph-details .jb-app").length, 0, "the button opened no diff");
     },
 
+    /**
+     * #158: the file whose diff is open is lit in the commit details' Files
+     * changed, as the graph lights its selected commit — the desktop's list
+     * selection, and no bar. Another file moves the light; closing the dock's
+     * diff tab puts it out; another commit starts with none.
+     */
+    "the-open-diffs-file-is-lit": async (f) => {
+      const c = check(f);
+      noAnimation();
+      await settle(600);
+      const sr = $("gitstudio-graph")?.shadowRoot;
+      if (!sr) return c.ok(false, "the graph is mounted");
+      const pick = async (sha) => {
+        sr.querySelector(`.row[data-sha="${sha}"]`)
+          ?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true }));
+        await settle(1200);
+      };
+      const pane = () => $(".graph-details gitstudio-commit-details");
+      const files = () => $$(".ftree .file:not(.dir)", pane()?.shadowRoot);
+      const lit = () => $$(".file.active", pane()?.shadowRoot);
+      // A commit the shim gives several files (a1b2c3d4: four views changed).
+      await pick("a1b2c3d4e5f60718293a");
+      c.ok(files().length >= 2, `the commit lists its files (${files().length})`);
+      if (files().length < 2) return;
+      c.eq(lit().length, 0, "nothing is lit before a diff is opened");
+      const [first, second] = files();
+      first.click();
+      await settle(800);
+      c.ok(!!$(".term-tab-close"), "the diff opened in the dock, with its tab");
+      c.eq(lit().length === 1 && lit()[0] === first, true, "the clicked file is lit");
+      c.eq(first.getAttribute("aria-selected"), "true", "and says it is the selected one");
+      // The desktop's own selection, fed to the shared pane as the --vscode-* name.
+      const want = getComputedStyle(pane()).getPropertyValue("--vscode-list-activeSelectionBackground").trim();
+      const probe = document.createElement("div");
+      probe.style.background = want;
+      document.body.appendChild(probe);
+      const sel = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      c.eq(getComputedStyle(first).backgroundColor, sel, "filled with the list selection the graph's selected commit wears");
+      c.ok(getComputedStyle(first).backgroundColor !== getComputedStyle(second).backgroundColor, "and only it");
+      const s = getComputedStyle(first);
+      c.eq([s.borderLeftWidth, s.boxShadow, s.outlineStyle].join(" "), "0px none none", "with no bar, edge or ring");
+      files()[1].click();
+      await settle(800);
+      c.eq(lit().length === 1 && lit()[0] === files()[1], true, "another file moves the light");
+      $(".term-tab-close")?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      await settle(400);
+      c.ok(!$(".term-tab-close"), "the dock's diff tab closed");
+      c.eq(lit().length, 0, "its diff closed: nothing is lit");
+      files()[0].click();
+      await settle(800);
+      c.eq(lit().length, 1, "opened again, lit again");
+      // Another commit the shim has details for (?stack=1's newest).
+      await pick("3c0ffee1a2b3c4d5e6f7");
+      c.ok(files().length >= 1, `the other commit lists its files (${files().length})`);
+      c.eq(lit().length, 0, "another commit starts with nothing lit");
+    },
+
     "whitespace-toggle-agrees-across-diff-views": async (f) => {
       const c = check(f);
       const ws = $(".dc-ws");
@@ -10638,8 +10696,10 @@
      * "show me only these branches". The picker is: tick refs and the host
      * rebuilds the graph from page 0 around exactly those refs — HEAD only
      * when detached, so "Show only" another branch is that branch alone (the
-     * released 1.13.0 walked the current branch beside it) — and the chips
-     * follow (an unticked ref draws none, the current branch included).
+     * released 1.13.0 walked the current branch beside it) — and the branch
+     * chips follow (an unticked branch draws none, the current one included),
+     * while a tag on a drawn commit keeps its chip in every scope (#159: the
+     * scope picks the history, the tags decorate it).
      * Presets are sent as what they MEAN ("@current") and come back resolved
      * and lit, All restores everything, Escape hands focus back to the
      * trigger, and a chip's own menu narrows to that chip.
@@ -10702,9 +10762,11 @@
       c.ok(!hasRow(REMOTE_ONLY), "(that one)");
       c.ok(!!chip("main"), "the current branch has its chip — it is what the preset ticks");
       c.ok(!chip("main")?.dataset.remotes, "without its folded origin/main — that ref is not ticked");
-      c.ok(!chip("desktop-v1.5.1") && !sr.querySelector(".chip-tag"), "an unticked tag draws no chip");
-      c.ok(!sr.querySelector(".chip-overflow"), "and nothing is left to fold behind a +N pill");
-      c.ok(!chip("redesign/issues-detail"), "nor does an unticked local branch");
+      // #159: every preset ticks branches only, and a tag used to be kept
+      // only when ticked — so no preset drew one, and a release tag right
+      // there on main's line vanished as the scope narrowed.
+      c.ok(!!chip("desktop-v1.5.1"), "a tag on a commit the scope draws keeps its chip, ticked or not (#159)");
+      c.ok(!chip("redesign/issues-detail"), "an unticked local branch draws none");
       c.eq(label(), "main (current)", "the trigger names the preset and the branch it means now");
       c.ok(!!pop(), "and the picker stays open for the next tick");
       c.ok(
@@ -10726,7 +10788,7 @@
         "ticking a second ref adds it",
       );
       c.ok(!sr.querySelector(".gh-branches-pop .gh-preset.active"), "a hand-picked selection lights no preset");
-      c.ok(!!chip("desktop-v1.5.1"), "and its chip comes back");
+      c.ok(!!chip("desktop-v1.5.1"), "and its chip stays");
       c.eq(label(), "main, desktop-v1.5.1", "two names fit the trigger");
 
       // ── All restores everything ──
@@ -10765,8 +10827,8 @@
         "Show only this branch narrows to it",
       );
       c.ok(!sr.querySelector(".gh-chip-menu"), "and the menu closes");
-      c.ok(!hasRow(REMOTE_ONLY) && !!chip("redesign/issues-detail") && !chip("desktop-v1.5.1"),
-        "the graph is that branch, chips included");
+      c.ok(!hasRow(REMOTE_ONLY) && !!chip("redesign/issues-detail"), "the graph is that branch, chips included");
+      c.ok(!!chip("desktop-v1.5.1"), "and the tag on the trunk it forked from, which it reaches, keeps its chip");
       c.ok(!hasRow("9f8e7d6c5b4a39281706") && !chip("main"),
         "and not the current branch beside it: main's tip is not on it, and main is not ticked");
       c.eq(label(), "redesign/issues-detail", "the trigger names it");
@@ -10796,6 +10858,43 @@
       c.eq(sent?.payload?.action, "checkout-ref", "the checkout goes out as a ref checkout");
       c.eq(sent?.payload?.refKind, "remote", "…as a remote");
       c.eq(sent?.payload?.fullName, "refs/remotes/origin/chore/dependabot-bump", "…by its full name, never the chip's short one");
+    },
+
+    /**
+     * A remembered scope that walks NOTHING keeps the way out (crash report
+     * #97's neighbour). HEAD on a branch with no commits yet — an orphan, an
+     * init + fetch — and "Current branch" remembered: the walk is empty while
+     * the other branches have their whole history. The crafted "No commits
+     * yet" tile replaced the whole graph, the "Show branches" picker with it,
+     * and every reload walked the same remembered scope — so those branches
+     * could not be reached from the graph at all. The tile is for a history
+     * that is empty under All; a scope's empty graph keeps its header.
+     */
+    "a-scope-that-walks-nothing-keeps-its-picker": async (f) => {
+      const c = check(f);
+      await settle(700);
+      const host = $("gitstudio-graph");
+      const sr = host?.shadowRoot;
+      c.ok(!!host?.isConnected, "the graph element is on screen, not replaced by a tile");
+      // The tile by its own words: the details pane beside it has a
+      // .list-empty of its own (hidden while there is no history).
+      const tile = [...document.querySelectorAll(".graph-view .list-empty")].find((n) =>
+        /This branch has no history/.test(text(n)),
+      );
+      c.ok(!tile, "no crafted tile in its place");
+      if (!sr) return;
+      const loads = () => window.__GS_GRAPH_LOADS || [];
+      c.eq(JSON.stringify(loads()[0]?.walked), "[]", "sanity: the remembered Current branch walked nothing");
+      c.eq(sr.querySelectorAll(".row").length, 0, "no rows under it");
+      c.ok(/No commits yet/.test(text(sr.querySelector(".placeholder"))), "the graph's own empty state says why");
+      const trigger = sr.querySelector(".gh-branches");
+      c.ok(!!trigger && trigger.getClientRects().length > 0, "the Show branches trigger is there to widen it");
+      trigger?.click();
+      await settle(300);
+      sr.querySelector(".gh-branches-pop .gh-preset[data-preset=all]")?.click();
+      await settle(700);
+      c.eq(loads().at(-1)?.refs, null, "All asks for every branch");
+      c.ok(sr.querySelectorAll(".row").length >= 11, `and the other branches' history is drawn (${sr.querySelectorAll(".row").length} rows)`);
     },
 
     /**

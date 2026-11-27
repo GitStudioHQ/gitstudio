@@ -221,7 +221,8 @@ test("every commit-change surface builds its sides through the rename-aware help
   assert.match(src("blame/blameController.ts"), /blameChangeSides\(at\.commit, rel\)/);
   assert.match(src("blame/blameController.ts"), /toRevisionUri\(at\.entry\.root, previous\.sha, rel, previous\.filename\)/);
   assert.match(src("graph/graphPanel.ts"), /commitChangeSides\(\{ sha, parent, path, oldPath, status \}\)/);
-  assert.match(src("graph/graphPanel.ts"), /this\.doOpenFile\(msg\.sha, msg\.path, !!msg\.wip, msg\.oldPath, msg\.status\)/);
+  // (…and whether the keyboard stays in the list, #158, after them.)
+  assert.match(src("graph/graphPanel.ts"), /this\.doOpenFile\(msg\.sha, msg\.path, !!msg\.wip, msg\.oldPath, msg\.status(, !!msg\.preserveFocus)?\)/);
   assert.equal((src("history/revisionNavigation.ts").match(/historyChangeSides\(/g) ?? []).length, 2);
   assert.match(src("history/fileTimelineProvider.ts"), /historyChangeSides\(e\)/);
   assert.match(src("history/lineHistory.ts"), /commitChangeSides\(\{ sha: picked\.sha/);

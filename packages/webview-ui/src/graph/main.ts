@@ -206,10 +206,24 @@ function start(root: HTMLElement): void {
     vscode.postMessage({ type: "openWorkspaceFile", path: d.path });
   });
   details.addEventListener("gs-file-open", (e) => {
-    const d = (e as CustomEvent).detail as { path: string; oldPath?: string; status?: string; wip?: boolean };
+    const d = (e as CustomEvent).detail as {
+      path: string;
+      oldPath?: string;
+      status?: string;
+      wip?: boolean;
+      preserveFocus?: boolean;
+    };
     const sha = details.details?.sha ?? "";
     // oldPath too: a renamed file's parent side is read under its old name.
-    vscode.postMessage({ type: "openFile", sha, path: d.path, oldPath: d.oldPath, status: d.status, wip: d.wip });
+    vscode.postMessage({
+      type: "openFile",
+      sha,
+      path: d.path,
+      oldPath: d.oldPath,
+      status: d.status,
+      wip: d.wip,
+      ...(d.preserveFocus ? { preserveFocus: true } : {}),
+    });
   });
   details.addEventListener("gs-action", (e) => {
     const d = (e as CustomEvent).detail as { id: string; sha: string };
@@ -402,6 +416,11 @@ function handle(
       // The shared choice — made in another graph, or remembered. Stored
       // here too, so this page's next load starts from it.
       saveFilesLayout(message.layout);
+      break;
+    }
+    case "activeFile": {
+      // Which file's diff is open (#158): the host follows its tabs.
+      details.setActiveFile(message.sha, message.path);
       break;
     }
     case "avatarPrefs": {

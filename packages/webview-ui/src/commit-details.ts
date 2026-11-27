@@ -188,6 +188,20 @@ export class CommitDetails extends LitElement {
   private filesFocus = new Map<string, string>();
   /** The commit the two maps above belong to. */
   private filesSha: string | undefined;
+  /**
+   * The file whose diff is open (#158): its row is lit, as the graph's
+   * selected commit is, so a long list never loses which diff you are
+   * reading. A click, Enter or Space sets it; the host moves or clears it
+   * (setActiveFile) when that diff's tab is switched to or closed. It belongs
+   * to one commit and shows only on that commit's files. `group` is the list
+   * the click came from: a file both staged and unstaged has a row in each,
+   * and the one clicked is the one lit.
+   */
+  private activeFile: { sha: string; path: string; group?: string } | undefined;
+  /** Set by Space for the click it makes on a file row (onFilesKey). */
+  private keepFocusOnOpen = false;
+  /** The lists the open file's row is lit in, worked out once per paint (litGroupsFor). */
+  private litGroups: ReadonlySet<string> = new Set();
 
   constructor() {
     super();
@@ -219,6 +233,26 @@ export class CommitDetails extends LitElement {
       }
       this.copiedKey = undefined;
     }
+  }
+
+  /**
+   * The host's word on which file's diff is open (#158): `path` in commit
+   * `sha`, or none. The extension says so when that diff's tab is switched
+   * to or closed; the desktop when its dock opens another diff or closes. The keyboard's Tab
+   * stop goes with it, unless the keyboard is in the list already.
+   */
+  setActiveFile(sha?: string, path?: string): void {
+    const was = this.activeFile;
+    if (sha === undefined || path === undefined) {
+      if (!was) return;
+      this.activeFile = undefined;
+    } else {
+      // The same file again: keep the list it was clicked in (litGroupsFor).
+      if (was?.sha === sha && was.path === path) return;
+      this.activeFile = { sha, path };
+      if (sha === this.details?.sha && !this.matches(":focus-within")) this.filesFocus.clear();
+    }
+    this.requestUpdate();
   }
 
   /** Host reply to `requestContains`. Ignored when it is for another commit. */
@@ -791,6 +825,44 @@ export class CommitDetails extends LitElement {
       }
       .file:hover { background: var(--gs-hover); }
       .file:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -1px; }
+      /* The file whose diff is open (#158), lit the way the graph lights its
+         selected commit: VS Code's list selection fill and ink, under the
+         pointer too, and never a bar. The keyboard's row keeps its own ring,
+         so the two read apart, and as both on one row. */
+      .file.active,
+      .file.active:hover {
+        background: var(--vscode-list-activeSelectionBackground);
+        color: var(--vscode-list-activeSelectionForeground, inherit);
+      }
+      /* Words on the fill take its ink, as the graph's selected row's do: a
+         theme's grey folder and its green and red counts sat under AA on
+         Light+'s blue. The meter keeps its colours; it is not text. */
+      .file.active .fdir,
+      .file.active .fdir.from,
+      .file.active .fnums .add,
+      .file.active .fnums .del,
+      .file.active .fnums .bin,
+      .file.active .fopen { color: inherit; }
+      .file.active .fdir { opacity: 0.85; }
+      /* A deleted file's struck name keeps full ink there: dimmed, it read
+         4.49:1 on Light+'s selection. The strike still says it. */
+      .file.active.deleted .fname { opacity: 1; }
+      /* The status letter sits on a layer of the editor's own ground, as the
+         graph's ref chips do on its selected row, so its colour reads as it
+         does on a plain row. */
+      .file.active .fstatus {
+        background: color-mix(in srgb, var(--st, var(--gs-fg-muted)) 15%,
+          var(--vscode-editor-background, #1e1e1e));
+      }
+      /* High contrast paints no selection fill: VS Code rings a selection
+         whole, dashed, and the keyboard's row solid (the graph does the same). */
+      :host-context(body.vscode-high-contrast) .file.active {
+        outline: 1px dashed var(--vscode-contrastActiveBorder, var(--vscode-focusBorder));
+        outline-offset: -1px;
+      }
+      :host-context(body.vscode-high-contrast) .file.active:focus-visible {
+        outline-style: solid;
+      }
       .fstatus {
         width: 16px; height: 16px; flex: 0 0 auto; border-radius: 4px;
         display: inline-flex; align-items: center; justify-content: center;
@@ -1423,6 +1495,7 @@ export class CommitDetails extends LitElement {
     </div>`;
 
     if (files.length === 0) {
+      this.litGroups = new Set();
       return html`${header}<div class="group-label" style="text-transform:none;letter-spacing:0">${l10n.t("No file changes.")}</div>`;
     }
 
@@ -1430,11 +1503,26 @@ export class CommitDetails extends LitElement {
     if (d.kind === "wip" && d.stagedCount !== undefined) {
       const staged = files.slice(0, d.stagedCount);
       const unstaged = files.slice(d.stagedCount);
+      this.litGroups = this.litGroupsFor(d, [["staged", staged], ["unstaged", unstaged]]);
       return html`${header}
         ${staged.length ? html`<div class="group-label">${l10n.t("Staged")}</div>${this.filesList("staged", l10n.t("Staged"), staged, true)}` : nothing}
         ${unstaged.length ? html`<div class="group-label">${l10n.t("Unstaged")}</div>${this.filesList("unstaged", l10n.t("Unstaged"), unstaged, true)}` : nothing}`;
     }
+    this.litGroups = this.litGroupsFor(d, [["files", files]]);
     return html`${header}${this.filesList("files", title, files, d.kind === "wip")}`;
+  }
+
+  /**
+   * Which lists light the open file's row (#158): the list it was clicked
+   * in, while that list still has it; otherwise every list that has it.
+   * Staging or unstaging the file moves it to the other list with its diff
+   * still open, and the light goes with it.
+   */
+  private litGroupsFor(d: CommitDetailsPayload, lists: [string, CommitFileChange[]][]): Set<string> {
+    const o = this.activeFile;
+    if (!o || o.sha !== d.sha) return new Set();
+    const having = lists.filter(([, fs]) => fs.some((f) => f.path === o.path)).map(([g]) => g);
+    return new Set(o.group !== undefined && having.includes(o.group) ? [o.group] : having);
   }
 
   /**
@@ -1472,7 +1560,7 @@ export class CommitDetails extends LitElement {
       ${repeat(
         rows,
         (r) => r.key,
-        (r) => (r.kind === "dir" ? this.dirRow(group, r) : this.fileRow(r.file, wip, r, tree)),
+        (r) => (r.kind === "dir" ? this.dirRow(group, r) : this.fileRow(r.file, wip, r, tree, group)),
       )}
     </div>`;
   }
@@ -1539,7 +1627,8 @@ export class CommitDetails extends LitElement {
     for (const list of lists) {
       const rows = [...list.querySelectorAll<HTMLElement>('[role="treeitem"]')];
       const want = this.filesFocus.get(list.dataset.group ?? "files");
-      const stop = rows.find((r) => r.dataset.key === want) ?? rows[0];
+      // Where the keyboard was last, else the file whose diff is open (#158).
+      const stop = rows.find((r) => r.dataset.key === want) ?? rows.find((r) => r.classList.contains("active")) ?? rows[0];
       for (const r of rows) {
         const t = r === stop ? 0 : -1;
         if (r.tabIndex !== t) r.tabIndex = t;
@@ -1605,9 +1694,38 @@ export class CommitDetails extends LitElement {
     }
     if (k === "Enter" || k === " ") {
       e.preventDefault();
-      row.click();
+      // Space on a file opens its diff and leaves the keyboard here, as the
+      // Explorer's Space does: ↓ Space ↓ Space walks the diffs, the lit row
+      // following. Enter (and a click) opens it to read.
+      this.keepFocusOnOpen = k === " " && dir === undefined;
+      try {
+        row.click();
+      } finally {
+        this.keepFocusOnOpen = false;
+      }
     }
   };
+
+  /** A file row was clicked (or Enter / Space): it is the open file now, and the host opens its diff. */
+  private openFileRow(f: CommitFileChange, wip: boolean, group: string): void {
+    const sha = this.details?.sha;
+    if (sha !== undefined) {
+      this.activeFile = { sha, path: f.path, group };
+      this.requestUpdate();
+    }
+    this.emit("gs-file-open", {
+      path: f.path,
+      oldPath: f.oldPath,
+      status: f.status,
+      wip,
+      ...(this.keepFocusOnOpen ? { preserveFocus: true } : {}),
+    });
+  }
+
+  /** Whether this row is the open file's (#158), in a list that lights it this paint. */
+  private isActiveFile(f: CommitFileChange, group: string): boolean {
+    return this.activeFile?.path === f.path && this.litGroups.has(group);
+  }
 
   /** The height of the box that scrolls this list: its nearest ancestor in
    *  the pane that scrolls on the vertical axis, else the pane. */
@@ -1624,8 +1742,9 @@ export class CommitDetails extends LitElement {
    * folder it is in beside its name; the tree already says that, so there the
    * gray text is where a renamed file came from.
    */
-  private fileRow(f: CommitFileChange, wip: boolean, place: FileRow, tree: boolean) {
+  private fileRow(f: CommitFileChange, wip: boolean, place: FileRow, tree: boolean, group: string) {
     const st = statusColor(f.status);
+    const active = this.isActiveFile(f, group);
     const slash = f.path.lastIndexOf("/");
     const name = slash === -1 ? f.path : f.path.slice(slash + 1);
     const dir = slash === -1 ? "" : f.path.slice(0, slash);
@@ -1638,16 +1757,17 @@ export class CommitDetails extends LitElement {
         : f.oldPath
       : "";
     return html`<div
-      class="file ${f.status === "D" ? "deleted" : ""}"
+      class="file ${f.status === "D" ? "deleted" : ""} ${active ? "active" : ""}"
       role="treeitem"
       tabindex="-1"
       data-key=${place.key}
       aria-level=${place.level}
       aria-setsize=${place.setsize}
       aria-posinset=${place.posinset}
+      aria-selected=${active ? "true" : "false"}
       style=${styleMap({ "--st": st, "--depth": String(place.level - 1) })}
       title=${f.oldPath ? `${f.oldPath} → ${f.path}` : f.path}
-      @click=${() => this.emit("gs-file-open", { path: f.path, oldPath: f.oldPath, status: f.status, wip })}>
+      @click=${() => this.openFileRow(f, wip, group)}>
       ${tree ? html`<span class="twisty" aria-hidden="true"></span>` : nothing}
       <span class="fstatus">${f.status}</span>
       <span class="fname">${name}</span>
