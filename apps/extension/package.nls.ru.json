@@ -1,5 +1,8 @@
 {
   "capabilities.virtualWorkspaces.description": "Для работы GitStudio требуется локальный git-репозиторий на диске.",
+  "color.gitstudio.changedLines.addedBackground.description": "Фон добавленных строк во вкладках редактора, когда включён параметр gitstudio.staging.highlightChangedLines.",
+  "color.gitstudio.changedLines.modifiedBackground.description": "Фон изменённых строк во вкладках редактора, когда включён параметр gitstudio.staging.highlightChangedLines.",
+  "color.gitstudio.changedLines.deletedBackground.description": "Фон подписи, отмечающей удалённые строки во вкладках редактора, когда включён параметр gitstudio.staging.highlightChangedLines.",
   "command.gitstudio.abortRebase.title": "Прервать перебазирование",
   "command.gitstudio.addRemote.title": "Добавить удалённый репозиторий…",
   "command.gitstudio.ai.clearApiKey.title": "Очистить API-ключ Anthropic",
@@ -209,6 +212,7 @@
   "config.gitstudio.staging.hoverActions.description": "Показывает ссылки «Добавить в индекс» и «Убрать из индекса», когда указатель задерживается на изменённой строке, в редакторе и на изменённой стороне сравнения. При выделении ссылки действуют на выбранные строки. С клавиатуры: Show or Focus Hover, затем Tab до ссылки.",
   "config.gitstudio.staging.codeLens.description": "Показывает ссылки «Добавить в индекс» и «Убрать из индекса» над каждым изменением в редакторе. Редактор сравнения показывает их, только если в VS Code включён параметр Diff Editor: Code Lens.",
   "config.gitstudio.staging.showGutterState.description": "Показывает на полях редактора, какие изменения в индексе. Метка только сообщает состояние: VS Code не позволяет расширениям делать значок на полях кликабельным или показывать к нему подсказку. Чтобы добавить изменение в индекс или убрать его, задержите указатель на его строках, щёлкните правой кнопкой метку или номер строки или используйте сочетание клавиш.",
+  "config.gitstudio.staging.highlightChangedLines.markdownDescription": "Выделяет всю строку каждого изменения в обычных вкладках редактора: у добавленных и изменённых строк появляется фон, а там, где строки удалены, — подпись. Выделяются все изменения с последнего коммита, в индексе они или нет; какие в индексе, показывает метка на полях. Редакторы различий, которые сами раскрашивают изменения, и файлы, появившиеся после последнего коммита, остаются как есть. Цвета меняются в `#workbench.colorCustomizations#`: `gitstudio.changedLines.addedBackground`, `gitstudio.changedLines.modifiedBackground` и `gitstudio.changedLines.deletedBackground`.",
   "config.gitstudio.statusBar.showGraph.description": "Показывать кнопку в строке состояния, открывающую граф коммитов.",
   "config.gitstudio.statusBar.showTerminal.description": "Показывать кнопку в строке состояния, открывающую терминал уже в корне активного репозитория — который не обязательно совпадает с корнем рабочей области.",
   "config.gitstudio.worktrees.prefixWithProjectName.description": "Больше не используется: «Новый рабочий каталог» теперь предлагает папку «<проект>-<ветка>» рядом с основным рабочим каталогом, и вы можете изменить её перед созданием.",

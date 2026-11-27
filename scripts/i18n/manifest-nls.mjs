@@ -104,6 +104,10 @@ function collect(pkg) {
     }
   }
 
+  // A theme colour's description is what the colour picker in
+  // workbench.colorCustomizations shows beside its id.
+  for (const color of c.colors ?? []) add(color, "description", `color.${color.id}.description`);
+
   for (const walkthrough of c.walkthroughs ?? []) {
     const id = slug(walkthrough.id);
     add(walkthrough, "title", `walkthrough.${id}.title`);

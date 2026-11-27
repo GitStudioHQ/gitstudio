@@ -1,5 +1,8 @@
 {
   "capabilities.virtualWorkspaces.description": "GitStudioにはディスク上のローカルGitリポジトリが必要です。",
+  "color.gitstudio.changedLines.addedBackground.description": "gitstudio.staging.highlightChangedLines がオンのときの、エディタータブで追加された行の背景色。",
+  "color.gitstudio.changedLines.modifiedBackground.description": "gitstudio.staging.highlightChangedLines がオンのときの、エディタータブで変更された行の背景色。",
+  "color.gitstudio.changedLines.deletedBackground.description": "gitstudio.staging.highlightChangedLines がオンのときの、エディタータブで削除された行を示すラベルの背景色。",
   "command.gitstudio.abortRebase.title": "リベースを中止",
   "command.gitstudio.addRemote.title": "リモートを追加…",
   "command.gitstudio.ai.clearApiKey.title": "Anthropic APIキーを消去",
@@ -209,6 +212,7 @@
   "config.gitstudio.staging.hoverActions.description": "変更された行にポインターを置くと、ステージとステージ解除のリンクを表示します。エディターでも差分の変更側でも使えます。選択範囲がある場合、リンクは選択した行に作用します。キーボードでは Show or Focus Hover を実行し、Tab でリンクに移動します。",
   "config.gitstudio.staging.codeLens.description": "エディター内の各変更の上にステージとステージ解除のリンクを表示します。差分エディターでは VS Code の Diff Editor: Code Lens 設定がオンの場合のみ表示されます。",
   "config.gitstudio.staging.showGutterState.description": "どの変更がステージ済みかをエディターの余白に表示します。マークは状態を示すだけです。VS Code では拡張機能が余白のアイコンをクリック可能にしたり、ツールチップを表示したりできません。変更をステージまたはステージ解除するには、その行にポインターを置くか、マークまたは行番号を右クリックするか、キーボード ショートカットを使います。",
+  "config.gitstudio.staging.highlightChangedLines.markdownDescription": "通常のエディタータブで、変更のある行全体を強調表示します。追加された行と変更された行には背景色を付け、行が削除された位置にはラベルを表示します。前回のコミット以降のすべての変更が対象で、ステージ済みかどうかは問いません。どちらかは余白のマークで分かります。変更を独自に色分けする差分エディターと、前回のコミット以降に新しく作成されたファイルはそのままです。色は `#workbench.colorCustomizations#` で `gitstudio.changedLines.addedBackground`、`gitstudio.changedLines.modifiedBackground`、`gitstudio.changedLines.deletedBackground` を指定して変更できます。",
   "config.gitstudio.statusBar.showGraph.description": "コミットグラフを開くステータスバーのボタンを表示します。",
   "config.gitstudio.statusBar.showTerminal.description": "アクティブなリポジトリのルート（ワークスペースのルートとは限りません）で開くターミナルを起動するステータスバーのボタンを表示します。",
   "config.gitstudio.worktrees.prefixWithProjectName.description": "現在は使用されていません: 「新しいワークツリー」は、メインのワークツリーの横にフォルダー '<project>-<branch>' を提案するようになり、作成前に編集できます。",

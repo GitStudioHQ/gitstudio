@@ -1109,23 +1109,29 @@
             "description": "%config.gitstudio.staging.showGutterState.description%",
             "order": 4
           },
+          "gitstudio.staging.highlightChangedLines": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.gitstudio.staging.highlightChangedLines.markdownDescription%",
+            "order": 5
+          },
           "gitstudio.staging.clickGutterToggles": {
             "type": "boolean",
             "default": false,
             "description": "%config.gitstudio.staging.clickGutterToggles.description%",
-            "order": 5
+            "order": 6
           },
           "gitstudio.staging.hoverActions": {
             "type": "boolean",
             "default": true,
             "description": "%config.gitstudio.staging.hoverActions.description%",
-            "order": 6
+            "order": 7
           },
           "gitstudio.staging.codeLens": {
             "type": "boolean",
             "default": false,
             "description": "%config.gitstudio.staging.codeLens.description%",
-            "order": 7
+            "order": 8
           }
         }
       },
@@ -1498,6 +1504,38 @@
             "description": "%config.gitstudio.debug.logChildProcesses.description%",
             "order": 3
           }
+        }
+      }
+    ],
+    "colors": [
+      {
+        "id": "gitstudio.changedLines.addedBackground",
+        "description": "%color.gitstudio.changedLines.addedBackground.description%",
+        "defaults": {
+          "dark": "diffEditor.insertedLineBackground",
+          "light": "diffEditor.insertedLineBackground",
+          "highContrast": "#33ff2e26",
+          "highContrastLight": "#48985d33"
+        }
+      },
+      {
+        "id": "gitstudio.changedLines.modifiedBackground",
+        "description": "%color.gitstudio.changedLines.modifiedBackground.description%",
+        "defaults": {
+          "dark": "#1b81a833",
+          "light": "#2090d326",
+          "highContrast": "#1b81a84d",
+          "highContrastLight": "#2090d326"
+        }
+      },
+      {
+        "id": "gitstudio.changedLines.deletedBackground",
+        "description": "%color.gitstudio.changedLines.deletedBackground.description%",
+        "defaults": {
+          "dark": "diffEditor.removedLineBackground",
+          "light": "diffEditor.removedLineBackground",
+          "highContrast": "#ff008f33",
+          "highContrastLight": "#ad070726"
         }
       }
     ],

@@ -1,5 +1,8 @@
 {
   "capabilities.virtualWorkspaces.description": "O GitStudio exige um repositório git local em disco.",
+  "color.gitstudio.changedLines.addedBackground.description": "Fundo das linhas adicionadas nas abas do editor enquanto gitstudio.staging.highlightChangedLines está ativado.",
+  "color.gitstudio.changedLines.modifiedBackground.description": "Fundo das linhas modificadas nas abas do editor enquanto gitstudio.staging.highlightChangedLines está ativado.",
+  "color.gitstudio.changedLines.deletedBackground.description": "Fundo do rótulo que marca as linhas excluídas nas abas do editor enquanto gitstudio.staging.highlightChangedLines está ativado.",
   "command.gitstudio.abortRebase.title": "Abortar Rebase",
   "command.gitstudio.addRemote.title": "Adicionar Remoto…",
   "command.gitstudio.ai.clearApiKey.title": "Limpar Chave de API da Anthropic",
@@ -209,6 +212,7 @@
   "config.gitstudio.staging.hoverActions.description": "Mostra links para colocar em stage e remover do stage quando o ponteiro para sobre uma linha alterada, no editor e no lado alterado de um diff. Com uma seleção, os links agem sobre as linhas selecionadas. Pelo teclado: Show or Focus Hover e depois Tab até um link.",
   "config.gitstudio.staging.codeLens.description": "Mostra links para colocar em stage e remover do stage acima de cada alteração no editor. Um editor de diff só os mostra com a configuração Diff Editor: Code Lens do VS Code ativada.",
   "config.gitstudio.staging.showGutterState.description": "Mostra na margem do editor quais alterações estão em stage. A marca só informa o estado: o VS Code não permite que nenhuma extensão torne um ícone da margem clicável nem mostre uma dica nele. Para colocar uma alteração em stage ou removê-la, pare o ponteiro sobre as linhas dela, clique com o botão direito na marca ou no número da linha, ou use o atalho de teclado.",
+  "config.gitstudio.staging.highlightChangedLines.markdownDescription": "Destaca a linha inteira de cada alteração nas abas comuns do editor: um fundo nas linhas adicionadas e modificadas, e um rótulo onde linhas foram excluídas. Toda alteração desde o último commit é destacada, em stage ou não; a marca na margem mostra qual. Editores de diff, que já colorem as alterações, e arquivos novos desde o último commit ficam como estão. Altere as cores em `#workbench.colorCustomizations#`: `gitstudio.changedLines.addedBackground`, `gitstudio.changedLines.modifiedBackground` e `gitstudio.changedLines.deletedBackground`.",
   "config.gitstudio.statusBar.showGraph.description": "Mostrar um botão na barra de status que abre o Grafo de Commits.",
   "config.gitstudio.statusBar.showTerminal.description": "Mostrar um botão na barra de status que abre um terminal já na raiz do repositório ativo — que não é necessariamente a raiz do workspace.",
   "config.gitstudio.worktrees.prefixWithProjectName.description": "Não mais usado: Novo Worktree agora sugere a pasta '<project>-<branch>' ao lado do worktree principal, e você pode editá-la antes de ela ser criada.",

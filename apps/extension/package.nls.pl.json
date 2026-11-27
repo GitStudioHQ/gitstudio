@@ -1,5 +1,8 @@
 {
  "capabilities.virtualWorkspaces.description": "GitStudio wymaga lokalnego repozytorium git na dysku.",
+ "color.gitstudio.changedLines.addedBackground.description": "Tło dodanych linii w kartach edytora, gdy włączone jest gitstudio.staging.highlightChangedLines.",
+ "color.gitstudio.changedLines.modifiedBackground.description": "Tło zmodyfikowanych linii w kartach edytora, gdy włączone jest gitstudio.staging.highlightChangedLines.",
+ "color.gitstudio.changedLines.deletedBackground.description": "Tło etykiety oznaczającej usunięte linie w kartach edytora, gdy włączone jest gitstudio.staging.highlightChangedLines.",
  "command.gitstudio.abortRebase.title": "Przerwij rebase",
  "command.gitstudio.addRemote.title": "Dodaj remote…",
  "command.gitstudio.ai.clearApiKey.title": "Usuń klucz API Anthropic",
@@ -209,6 +212,7 @@
  "config.gitstudio.staging.hoverActions.description": "Pokazuje linki Przygotuj i Usuń z indeksu, gdy wskaźnik zatrzyma się na zmienionej linii, w edytorze i po zmienionej stronie porównania. Przy zaznaczeniu linki działają na wybrane linie. Z klawiatury: Show or Focus Hover, a potem Tab do linku.",
  "config.gitstudio.staging.codeLens.description": "Pokazuje linki Przygotuj i Usuń z indeksu nad każdą zmianą w edytorze. Edytor porównania pokazuje je tylko przy włączonym ustawieniu VS Code Diff Editor: Code Lens.",
  "config.gitstudio.staging.showGutterState.description": "Pokazuje na marginesie edytora, które zmiany są przygotowane. Znacznik tylko informuje o stanie: VS Code nie pozwala żadnemu rozszerzeniu uczynić ikony na marginesie klikalną ani pokazać przy niej podpowiedzi. Aby przygotować zmianę lub usunąć ją z indeksu, zatrzymaj wskaźnik na jej liniach, kliknij prawym przyciskiem znacznik lub numer linii albo użyj skrótu klawiszowego.",
+ "config.gitstudio.staging.highlightChangedLines.markdownDescription": "Wyróżnia całą linię każdej zmiany w zwykłych kartach edytora: dodane i zmodyfikowane linie dostają tło, a miejsce, w którym usunięto linie, oznacza etykieta. Wyróżniana jest każda zmiana od ostatniego commita, przygotowana czy nie; które są przygotowane, pokazuje znacznik na marginesie. Edytory porównania, które same kolorują zmiany, oraz pliki nowe od ostatniego commita pozostają bez zmian. Kolory zmienisz w `#workbench.colorCustomizations#`: `gitstudio.changedLines.addedBackground`, `gitstudio.changedLines.modifiedBackground` i `gitstudio.changedLines.deletedBackground`.",
  "config.gitstudio.statusBar.showGraph.description": "Pokazuje przycisk na pasku stanu, który otwiera Commit Graph.",
  "config.gitstudio.statusBar.showTerminal.description": "Pokazuje przycisk na pasku stanu, który otwiera terminal już w katalogu głównym aktywnego repozytorium — który nie musi być katalogiem głównym obszaru roboczego.",
  "config.gitstudio.worktrees.prefixWithProjectName.description": "Już nieużywane: New Worktree teraz proponuje folder '<project>-<branch>' przy głównym worktree, i możesz go edytować przed utworzeniem.",

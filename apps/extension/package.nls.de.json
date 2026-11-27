@@ -1,5 +1,8 @@
 {
   "capabilities.virtualWorkspaces.description": "GitStudio erfordert ein lokales Git-Repository auf der Festplatte.",
+  "color.gitstudio.changedLines.addedBackground.description": "Hintergrund hinzugefügter Zeilen in Editor-Tabs, solange gitstudio.staging.highlightChangedLines aktiviert ist.",
+  "color.gitstudio.changedLines.modifiedBackground.description": "Hintergrund geänderter Zeilen in Editor-Tabs, solange gitstudio.staging.highlightChangedLines aktiviert ist.",
+  "color.gitstudio.changedLines.deletedBackground.description": "Hintergrund der Beschriftung, die in Editor-Tabs gelöschte Zeilen markiert, solange gitstudio.staging.highlightChangedLines aktiviert ist.",
   "command.gitstudio.abortRebase.title": "Rebase abbrechen",
   "command.gitstudio.addRemote.title": "Remote hinzufügen…",
   "command.gitstudio.ai.clearApiKey.title": "Anthropic-API-Schlüssel löschen",
@@ -209,6 +212,7 @@
   "config.gitstudio.staging.hoverActions.description": "Zeigt Links zum Bereitstellen und Entfernen aus der Staging-Area, wenn der Zeiger auf einer geänderten Zeile ruht – im Editor und auf der geänderten Seite eines Diffs. Mit einer Auswahl wirken die Links auf die ausgewählten Zeilen. Per Tastatur: Show or Focus Hover, dann mit Tab zu einem Link.",
   "config.gitstudio.staging.codeLens.description": "Zeigt Links zum Bereitstellen und Entfernen aus der Staging-Area über jeder Änderung im Editor. Ein Diff-Editor zeigt sie nur, solange die VS-Code-Einstellung Diff Editor: Code Lens aktiv ist.",
   "config.gitstudio.staging.showGutterState.description": "Zeigt im Editor-Rand, welche Änderungen bereitgestellt sind. Das Symbol meldet nur den Zustand: VS Code erlaubt keiner Erweiterung, ein Rand-Symbol klickbar zu machen oder eine QuickInfo daran zu zeigen. Um eine Änderung bereitzustellen oder zu entfernen, den Zeiger auf ihren Zeilen ruhen lassen, das Symbol oder die Zeilennummer rechtsklicken oder die Tastenkombination verwenden.",
+  "config.gitstudio.staging.highlightChangedLines.markdownDescription": "Hebt in normalen Editor-Tabs die ganze Zeile jeder Änderung hervor: Hinzugefügte und geänderte Zeilen erhalten einen Hintergrund, und eine Beschriftung zeigt, wo Zeilen gelöscht wurden. Hervorgehoben wird jede Änderung seit dem letzten Commit, ob bereitgestellt oder nicht; das Symbol im Editor-Rand zeigt, welche bereitgestellt sind. Diff-Editoren, die Änderungen selbst einfärben, und Dateien, die seit dem letzten Commit neu sind, bleiben, wie sie sind. Die Farben ändern Sie in `#workbench.colorCustomizations#`: `gitstudio.changedLines.addedBackground`, `gitstudio.changedLines.modifiedBackground` und `gitstudio.changedLines.deletedBackground`.",
   "config.gitstudio.statusBar.showGraph.description": "Eine Schaltfläche in der Statusleiste anzeigen, die den Commit-Graph öffnet.",
   "config.gitstudio.statusBar.showTerminal.description": "Eine Schaltfläche in der Statusleiste anzeigen, die ein Terminal bereits im Stammverzeichnis des aktiven Repositorys öffnet — das nicht notwendigerweise das Arbeitsbereich-Stammverzeichnis ist.",
   "config.gitstudio.worktrees.prefixWithProjectName.description": "Nicht mehr verwendet: Neuer Worktree schlägt jetzt den Ordner „<project>-<branch>“ neben dem Haupt-Worktree vor, der vor dem Erstellen bearbeitet werden kann.",

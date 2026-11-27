@@ -1,5 +1,8 @@
 {
  "capabilities.virtualWorkspaces.description": "GitStudio 需要磁碟上的本地 git 儲存庫。",
+ "color.gitstudio.changedLines.addedBackground.description": "啟用 gitstudio.staging.highlightChangedLines 時，編輯器標籤頁中新增行的背景色。",
+ "color.gitstudio.changedLines.modifiedBackground.description": "啟用 gitstudio.staging.highlightChangedLines 時，編輯器標籤頁中修改行的背景色。",
+ "color.gitstudio.changedLines.deletedBackground.description": "啟用 gitstudio.staging.highlightChangedLines 時，編輯器標籤頁中標示已刪除行的標籤的背景色。",
  "command.gitstudio.abortRebase.title": "中止變基",
  "command.gitstudio.addRemote.title": "新增遠端儲存庫…",
  "command.gitstudio.ai.clearApiKey.title": "清除 Anthropic API 金鑰",
@@ -209,6 +212,7 @@
  "config.gitstudio.staging.hoverActions.description": "指標停留在已更改的行上時，顯示暫存和取消暫存連結，在編輯器中和差異的已修改一側皆可使用。有選取內容時，連結會作用於所選行。鍵盤操作：執行 Show or Focus Hover，然後按 Tab 移到連結。",
  "config.gitstudio.staging.codeLens.description": "在編輯器中每處更改的上方顯示暫存和取消暫存連結。差異編輯器僅在 VS Code 的 Diff Editor: Code Lens 設定開啟時顯示它們。",
  "config.gitstudio.staging.showGutterState.description": "在編輯器邊欄中顯示哪些更改已暫存。標記只回報狀態：VS Code 不允許任何擴充功能讓邊欄圖示可點擊，也不允許在其上顯示提示。若要暫存或取消暫存某處更改，請將指標停留在其所在行上、以滑鼠右鍵按一下標記或其行號，或使用快速鍵。",
+ "config.gitstudio.staging.highlightChangedLines.markdownDescription": "在一般編輯器標籤頁中醒目提示每處更改的整行：為新增和修改的行加上背景色，並在刪除了行的位置顯示標籤。自上次提交以來的所有更改都會醒目提示，無論是否已暫存；邊欄中的標記會顯示哪些已暫存。差異編輯器（它本身會為更改著色）和自上次提交以來新建的檔案保持原樣，不做醒目提示。可在 `#workbench.colorCustomizations#` 中透過 `gitstudio.changedLines.addedBackground`、`gitstudio.changedLines.modifiedBackground` 和 `gitstudio.changedLines.deletedBackground` 變更色彩。",
  "config.gitstudio.statusBar.showGraph.description": "顯示一個開啟提交圖的狀態列按鈕。",
  "config.gitstudio.statusBar.showTerminal.description": "顯示一個狀態列按鈕，開啟一個已位於活動儲存庫根目錄的終端 — 該目錄不一定是工作區根目錄。",
  "config.gitstudio.worktrees.prefixWithProjectName.description": "已不再使用：新建工作樹現在會在主工作樹旁邊建議資料夾“<project>-<branch>”，你可以在建立前編輯它。",

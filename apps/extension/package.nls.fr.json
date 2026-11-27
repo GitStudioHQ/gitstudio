@@ -1,5 +1,8 @@
 {
   "capabilities.virtualWorkspaces.description": "GitStudio nécessite un dépôt git local sur disque.",
+  "color.gitstudio.changedLines.addedBackground.description": "Fond des lignes ajoutées dans les onglets d’éditeur lorsque gitstudio.staging.highlightChangedLines est activé.",
+  "color.gitstudio.changedLines.modifiedBackground.description": "Fond des lignes modifiées dans les onglets d’éditeur lorsque gitstudio.staging.highlightChangedLines est activé.",
+  "color.gitstudio.changedLines.deletedBackground.description": "Fond de l’étiquette qui signale les lignes supprimées dans les onglets d’éditeur lorsque gitstudio.staging.highlightChangedLines est activé.",
   "command.gitstudio.abortRebase.title": "Abandonner le rebase",
   "command.gitstudio.addRemote.title": "Ajouter un dépôt distant…",
   "command.gitstudio.ai.clearApiKey.title": "Effacer la clé API Anthropic",
@@ -209,6 +212,7 @@
   "config.gitstudio.staging.hoverActions.description": "Affiche des liens Indexer et Désindexer quand le pointeur s’arrête sur une ligne modifiée, dans l’éditeur et du côté modifié d’un diff. Avec une sélection, les liens indexent ou désindexent les lignes sélectionnées. Au clavier : Show or Focus Hover, puis Tab jusqu’à un lien.",
   "config.gitstudio.staging.codeLens.description": "Affiche des liens Indexer et Désindexer au-dessus de chaque modification dans l’éditeur. Un éditeur de diff ne les affiche que si le paramètre Diff Editor: Code Lens de VS Code est activé.",
   "config.gitstudio.staging.showGutterState.description": "Indique dans la marge de l’éditeur quelles modifications sont indexées. La marque ne fait qu’indiquer l’état : VS Code ne permet à aucune extension de rendre une icône de marge cliquable ni d’y afficher une info-bulle. Pour indexer ou désindexer une modification, laissez le pointeur sur ses lignes, faites un clic droit sur la marque ou son numéro de ligne, ou utilisez le raccourci clavier.",
+  "config.gitstudio.staging.highlightChangedLines.markdownDescription": "Met en évidence la ligne entière de chaque modification dans les onglets d’éditeur ordinaires : un fond sur les lignes ajoutées et modifiées, et une étiquette là où des lignes ont été supprimées. Chaque modification depuis le dernier commit est mise en évidence, indexée ou non ; la marque dans la marge indique lesquelles le sont. Les éditeurs de diff, qui colorent déjà les modifications, et les fichiers nouveaux depuis le dernier commit restent tels quels. Changez les couleurs dans `#workbench.colorCustomizations#` : `gitstudio.changedLines.addedBackground`, `gitstudio.changedLines.modifiedBackground` et `gitstudio.changedLines.deletedBackground`.",
   "config.gitstudio.statusBar.showGraph.description": "Afficher un bouton dans la barre d'état qui ouvre le graphe de commits.",
   "config.gitstudio.statusBar.showTerminal.description": "Afficher un bouton dans la barre d'état qui ouvre un terminal déjà positionné à la racine du dépôt actif — qui n'est pas forcément la racine de l'espace de travail.",
   "config.gitstudio.worktrees.prefixWithProjectName.description": "Plus utilisé : Nouvelle arborescence de travail suggère maintenant le dossier '<projet>-<branche>' à côté de l'arborescence de travail principale, et vous pouvez le modifier avant sa création.",

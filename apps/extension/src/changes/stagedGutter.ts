@@ -12,6 +12,7 @@ import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { relativePath } from "./changesView";
 import { blockAtLine } from "./blockAtLine";
 import { touches } from "../git/repoChange";
+import { ChangedLineHighlights } from "./changedLineHighlights";
 import * as l10n from "@vscode/l10n";
 
 /**
@@ -56,23 +57,39 @@ const WATCHED_SETTINGS = [
   "gitstudio.staging.showGutterState",
   "gitstudio.staging.hoverActions",
   "gitstudio.staging.codeLens",
+  "gitstudio.staging.highlightChangedLines",
 ];
 
 function readShowMarks(): boolean {
   return vscode.workspace.getConfiguration("gitstudio").get<boolean>("staging.showGutterState", true) !== false;
 }
 
-/** Whether anything needs the blocks: the marks, the hover (on by default) or the CodeLens (off). */
+/** Whether changed lines are painted whole in ordinary editor tabs — off unless asked for (#160). */
+function readHighlightLines(): boolean {
+  return vscode.workspace.getConfiguration("gitstudio").get<boolean>("staging.highlightChangedLines", false) === true;
+}
+
+/**
+ * Whether anything needs the blocks: the marks, the hover (on by default), the
+ * CodeLens (off) or the whole-line highlights (off).
+ */
 function readEnabled(): boolean {
   const config = vscode.workspace.getConfiguration("gitstudio");
   return (
     readShowMarks() ||
+    readHighlightLines() ||
     config.get<boolean>("staging.hoverActions", true) !== false ||
     config.get<boolean>("staging.codeLens", false) === true
   );
 }
 
 const STATES: readonly State[] = ["staged", "unstaged", "partial"];
+
+/** Whether HEAD has `rel` at all, empty or not: one `git cat-file -e`, the probe blame uses. */
+async function headHas(entry: RepoEntry, rel: string): Promise<boolean> {
+  const result = await entry.ctx.process.run(["cat-file", "-e", `HEAD:${rel}`]);
+  return result.code === 0;
+}
 
 /** How long to wait after an edit before re-reading git for this document. */
 const REFRESH_DEBOUNCE_MS = 300;
@@ -101,7 +118,7 @@ export class StagedGutter implements vscode.Disposable {
    * Every other cause — focus, save, a ref or index move, a toggle — reads git
    * again and replaces the entry.
    */
-  private readonly baselines = new Map<string, { conflicted: boolean; baselines: Baselines }>();
+  private readonly baselines = new Map<string, { conflicted: boolean; baselines: Baselines; inHead: boolean }>();
   /** Documents whose next scheduled refresh must read git, not reuse `baselines`. */
   private readonly readGit = new Set<string>();
   /** Documents with a scheduled refresh running now; a timer that fires meanwhile waits for it. */
@@ -110,9 +127,14 @@ export class StagedGutter implements vscode.Disposable {
   private readonly paintedVersion = new Map<string, number>();
   /** Whether the marks are drawn (`staging.showGutterState`). */
   private showMarks: boolean;
+  /** Whether changed lines are painted whole (`staging.highlightChangedLines`). */
+  private highlightLines: boolean;
+  /** The whole-line highlights, painted from the same blocks as the marks. */
+  private readonly highlights = new ChangedLineHighlights();
   /**
-   * Whether the blocks are read at all: for the marks, or for the hover and the
-   * CodeLens, which act on the same blocks (any of the three settings).
+   * Whether the blocks are read at all: for the marks, for the hover and the
+   * CodeLens, which act on the same blocks, or for the whole-line highlights
+   * (any of the four settings).
    */
   private enabled: boolean;
   private readonly refreshed = new vscode.EventEmitter<vscode.Uri>();
@@ -149,10 +171,12 @@ export class StagedGutter implements vscode.Disposable {
     }
 
     this.showMarks = readShowMarks();
+    this.highlightLines = readHighlightLines();
     this.enabled = readEnabled();
 
     this.disposables.push(
       this.refreshed,
+      this.highlights,
       vscode.window.onDidChangeActiveTextEditor((editor) => {
         if (editor) void this.schedule(editor.document, 0);
       }),
@@ -181,9 +205,17 @@ export class StagedGutter implements vscode.Disposable {
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (!WATCHED_SETTINGS.some((key) => event.affectsConfiguration(key))) return;
         this.showMarks = readShowMarks();
+        this.highlightLines = readHighlightLines();
         this.enabled = readEnabled();
+        // Off: take the highlights off every editor now, not as each repaints.
+        if (!this.highlightLines) this.highlights.clear();
         this.refreshAll();
       }),
+      // Whether an editor is an ordinary tab or a side of a diff is read from
+      // the tabs, which VS Code reports apart from the editors: repaint the
+      // highlights when they move, so a diff opened in the same column as the
+      // file is never left with a tint of its own on top of the diff's.
+      vscode.window.tabGroups.onDidChangeTabs(() => this.repaintHighlights()),
     );
 
     this.refreshAll();
@@ -309,8 +341,54 @@ export class StagedGutter implements vscode.Disposable {
     this.blocksByDoc.set(key, blocks);
     if (typeof version === "number") this.paintedVersion.set(key, version);
     else this.paintedVersion.delete(key);
-    this.paint(document, this.showMarks ? blocks : []);
+    this.paint(document, blocks);
     this.refreshed.fire(document.uri);
+  }
+
+  /**
+   * Repaints just the highlights from the blocks already read — no git, no
+   * diff. A document whose text moved since its last paint is skipped: its
+   * own refresh is already scheduled and paints both.
+   */
+  private repaintHighlights(): void {
+    if (!this.highlightLines) return;
+    const done = new Set<string>();
+    for (const editor of vscode.window.visibleTextEditors) {
+      const document = editor.document;
+      const key = document.uri.toString();
+      if (done.has(key)) continue;
+      done.add(key);
+      const blocks = this.blocksByDoc.get(key);
+      if (!blocks || this.paintedVersion.get(key) !== document.version) continue;
+      this.paintHighlights(this.editorsOf(document), document, blocks);
+    }
+  }
+
+  /** Paints the highlights for `blocks` (or clears them; see highlightable). */
+  private paintHighlights(editors: vscode.TextEditor[], document: vscode.TextDocument, blocks: ChangeBlock[]): void {
+    const key = document.uri.toString();
+    const known = this.baselines.get(key);
+    // HEAD has the file, and it is empty: lines typed into it are additions.
+    const emptyHead = known !== undefined && known.inHead && known.baselines.head === "";
+    this.highlights.paint(editors, document, this.highlightable(key, blocks), emptyHead);
+  }
+
+  /**
+   * The blocks the highlights paint for document `key`: none while they are
+   * off, and none for a file that is not in HEAD. Every line of such a file is
+   * new, so painting it says nothing — and an untracked or ignored file reads
+   * as all new, so every build output or local config file would open painted
+   * from top to bottom. VS Code's own change bars stay off on those files too.
+   * An EMPTY file HEAD does have is painted like any other.
+   */
+  private highlightable(key: string, blocks: ChangeBlock[]): ChangeBlock[] {
+    if (!this.highlightLines) return [];
+    return this.baselines.get(key)?.inHead === false ? [] : blocks;
+  }
+
+  private editorsOf(document: vscode.TextDocument): vscode.TextEditor[] {
+    const key = document.uri.toString();
+    return vscode.window.visibleTextEditors.filter((e) => e.document.uri.toString() === key);
   }
 
   /**
@@ -333,17 +411,18 @@ export class StagedGutter implements vscode.Disposable {
     this.generation.delete(key);
   }
 
+  /** Paints the marks (when shown) and the highlights (when on) for `blocks`; none clears both. */
   private paint(document: vscode.TextDocument, blocks: ChangeBlock[]): void {
-    const editors = vscode.window.visibleTextEditors.filter(
-      (e) => e.document.uri.toString() === document.uri.toString(),
-    );
+    const editors = this.editorsOf(document);
     if (editors.length === 0) return;
+
+    this.paintHighlights(editors, document, blocks);
 
     const ranges = new Map<State, vscode.Range[]>();
     for (const state of STATES) ranges.set(state, []);
 
     const lastLine = Math.max(0, document.lineCount - 1);
-    for (const block of blocks) {
+    for (const block of this.showMarks ? blocks : []) {
       // The glyph marks the change's FIRST line. A pure deletion has a
       // zero-width working span, whose `start` is still the line the deletion
       // sits above — so it is marked rather than skipped.
@@ -497,7 +576,14 @@ export class StagedGutter implements vscode.Disposable {
         const baselines = conflicted
           ? { head: "", index: "" }
           : await readBaselines(target.entry.ctx, target.rel);
-        known = { conflicted, baselines };
+        // `git show` answers "" both for an empty file HEAD has and for a path
+        // HEAD lacks; the highlights must tell the two apart. Only that case
+        // asks git again, and only while the highlights are on (turning them
+        // on re-reads every baseline) — a file with committed text never does
+        // — and the answer is kept with the baselines, so typing never asks.
+        const inHead =
+          conflicted || baselines.head !== "" || !this.highlightLines || (await headHas(target.entry, target.rel));
+        known = { conflicted, baselines, inHead };
         this.baselines.set(key, known);
       }
       // The text as it is now, after git answered — not as it was when asked.
