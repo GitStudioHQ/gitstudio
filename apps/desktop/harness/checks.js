@@ -10898,6 +10898,23 @@
     },
 
     /**
+     * …but a repository with no commits at all, just initialised, gets the
+     * crafted tile whatever scope is remembered for it (review of #162):
+     * there is no branch to widen to, so no picker to keep.
+     */
+    "a-fresh-repository-gets-the-tile-under-any-scope": async (f) => {
+      const c = check(f);
+      await settle(700);
+      const loads = () => window.__GS_GRAPH_LOADS || [];
+      c.eq(JSON.stringify(loads()[0]?.walked), "[]", "sanity: the remembered Current branch walked nothing");
+      const tile = [...document.querySelectorAll(".graph-view .list-empty")].find((n) =>
+        /This branch has no history/.test(text(n)),
+      );
+      c.ok(!!tile, "the crafted tile is up");
+      c.ok(!$("gitstudio-graph")?.isConnected, "in the graph's place");
+    },
+
+    /**
      * "Drop commit…" (issue #32) is offered only where it can work — the menu
      * asks main first — sits after Revert in the danger colour, and choosing
      * it asks main again with the preflight, confirms in words (the commit,

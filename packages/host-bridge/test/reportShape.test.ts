@@ -378,3 +378,38 @@ test("review, round 2: a command that lost its facts, data in a parse error, nam
   assert.ok(userStateOutcome("Commit message must reference a JIRA ticket\nNot committing merge; use 'git commit' to complete the merge."));
   assert.ok(userStateOutcome("remote: error: Gitea: User <account> does not have write permission to <path>"));
 });
+
+test("review #162: git status's preamble and file lists are never the verdict", () => {
+  // A cherry-pick that came out empty, with status on stdout in front of it.
+  assert.equal(
+    gitVerdict(
+      "On branch feature/acme\nYou are currently cherry-picking commit 1a2b3c4.\n\nnothing to commit, working tree clean\nThe previous cherry-pick is now empty, possibly due to conflict resolution.\nIf you wish to commit it anyway, use:\n\n    git commit --allow-empty",
+    ),
+    "The previous cherry-pick is now empty, possibly due to conflict resolution.",
+  );
+  // A commit with nothing to commit: status's last word is the failure.
+  assert.equal(gitVerdict("On branch acme-billing\nnothing to commit, working tree clean"), "nothing to commit, working tree clean");
+  // Nothing staged: scrubbing takes the file lists (and the summary with them);
+  // what is left is never the preamble, nor a file of the user's.
+  const unstaged = gitVerdict(
+    'On branch acme\nChanges not staged for commit:\n  (use "git add <file>..." to update what will be committed)\n\tmodified:   src/acme/billing.ts\n\tdeleted:    src/acme/old.ts\n\nUntracked files:\n  (use "git add <file>..." to include in what will be committed)\n\tacme-notes.txt\n\nno changes added to commit (use "git add" and/or "git commit -a")',
+  );
+  assert.ok(!/On branch|Changes not staged|acme|billing/.test(unstaged), unstaged);
+  // A rebase's status: the conflict list is not it either.
+  const rebasing = gitVerdict(
+    "interactive rebase in progress; onto 1a2b3c4\nLast command done (1 command done):\n   pick 5d6e7f8 acme billing\nNo commands remaining.\nYou are currently rebasing branch 'acme' on '1a2b3c4'.\n\nUnmerged paths:\n\tboth modified:   src/acme.ts\n\nno changes added to commit",
+  );
+  assert.equal(rebasing, "no changes added to commit");
+  for (const output of ["On branch acme\nnothing to commit, working tree clean", "HEAD detached at 1a2b3c4\nThe previous cherry-pick is now empty"]) {
+    const once = gitVerdict(output);
+    assert.equal(gitVerdict(once), once, output);
+  }
+});
+
+test("review #162: a sentence of ours that starts with \"git\" is not a git command line", () => {
+  assert.equal(thrownReport(new Error("git was not found on your PATH.")).message, "git was not found on your PATH.");
+  assert.equal(thrownReport(new Error("git is busy with another operation")).message, "git is busy with another operation");
+  // git's own command lines still are, in any language
+  assert.equal(thrownReport(new Error("git cherry-pick acme 以代码 1 退出：fatal: x")).message, "git cherry-pick <args> failed: fatal: x");
+  assert.equal(thrownReport(new Error("git rev-parse acme: killed by SIGKILL")).message, "git rev-parse <args> failed");
+});

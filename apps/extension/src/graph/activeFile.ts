@@ -100,7 +100,8 @@ export class ActiveFileTracker {
   /**
    * The tabs changed. For each repository: the tab in front showing one of
    * its diffs makes that file the open one; otherwise the open one stays
-   * while some tab still shows it, and with none, it has no open file. A
+   * while some tab still shows it, then the latest of its others still
+   * open, and with none, it has no open file. A
    * diff still on its way keeps the light whatever is in front meanwhile.
    * Says whether any repository's open file changed.
    */
@@ -122,7 +123,9 @@ export class ActiveFileTracker {
         // top of this file): the open one, if it is one of them, else the latest.
         next = cur && inFront.includes(cur) ? cur : inFront[inFront.length - 1];
       } else if (!cur || !shown(cur)) {
-        next = undefined;
+        // Its tab closed with another tab in front: the latest of the
+        // pane's diffs still open has the light, and none puts it out.
+        next = cur ? [...this.opened].reverse().find((d) => d.root === root && d !== cur && shown(d)) : undefined;
       }
       if (next === cur) continue;
       changed = changed || next?.sha !== cur?.sha || next?.path !== cur?.path;

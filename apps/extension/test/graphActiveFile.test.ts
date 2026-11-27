@@ -115,6 +115,25 @@ test("the open file: what is remembered stays small — only diffs with a tab, a
   assert.equal((t as any).opened.length, 1, "a preview replaced is forgotten");
 });
 
+test("review #162: closing the diff that has the light hands it to another of the pane's diffs still open", () => {
+  const A = diffOf("c".repeat(40), "src/widgets/a.ts");
+  const B = diffOf("c".repeat(40), "src/widgets/b.ts");
+  const t = new ActiveFileTracker();
+  let now = 30_000;
+  t.open(A, now);
+  t.settle({ front: tabOf(A), all: [tabOf(A)] }, (now += 5));
+  t.open(B, (now += 5));
+  t.settle({ front: tabOf(B), all: [tabOf(A), tabOf(B)] }, (now += 5));
+  t.settle({ front: tabOf(A), all: [tabOf(A), tabOf(B)] }, (now += 5));
+  assert.equal(t.active(ROOT)?.path, A.path, "A's tab in front has the light");
+  // A closed, and VS Code puts a source file in front: B is still open.
+  assert.equal(t.settle({ front: OTHER, all: [OTHER, tabOf(B)] }, (now += 5)), true, "the light moved: said");
+  assert.equal(t.active(ROOT)?.path, B.path, "the pane's other diff, still open, has it");
+  // B closed too: none left, the light goes out.
+  t.settle({ front: OTHER, all: [OTHER] }, (now += 5));
+  assert.equal(t.active(ROOT), undefined);
+});
+
 test("the open file is each repository's own: the same working-tree file of another is not it", () => {
   const W = "0".repeat(40);
   const A = diffOf(W, "package.json", "/work/a");

@@ -439,11 +439,12 @@ function scrubHosts(input: string): string {
     .replace(HOST_IN_CONTEXT, (_m, lead: string, token: string) => lead + hostToken(token))
     .replace(HOST_BEFORE, (_m, token: string) => hostToken(token))
     .replace(HOST_THEN, (_m, lead: string, token: string) => lead + hostToken(token))
-    .replace(HOST_PORT_AFTER, (m: string, token: string) =>
-      /^[^:]+\]?:\d{2,5}[.:]?$/.test(token) && !NOT_HOST_WORDS.has(token.slice(0, token.indexOf(":")).toLowerCase())
-        ? hostToken(token)
-        : m,
-    )
+    .replace(HOST_PORT_AFTER, (m: string, token: string) => {
+      const host = token.slice(0, token.indexOf(":")).toLowerCase();
+      // "failed at lib.ts:44" is a file and its line, not a host and its port.
+      const file = host.includes(".") && FILE_EXTS.has(host.slice(host.lastIndexOf(".") + 1));
+      return /^[^:]+\]?:\d{2,5}[.:]?$/.test(token) && !NOT_HOST_WORDS.has(host) && !file ? hostToken(token) : m;
+    })
     .replace(REACH_HOST, (h: string) => hostOr(h))
     .replace(AI_HOST_FIRST, (_m, token: string) => hostToken(token))
     .replace(AI_STREAM_FROM, (_m, token: string) => hostToken(token))

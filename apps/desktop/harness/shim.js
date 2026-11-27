@@ -1156,6 +1156,9 @@
   if (params.get("unborn")) {
     fixtures["refs:list"] = fixtures["refs:list"].map((r) => ({ ...r, isCurrent: false }));
   }
+  // ?norefs=1 (with ?unborn=1) → a repository just initialised: no commit,
+  // and no branch, tag or remote at all.
+  if (params.get("norefs")) fixtures["refs:list"] = [];
 
   // ?collide=1 (see the branches above): the refs git lists beside them, under
   // the short names git gives them — the tags "main" and "release", the
@@ -3231,6 +3234,7 @@
     graphBase.head = "";
     for (const r of graphBase.rows) r.refs = r.refs.map((c) => (c.kind === "currentHead" ? { ...c, kind: "head" } : c));
   }
+  if (params.get("norefs")) graphBase.rows = [];
   // ?stack=1 (issue #32's multi-select scenes): three LOCAL commits on main,
   // not pushed yet, above the released tip — the history a squash or a drop of
   // several commits is for. main moves up to the newest; origin/main and the

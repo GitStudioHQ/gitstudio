@@ -330,3 +330,42 @@ test("disposing an idle session is safe and repeatable", () => {
   assert.equal(s.warm, false);
   assert.equal(s.id, undefined);
 });
+
+test("review #162: a cancelled process that closes late does not end the turn sent after it", async () => {
+  // The first `claude` takes its time to go (on Windows a taskkill is async);
+  // the second answers only once the first has closed.
+  let firstClosed: () => void = () => {};
+  const closedFirst = new Promise<void>((r) => (firstClosed = r));
+  onNextSpawn(() => {}); // never answers: the user presses Stop
+  configureNextChild((c) => {
+    c.kill = (signal = "SIGTERM") => {
+      c.killed = true;
+      c.killSignal = signal;
+      setTimeout(() => void c.exit(null, signal).then(firstClosed), 30);
+      return true;
+    };
+  });
+  onNextSpawn((c) => {
+    c.json({ type: "system", subtype: "init", session_id: "sess-2" });
+    c.onStdinLine(() => void closedFirst.then(() => {
+      c.json(delta("after the stop"));
+      c.json({ type: "result", result: "x", session_id: "sess-2" });
+    }));
+  });
+  let exits = 0;
+  const s = new WarmCliSession({ cwd: undefined, onExit: () => exits++ });
+  try {
+    const stop = new AbortController();
+    const first = s.send("slow", { onDelta: () => {}, signal: stop.signal });
+    await until(() => spawned.length === 1 && spawned[0].stdinLines.length === 1, "the first message went out");
+    stop.abort();
+    await assert.rejects(first, /Session cancelled\./);
+    const second = await s.send("again", { onDelta: () => {} });
+    assert.equal(second, "after the stop", "the answer to the message after Stop arrives");
+    assert.equal(spawned.length, 2);
+    assert.equal(s.warm, true, "and its process is still the session's");
+    assert.equal(exits, 0, "the late close of the first did not report the session gone");
+  } finally {
+    s.dispose();
+  }
+});

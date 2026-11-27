@@ -197,7 +197,11 @@ const GIT_INSIDE = /[:：\s]((?:fatal|error): [^\n]*)$/;
  * running the user's command, file lists.
  */
 const NOISE =
-  /^(?:\s|hint:|remote:|To |From |\*\*|Cloning into|Receiving |Resolving |Counting |Compressing |Writing |Enumerating |Total |Unpacking |Updating |Fast-forward|Already up to date|Auto-merging |Delta compression|POST git-|Your branch |Please |and the repository exists|If you wish to|Otherwise,|You can |Use '|Executing: |Could not execute|Not committing merge|Resolve all conflicts|To abort|and then run|When you have resolved)/;
+  /^(?:\s|hint:|remote:|To |From |\*\*|Cloning into|Receiving |Resolving |Counting |Compressing |Writing |Enumerating |Total |Unpacking |Updating |Fast-forward|Already up to date|Auto-merging |Delta compression|POST git-|Your branch |Please |and the repository exists|If you wish to|Otherwise,|You can |Use '|Executing: |Could not execute|Not committing merge|Resolve all conflicts|To abort|and then run|When you have resolved|On branch |HEAD detached |Not currently on any branch|You are currently |You are in the middle of|interactive rebase in progress|Last commands? done|Next commands? to do|No commands remaining|Changes to be committed|Changes not staged for commit|Untracked files|Unmerged paths|All conflicts fixed|(?:both (?:modified|added|deleted)|(?:added|deleted) by (?:us|them)|modified|new file|deleted|renamed|copied|typechange):\s)/;
+
+/** git status's last word on the tree: the failure only when nothing more
+ *  particular was said ("The previous cherry-pick is now empty" is). */
+const STATUS_SUMMARY = /^(?:nothing to commit|nothing added to commit|no changes added to commit)\b/;
 
 /** A line git or an app writes starts with a letter; a hook's report often doesn't ("✖ subject may not be empty"). */
 const PROSE = /^\p{L}/u;
@@ -215,19 +219,24 @@ const MAX_VERDICT_LINES = 4;
  *
  * When git said none of those (a message of our own, git in another language,
  * a sentence such as "The previous cherry-pick is now empty"): the first line
- * that is not progress, advice or a hook's report — one line, since what
- * follows is git's advice or a hook's free text. Nothing, when there is none.
+ * that is not progress, advice, git status's preamble or a hook's report —
+ * one line, since what follows is git's advice or a hook's free text, and
+ * status's "nothing to commit" only when nothing else was said. Nothing,
+ * when there is none.
  * Idempotent, so the collector can apply it again.
  */
 export function gitVerdict(output: string): string {
   if (!output) return "";
-  const lines = scrubGitMessage(clipForScrub(output, 4_000))
+  const raw = scrubGitMessage(clipForScrub(output, 4_000))
     .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l !== "")
-    .map((l) => (VERDICT.test(l) ? l : (GIT_INSIDE.exec(l)?.[1] ?? l)));
+    .filter((l) => l.trim() !== "");
+  const lines = raw.map((l) => l.trim()).map((l) => (VERDICT.test(l) ? l : (GIT_INSIDE.exec(l)?.[1] ?? l)));
   const verdicts = lines.filter((l) => VERDICT.test(l));
-  const kept = verdicts.length > 0 ? verdicts : lines.filter((l) => !NOISE.test(l) && PROSE.test(l)).slice(0, 1);
+  // An indented line is a file list's or an example's ("\tsrc/billing.ts",
+  // "    git commit --allow-empty"): never the sentence that says what failed.
+  const prose = lines.filter((l, i) => !/^\s/.test(raw[i]) && !NOISE.test(l) && PROSE.test(l));
+  const said = prose.find((l) => !STATUS_SUMMARY.test(l)) ?? prose[0];
+  const kept = verdicts.length > 0 ? verdicts : said === undefined ? [] : [said];
   return [...new Set(kept)]
     .slice(0, MAX_VERDICT_LINES)
     .map((l) => clipForScrub(l, 200))
@@ -367,6 +376,22 @@ const ENGINE_ERRORS = new Set(["TypeError", "ReferenceError", "RangeError"]);
 /** A message that starts like one of git's own command lines, in any language. */
 const GIT_START = /^(?:Error: )?git ([a-z][a-z0-9-]{0,30})(?= )/;
 
+/** git's commands: what a command line of git's starts with. "git was not
+ *  found" and "git is busy" are sentences of ours, not commands. */
+export const GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
+  "add", "am", "annotate", "apply", "archive", "bisect", "blame", "branch", "bundle", "cat-file",
+  "check-attr", "check-ignore", "check-ref-format", "checkout", "checkout-index", "cherry", "cherry-pick",
+  "clean", "clone", "commit", "commit-graph", "commit-tree", "config", "count-objects", "credential",
+  "describe", "diff", "diff-files", "diff-index", "diff-tree", "difftool", "fetch", "for-each-ref",
+  "format-patch", "fsck", "gc", "grep", "hash-object", "hook", "init", "interpret-trailers", "lfs", "log",
+  "ls-files", "ls-remote", "ls-tree", "maintenance", "merge", "merge-base", "merge-file", "merge-tree",
+  "mergetool", "mktag", "mktree", "mv", "name-rev", "notes", "prune", "pull", "push", "range-diff",
+  "read-tree", "rebase", "reflog", "remote", "repack", "replace", "rerere", "reset", "restore", "rev-list",
+  "rev-parse", "revert", "rm", "shortlog", "show", "show-ref", "sparse-checkout", "stash", "status",
+  "submodule", "switch", "symbolic-ref", "tag", "update-index", "update-ref", "var", "verify-commit",
+  "verify-tag", "version", "whatchanged", "worktree", "write-tree",
+]);
+
 export interface ThrownReport {
   name: string;
   message: string;
@@ -404,7 +429,7 @@ export function thrownReport(err: Error): ThrownReport {
           : "failed";
     const said = gitVerdict(git.stderr);
     message = `git ${gitCommandShape(git.args)} ${how}${said ? `: ${said}` : ""}`;
-  } else if (GIT_START.test(raw) && !/^(?:exited|failed)$/.test(GIT_START.exec(raw)?.[1] ?? "")) {
+  } else if (GIT_SUBCOMMANDS.has(GIT_START.exec(raw)?.[1] ?? "")) {
     // A git command line that lost its facts, in a language the English
     // form does not read ("git checkout acme 以代码 1 退出：…"): the
     // subcommand, and git's verdict when its words are there.

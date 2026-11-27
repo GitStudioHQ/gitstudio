@@ -762,3 +762,12 @@ test("resweep: still linear — a run of blanks, and the classifier on unclipped
   const ms = performance.now() - t0;
   assert.ok(ms < 2_000, `took ${ms.toFixed(0)} ms`);
 });
+
+test("review #162: a file and its line after \"at\" or \"in\" is not a host and its port", () => {
+  assert.equal(scrub("failed at lib.ts:44"), "failed at lib.ts:44");
+  assert.equal(scrub("TypeError: x is not a function at main.js:12"), "TypeError: x is not a function at main.js:12");
+  assert.equal(scrub("error in index.d.ts:300"), "error in index.d.ts:300");
+  // hosts still are
+  assert.equal(scrub("Ollama at llm-box:11434 is unreachable"), "Ollama at <host>:11434 is unreachable");
+  assert.equal(scrub("Could not reach the server at llm.acme.ai:8080."), "Could not reach the server at <host>:8080.");
+});

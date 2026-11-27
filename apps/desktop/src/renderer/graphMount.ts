@@ -121,7 +121,10 @@ export class GraphMount {
           this.element.totalColumns = message.totalColumns;
           this.element.hasMore = message.hasMore;
           applyGraphInitRefs(this.element, message);
-          if (message.rows.length === 0 && !message.hasMore && message.refFilter === null) {
+          // No commit and no branch, tag or remote at all: a repository just
+          // initialised, whatever scope is remembered for it.
+          const historyless = !message.head && (this.element.refList?.length ?? 0) === 0;
+          if (message.rows.length === 0 && !message.hasMore && (message.refFilter === null || historyless)) {
             // A genuinely empty history gets the crafted tile, not the shared
             // element's bare "No commits yet" — consistent with every other view.
             this.renderEmpty();

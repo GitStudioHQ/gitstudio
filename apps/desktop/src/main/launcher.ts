@@ -167,17 +167,40 @@ function registryPath(env: NodeJS.ProcessEnv): Promise<string[]> {
   ]).then((values) => values.flatMap((v) => splitPathList(v === undefined ? undefined : expandWindowsVars(v, env), "win32")));
 }
 
+/** How long the login shell's / registry's answer is trusted: a CLI
+ *  installed into a new folder meanwhile is found within this, without
+ *  a restart. */
+export const FRESH_PATH_TTL_MS = 5 * 60_000;
+
+/**
+ * `ask`, at most once in `ttlMs` — but an empty answer is never kept: a
+ * login shell that timed out on a cold start (nvm, oh-my-zsh) or a `reg`
+ * that failed said nothing about the machine, and keeping it reported
+ * every CLI on the shell's PATH "isn't installed" until a restart.
+ */
+export function keptForAWhile(ask: () => Promise<string[]>, ttlMs = FRESH_PATH_TTL_MS, now: () => number = Date.now): () => Promise<string[]> {
+  let kept: { at: number; dirs: Promise<string[]> } | undefined;
+  return () => {
+    if (kept && now() - kept.at < ttlMs) return kept.dirs;
+    const entry = { at: now(), dirs: ask().catch((): string[] => []) };
+    kept = entry;
+    void entry.dirs.then((dirs) => {
+      if (dirs.length === 0 && kept === entry) kept = undefined;
+    });
+    return entry.dirs;
+  };
+}
+
 function realMachine(): LauncherMachine {
   const platform = process.platform;
   const env = process.env;
-  let fresh: Promise<string[]> | undefined;
   return {
     platform,
     env,
     home: homedir(),
     isFile,
     readText,
-    freshPath: () => (fresh ??= platform === "win32" ? registryPath(env) : loginShellPath(env, platform)),
+    freshPath: keptForAWhile(() => (platform === "win32" ? registryPath(env) : loginShellPath(env, platform))),
   };
 }
 
@@ -195,8 +218,8 @@ export function setLauncherMachine(m: LauncherMachine | undefined): void {
 /**
  * A lookup for command NAMES (`hx`) and paths (`~/bin/ed`) as a terminal
  * would resolve them: over this process's PATH and the installers' folders,
- * or — `fresh` — over the login shell's / registry's PATH as well (asked once,
- * so a caller tries without it first).
+ * or — `fresh` — over the login shell's / registry's PATH as well (asked at
+ * most once in a few minutes, so a caller tries without it first).
  */
 export async function programFinder(fresh = false): Promise<(name: string) => string | undefined> {
   const m = current();

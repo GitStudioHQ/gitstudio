@@ -193,15 +193,29 @@ export class WarmCliSession {
     // (below, on close).
     proc.stdin.on("error", () => {});
     proc.stdout.setEncoding("utf8");
-    proc.stdout.on("data", (d: string) => this.onStdout(d));
+    // A process this session let go of (Stop, then another message straight
+    // away) closes LATER — on Windows through an async taskkill — and then
+    // owns nothing: its last output, its error and its close must not reach
+    // the turn, or the process, that came after it.
+    const mine = () => this.proc === proc;
+    proc.stdout.on("data", (d: string) => {
+      if (mine()) this.onStdout(d);
+    });
     proc.stderr.on("data", () => {
       /* swallow logs; failures surface via close code */
     });
     proc.on("error", (err: NodeJS.ErrnoException) => {
+      if (!mine()) return;
       const e = cliStartError(err, "claude", install, this.opts.cwd);
       if (this.active && this.busy) this.settle(this.active.reject, e);
     });
     proc.on("close", () => {
+      if (!mine()) {
+        // Gone after it was let go of: the session has no process only
+        // when no other has been started, or is being started, since.
+        if (!this.proc && !this.busy) this.opts.onExit?.();
+        return;
+      }
       this.proc = undefined;
       if (this.active && this.busy) {
         // Process died mid-turn: resolve with whatever streamed (or fail).

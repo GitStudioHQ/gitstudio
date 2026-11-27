@@ -691,6 +691,7 @@ const CASES = [
   ["the-branch-picker-narrows-the-graph-and-all-restores-it", "graph"],
   // Crash report #97: an unborn HEAD under a remembered "Current branch".
   ["a-scope-that-walks-nothing-keeps-its-picker", "graph", { extra: "unborn=1&graphfilter=current" }],
+  ["a-fresh-repository-gets-the-tile-under-any-scope", "graph", { extra: "unborn=1&norefs=1&graphfilter=current" }],
   ["a-commit-the-filter-hides-says-so-and-offers-every-branch", "graph"],
   ["the-branch-picker-clears-the-dock", "graph~click:.dock-chevron", { height: 700 }],
   ["a-details-chip-opens-the-graphs-chip-menu", "graph"],

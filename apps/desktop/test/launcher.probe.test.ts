@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { probeShellPath, shellFlags } from "../src/main/launcher";
+import { keptForAWhile, probeShellPath, shellFlags } from "../src/main/launcher";
 
 const posixOnly = process.platform === "win32" && "a POSIX login shell is a macOS/Linux matter";
 const dir = mkdtempSync(join(tmpdir(), "gs-shell-probe-"));
@@ -76,4 +76,25 @@ test("a shell that hangs is given up on, and what its rc file started goes with 
 test("a csh-family shell gets the flags it accepts, and answers", { skip: posixOnly }, async () => {
   const sh = shell("tcsh", 'for a; do [ "$a" = "-l" ] && { echo "Unknown option: -l" >&2; exit 1; }; done\nsh -c "$s"');
   assert.deepEqual(await probeShellPath(sh, ENV, "darwin", 8_000), ["/gs-probe/bin", "/usr/bin", "/bin"]);
+});
+
+test("review #162: the login shell's PATH is asked again after an empty answer, and after a while", async () => {
+  const answers: string[][] = [[], ["/gs-probe/nvm/bin"], ["/gs-probe/new/bin"]];
+  let asked = 0;
+  let clock = 0;
+  const fresh = keptForAWhile(async () => answers[asked++] ?? [], 60_000, () => clock);
+  assert.deepEqual(await fresh(), [], "a cold shell that timed out says nothing");
+  assert.deepEqual(await fresh(), ["/gs-probe/nvm/bin"], "so the next lookup asks again");
+  assert.deepEqual(await fresh(), ["/gs-probe/nvm/bin"], "an answer is kept");
+  assert.equal(asked, 2);
+  clock += 60_000;
+  assert.deepEqual(await fresh(), ["/gs-probe/new/bin"], "for a while, not for good");
+  // a lookup that throws is an empty answer, not a rejected one, and not kept
+  let threw = 0;
+  const failing = keptForAWhile(async () => {
+    if (threw++ === 0) throw new Error("reg failed");
+    return ["C:\\gs-probe"];
+  });
+  assert.deepEqual(await failing(), []);
+  assert.deepEqual(await failing(), ["C:\\gs-probe"]);
 });
