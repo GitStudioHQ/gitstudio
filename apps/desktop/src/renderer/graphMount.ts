@@ -121,10 +121,21 @@ export class GraphMount {
           this.element.totalColumns = message.totalColumns;
           this.element.hasMore = message.hasMore;
           applyGraphInitRefs(this.element, message);
-          if (message.rows.length === 0 && !message.hasMore) {
+          if (message.rows.length === 0 && !message.hasMore && message.refFilter === null) {
             // A genuinely empty history gets the crafted tile, not the shared
             // element's bare "No commits yet" — consistent with every other view.
             this.renderEmpty();
+            cb.onEmpty?.(true);
+          } else if (message.rows.length === 0 && !message.hasMore) {
+            // Empty under a SCOPE — "Current branch" on a branch with no
+            // commits yet (an orphan, or an init + fetch), whose repository
+            // has history on other branches (crash report #97). The tile
+            // replaced the whole graph, the "Show branches" picker with it,
+            // and every reload walks the same remembered scope, so the other
+            // branches could not be reached from here at all. The element's
+            // own empty state keeps its header, and the picker in it.
+            if (this.element.parentNode !== this.container) this.container.replaceChildren(this.element);
+            this.element.status = "empty";
             cb.onEmpty?.(true);
           } else {
             this.element.status = message.rows.length === 0 ? "empty" : "ready";

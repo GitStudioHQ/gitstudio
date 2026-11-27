@@ -93,7 +93,7 @@ test("normalizeRefFilter survives garbage storage and duplicates", () => {
   assert.equal(normalizeRefFilter("refs/heads/main", REFS), null);
 });
 
-test("chipRefsUnderFilter keeps only the refs the graph was walked from — the current branch included", () => {
+test("chipRefsUnderFilter keeps only the BRANCHES the graph was walked from — the current branch included", () => {
   // An attached HEAD is no longer walked unless it is ticked (a preset or by
   // hand), so it no longer keeps a chip unless it is: a "main" chip over a
   // graph of origin/x said main was in a filter that did not name it.
@@ -107,12 +107,50 @@ test("chipRefsUnderFilter keeps only the refs the graph was walked from — the 
     ["ccc", [tag]],
   ]);
   const out = chipRefsUnderFilter(bySha, ["refs/heads/feature/x"]);
-  assert.deepEqual([...out.keys()], ["bbb"], "a row with nothing left has no entry at all — main's included");
+  assert.deepEqual([...out.keys()], ["bbb", "ccc"], "a row with nothing left has no entry at all — main's included");
   assert.deepEqual(out.get("bbb"), [feat]);
   const withMain = chipRefsUnderFilter(bySha, ["refs/heads/main", "refs/tags/v1"]);
   assert.deepEqual(withMain.get("aaa"), [main], "ticked, it keeps its chip; origin/main beside it does not");
   assert.deepEqual(withMain.get("ccc"), [tag]);
-  assert.equal(chipRefsUnderFilter(bySha, []).size, 0, "a walk of HEAD alone (detached) draws no branch chip");
+  assert.deepEqual([...chipRefsUnderFilter(bySha, []).keys()], ["ccc"], "a walk of HEAD alone (detached) draws no branch chip");
+});
+
+test("chipRefsUnderFilter keeps every tag, ticked or not — the filter picks the history, tags decorate it (#159)", () => {
+  // Every preset ticks branches only: "Current branch", "Current + upstream"
+  // and "Local only" kept no tag at all, so a release tag on a commit right
+  // there on main vanished as the scope narrowed and came back under All.
+  const main = ref("head", "main", { isCurrent: true });
+  const upstream = ref("remote", "origin/main");
+  const v17 = ref("tag", "v1.7.0");
+  const v16 = ref("tag", "v1.6.0");
+  const bySha = new Map([
+    ["tip", [main, upstream]],
+    ["r17", [v17]],
+    ["r16", [v16]],
+  ]);
+  for (const walked of [
+    ["refs/heads/main"], // Current branch
+    ["refs/heads/main", "refs/remotes/origin/main"], // Current + upstream
+    ["refs/heads/main", "refs/heads/feature/x"], // Local only
+    [], // Current branch on a detached HEAD: HEAD alone
+  ]) {
+    const out = chipRefsUnderFilter(bySha, walked);
+    assert.deepEqual(out.get("r17"), [v17], walked.join(" ") || "HEAD alone");
+    assert.deepEqual(out.get("r16"), [v16], walked.join(" ") || "HEAD alone");
+  }
+  assert.deepEqual(chipRefsUnderFilter(bySha, ["refs/heads/main"]).get("tip"), [main], "the branches still follow it");
+});
+
+test("chipRefsUnderFilter tells a tag from a branch of the same name by kind, not by name", () => {
+  // A branch and a tag both called "release" on one commit: the tag stays
+  // whatever is ticked; the branch only when refs/heads/release is.
+  const branch = ref("head", "heads/release", { fullName: "refs/heads/release" });
+  const tag = ref("tag", "tags/release", { fullName: "refs/tags/release" });
+  const bySha = new Map([["rel", [branch, tag]]]);
+  assert.deepEqual(chipRefsUnderFilter(bySha, ["refs/heads/main"]).get("rel"), [tag]);
+  assert.deepEqual(chipRefsUnderFilter(bySha, ["refs/heads/release"]).get("rel"), [branch, tag]);
+  // Ticking the TAG does not keep the branch that shares its short name.
+  assert.deepEqual(chipRefsUnderFilter(bySha, ["refs/tags/release"]).get("rel"), [tag]);
 });
 
 // ── Presets that follow HEAD (found on the released 1.13.0) ─────────────────

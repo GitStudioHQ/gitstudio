@@ -118,7 +118,21 @@ export class LogProvider {
           return;
         }
       } else {
-        args.push("--branches", "--tags", "--remotes", "HEAD");
+        // `--ignore-missing` is for HEAD, the one revision here that can name
+        // nothing: an UNBORN branch — a fresh `git init`, `git switch
+        // --orphan`, or an init + fetch that never checked anything out. git
+        // refuses the whole log over it ("ambiguous argument 'HEAD'"), so a
+        // repository whose other branches had all their history showed an
+        // error instead (crash report #97). Ignored, an unborn HEAD walks
+        // nothing, as it should, and the branches, tags and remotes walk as
+        // ever; with none of those either, the walk is empty — not a fallback
+        // to HEAD, which is what git does only when NO revision is named. It
+        // also covers the refs the pseudo-options expand to: a branch or tag
+        // pointing at an object the repository no longer has is skipped
+        // instead of failing the whole walk ("fatal: bad object"), so one
+        // corrupt ref no longer blanks the graph. It must come before HEAD:
+        // git applies it to the revisions after it.
+        args.push("--ignore-missing", "--branches", "--tags", "--remotes", "HEAD");
       }
     } else {
       args.push(revRange);

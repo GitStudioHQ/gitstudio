@@ -14,8 +14,9 @@ import { removeTempRepo } from "./tmpRepo";
 // The Commit Graph's branch filter (issue #30) on the desktop host. graph:load
 // is a stateful, skip-paged accumulator; a filter change has to reset it, be
 // remembered per repository, prune refs that are gone, and re-decorate the
-// chips so only the ticked refs draw one. An attached HEAD is a branch like
-// any other: walked, and chipped, only when ticked (a preset or by hand).
+// chips so only the ticked BRANCHES draw one (a tag on a drawn commit always
+// does, #159). An attached HEAD is a branch like any other: walked, and
+// chipped, only when ticked (a preset or by hand).
 
 let repo: string;
 let ctx: GitContext;
@@ -131,7 +132,7 @@ test("a remembered selection that is entirely gone falls back to All, and says s
   assert.ok(shasOf(page).includes(sideTip), "…and every branch is walked");
 });
 
-test("chips follow the filter: unticked refs draw none — the current branch included", async () => {
+test("branch chips follow the filter: unticked branches draw none — the current one included (tags: graphLoadScopes.test.ts)", async () => {
   const all = await bridge.graphLoad({ skip: 0, maxCount: 50 });
   const chipsAt = (p: typeof all, sha: string) => p.rows.find((r) => r.sha === sha)?.refs.map((r) => r.name) ?? [];
   assert.deepEqual(chipsAt(all, sideTip), ["side"]);
