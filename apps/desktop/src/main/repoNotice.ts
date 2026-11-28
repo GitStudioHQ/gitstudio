@@ -188,12 +188,26 @@ export function missingFolderMessage(root: string): string {
   return l10n.t("The folder {0} is not there any more — it was moved or deleted.", root);
 }
 
+/**
+ * The program Node's own spawn error names — `spawn <file> <code>`, the WHOLE
+ * message (an Error's string form may lead with "Error: ") — or undefined when
+ * the message is anything else. A message that merely CONTAINS those words is
+ * someone else's: a commit hook printing "✖ lint-staged failed: Error: spawn
+ * git ENOENT" was rewritten to "git was not found on your PATH.", and the
+ * hook's own output was lost.
+ */
+function spawnFailureFile(message: unknown, codes: RegExp): string | undefined {
+  if (typeof message !== "string") return undefined;
+  const m = /^(?:Error: )?spawn (.+) ([A-Z]+)$/.exec(message.trim());
+  return m && codes.test(m[2]) && !m[1].includes("\n") ? m[1] : undefined;
+}
+
 /** Node's error for a child it could not start: `spawn <git> ENOENT`. */
 function isSpawnEnoent(err: unknown): boolean {
   const e = err as { code?: unknown; syscall?: unknown; message?: unknown } | undefined;
   if (!e || typeof e !== "object") return false;
-  if (e.code === "ENOENT" && String(e.syscall ?? "").startsWith("spawn")) return true;
-  return typeof e.message === "string" && /\bspawn\b\S*.*\bENOENT\b/.test(e.message);
+  if (typeof e.code === "string") return e.code === "ENOENT" && String(e.syscall ?? "").startsWith("spawn");
+  return spawnFailureFile(e.message, /^ENOENT$/) !== undefined;
 }
 
 /**
@@ -216,12 +230,68 @@ export function missingFolderError(
   return new ExpectedError(missingFolderMessage(root));
 }
 
+/** Node's `spawn <x> ENOENT` where <x> is GIT — not an editor or another tool. */
+function isGitSpawnEnoent(err: unknown): boolean {
+  return isSpawnEnoent(err) && spawnedGit(err, /^ENOENT$/);
+}
+
+/** Was the program a spawn error names git (not an editor, a CLI, a shell)? */
+function spawnedGit(err: unknown, codes: RegExp): boolean {
+  const e = err as { path?: unknown; syscall?: unknown; message?: unknown };
+  const file =
+    typeof e.path === "string"
+      ? e.path
+      : typeof e.syscall === "string" && e.syscall.startsWith("spawn ")
+        ? e.syscall.slice("spawn ".length)
+        : (spawnFailureFile(e.message, codes) ?? "");
+  return /(?:^|[\\/])git(?:\.exe)?$/i.test(file);
+}
+
+/** What a git command says when git itself could not be found. */
+export function gitNotFoundMessage(): string {
+  return l10n.t("git was not found on your PATH.");
+}
+
+/**
+ * `spawn git ENOENT` with the repository's folder still there: git itself is
+ * not there — uninstalled, or off PATH, since the launch check (gitCheck.ts)
+ * found it. The user's machine, not a defect: report #90 filed it as a crash of
+ * graph:load, from a build before that check existed, and anything reached
+ * after it would have been filed the same way. A folder that is gone is
+ * missingFolderError's, and an editor or a CLI that is not there is its
+ * caller's to say.
+ */
+export function gitMissingError(
+  err: unknown,
+  root: string | undefined,
+  exists: (path: string) => boolean = existsSync,
+): ExpectedError | undefined {
+  if (!isGitSpawnEnoent(err) || (root && !exists(root))) return undefined;
+  return new ExpectedError(gitNotFoundMessage());
+}
+
+/** The same, for a handler that RETURNS its failure (see missingFolderResult). */
+export function gitMissingResult<T>(
+  result: T,
+  root: string | undefined,
+  exists: (path: string) => boolean = existsSync,
+): T | undefined {
+  if (!result || typeof result !== "object") return undefined;
+  const r = result as { ok?: unknown; message?: unknown };
+  if (r.ok !== false || typeof r.message !== "string") return undefined;
+  return gitMissingError({ message: r.message }, root, exists) ? { ...result, message: gitNotFoundMessage(), expected: true } : undefined;
+}
+
 /** Node's error for a child it was not allowed to start: `spawn <git> EACCES`. */
 function isSpawnDenied(err: unknown): boolean {
   const e = err as { code?: unknown; syscall?: unknown; message?: unknown } | undefined;
   if (!e || typeof e !== "object") return false;
-  if (DENIED.has(String(e.code)) && String(e.syscall ?? "").startsWith("spawn")) return true;
-  return typeof e.message === "string" && /\bspawn\b\S*.*\b(?:EACCES|EPERM)\b/.test(e.message);
+  // …and only GIT's: an editor or a CLI the account may not run is its
+  // caller's to say, never "Git couldn't be started".
+  if (typeof e.code === "string") {
+    return DENIED.has(e.code) && String(e.syscall ?? "").startsWith("spawn") && spawnedGit(err, /^(?:EACCES|EPERM)$/);
+  }
+  return spawnFailureFile(e.message, /^(?:EACCES|EPERM)$/) !== undefined && spawnedGit(err, /^(?:EACCES|EPERM)$/);
 }
 
 /** A repository's folder this account may not enter. */

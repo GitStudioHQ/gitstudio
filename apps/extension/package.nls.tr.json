@@ -1,5 +1,8 @@
 {
   "capabilities.virtualWorkspaces.description": "GitStudio diskte yerel bir git deposu gerektirir.",
+  "color.gitstudio.changedLines.addedBackground.description": "gitstudio.staging.highlightChangedLines açıkken düzenleyici sekmelerinde eklenen satırların arka planı.",
+  "color.gitstudio.changedLines.modifiedBackground.description": "gitstudio.staging.highlightChangedLines açıkken düzenleyici sekmelerinde değiştirilen satırların arka planı.",
+  "color.gitstudio.changedLines.deletedBackground.description": "gitstudio.staging.highlightChangedLines açıkken düzenleyici sekmelerinde silinen satırları işaretleyen etiketin arka planı.",
   "command.gitstudio.abortRebase.title": "Yeniden Temellendirmeyi İptal Et",
   "command.gitstudio.addRemote.title": "Uzak Konum Ekle…",
   "command.gitstudio.ai.clearApiKey.title": "Anthropic API Anahtarını Temizle",
@@ -209,6 +212,7 @@
   "config.gitstudio.staging.hoverActions.description": "İşaretçi değişmiş bir satırda durduğunda Hazırla ve Hazırlıktan Çıkar bağlantılarını gösterir; düzenleyicide ve bir diff’in değişen tarafında. Seçim varken bağlantılar seçili satırlara uygulanır. Klavyeden: Show or Focus Hover, ardından Tab ile bir bağlantıya gidin.",
   "config.gitstudio.staging.codeLens.description": "Düzenleyicide her değişikliğin üstünde Hazırla ve Hazırlıktan Çıkar bağlantılarını gösterir. Bir diff düzenleyicisi bunları yalnızca VS Code’un Diff Editor: Code Lens ayarı açıkken gösterir.",
   "config.gitstudio.staging.showGutterState.description": "Hangi değişikliklerin hazırlandığını düzenleyici kenar boşluğunda gösterir. İşaret yalnızca durumu bildirir: VS Code hiçbir uzantının kenar boşluğu simgesini tıklanabilir yapmasına veya üzerinde ipucu göstermesine izin vermez. Bir değişikliği hazırlamak veya hazırlıktan çıkarmak için işaretçiyi satırlarında bekletin, işarete veya satır numarasına sağ tıklayın ya da tuş bağını kullanın.",
+  "config.gitstudio.staging.highlightChangedLines.markdownDescription": "Sıradan düzenleyici sekmelerinde her değişikliğin tüm satırını vurgular: eklenen ve değiştirilen satırlara arka plan rengi verilir, satırların silindiği yere bir etiket konur. Son işlemeden bu yana yapılan her değişiklik vurgulanır, hazırlanmış olsun ya da olmasın; hangisinin hazırlandığını kenar şeridindeki işaret gösterir. Değişiklikleri kendisi renklendiren fark düzenleyicileri ve son işlemeden bu yana yeni olan dosyalar olduğu gibi bırakılır. Renkleri `#workbench.colorCustomizations#` içinde değiştirin: `gitstudio.changedLines.addedBackground`, `gitstudio.changedLines.modifiedBackground` ve `gitstudio.changedLines.deletedBackground`.",
   "config.gitstudio.statusBar.showGraph.description": "İşleme Grafiğini açan bir durum çubuğu düğmesi göster.",
   "config.gitstudio.statusBar.showTerminal.description": "Etkin deponun köküyle açılmış bir terminal açan bir durum çubuğu düğmesi göster — bu çalışma alanı kökü olmak zorunda değildir.",
   "config.gitstudio.worktrees.prefixWithProjectName.description": "Artık kullanılmıyor: Yeni Çalışma Alanı şimdi ana çalışma alanının yanında '<project>-<branch>' klasörünü önerir ve oluşturulmadan önce düzenleyebilirsiniz.",

@@ -5,9 +5,11 @@
 //
 // `claude` is a scripted FakeChild (aiBridge.fakes.ts), never the real CLI.
 
-import { FakeChild, configureNextChild, onNextSpawn, resetSpawns, spawned, until } from "./aiBridge.fakes";
+import { FAKE_ROOT, FakeChild, configureNextChild, fakeMachine, onNextSpawn, resetSpawns, spawned, until, useMachine } from "./aiBridge.fakes";
 import { test, beforeEach, mock } from "node:test";
 import assert from "node:assert/strict";
+import { CLI_SPECS } from "../src/main/cliProvider";
+import { isExpectedError } from "../src/main/expectedError";
 import { WarmCliSession } from "../src/main/warmCliSession";
 
 beforeEach(() => resetSpawns());
@@ -151,7 +153,8 @@ test("an already-aborted signal cancels the turn immediately", async () => {
   ctrl.abort();
   const s = new WarmCliSession({ cwd: undefined });
   await assert.rejects(s.send("q", { onDelta: () => {}, signal: ctrl.signal }), /Session cancelled\./);
-  assert.equal(spawned[0].killed, true);
+  assert.equal(spawned.length, 0, "nothing is started for a turn already cancelled");
+  assert.equal(s.warm, false);
 });
 
 test("after a restart the first spawn resumes the persisted session id", async () => {
@@ -212,6 +215,68 @@ test("a missing `claude` says it isn't installed", async () => {
   }
 });
 
+test("a `claude` that is nowhere says so with how to install it, starts nothing, and is not a crash", async () => {
+  // Crash report "Ai chatSend": this sentence, without the install hint the
+  // one-shot provider gives, filed as a crash for a user's setup.
+  useMachine(fakeMachine({ isFile: () => false }));
+  const s = new WarmCliSession({ cwd: undefined });
+  await assert.rejects(s.send("q", { onDelta: () => {} }), (e: Error) => {
+    assert.match(e.message, /The `claude` CLI isn't installed or not on PATH\./);
+    assert.ok(e.message.includes(CLI_SPECS["claude-code"].install), "with how to install it");
+    assert.ok(isExpectedError(e));
+    return true;
+  });
+  assert.equal(spawned.length, 0);
+  // Not left busy: the next message is tried again (and fails the same way).
+  await assert.rejects(s.send("again", { onDelta: () => {} }), /isn't installed/);
+});
+
+test("a session disposed while `claude` is still being looked for leaves no process behind", async () => {
+  const dir = `${FAKE_ROOT}/late/bin`;
+  let answer!: (dirs: string[]) => void;
+  useMachine(
+    fakeMachine({
+      isFile: (p) => p === `${dir}/claude`,
+      freshPath: () => new Promise<string[]>((r) => (answer = r)),
+    }),
+  );
+  const s = new WarmCliSession({ cwd: undefined });
+  const turn = s.send("q", { onDelta: () => {} });
+  await until(() => answer !== undefined, "the login shell to be asked");
+  s.dispose();
+  answer([dir]);
+  await assert.rejects(turn, (e: Error) => {
+    assert.match(e.message, /Session cancelled\./);
+    assert.ok(isExpectedError(e), "the session going away is never a crash");
+    return true;
+  });
+  assert.equal(spawned.length, 0, "nothing was started after the dispose");
+  assert.equal(s.warm, false);
+});
+
+test("Windows: disposing a warm session ends claude's whole process tree", async () => {
+  const exe = "C:\\gs-fake-machine\\home\\.local\\bin\\claude.exe";
+  const trees: number[] = [];
+  useMachine(
+    fakeMachine({
+      platform: "win32",
+      env: { Path: "C:\\Windows", PATHEXT: ".EXE;.CMD" },
+      home: "C:\\gs-fake-machine\\home",
+      isFile: (p) => p.toLowerCase() === exe.toLowerCase(),
+      stopTree: (pid) => {
+        trees.push(pid);
+        void spawned.find((c) => c.pid === pid)?.exit(1);
+      },
+    }),
+  );
+  onNextSpawn(answering(() => ["hi"]));
+  const s = new WarmCliSession({ cwd: undefined });
+  assert.equal(await s.send("q", { onDelta: () => {} }), "hi");
+  assert.equal((spawned[0].options as { windowsHide?: boolean }).windowsHide, true, "no console window to close by accident");
+  s.dispose();
+  assert.deepEqual(trees, [spawned[0].pid]);
+});
+
 test("any other start failure surfaces as itself", async () => {
   onNextSpawn((c) => c.fail("EACCES", "permission denied"));
   const s = new WarmCliSession({ cwd: undefined });
@@ -264,4 +329,43 @@ test("disposing an idle session is safe and repeatable", () => {
   s.dispose();
   assert.equal(s.warm, false);
   assert.equal(s.id, undefined);
+});
+
+test("review #162: a cancelled process that closes late does not end the turn sent after it", async () => {
+  // The first `claude` takes its time to go (on Windows a taskkill is async);
+  // the second answers only once the first has closed.
+  let firstClosed: () => void = () => {};
+  const closedFirst = new Promise<void>((r) => (firstClosed = r));
+  onNextSpawn(() => {}); // never answers: the user presses Stop
+  configureNextChild((c) => {
+    c.kill = (signal = "SIGTERM") => {
+      c.killed = true;
+      c.killSignal = signal;
+      setTimeout(() => void c.exit(null, signal).then(firstClosed), 30);
+      return true;
+    };
+  });
+  onNextSpawn((c) => {
+    c.json({ type: "system", subtype: "init", session_id: "sess-2" });
+    c.onStdinLine(() => void closedFirst.then(() => {
+      c.json(delta("after the stop"));
+      c.json({ type: "result", result: "x", session_id: "sess-2" });
+    }));
+  });
+  let exits = 0;
+  const s = new WarmCliSession({ cwd: undefined, onExit: () => exits++ });
+  try {
+    const stop = new AbortController();
+    const first = s.send("slow", { onDelta: () => {}, signal: stop.signal });
+    await until(() => spawned.length === 1 && spawned[0].stdinLines.length === 1, "the first message went out");
+    stop.abort();
+    await assert.rejects(first, /Session cancelled\./);
+    const second = await s.send("again", { onDelta: () => {} });
+    assert.equal(second, "after the stop", "the answer to the message after Stop arrives");
+    assert.equal(spawned.length, 2);
+    assert.equal(s.warm, true, "and its process is still the session's");
+    assert.equal(exits, 0, "the late close of the first did not report the session gone");
+  } finally {
+    s.dispose();
+  }
 });

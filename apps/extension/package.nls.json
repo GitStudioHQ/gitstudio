@@ -1,5 +1,8 @@
 {
   "capabilities.virtualWorkspaces.description": "GitStudio requires a local git repository on disk.",
+  "color.gitstudio.changedLines.addedBackground.description": "Background of added lines in editor tabs while gitstudio.staging.highlightChangedLines is on.",
+  "color.gitstudio.changedLines.modifiedBackground.description": "Background of modified lines in editor tabs while gitstudio.staging.highlightChangedLines is on.",
+  "color.gitstudio.changedLines.deletedBackground.description": "Background of the label that marks deleted lines in editor tabs while gitstudio.staging.highlightChangedLines is on.",
   "command.gitstudio.abortRebase.title": "Abort Rebase",
   "command.gitstudio.addRemote.title": "Add Remote…",
   "command.gitstudio.ai.clearApiKey.title": "Clear Anthropic API Key",
@@ -209,6 +212,7 @@
   "config.gitstudio.staging.hoverActions.description": "Show Stage and Unstage links when the pointer rests on a changed line, in the editor and on the changed side of a diff. With a selection, the links stage or unstage the selected lines. From the keyboard: Show or Focus Hover, then Tab to a link.",
   "config.gitstudio.staging.codeLens.description": "Show Stage and Unstage links above every change in the editor. A diff editor shows them only while VS Code's Diff Editor: Code Lens setting is on.",
   "config.gitstudio.staging.showGutterState.description": "Show which changes are staged in the editor gutter. The mark reports state only: VS Code lets no extension make a gutter icon clickable or show a tooltip on it. To stage or unstage a change, rest the pointer on its lines, right-click the mark or its line number, or use the keybinding.",
+  "config.gitstudio.staging.highlightChangedLines.markdownDescription": "Paint the whole line of every change in ordinary editor tabs: a background on added and modified lines, and a label where lines were deleted. Every change since the last commit is painted, staged or not; the gutter mark says which. Diff editors, which color changes themselves, and files that are new since the last commit are left as they are. Change the colors in `#workbench.colorCustomizations#`: `gitstudio.changedLines.addedBackground`, `gitstudio.changedLines.modifiedBackground` and `gitstudio.changedLines.deletedBackground`.",
   "config.gitstudio.statusBar.showGraph.description": "Show a status-bar button that opens the Commit Graph.",
   "config.gitstudio.statusBar.showTerminal.description": "Show a status-bar button that opens a terminal already in the active repository's root — which is not necessarily the workspace root.",
   "config.gitstudio.worktrees.prefixWithProjectName.description": "No longer used: New Worktree now suggests the folder '<project>-<branch>' beside the main worktree, and you can edit it before it is created.",

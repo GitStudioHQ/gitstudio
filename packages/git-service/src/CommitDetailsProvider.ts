@@ -70,6 +70,9 @@ export class CommitDetailsProvider {
     }
     const r = await this.process.run(
       [
+        // `-m` would otherwise take the user's log.diffMerges (combinedChanges.ts).
+        "-c",
+        "log.diffMerges=first-parent",
         "log",
         "--no-walk=unsorted",
         "--ignore-missing",

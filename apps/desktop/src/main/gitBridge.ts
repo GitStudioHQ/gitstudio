@@ -25,6 +25,7 @@ import { selectionTakes, type LineRange } from "@gitstudio/engine/staging/applyL
 import { computeChangeBlocks } from "@gitstudio/engine/staging/blockStaging";
 import { toOriginalSelection } from "@gitstudio/engine/staging/selectionStaging";
 import { buildWireRows, wireRefs } from "@gitstudio/host-bridge/graphWire";
+import { combinedChanges } from "@gitstudio/git-service/combinedChanges";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
 import { restoreStash, stashStack, type StashPlace } from "@gitstudio/git-service/stashRestore";
@@ -115,7 +116,7 @@ import {
   refListSignature,
   sameRefFilter,
 } from "@gitstudio/host-bridge/graphRefFilter";
-import type { CommitFileChange } from "@gitstudio/host-bridge/git";
+import type { CombinedChanges, CommitFileChange } from "@gitstudio/host-bridge/git";
 import type { RepoStore } from "./repoStore";
 import { planBranchReset, resetBranchToUpstream, undoBranchReset } from "./branchReset";
 
@@ -563,9 +564,10 @@ export class GitBridge {
     const allRows = buildWireRows({
       rows: layout.rows,
       records: g.records,
-      // Chips follow the filter: a ref the graph is not walked from draws no
-      // chip — the current branch included, unless it is ticked.
-      // commit:details keeps reading the full map — it describes the commit.
+      // Branch chips follow the filter: a branch the graph is not walked from
+      // draws no chip — the current one included, unless it is ticked. A tag
+      // on a drawn commit always does (#159). commit:details keeps reading
+      // the full map — it describes the commit.
       refsBySha: chipRefsUnderFilter(g.refsBySha, g.walk.refs),
     });
 
@@ -626,10 +628,11 @@ export class GitBridge {
     const page: GraphInputCommit[] = [];
     if (!g.currentHeadSha && !g.refsListed) {
       // Nothing to walk: no ref, and HEAD names no commit — a freshly `git
-      // init`ed repository. The walk passes a literal HEAD, which git refuses
-      // there ("ambiguous argument 'HEAD'"), and that rejection painted
-      // "Couldn't load history" + Retry over a repository that simply has no
-      // commits yet. An empty page is what draws its "No commits yet" tile.
+      // init`ed repository. An empty page is what draws its "No commits yet"
+      // tile, without spawning a walk that can only come back empty. An
+      // unborn HEAD WITH refs beside it (an orphan branch, an init + fetch) is
+      // walked: the walk skips a HEAD that names nothing (LogProvider,
+      // crash report #97) and shows the branches that do.
       return page;
     }
     for await (const commit of ctx.log.streamCommits({
@@ -1903,6 +1906,17 @@ export class GitBridge {
     return { commits, files, ahead, behind, commitsTruncated: ahead > commits.length };
   }
 
+  /**
+   * The files several selected commits changed, as one change (#161): the
+   * "N commits selected" summary's Files list. Its rows open through
+   * compareFileDiff, two-dot, between the revisions each one names.
+   */
+  async commitsFiles(req: { shas: string[] }): Promise<CombinedChanges> {
+    const ctx = this.ctx();
+    if (!ctx) return { kind: "pieces", files: [] };
+    return combinedChanges(ctx.process, selectedCommits(req?.shas));
+  }
+
   async compareFileDiff(req: {
     base: string;
     head: string;
@@ -2573,9 +2587,14 @@ export class GitBridge {
       const remote =
         names.find((n) => n === "origin") ?? (names.length === 1 ? names[0] : undefined);
       if (!remote) {
+        // The repository's state, said in the app's own words — so `expected`,
+        // never git's stderr. Returned as stderr it was filed as a crash of
+        // "Push branch" (report #87), and in every language the sentence is
+        // translated into (#102): no classifier can match our own words.
         return {
           ok: false,
-          stderr:
+          expected: true,
+          message:
             names.length === 0
               ? l10n.t("No remote is configured, so '{0}' can't be published.", name)
               : l10n.t("Several remotes are configured — publish '{0}' from the branch's Set upstream… action.", name),
@@ -3295,6 +3314,22 @@ export class GitBridge {
           if (conflicts) {
             return { ok: false, changed: !!note, expected: true, message: conflicts, ...withNote };
           }
+          // Paused, not failed: the pick or revert stopped to ask the user,
+          // with nothing unmerged — most often a commit already on this
+          // branch ("The previous cherry-pick is now empty…"), which filed a
+          // crash report on every press (report #94). Read from git's own
+          // state, never its words: the door refuses these over any stop that
+          // is not a rebase's, so a stopped pick here is the one this ran.
+          // staged() matched the sentence, and this path never went through it.
+          if (op && (op.kind === "cherry-pick" || op.kind === "revert") && (await stoppedIn(ctx.process))?.operation === op.kind) {
+            return {
+              ok: false,
+              changed: true,
+              expected: true,
+              message: stderr || stdout || l10n.t("The operation failed."),
+              ...withNote,
+            };
+          }
           return {
             ok: false,
             changed: false,
@@ -3882,9 +3917,11 @@ export class GitBridge {
         const names = (await ctx.remotes.list()).map((r) => r.name);
         remote = names.find((n) => n === "origin") ?? (names.length === 1 ? names[0] : undefined);
         if (!remote) {
+          // The repository's state, in our words: `expected` (see branchPush).
           return {
             ok: false,
-            stderr:
+            expected: true,
+            message:
               names.length === 0
                 ? l10n.t("No remote is configured, so '{0}' can't be pushed.", req.name)
                 : l10n.t("Several remotes are configured — name the one to push '{0}' to.", req.name),

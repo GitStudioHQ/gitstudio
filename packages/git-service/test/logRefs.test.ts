@@ -217,10 +217,11 @@ test("no refs list is the unfiltered walk, exactly as before the filter existed"
   const { args, input } = lastLog();
   assert.deepEqual(
     args.slice(args.findIndex((a) => a.startsWith("--pretty=")) + 1),
-    ["--branches", "--tags", "--remotes", "HEAD"],
+    // --ignore-missing for an unborn HEAD (crash report #97, unbornHead.test.ts),
+    // and before HEAD, or git would not apply it there.
+    ["--ignore-missing", "--branches", "--tags", "--remotes", "HEAD"],
     "the --all expansion, HEAD on argv, nothing else",
   );
-  assert.ok(!args.includes("--ignore-missing"));
   assert.ok(!args.includes("--stdin"));
   assert.equal(input, undefined, "and nothing on stdin");
   for (const c of [mainTip, sideTip, tagged]) assert.ok(all.includes(c), c);

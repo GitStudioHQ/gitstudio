@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, readlinkSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { GitProcess, GitRunOptions } from "./GitProcess";
+import { attachGitFailure } from "@gitstudio/host-bridge/reportShape";
 import {
   branchShort,
   checkedOutAt,
@@ -1419,7 +1420,13 @@ export class SnapshotProvider {
   private async run(args: string[], opts?: GitRunOptions): Promise<string> {
     const result = await this.process.run(args, opts);
     if (result.code !== 0) {
-      throw new Error(l10n.t("git {0} failed: {1}", args.join(" "), result.stderr.trim()));
+      // The facts ride along for a crash report (reportShape.ts): this
+      // message is translated, and names what the command was given.
+      throw attachGitFailure(new Error(l10n.t("git {0} failed: {1}", args.join(" "), result.stderr.trim())), {
+        args: [...args],
+        exitCode: result.code,
+        stderr: result.stderr,
+      });
     }
     return result.stdout;
   }

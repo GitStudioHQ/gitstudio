@@ -7,6 +7,7 @@ import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { touches } from "../git/repoChange";
 import { notice, notifyCopied } from "../ui/notify";
 import { relativeTime } from "../util/relativeTime";
+import { setContext } from "../util/setContext";
 import { commitWebUrlIn } from "../util/remoteUrl";
 import { blameChangeSides, openSidesDiff, toRevisionUri } from "../history/revisionContentProvider";
 import * as l10n from "@vscode/l10n";
@@ -104,11 +105,7 @@ export class BlameController implements vscode.Disposable {
     this.annotateAll = context.globalState.get<boolean>(BlameController.ANNOTATE_KEY, false);
     // Always publish the key — the annotation submenu's `when` clause reads it,
     // and an explicit false is clearer than relying on undefined being falsy.
-    void vscode.commands.executeCommand(
-      "setContext",
-      "gitstudio.blameAnnotated",
-      this.annotateAll,
-    );
+    void setContext("gitstudio.blameAnnotated", this.annotateAll);
     if (this.annotateAll) {
       const active = vscode.window.activeTextEditor;
       if (active) {
@@ -378,11 +375,7 @@ export class BlameController implements vscode.Disposable {
   private async toggleFileBlame(): Promise<void> {
     this.annotateAll = !this.annotateAll;
     await this.context.globalState.update(BlameController.ANNOTATE_KEY, this.annotateAll);
-    await vscode.commands.executeCommand(
-      "setContext",
-      "gitstudio.blameAnnotated",
-      this.annotateAll,
-    );
+    await setContext("gitstudio.blameAnnotated", this.annotateAll);
 
     if (!this.annotateAll) {
       this.clearAllAnnotations();
@@ -558,8 +551,8 @@ export class BlameController implements vscode.Disposable {
    */
   private async syncMenuContexts(): Promise<void> {
     const opts = gutterOptions();
-    const set = (key: string, value: unknown): Thenable<unknown> =>
-      vscode.commands.executeCommand("setContext", key, value);
+    // setContext never rejects: a window closing cancels the call (report #100).
+    const set = (key: string, value: unknown): Promise<void> => setContext(key, value);
     await Promise.all([
       ...GUTTER_FIELDS.map((f) => set(`gitstudio.blame.f.${f}`, opts.fields.includes(f))),
       set("gitstudio.blame.c", opts.colors),

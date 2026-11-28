@@ -121,6 +121,7 @@ const CASES = [
   ["whitespace-toggle-agrees-across-diff-views", "changes~text:spacing.ts", { extra: "ws=1" }],
   ["settings-sets-where-comparisons-start", "changes~text:spacing.ts", { extra: "ws=1" }],
   ["a-changed-file-opens-in-your-editor", "graph", { extra: "stack=1" }],
+  ["the-open-diffs-file-is-lit", "graph", { extra: "stack=1" }],
   ["ignoring-whitespace-keeps-real-changes", "changes~text:prs.ts", { extra: "ws=1" }],
   ["ignoring-whitespace-stops-at-the-ends-of-a-line", "changes~text:spacing-inner.ts", { extra: "ws=1" }],
   ["compare-no-self-compare", "compare"],
@@ -688,6 +689,9 @@ const CASES = [
   ["switch-account-starts-the-new-sign-in", "settings"],
   ["the-graph-search-paints-before-it-travels", "graph"],
   ["the-branch-picker-narrows-the-graph-and-all-restores-it", "graph"],
+  // Crash report #97: an unborn HEAD under a remembered "Current branch".
+  ["a-scope-that-walks-nothing-keeps-its-picker", "graph", { extra: "unborn=1&graphfilter=current" }],
+  ["a-fresh-repository-gets-the-tile-under-any-scope", "graph", { extra: "unborn=1&norefs=1&graphfilter=current" }],
   ["a-commit-the-filter-hides-says-so-and-offers-every-branch", "graph"],
   ["the-branch-picker-clears-the-dock", "graph~click:.dock-chevron", { height: 700 }],
   ["a-details-chip-opens-the-graphs-chip-menu", "graph"],

@@ -9,12 +9,13 @@
 //
 // Real throwaway repository; fake fetch model; scripted FakeChild `claude`.
 
-import { onEverySpawn, onNextSpawn, resetSpawns, spawned, until, type FakeChild } from "./aiBridge.fakes";
+import { fakeMachine, onEverySpawn, onNextSpawn, resetSpawns, spawned, until, useMachine, type FakeChild } from "./aiBridge.fakes";
 import { test, beforeEach, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { summarizeArgs } from "../src/main/aiBridge";
+import { reportableResultMessage } from "../src/main/expectedError";
 import { cleanupAll, fakeModel, freshUserData, makeBridge, makeRepo, type FakeModel, type Sent } from "./aiBridge.harness";
 
 let model: FakeModel;
@@ -382,7 +383,118 @@ test("cancelling a Claude Code chat turn stops the process and reports the cance
   await until(() => spawned.length === 1 && spawned[0].stdinLines.length === 1, "the message to reach claude");
   bridge.cancel("cc");
   const r = await run;
-  assert.deepEqual(r, { requestId: "cc", ok: false, message: "Session cancelled." });
+  // The user's own Stop: said, and never filed as a crash.
+  assert.deepEqual(r, { requestId: "cc", ok: false, expected: true, message: "Session cancelled." });
+  assert.equal(spawned[0].killSignal, "SIGTERM");
+  bridge.dispose();
+});
+
+test("a Claude Code chat whose CLI is nowhere says how to install it, and is not filed as a crash", async () => {
+  const { bridge } = await setup("claude-code");
+  useMachine(fakeMachine({ isFile: () => false }));
+  const chat = (await bridge.chatNew())!;
+  const r = await bridge.chatSend({ chatId: chat.id, requestId: "m", goal: "hi", allowWrite: false, allowDestructive: false });
+  assert.equal(r.ok, false);
+  assert.match(r.message ?? "", /The `claude` CLI isn't installed or not on PATH\. Install Claude Code/);
+  assert.equal(r.expected, true);
+  assert.equal(reportableResultMessage(r), undefined);
+  assert.equal(spawned.length, 0);
+  bridge.dispose();
+});
+
+// ── chats over Codex and the Gemini CLI ──────────────────────────────────────
+
+test("a Codex chat runs codex — not claude — once per turn, with the conversation so far", async () => {
+  // Crash report "Ai chatSend": every CLI chat went to the warm Claude Code
+  // session, so a machine with only Codex answered "`claude` isn't installed".
+  const { bridge, sent } = await setup("codex");
+  let n = 0;
+  onEverySpawn((c) => {
+    c.out(`codex answer ${n++}`);
+    void c.exit(0);
+  });
+  const chat = (await bridge.chatNew())!;
+  try {
+    const r1 = await bridge.chatSend({ chatId: chat.id, requestId: "x1", goal: "first", allowWrite: false, allowDestructive: false });
+    assert.deepEqual(r1, { requestId: "x1", ok: true, text: "codex answer 0" });
+    assert.equal(spawned[0].command, "codex");
+    assert.equal(spawned[0].args[0], "exec");
+    assert.ok(spawned[0].options?.cwd && /gs-ai-repo-/.test(spawned[0].options.cwd), "runs in the repository");
+    assert.deepEqual(events(sent, "status").map((e) => e.text), ["Loading the agent"]);
+    assert.equal(sent.filter((s) => s.event === "ai:delta" && s.data.requestId === "x1").map((s) => s.data.delta).join(""), "codex answer 0");
+
+    const r2 = await bridge.chatSend({ chatId: chat.id, requestId: "x2", goal: "second", allowWrite: false, allowDestructive: false });
+    assert.equal(r2.text, "codex answer 1");
+    assert.equal(spawned.length, 2, "a fresh run per turn: Codex has no warm session");
+    assert.match(spawned[1].stdinText, /User: first\n\nAssistant: codex answer 0\n\nUser: second/, "the turns so far ride along, labelled");
+    assert.ok(spawned.every((c) => c.command !== "claude"));
+    const disk = JSON.parse(readFileSync(join(userData, "ai-sessions.json"), "utf8"));
+    const saved = disk.sessions.find((s: { id: string }) => s.id === chat.id);
+    assert.deepEqual(saved.turns.map((t: { text: string }) => t.text), ["first", "codex answer 0", "second", "codex answer 1"]);
+  } finally {
+    onEverySpawn(undefined);
+    bridge.dispose();
+  }
+});
+
+test("a long Codex chat keeps sending: the history it carries is bounded", async () => {
+  // Each turn used to carry every earlier one as ONE argument — 12k, 24k
+  // characters — until a turn could not be sent at all.
+  const { bridge } = await setup("codex");
+  onEverySpawn((c) => {
+    c.out("A".repeat(12_000));
+    void c.exit(0);
+  });
+  const chat = (await bridge.chatNew())!;
+  try {
+    for (let i = 0; i < 6; i++) {
+      const r = await bridge.chatSend({ chatId: chat.id, requestId: `l${i}`, goal: `question ${i}`, allowWrite: false, allowDestructive: false });
+      assert.equal(r.ok, true, `turn ${i}`);
+    }
+    const sizes = spawned.map((c) => c.stdinText.length);
+    assert.ok(sizes.every((n) => n < 26_000), `bounded: ${sizes.join(", ")}`);
+    assert.match(spawned.at(-1)!.stdinText, /left out[\s\S]*User: question 5$/, "the newest question is always there");
+    assert.ok(spawned.every((c) => c.args.every((a) => a.length < 100)), "and none of it in argv");
+  } finally {
+    onEverySpawn(undefined);
+    bridge.dispose();
+  }
+});
+
+test("a Claude Code chat whose session is disposed while `claude` is being found is not a crash", async () => {
+  const { bridge } = await setup("claude-code");
+  let answer!: (dirs: string[]) => void;
+  useMachine(fakeMachine({ isFile: (p) => p === "/gs-fake-machine/late/claude", freshPath: () => new Promise((r) => (answer = r)) }));
+  const chat = (await bridge.chatNew())!;
+  const run = bridge.chatSend({ chatId: chat.id, requestId: "d", goal: "hi", allowWrite: false, allowDestructive: false });
+  await until(() => answer !== undefined, "the lookup to start");
+  bridge.dispose();
+  answer(["/gs-fake-machine/late"]);
+  const r = await run;
+  assert.deepEqual(r, { requestId: "d", ok: false, expected: true, message: "Session cancelled." });
+  assert.equal(reportableResultMessage(r), undefined);
+  assert.equal(spawned.length, 0);
+});
+
+test("a Gemini CLI chat whose CLI is missing names gemini and how to install it", async () => {
+  const { bridge } = await setup("gemini-cli");
+  useMachine(fakeMachine({ isFile: () => false }));
+  const chat = (await bridge.chatNew())!;
+  const r = await bridge.chatSend({ chatId: chat.id, requestId: "g", goal: "hi", allowWrite: false, allowDestructive: false });
+  assert.equal(r.ok, false);
+  assert.match(r.message ?? "", /The `gemini` CLI isn't installed or not on PATH\. Install the Gemini CLI/);
+  assert.equal(r.expected, true);
+  bridge.dispose();
+});
+
+test("cancelling a Codex chat turn stops the process and says so, as the user's choice", async () => {
+  const { bridge } = await setup("codex");
+  onNextSpawn((c) => c.out("partial"));
+  const chat = (await bridge.chatNew())!;
+  const run = bridge.chatSend({ chatId: chat.id, requestId: "xc", goal: "long", allowWrite: false, allowDestructive: false });
+  await until(() => spawned.length === 1, "codex to start");
+  bridge.cancel("xc");
+  assert.deepEqual(await run, { requestId: "xc", ok: false, expected: true, message: "Session cancelled." });
   assert.equal(spawned[0].killSignal, "SIGTERM");
   bridge.dispose();
 });

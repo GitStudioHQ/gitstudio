@@ -20,7 +20,7 @@ import "./hermeticGit";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitBridge } from "../src/main/gitBridge";
@@ -196,7 +196,17 @@ interface Row {
 const rows: Row[] = [];
 after(() => {
   if (process.env.UNDO_AUDIT_OUT) writeFileSync(process.env.UNDO_AUDIT_OUT, JSON.stringify(rows, null, 2));
+  // Every cell's repositories: ~20 MB a run, left in the temp folder for good.
+  rmQuietly(scratch);
 });
+
+function rmQuietly(dir: string): void {
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+  } catch {
+    /* a Windows file still held open: the OS's temp cleanup gets it */
+  }
+}
 
 interface CellSpec {
   id: string;

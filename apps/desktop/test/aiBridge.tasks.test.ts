@@ -7,7 +7,9 @@
 // (aiBridge.harness.ts) and a local CLI a scripted FakeChild — no network, no
 // real `claude`.
 
-import { onNextSpawn, resetSpawns, spawned } from "./aiBridge.fakes";
+import { fakeMachine, onNextSpawn, resetSpawns, spawned, useMachine } from "./aiBridge.fakes";
+import { reportableResultMessage } from "../src/main/expectedError";
+import { CLI_SPECS } from "../src/main/cliProvider";
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
@@ -271,7 +273,7 @@ test("cancelling a task aborts the model request", async () => {
   bridge.cancel("r-cancel");
   const r = await pending;
   assert.equal(model.chats[0].signal?.aborted, true);
-  assert.deepEqual(r, { requestId: "r-cancel", ok: false, message: "Request cancelled." });
+  assert.deepEqual(r, { requestId: "r-cancel", ok: false, expected: true, message: "Request cancelled." }, "the user's own cancel is not a crash");
   bridge.cancel("r-cancel"); // a second cancel of a finished request is harmless
 });
 
@@ -289,7 +291,48 @@ test("a local CLI connection runs the task through the CLI, inside the open repo
   assert.equal(c.command, "claude");
   assert.ok(c.options?.cwd && /gs-ai-repo-/.test(c.options.cwd), "the repository is the CLI's working directory");
   assert.ok(c.args.includes("--model") && c.args[c.args.indexOf("--model") + 1] === "sonnet", "the mid tier");
-  assert.match(c.args.at(-1)!, /hello cli/);
+  assert.match(c.stdinText, /hello cli/, "the prompt goes on stdin");
   assert.deepEqual(sent.filter((s) => s.event === "ai:delta").map((s) => s.data.delta), ["cli says hi"]);
   assert.equal(model.all.length, 0, "no HTTP at all");
+});
+
+test("a task over a local CLI that isn't installed says how to install it, and is not filed as a crash", async () => {
+  const repo = makeRepo();
+  const { bridge } = await makeBridge(repo.root);
+  await bridge.addConnection("codex");
+  useMachine(fakeMachine({ isFile: () => false }));
+  const r = await bridge.runTask("r", "assist", { description: "hello" });
+  assert.equal(r.ok, false);
+  assert.match(r.message ?? "", /The `codex` CLI isn't installed or not on PATH/);
+  assert.ok(r.message?.includes(CLI_SPECS.codex.install));
+  assert.equal(r.expected, true);
+  assert.equal(reportableResultMessage(r), undefined, "the IPC wrapper does not report it");
+  assert.equal(spawned.length, 0);
+});
+
+test("a task whose CLI was found and then failed to start still reports", async () => {
+  const repo = makeRepo();
+  const { bridge } = await makeBridge(repo.root);
+  await bridge.addConnection("codex");
+  onNextSpawn((c) => c.fail("EACCES"));
+  const r = await bridge.runTask("r", "assist", { description: "hello" });
+  assert.equal(r.ok, false);
+  assert.equal(r.expected, undefined);
+  assert.equal(reportableResultMessage(r), "`codex` failed to start: EACCES");
+});
+
+test("cancelling a CLI task before it said anything is the user's choice, not an empty answer", async () => {
+  // Answered "The model returned nothing." without `expected`, so a Cancel
+  // was filed as a crash.
+  const repo = makeRepo();
+  const { bridge } = await makeBridge(repo.root);
+  await bridge.addConnection("codex");
+  onNextSpawn(() => {}); // never answers
+  const pending = bridge.runTask("c1", "assist", { description: "hello" });
+  await (await import("./aiBridge.fakes")).until(() => spawned.length === 1, "codex to start");
+  bridge.cancel("c1");
+  const r = await pending;
+  assert.deepEqual(r, { requestId: "c1", ok: false, expected: true, message: "Request cancelled." });
+  assert.equal(reportableResultMessage(r), undefined);
+  assert.equal(spawned[0].killSignal, "SIGTERM");
 });

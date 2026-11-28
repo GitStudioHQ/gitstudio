@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import * as os from "node:os";
-import { randomId, safeShort, scrub, scrubExtra, scrubGitMessage, redactCredentials } from "../src/scrub";
+import { clipForScrub, MAX_SCRUB_INPUT, randomId, safeShort, scrub, scrubExtra, scrubGitMessage, redactCredentials } from "../src/scrub";
 
 // The scrubber is the last line of defense before an anonymous crash report
 // leaves a user's machine, so every identifying shape it must catch is pinned
@@ -38,7 +38,7 @@ test("emails are redacted", () => {
   assert.equal(scrub("committer john.doe+work@example.co.uk failed"), "committer <email> failed");
 });
 
-test("https remote: credentials AND org/repo are stripped, host kept", () => {
+test("https remote: credentials AND org/repo are stripped, a public host kept", () => {
   const out = scrub(
     "fatal: unable to access https://alice:ghp_abcDEF123456@github.com/acme-corp/private-repo.git/",
   );
@@ -135,7 +135,10 @@ test("scrubGitMessage takes out the commit subject git prints when an operation 
     ["Could not apply 9f8e7d6c5b... Rename the secret project", "Could not apply 9f8e7d6c5b... <subject>"],
     ["error: could not revert 1a2b3c4... Revert \"Launch Acme pricing\"", "error: could not revert 1a2b3c4... <subject>"],
     // (The quoted hint goes too — every quoted span does, by the rule below.)
-    ["Patch failed at 0003 Wire the Acme billing webhook\nhint: Use 'git am --show-current-patch=diff'", "Patch failed at 0003 <subject>\nhint: Use '<ref>'"],
+    // git's own suggested command stays (gitsOwnWords); one naming a branch does not
+    ["Patch failed at 0003 Wire the Acme billing webhook\nhint: Use 'git am --show-current-patch=diff'", "Patch failed at 0003 <subject>\nhint: Use 'git am --show-current-patch=diff'"],
+    ["hint: use 'git push --set-upstream origin acme-billing'", "hint: use '<ref>'"],
+    ["hint: use \"git restore --staged <file>\"", "hint: use \"<ref>\""],
     // git am names every patch it applies, the one that failed included.
     [
       "Applying: Wire the Acme billing webhook\nerror: patch failed: src/billing.ts:12\nPatch failed at 0001 Wire the Acme billing webhook",
@@ -317,4 +320,454 @@ test("an ordinary command is left completely alone", () => {
   ]) {
     assert.equal(redactCredentials(cmd), cmd, `${cmd} was altered`);
   }
+});
+
+// ── host names ───────────────────────────────────────────────────────────────
+//
+// Report #105 carried a company's internal proxy name into the tracker: "Could
+// not resolve proxy: proxy.<office>.<company>.corp". A server's name says who
+// the user works for, so only a PUBLIC service's leaves the machine. (Every
+// name below is invented.)
+
+test("a server or proxy name that could name an employer becomes <host>", () => {
+  for (const [input, expected] of [
+    // #105's shape, through the git path
+    [
+      "fatal: unable to access 'https://git.acme.example/widgets.git/': Could not resolve proxy: proxy.emea.acme.corp",
+      "fatal: unable to access '<ref>': Could not resolve proxy: <host>",
+    ],
+    // git:// (#95, #96): a user@host is an email already; an address with a
+    // name after the colon keeps neither
+    [
+      "fatal: unable to look up someone@git.acme.example (port 9418) (Name or service not known)",
+      "fatal: unable to look up <email> (port 9418) (Name or service not known)",
+    ],
+    [
+      "fatal: unable to look up 192.0.2.7:Widgets (port 9418) (Name or service not known)",
+      "fatal: unable to look up <ip>:<path> (port 9418) (Name or service not known)",
+    ],
+    // ssh and curl, wherever they name the host
+    [
+      "ssh: connect to host git.acme.example port 22: Connection timed out",
+      "ssh: connect to host <host> port 22: Connection timed out",
+    ],
+    [
+      "ssh: Could not resolve hostname gitserver: nodename nor servname provided, or not known",
+      "ssh: Could not resolve hostname <host>: nodename nor servname provided, or not known",
+    ],
+    [
+      "fatal: unable to access '<ref>': Failed to connect to proxy.acme.example port 8080 after 21 ms: Couldn't connect to server",
+      "fatal: unable to access '<ref>': Failed to connect to <host> port 8080 after 21 ms: Couldn't connect to server",
+    ],
+    ["Connection closed by git.acme.example port 22", "Connection closed by <host> port 22"],
+  ] as const) {
+    const out = scrubGitMessage(input);
+    assert.equal(out, expected, JSON.stringify(input));
+    assert.doesNotMatch(out, /acme|emea|gitserver|Widgets/i);
+  }
+  for (const [input, expected] of [
+    // a URL's authority, in any network scheme — and ssh's user goes with it
+    ["fatal: unable to access https://git.acme.example/widgets.git/", "fatal: unable to access https://<host>/<path>"],
+    ["ssh://deploy@git.acme.example:2222/acme/widgets.git", "ssh://<host>:2222/<path>"],
+    ["git://git.acme.example/widgets.git", "git://<host>/<path>"],
+    // a single label, where an error names a host
+    ["Could not resolve host: gitserver", "Could not resolve host: <host>"],
+    ["getaddrinfo ENOTFOUND github.acme.example", "getaddrinfo ENOTFOUND <host>"],
+    // anything else shaped like a host under a common or private TLD
+    ["pushing to git.acme.example failed", "pushing to <host> failed"],
+    ["acme.corp refused the connection", "<host> refused the connection"],
+    // a subdomain of a public service is usually the organisation itself
+    ["https://acme.visualstudio.com/widgets/_git/widgets", "https://<host>/<path>"],
+    ["https://acme.ghe.com/acme/widgets", "https://<host>/<path>"],
+  ] as const) {
+    assert.equal(scrub(input), expected, JSON.stringify(input));
+  }
+});
+
+test("a public service's name stays, so a report still says which forge refused", () => {
+  for (const msg of [
+    "Could not resolve host: github.com",
+    "Failed to connect to gitlab.com port 443 after 21 ms: Couldn't connect to server",
+    "ssh: connect to host ssh.dev.azure.com port 22: Connection refused",
+    "fatal: unable to access https://gitee.com/<path>",
+  ]) {
+    assert.equal(scrub(msg), msg);
+  }
+  assert.equal(scrub("https://bitbucket.org/acme/widgets.git"), "https://bitbucket.org/<path>");
+});
+
+test("JavaScript names and stack frames are not host names", () => {
+  // Dotted like a host, but a host's last label is a TLD; and a frame's
+  // function names are left alone whatever they end in.
+  for (const msg of [
+    "TypeError: this.ctx.process.run is not a function",
+    "TypeError: e.repo.root is not a function\n    at s.init (~/<path>:1:2)\n    at e.exports.com (~/<path>:3:4)",
+    "Cannot find module 'vue.config.js'",
+    "git version 2.45.1.windows.1",
+  ]) {
+    assert.equal(scrub(msg), msg);
+  }
+});
+
+test("two users behind two proxies file the same report", () => {
+  // The collector groups by the scrubbed first line: the host must not split it.
+  const a = scrubGitMessage("fatal: unable to access 'https://git.acme.example/a.git/': Could not resolve proxy: proxy.acme.corp");
+  const b = scrubGitMessage("fatal: unable to access 'https://code.widgets.example/b.git/': Could not resolve proxy: gw.widgets.internal");
+  assert.equal(a, b);
+  for (const once of [a, scrub("ssh://deploy@git.acme.example:2222/x"), scrub("Could not resolve host: gitserver")]) {
+    assert.equal(scrub(once), once, "a fixed point");
+    assert.equal(scrubGitMessage(once), once, "a fixed point");
+  }
+});
+
+// ── push and fetch status lines ──────────────────────────────────────────────
+//
+// Report #104 arrived as "To https://github.com/<path> error: failed to push
+// some refs to '<ref>'": the line that said WHY was indented, so the file-list
+// rule ate it and the <path> collapse folded it into the URL.
+
+test("a refused push keeps the line that says why, without the names", () => {
+  for (const [input, expected] of [
+    [
+      "To https://github.com/acme/widget.git\n ! [rejected]        main -> main (stale info)\nerror: failed to push some refs to 'https://github.com/acme/widget.git'",
+      "! [rejected] <ref> -> <ref> (stale info)\nerror: failed to push some refs to '<ref>'",
+    ],
+    [
+      "To git.acme.example:acme/widget.git\n ! [remote rejected] feature/acme-billing -> feature/acme-billing (shallow update not allowed)\nerror: failed to push some refs to 'git.acme.example:acme/widget.git'",
+      "! [remote rejected] <ref> -> <ref> (shallow update not allowed)\nerror: failed to push some refs to '<ref>'",
+    ],
+    // a server's own words may name the branch: they go
+    [
+      " ! [remote rejected] acme-billing -> acme-billing (Not allowed to push to protected branch acme-billing)",
+      "! [remote rejected] <ref> -> <ref> (<reason>)",
+    ],
+    [" ! [remote rejected] acme-billing (deletion of the current branch prohibited)", "! [remote rejected] <ref> (deletion of the current branch prohibited)"],
+  ] as const) {
+    const out = scrubGitMessage(input);
+    assert.equal(out, expected, JSON.stringify(input));
+    assert.doesNotMatch(out, /acme|billing|widget/);
+    assert.equal(scrubGitMessage(out), out, "a fixed point");
+  }
+});
+
+test("what went right, and the remote's banner, leave the failure as the first line", () => {
+  // #107's shape: the fetch line and "From <remote>" said nothing about it.
+  assert.equal(
+    scrubGitMessage("From gitee.com:acme/widget\n * branch            main       -> FETCH_HEAD\nfatal: refusing to merge unrelated histories"),
+    "fatal: refusing to merge unrelated histories",
+  );
+  assert.equal(
+    scrubGitMessage(
+      "To https://github.com/acme/widget.git\n   1a2b3c4..5d6e7f8  main -> main\n = [up to date]      v1 -> v1\n ! [rejected]        v2 -> v2 (already exists)",
+    ),
+    "! [rejected] <ref> -> <ref> (already exists)",
+  );
+  // "To push …" is a sentence, not a banner.
+  assert.match(scrubGitMessage("To push the current branch and set the remote as upstream, use"), /^To push the current branch/);
+});
+
+// ── the review's probes (Nov 2026) ───────────────────────────────────────────
+//
+// A reviewer's corpus against the host rules above. Every name is invented.
+
+const HOSTS_ANY_SPELLING: Array<[string, string]> = [
+  // 1. a host with an underscore or a non-ASCII letter is redacted WHOLE
+  ["Could not resolve host: git_server.acme.corp", "Could not resolve host: <host>"],
+  ["Error: getaddrinfo ENOTFOUND llm_gateway.acme.ai", "Error: getaddrinfo ENOTFOUND <host>"],
+  ["Could not resolve host: bücher.acme.ai", "Could not resolve host: <host>"],
+  ["ssh: connect to host git_server port 22: Connection refused", "ssh: connect to host <host> port 22: Connection refused"],
+  ["push to bücher.acme.com failed", "push to <host> failed"],
+  // 2. mixed case is a host under a country's, a common or a private TLD
+  ["push to Git.AcmeCorp.com failed", "push to <host> failed"],
+  ["FS01.AcmeCorp.local is offline", "<host> is offline"],
+  ["GitLab.acme.com refused", "<host> refused"],
+  // 3. ssh's, OpenSSL's, GCM's, schannel's and curl's other wordings
+  ["Unable to negotiate with gitbox port 22: no matching host key type found.", "Unable to negotiate with <host> port 22: no matching host key type found."],
+  ["No ED25519 host key is known for gitbox.acme.ai and you have requested strict checking.", "No ED25519 host key is known for <host> and you have requested strict checking."],
+  ["Received disconnect from gitbox port 22:2: Too many authentication failures", "Received disconnect from <host> port 22:2: Too many authentication failures"],
+  ["Disconnected from user bob gitbox port 22", "Disconnected from user <user> <host> port 22"],
+  ["Timeout, server gitbox not responding.", "Timeout, server <host> not responding."],
+  ["Warning: Permanently added '[gitbox.acme.ai]:2222' (ED25519) to the list of known hosts.", "Warning: Permanently added '[<host>]:2222' (ED25519) to the list of known hosts."],
+  ["Host key for [gitbox]:2222 has changed and you have requested strict checking.", "Host key for [<host>]:2222 has changed and you have requested strict checking."],
+  ["The authenticity of host '[gitbox]:2222 ([10.1.2.3]:2222)' can't be established.", "The authenticity of host '[<host>]:2222 ([<ip>]:2222)' can't be established."],
+  ["fatal: unable to connect to gitbox:\ngitbox[0: 10.1.2.3]: errno=Connection refused", "fatal: unable to connect to <host>:\n<host>[0: <ip>]: errno=Connection refused"],
+  ["OpenSSL SSL_read: SSL_ERROR_SYSCALL, errno 0 in connection to gitbox:443", "OpenSSL SSL_read: SSL_ERROR_SYSCALL, errno 0 in connection to <host>:443"],
+  ["fatal: An error occurred while sending the request. No such host is known. (gitbox.acme.ai:443)", "fatal: An error occurred while sending the request. No such host is known. (<host>:443)"],
+  ["schannel: CertGetNameString() failed to match connection hostname (gitbox) against server certificate names", "schannel: CertGetNameString() failed to match connection hostname (<host>) against server certificate names"],
+  ["SSL: certificate subject name (gitbox.acme.ai) does not match target host name 'gitbox'", "SSL: certificate subject name (<host>) does not match target host name '<host>'"],
+  ["fatal: 无法查找 gitbox（端口 9418）（未知的名称或服务）", "fatal: 无法查找 <host>（端口 9418）（未知的名称或服务）"],
+  ["fatal: Konnte gitbox nicht nachschlagen (Port 9418) (Name or service not known)", "fatal: Konnte <host> nicht nachschlagen (Port 9418) (Name or service not known)"],
+  ["Ollama at llm-box:11434 is unreachable", "Ollama at <host>:11434 is unreachable"],
+  ["using proxy gitproxy:3128", "using proxy <host>:3128"],
+  // …and the TLDs that are words or extensions, with two dots or a hyphen
+  ...["ai", "me", "us", "in", "it", "pl", "at", "be", "no", "sh", "gg", "ly", "systems", "company", "office", "vpn"].map(
+    (tld): [string, string] => [`push to git.acme.${tld} failed`, "push to <host> failed"],
+  ),
+  ["Could not connect: acme-nas.local", "Could not connect: <host>"],
+  // 6. a remote with no user in front of it keeps neither its host nor its path
+  ["To git.acme.example:team/widgets.git", "To <host>:<path>"],
+  ["fatal: 'github-acme:acme-corp/widgets.git' does not appear to be a git repository", "fatal: '<host>:<path>' does not appear to be a git repository"],
+  ["Error: git fetch failed: github-acme:acme-corp/widgets.git", "Error: git fetch failed: <host>:<path>"],
+  ["bob@gitbox: Permission denied (publickey).", "<email>: Permission denied (publickey)."],
+  ["bob@gitbox:team/repo.git", "<email>:<path>"],
+  ["gitlab.acme.example/acme/widgets", "<host>/<path>"],
+  ["github.com/acme/widgets", "github.com/<path>"],
+  ["smb://fileserver.acme.example/share", "smb://<host>/<path>"],
+  ["file://fileserver/share/repo.git", "file://<host>/<path>"],
+];
+
+test("review: a host is redacted whatever it is spelled with, and wherever an error names it", () => {
+  for (const [input, expected] of HOSTS_ANY_SPELLING) {
+    assert.equal(scrub(input), expected, JSON.stringify(input));
+    assert.doesNotMatch(scrub(input), /acme|gitbox|git_server|llm|bücher|gitproxy|fileserver|bob\b/i, input);
+  }
+});
+
+test("review: what only looks like a host is left alone", () => {
+  for (const msg of [
+    // 4. JavaScript names, and macOS app bundles
+    "TypeError: logger.info is not a function",
+    "TypeError: pattern.test is not a function",
+    "TypeError: this.local is undefined",
+    "TypeError: electron.app is undefined",
+    "TypeError: process.env.HOME is undefined",
+    "TypeError: e.int is not a function",
+    // …and where only the place it stands says so: a member chain ending in
+    // what is also a TLD, before "is undefined" or a call.
+    "TypeError: config.env.dev is undefined",
+    "TypeError: Cannot read properties of null (reading 'x') at client.api.io(1)",
+    "Error: Cannot open Cursor.app",
+    "Error: Unable to find Visual Studio Code.app",
+    "Error: spawn /Applications/Cursor.app/Contents/Resources/app/bin/cursor ENOENT",
+    "x.y.z(1)",
+    // not remotes: a refspec, a scheme, a drive, a port
+    "    at Module._compile (node:internal/modules/cjs/loader:1)",
+    "listening on localhost:8080",
+    "README.md and index.d.ts",
+  ]) {
+    assert.equal(scrub(msg), msg);
+  }
+});
+
+test("review: forges' own words name no account, organization or file", () => {
+  for (const [input, expected] of [
+    // 9.
+    ["remote: Permission to acme-org/widgets.git denied to bob-smith.", "remote: Permission to <path> denied to <user>."],
+    ["ERROR: The `acme-org' organization has enabled or enforced SAML SSO.", "ERROR: The `<org>' organization has enabled or enforced SAML SSO."],
+    [
+      "remote: error: File acme-q3-report.zip is 120.00 MB; this exceeds GitHub's file size limit of 100.00 MB",
+      "remote: error: File <file> is 120.00 MB; this exceeds GitHub's file size limit of 100.00 MB",
+    ],
+    ["fatal: not a git repository: D:/Work/AcmeCorp/widgets", "fatal: not a git repository: <path>"],
+    ["fatal: '//fileserver/share/repo' does not appear to be a git repository", "fatal: '<path>' does not appear to be a git repository"],
+    ["fatal: cannot chdir to /Volumes/AcmeShare/widgets", "fatal: cannot chdir to <path>"],
+    ["fatal: cannot chdir to /mnt/d/acme/widgets", "fatal: cannot chdir to <path>"],
+    ["fatal: cannot chdir to /srv/git/acme.git", "fatal: cannot chdir to <path>"],
+    ["file:///Volumes/AcmeShare/repo.git", "file://<path>"],
+    [
+      "'<path>' is owned by:\n\tBUILTIN/Administrators (S-1-5-32-544)\nbut the current user is:\n\tACMECORP/bob.smith (S-1-5-21-1111-2222-3333-1001)",
+      "'<path>' is owned by:\n\t<user> (S-1-5-32-544)\nbut the current user is:\n\t<user> (<sid>)",
+    ],
+  ] as const) {
+    assert.equal(scrub(input), expected, JSON.stringify(input));
+  }
+});
+
+test("review: a status line keeps git's words only", () => {
+  // 8. a ref named with parentheses, a reason with its own, a hook's own summary
+  assert.equal(
+    scrubGitMessage(" ! [rejected]        feat(x) -> feat(x) (fetch first)"),
+    "! [rejected] <ref> -> <ref> (fetch first)",
+  );
+  assert.equal(
+    scrubGitMessage(" ! [remote rejected] main -> main (n/a (unpacker error))"),
+    "! [remote rejected] <ref> -> <ref> (unpacker error)",
+  );
+  assert.equal(scrubGitMessage(" ! [ACME-123] main -> main (see the ticket)"), "! [<summary>] <ref> -> <ref> (<reason>)");
+});
+
+test("review: idempotence and the same report from every machine", () => {
+  // scrub∘scrub = scrub, scrubGitMessage∘scrubGitMessage = scrubGitMessage,
+  // and scrub∘scrubGitMessage = scrubGitMessage (the collector re-scrubs).
+  for (const [input] of HOSTS_ANY_SPELLING) {
+    const s1 = scrub(input);
+    const g1 = scrubGitMessage(input);
+    assert.equal(scrub(s1), s1, `scrub of ${JSON.stringify(input)}`);
+    assert.equal(scrubGitMessage(g1), g1, `scrubGitMessage of ${JSON.stringify(input)}`);
+    assert.equal(scrub(g1), g1, `scrub after scrubGitMessage of ${JSON.stringify(input)}`);
+  }
+  // Text a rule turns into a tag is never read as an address afterwards.
+  for (const s of ["https://<host>::8080", "/Users/<user>::1", "unable to look up <host>:// (fetch first)/Users/<user>"]) {
+    assert.equal(scrub(s), s);
+  }
+  assert.equal(
+    scrubGitMessage("Could not resolve host: git_server.acme.corp"),
+    scrubGitMessage("Could not resolve host: gw.widgets.internal"),
+  );
+});
+
+test("review: a huge message is clipped, and the worst shapes scrub in linear time", () => {
+  const rep = (s: string, n: number): string => s.repeat(Math.ceil(n / s.length)).slice(0, n);
+  // Each was quadratic in one of the rules (seconds at 64k).
+  const worst = ["a.", "a-", "ab.", "a1-b2.", "a:a/", "a@a", " '" + "a/", "(", "x.y.com ", "a_b.", "ü."].map((u) => rep(u, 64_000));
+  worst.push(" ! [rejected] main -> main " + rep("(", 64_000));
+  const t0 = performance.now();
+  for (const s of worst) {
+    assert.ok(scrub(s).length <= MAX_SCRUB_INPUT + 64);
+    scrubGitMessage(s);
+  }
+  const ms = performance.now() - t0;
+  assert.ok(ms < 2_000, `the worst shapes took ${ms.toFixed(0)} ms`);
+  // The clip cuts at a space when there is one, never through a token.
+  assert.equal(clipForScrub("aaaa bbbb cccc", 12), "aaaa bbbb");
+  assert.equal(clipForScrub("short", 12), "short");
+});
+
+// ── the resweep (Nov 2026) ───────────────────────────────────────────────────
+//
+// A second review's probes. Every name is invented.
+
+test("resweep: what the previous round broke stays fixed", () => {
+  for (const [input, expected] of [
+    // 1(a) an IPv6 literal with its port
+    ["Error: connect ECONNREFUSED ::1:11434", "Error: connect ECONNREFUSED <ip>:11434"],
+    ["Error: connect ECONNREFUSED fd00::1:8443", "Error: connect ECONNREFUSED <ip>:8443"],
+    ["SSL_ERROR_SYSCALL in connection to ::1:11434", "SSL_ERROR_SYSCALL in connection to <ip>:11434"],
+    // 1(b) nothing after the code
+    ["Error: connect ECONNREFUSED", "Error: connect ECONNREFUSED"],
+    ["Error: getaddrinfo ENOTFOUND", "Error: getaddrinfo ENOTFOUND"],
+    ["Error: getaddrinfo EAI_AGAIN", "Error: getaddrinfo EAI_AGAIN"],
+    // 1(c) a VS Code webview frame keeps its line and column
+    ["    at e (vscode-file://vscode-app/x/workbench.desktop.main.js:1:2)", "    at e (vscode-file://vscode-app/x/workbench.desktop.main.js:1:2)"],
+    // 1(f) file names and bundle ids with word-like extensions, the apps' own hosts
+    ["release-notes.md run-checks.sh libssl-3.so pre-commit.py Android-Studio.app", "release-notes.md run-checks.sh libssl-3.so pre-commit.py Android-Studio.app"],
+    ["bundle id com.jetbrains.intellij.ce not found", "bundle id com.jetbrains.intellij.ce not found"],
+    ...[
+      "release-assets.githubusercontent.com", "objects-origin.githubusercontent.com", "avatars.githubusercontent.com",
+      "www.gravatar.com", "gh.io", "support.github.com", "ollama.com",
+    ].map((h): [string, string] => [`Error: getaddrinfo ENOTFOUND ${h}`, `Error: getaddrinfo ENOTFOUND ${h}`]),
+  ] as const) {
+    assert.equal(scrub(input), expected, JSON.stringify(input));
+  }
+});
+
+test("resweep: scrub() knows full refs and git's made-up address", () => {
+  // 2. (The thrown-git-failure half of this case moved to reportShape.test.ts.)
+  // …and scrub() itself now knows full refs and git's made-up address.
+  assert.equal(scrub("error: refs/heads/acme-billing does not point to a valid object"), "error: <ref> does not point to a valid object");
+  assert.equal(scrub("fatal: unable to auto-detect email address (got 'bob@HAL9000.(none)')"), "fatal: unable to auto-detect email address (got '<email>')");
+  assert.equal(scrub("Committer: Bob <bob@HAL9000>"), "Committer: Bob <<email>>");
+});
+
+test("resweep: conflict and patch lines name no file or branch, and keep the conflict's kind", () => {
+  // 3.
+  for (const [input, expected] of [
+    ["CONFLICT (content): Merge conflict in acme-pricing.sql", "CONFLICT (content): Merge conflict in <path>"],
+    ["CONFLICT (content): Merge conflict in AcmeBilling", "CONFLICT (content): Merge conflict in <path>"],
+    [
+      "CONFLICT (modify/delete): acme-billing deleted in HEAD and modified in topic. Version topic of acme-billing left in tree.",
+      "CONFLICT (modify/delete): <path>",
+    ],
+    ["CONFLICT (rename/delete): Billing.csproj renamed to Acme.csproj in HEAD, but deleted in topic.", "CONFLICT (rename/delete): <path>"],
+    ["Auto-merging acme-pricing.sql", "Auto-merging <path>"],
+    ["error: unable to create file acme-pricing.sql: Permission denied", "error: unable to create file <path>: Permission denied"],
+    ["error: patch failed: acme-pricing.sql:12\nerror: acme-pricing.sql: patch does not apply", "error: patch failed: <path>:12\nerror: <path>: patch does not apply"],
+    ["error: acme-pricing.sql: does not exist in index", "error: <path>: does not exist in index"],
+  ] as const) {
+    const out = scrubGitMessage(input);
+    assert.equal(out, expected, JSON.stringify(input));
+    assert.equal(scrubGitMessage(out), out, "a fixed point");
+  }
+});
+
+test("resweep: an AI endpoint the user configured is never named", () => {
+  // 4. packages/ai's openaiCompat wordings, and the adjacent-lead-word shapes.
+  for (const [input, expected] of [
+    ["Couldn't reach llmbox:11434 (ECONNREFUSED) — is the endpoint reachable?", "Couldn't reach <host>:11434 (ECONNREFUSED) — is the endpoint reachable?"],
+    ["Couldn't reach llmbox (ENOTFOUND) — is the endpoint reachable?", "Couldn't reach <host> (ENOTFOUND) — is the endpoint reachable?"],
+    ["Couldn't reach GitHub (ENOTFOUND) — check your network.", "Couldn't reach GitHub (ENOTFOUND) — check your network."],
+    ["llmbox:1234 returned 404 — check the base URL and model id.", "<host>:1234 returned 404 — check the base URL and model id."],
+    ["llmbox:1234 rejected the API key (HTTP 401).", "<host>:1234 rejected the API key (HTTP 401)."],
+    ["llmbox request failed (HTTP 500).", "<host> request failed (HTTP 500)."],
+    ["acme.ai request failed (HTTP 502).", "<host> request failed (HTTP 502)."],
+    ["Stream from llmbox:1234 failed.", "Stream from <host>:1234 failed."],
+    ["Stream from acme.ai failed.", "Stream from <host> failed."],
+    ["an error (llmbox:11434)", "an error (<host>:11434)"],
+    ["Could not reach the server at llmbox:11434.", "Could not reach the server at <host>:11434."],
+    ["Connecting to host gitbox:22 via proxy gitproxy:3128", "Connecting to host <host>:22 via proxy <host>:3128"],
+    ["Couldn't reach zorg.home:1234 — is the endpoint reachable?", "Couldn't reach <host>:1234 — is the endpoint reachable?"],
+    ["Could not resolve host: hal9000.local", "Could not resolve host: <host>"],
+  ] as const) {
+    assert.equal(scrub(input), expected, JSON.stringify(input));
+  }
+  // …and a word before a number is not a host.
+  for (const msg of ["at line:12 col:5", "retry attempt:3 of 5", "localhost:8080", "12:30:45"]) {
+    assert.equal(scrub(msg), msg);
+  }
+});
+
+test("resweep: the cheap ones", () => {
+  // 6. a translated "could not apply", the quotes translations use, the
+  // owner's name with a space, a quoted path with a space
+  for (const [input, expected] of [
+    ["Fehler: Konnte 1a2b3c4... (Add Acme billing) nicht anwenden", "Fehler: Konnte 1a2b3c4... <subject>"],
+    ["error: 无法应用 1a2b3c4... Add Acme billing", "error: 无法应用 1a2b3c4... <subject>"],
+    ["fatal : une branche nommée « acme-billing » existe déjà", "fatal : une branche nommée «<ref>» existe déjà"],
+    ["fatal: ブランチ「acme-billing」は既に存在します", "fatal: ブランチ「<ref>」は既に存在します"],
+    ["fatal: 分支“acme-billing”已存在", "fatal: 分支“<ref>”已存在"],
+  ] as const) {
+    assert.equal(scrubGitMessage(input), expected, JSON.stringify(input));
+  }
+  assert.equal(
+    scrub("'<path>' is owned by:\n\tACME\\Bob Smith (S-1-5-21-1004336348-1177238915-682003330-1001)"),
+    "'<path>' is owned by:\n\t<user> (<sid>)",
+  );
+  assert.equal(scrub("fatal: cannot open '/Users/bob/Acme Billing'"), "fatal: cannot open '<path>'");
+});
+
+/** Does `f` grow linearly between n and 4n? A quadratic rule grows ~16x, a
+ *  linear one ~4x; the best of three runs keeps the timer's noise out, and
+ *  anything under 5 ms is too small to judge and passes. */
+function growsLinearly(f: (s: string) => unknown, make: (n: number) => string, n: number): boolean {
+  const best = (s: string): number => {
+    let t = Infinity;
+    for (let i = 0; i < 3; i++) {
+      const t0 = performance.now();
+      f(s);
+      t = Math.min(t, performance.now() - t0);
+    }
+    return t;
+  };
+  const small = best(make(n));
+  const large = best(make(4 * n));
+  return large < 5 || large / Math.max(small, 0.5) < 9;
+}
+
+test("resweep: the rules that were quadratic grow linearly", () => {
+  const rep = (u: string) => (n: number): string => u.repeat(Math.ceil(n / u.length)).slice(0, n);
+  // (scrub clips at 16k, so the growth is measured below it.)
+  for (const unit of ["./", " ", "<path>" + " ", "to a:1 ", "a.", "a@a", " '" + "a/"]) {
+    assert.ok(growsLinearly(scrubGitMessage, rep(unit), 3_000), `scrubGitMessage on ${JSON.stringify(unit)}`);
+    assert.ok(growsLinearly(scrub, rep(unit), 3_000), `scrub on ${JSON.stringify(unit)}`);
+  }
+});
+
+test("resweep: still linear — a run of blanks, and the classifier on unclipped text", async () => {
+  const rep = (u: string, n: number): string => u.repeat(Math.ceil(n / u.length)).slice(0, n);
+  const t0 = performance.now();
+  for (const s of ["<path>" + rep(" ", 64_000), rep(" ", 64_000), rep("./", 64_000), rep("to a:1 ", 64_000), rep("x:12 ", 64_000)]) {
+    scrub(s);
+    scrubGitMessage(s);
+  }
+  const ms = performance.now() - t0;
+  assert.ok(ms < 2_000, `took ${ms.toFixed(0)} ms`);
+});
+
+test("review #162: a file and its line after \"at\" or \"in\" is not a host and its port", () => {
+  assert.equal(scrub("failed at lib.ts:44"), "failed at lib.ts:44");
+  assert.equal(scrub("TypeError: x is not a function at main.js:12"), "TypeError: x is not a function at main.js:12");
+  assert.equal(scrub("error in index.d.ts:300"), "error in index.d.ts:300");
+  // hosts still are
+  assert.equal(scrub("Ollama at llm-box:11434 is unreachable"), "Ollama at <host>:11434 is unreachable");
+  assert.equal(scrub("Could not reach the server at llm.acme.ai:8080."), "Could not reach the server at <host>:8080.");
 });

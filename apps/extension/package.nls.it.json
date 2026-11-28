@@ -1,5 +1,8 @@
 {
   "capabilities.virtualWorkspaces.description": "GitStudio richiede un repository git locale su disco.",
+  "color.gitstudio.changedLines.addedBackground.description": "Sfondo delle righe aggiunte nelle schede dell’editor quando gitstudio.staging.highlightChangedLines è attivo.",
+  "color.gitstudio.changedLines.modifiedBackground.description": "Sfondo delle righe modificate nelle schede dell’editor quando gitstudio.staging.highlightChangedLines è attivo.",
+  "color.gitstudio.changedLines.deletedBackground.description": "Sfondo dell’etichetta che segnala le righe eliminate nelle schede dell’editor quando gitstudio.staging.highlightChangedLines è attivo.",
   "command.gitstudio.abortRebase.title": "Interrompi rebase",
   "command.gitstudio.addRemote.title": "Aggiungi remoto…",
   "command.gitstudio.ai.clearApiKey.title": "Cancella chiave API Anthropic",
@@ -209,6 +212,7 @@
   "config.gitstudio.staging.hoverActions.description": "Mostra i link per mettere in stage e togliere dallo stage quando il puntatore si ferma su una riga modificata, nell’editor e sul lato modificato di un diff. Con una selezione, i link agiscono sulle righe selezionate. Da tastiera: Show or Focus Hover, poi Tab fino a un link.",
   "config.gitstudio.staging.codeLens.description": "Mostra i link per mettere in stage e togliere dallo stage sopra ogni modifica nell’editor. Un editor diff li mostra solo se l’impostazione Diff Editor: Code Lens di VS Code è attiva.",
   "config.gitstudio.staging.showGutterState.description": "Mostra nel margine dell’editor quali modifiche sono in stage. Il segno riporta solo lo stato: VS Code non permette a nessuna estensione di rendere cliccabile un’icona del margine né di mostrarvi un suggerimento. Per mettere in stage o togliere dallo stage una modifica, ferma il puntatore sulle sue righe, fai clic destro sul segno o sul suo numero di riga, oppure usa la scorciatoia da tastiera.",
+  "config.gitstudio.staging.highlightChangedLines.markdownDescription": "Evidenzia l’intera riga di ogni modifica nelle normali schede dell’editor: uno sfondo sulle righe aggiunte e modificate, e un’etichetta dove sono state eliminate delle righe. Viene evidenziata ogni modifica dall’ultimo commit, in stage o no; il segno nel margine indica quali lo sono. Gli editor di diff, che colorano già le modifiche, e i file nuovi dall’ultimo commit restano come sono. Cambia i colori in `#workbench.colorCustomizations#`: `gitstudio.changedLines.addedBackground`, `gitstudio.changedLines.modifiedBackground` e `gitstudio.changedLines.deletedBackground`.",
   "config.gitstudio.statusBar.showGraph.description": "Mostra un pulsante nella barra di stato che apre il grafico dei commit.",
   "config.gitstudio.statusBar.showTerminal.description": "Mostra un pulsante nella barra di stato che apre un terminale già nella radice del repository attivo — che non è necessariamente la radice del workspace.",
   "config.gitstudio.worktrees.prefixWithProjectName.description": "Non più usato: Nuovo worktree ora suggerisce la cartella '<project>-<branch>' a fianco del worktree principale, e puoi modificarla prima che venga creata.",

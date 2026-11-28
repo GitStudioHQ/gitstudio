@@ -14,6 +14,7 @@ import {
 import type { API, Repository } from "./git";
 import { getBuiltInGitApi } from "./builtInGit";
 import { isSamePathOrInside } from "../util/repoScope";
+import { setContext } from "../util/setContext";
 
 // Coalesce bursts of git activity (a rebase touches many ref files in quick
 // succession) into a single refresh, while still feeling instant on a branch
@@ -627,18 +628,12 @@ export class RepoManager implements vscode.Disposable {
   }
 
   private updateHasRepoContext(): void {
-    void vscode.commands.executeCommand(
-      "setContext",
-      "gitstudio.hasRepo",
-      this.bindings.size > 0,
-    );
+    // setContext, never a bare executeCommand: a window reloading or closing
+    // cancels the call, and the rejection went unhandled (report #100).
+    void setContext("gitstudio.hasRepo", this.bindings.size > 0);
     // Gates Switch Repository… in the Command Palette: with one repository
     // there is nothing to switch to.
-    void vscode.commands.executeCommand(
-      "setContext",
-      "gitstudio.multiRepo",
-      this.bindings.size > 1,
-    );
+    void setContext("gitstudio.multiRepo", this.bindings.size > 1);
   }
 
   /**

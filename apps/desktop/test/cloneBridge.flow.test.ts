@@ -11,6 +11,7 @@ import type { GitHubClient } from "../src/main/githubClient";
 import type { CloneProgress } from "../src/shared/ipc";
 import { serveOwnSsh } from "../../../scripts/test/no-network-git.mjs";
 import { removeTempRepo } from "./tmpRepo";
+import { reportableResultMessage } from "../src/main/expectedError";
 
 // Clone, end to end against local repositories (a file:// URL, so git runs its
 // real transport and prints real progress), and the checks on what the user
@@ -151,6 +152,76 @@ test("a clone git refuses resolves with git's reason, not the tail of its advice
   assert.equal(res.ok, false);
   assert.match(res.message ?? "", /does not appear to be a git repository|Could not read from remote/);
   assert.doesNotMatch(res.message ?? "", /^fatal:/, "the severity prefix is the toast's to show, not the sentence's");
+});
+
+/** An ssh that answers every connection with `stderr` (and `stdout`) and exit `code`. */
+function sshSaying(stderr: string, code: number, stdout = ""): () => void {
+  const script = join(temp("fake-ssh"), "ssh.cjs");
+  writeFileSync(
+    script,
+    `process.stdout.write(${JSON.stringify(stdout)}); process.stderr.write(${JSON.stringify(stderr)}); process.exit(${code});`,
+  );
+  const fwd = (p: string): string => p.split("\\").join("/");
+  return serveOwnSsh(`"${fwd(process.execPath)}" "${fwd(script)}"`);
+}
+
+// What a clone is handed is what the user typed, so git's answer about it is
+// their situation: reports #86, #89 and #98 were each that, filed as crashes
+// of "Clone". (Addresses and names invented.)
+
+test("a clone ssh refused says ssh's reason, and is not filed", async () => {
+  const parent = temp("clonedest");
+  const undo = sshSaying("git@example.invalid: Permission denied (publickey).\n", 255);
+  try {
+    const res = await startClone({ url: "git@example.invalid:acme/widgets.git", parentDir: parent }, () => undefined);
+    assert.equal(res.ok, false);
+    // #86: the sheet said only git's closing "Could not read from remote
+    // repository.", the reason cut off.
+    assert.match(res.message ?? "", /Permission denied \(publickey\)/);
+    assert.match(res.message ?? "", /Could not read from remote repository/);
+    assert.equal(res.expected, true);
+    assert.equal(reportableResultMessage(res), undefined, "never filed");
+  } finally {
+    undo();
+  }
+});
+
+test("a clone of an address that is no repository is the user's, not a crash", async () => {
+  const parent = temp("clonedest");
+  // #89: the SERVER says it, over ssh — the remote's path is the user's text.
+  const undo = sshSaying("fatal: 'acme/widgets.git' does not appear to be a git repository\n", 128);
+  try {
+    const res = await startClone({ url: "git@example.invalid:acme/widgets.git", parentDir: parent }, () => undefined);
+    assert.equal(res.ok, false);
+    assert.match(res.message ?? "", /does not appear to be a git repository/);
+    assert.equal(res.expected, true);
+    assert.equal(reportableResultMessage(res), undefined);
+  } finally {
+    undo();
+  }
+  // #98: a local path that is not there. Git on Windows says it the way the
+  // server above does; elsewhere, that the path does not exist.
+  const nowhere = join(temp("clonesrc"), "no-such-folder");
+  const res = await startClone({ url: nowhere, parentDir: parent, name: "copy" }, () => undefined);
+  assert.equal(res.ok, false);
+  assert.match(res.message ?? "", /does not exist|does not appear to be a git repository/);
+  assert.equal(res.expected, true);
+  assert.equal(reportableResultMessage(res), undefined);
+});
+
+test("a clone that failed for a reason that is not the user's still reports", async () => {
+  const parent = temp("clonedest");
+  // A remote that answers garbage ("protocol error: bad line length
+  // character"): nothing about the address or the user.
+  const undo = sshSaying("", 0, "this is not the git protocol\n");
+  try {
+    const res = await startClone({ url: "git@example.invalid:acme/widgets.git", parentDir: parent }, () => undefined);
+    assert.equal(res.ok, false);
+    assert.equal(res.expected, undefined, res.message);
+    assert.ok(reportableResultMessage(res), "filed");
+  } finally {
+    undo();
+  }
 });
 
 test("with no git on PATH the clone says so in words, not ENOENT", async () => {

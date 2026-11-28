@@ -3,7 +3,9 @@ import * as os from "node:os";
 import * as https from "node:https";
 import * as http from "node:http";
 import { URL } from "node:url";
-import { randomId, safeShort, scrub, scrubExtra, scrubGitMessage } from "@gitstudio/host-bridge/scrub";
+import { randomId, safeShort, scrubExtra } from "@gitstudio/host-bridge/scrub";
+import { gitVerdict, isReportableThrown, thrownReport } from "@gitstudio/host-bridge/reportShape";
+import { userStateOutcome } from "@gitstudio/host-bridge/gitOutcomes";
 
 /**
  * Anonymous, PII-scrubbed crash reporting — so during the beta we hear about
@@ -19,11 +21,17 @@ import { randomId, safeShort, scrub, scrubExtra, scrubGitMessage } from "@gitstu
  *   3. A collector endpoint is set (`gitstudio.errorReporting.endpoint`, default
  *      https://gitstudio.dev/api/errors). Blank it to disable sending entirely.
  *
- * What it captures: the SHAPE of a failure only — a scrubbed error name/message/
- * stack, or the failed git operation + scrubbed stderr — tagged with a random,
- * rotatable install id (never identity), the extension/editor versions, and the
- * OS. Absolute paths, home dirs, emails, a remote URL's credentials and
- * org/repo (its HOST is kept), tokens, and full SHAs are stripped before
+ * What it captures: only what helps fix a failure (host-bridge's
+ * reportShape.ts) — for a thrown error its type, scrubbed message, call frames
+ * (function and file NAME, line and column; never a folder) and Node's error
+ * code; for a failed git command its subcommand and options (never its
+ * arguments), exit code and git's verdict lines (fatal:/error:, a rejected
+ * ref's reason), not the rest of its output — tagged with a random, rotatable
+ * install id (never identity), the extension/editor versions, and the OS. A
+ * failure that is the user's situation (their network, credentials, working
+ * tree) is not reported at all. Absolute paths, home dirs, emails, a remote URL's credentials and
+ * org/repo, every host name but a public service's (github.com stays, a
+ * company's server or proxy does not), tokens, and full SHAs are stripped before
  * anything leaves the machine; git messages also lose file and branch names
  * and commit subjects. Never repo contents. What is sent, and how to turn it
  * off, is apps/extension/PRIVACY.md.
@@ -77,6 +85,22 @@ export function isAttributable(reason: unknown, extPath: string): reason is Erro
   return frames.includes(extPath) || /gitstudio\.gitstudio|[/\\]gitstudio[/\\]/i.test(frames);
 }
 
+/**
+ * VS Code's own `Canceled`: a request the editor called off — the window
+ * reloading or closing, the extension host shutting down, a token cancelled.
+ * Report #100 was one, a `setContext` cancelled during startup on a WSL
+ * window: its stack ran through our code, and there was nothing in it to fix.
+ * Cancellation is not a failure, so it is never a crash report. Matched the
+ * way VS Code makes one (`name` and `message` both "Canceled"), plus the
+ * public class.
+ */
+export function isCancellation(reason: unknown): boolean {
+  if (!(reason instanceof Error)) return false;
+  const Cancellation = (vscode as { CancellationError?: new () => Error }).CancellationError;
+  if (typeof Cancellation === "function" && reason instanceof Cancellation) return true;
+  return reason.name === "Canceled" && reason.message === "Canceled";
+}
+
 export class ErrorReporter implements vscode.Disposable {
   /** The active instance, so scattered call sites can report without threading. */
   static current: ErrorReporter | undefined;
@@ -118,12 +142,12 @@ export class ErrorReporter implements vscode.Disposable {
     // ONLY errors whose stack points into GitStudio's own code, and never
     // suppress or alter them — other extensions' errors pass through untouched.
     this.onRejection = (reason) => {
-      if (isAttributable(reason, this.extPath)) {
+      if (isAttributable(reason, this.extPath) && !isCancellation(reason)) {
         this.captureError("unhandledRejection", reason);
       }
     };
     this.onException = (err) => {
-      if (isAttributable(err, this.extPath)) {
+      if (isAttributable(err, this.extPath) && !isCancellation(err)) {
         this.captureError("uncaughtException", err);
       }
     };
@@ -145,11 +169,20 @@ export class ErrorReporter implements vscode.Disposable {
   captureError(where: string, err: unknown, extra?: Record<string, string>): void {
     try {
       const e = err instanceof Error ? err : new Error(String(err));
+      // Not a defect: git's words about the user's remote, credentials or
+      // working tree, or a server that could not be reached (reportShape.ts).
+      if (!isReportableThrown(e)) return;
+      // Only what helps fix it: a failed git command as its subcommand,
+      // options, exit code and git's verdict lines; call frames without
+      // folders; Node's error code (thrownReport says why).
+      const r = thrownReport(e);
       this.send("error", {
         where: safeShort(where, 60),
-        name: safeShort(e.name || "Error", 60),
-        message: scrub(e.message || "").slice(0, 300),
-        stack: scrub(e.stack || "").slice(0, 1600),
+        name: r.name,
+        message: r.message,
+        stack: r.stack,
+        ...(r.code ? { code: r.code } : {}),
+        ...(r.syscall ? { syscall: r.syscall } : {}),
         ...scrubExtra(extra),
       });
     } catch {
@@ -161,14 +194,16 @@ export class ErrorReporter implements vscode.Disposable {
    *  is our own fixed English title (e.g. "git reset failed") — never user data. */
   captureGitError(label: string, stderr: string): void {
     try {
+      // The same rule the call sites apply, here too, so no caller can file
+      // the user's situation as a defect.
+      if (userStateOutcome(stderr || "")) return;
       this.send("git-error", {
         op: safeShort(label, 80),
-        // scrubGitMessage, not scrub: git stderr names FILES and BRANCHES, which
-        // PRIVACY.md promises never leave the machine. scrub() only covers
-        // absolute paths, emails, URLs, tokens and SHAs — all of which are
-        // repo-INdependent — so a repo-relative path or a quoted ref sailed
-        // straight through.
-        stderr: scrubGitMessage(stderr || "").slice(0, 600),
+        // git's verdict lines only — fatal:, error:, a rejected ref and its
+        // reason, ssh's refusal — scrubbed as git output, which takes out the
+        // file and branch names PRIVACY.md promises never leave the machine.
+        // Not its progress, hints, banners or file lists (gitVerdict).
+        stderr: gitVerdict(stderr || ""),
       });
     } catch {
       // Crash reporting must never itself crash the host.

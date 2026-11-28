@@ -1,5 +1,8 @@
 {
   "capabilities.virtualWorkspaces.description": "GitStudio는 디스크의 로컬 Git 리포지토리가 필요합니다.",
+  "color.gitstudio.changedLines.addedBackground.description": "gitstudio.staging.highlightChangedLines가 켜져 있을 때 편집기 탭에서 추가된 줄의 배경색입니다.",
+  "color.gitstudio.changedLines.modifiedBackground.description": "gitstudio.staging.highlightChangedLines가 켜져 있을 때 편집기 탭에서 수정된 줄의 배경색입니다.",
+  "color.gitstudio.changedLines.deletedBackground.description": "gitstudio.staging.highlightChangedLines가 켜져 있을 때 편집기 탭에서 삭제된 줄을 표시하는 레이블의 배경색입니다.",
   "command.gitstudio.abortRebase.title": "리베이스 중단",
   "command.gitstudio.addRemote.title": "원격 추가…",
   "command.gitstudio.ai.clearApiKey.title": "Anthropic API 키 지우기",
@@ -209,6 +212,7 @@
   "config.gitstudio.staging.hoverActions.description": "변경된 줄에 포인터를 올리면 스테이지에 추가 및 스테이징 해제 링크를 표시합니다. 편집기와 diff의 변경된 쪽 모두에서 작동합니다. 선택 영역이 있으면 링크가 선택한 줄에 적용됩니다. 키보드: Show or Focus Hover를 실행한 다음 Tab으로 링크로 이동합니다.",
   "config.gitstudio.staging.codeLens.description": "편집기의 모든 변경 내용 위에 스테이지에 추가 및 스테이징 해제 링크를 표시합니다. diff 편집기에서는 VS Code의 Diff Editor: Code Lens 설정이 켜져 있을 때만 표시됩니다.",
   "config.gitstudio.staging.showGutterState.description": "어떤 변경 내용이 스테이징되었는지 편집기 여백에 표시합니다. 표시는 상태만 알려 줍니다. VS Code는 확장이 여백 아이콘을 클릭 가능하게 하거나 도구 설명을 표시하도록 허용하지 않습니다. 변경 내용을 스테이지에 추가하거나 스테이징 해제하려면 해당 줄에 포인터를 올리거나, 표시나 줄 번호를 마우스 오른쪽 단추로 클릭하거나, 키 바인딩을 사용하세요.",
+  "config.gitstudio.staging.highlightChangedLines.markdownDescription": "일반 편집기 탭에서 변경된 줄 전체를 강조 표시합니다. 추가되거나 수정된 줄에는 배경색을 칠하고, 줄이 삭제된 곳에는 레이블을 표시합니다. 마지막 커밋 이후의 모든 변경 내용이 대상이며, 스테이징 여부와 관계없습니다. 스테이징 여부는 여백의 표시로 알 수 있습니다. 변경 내용을 직접 색으로 표시하는 diff 편집기와 마지막 커밋 이후 새로 만든 파일은 그대로 둡니다. 색은 `#workbench.colorCustomizations#`에서 `gitstudio.changedLines.addedBackground`, `gitstudio.changedLines.modifiedBackground`, `gitstudio.changedLines.deletedBackground`로 바꿀 수 있습니다.",
   "config.gitstudio.statusBar.showGraph.description": "커밋 그래프를 여는 상태 표시줄 버튼을 표시합니다.",
   "config.gitstudio.statusBar.showTerminal.description": "활성 리포지토리의 루트(작업 영역 루트와 다를 수 있음)에서 터미널을 여는 상태 표시줄 버튼을 표시합니다.",
   "config.gitstudio.worktrees.prefixWithProjectName.description": "더 이상 사용되지 않습니다: 새 작업 폴더는 이제 메인 작업 폴더 옆에 '<project>-<branch>' 폴더를 제안하며, 만들기 전에 편집할 수 있습니다.",

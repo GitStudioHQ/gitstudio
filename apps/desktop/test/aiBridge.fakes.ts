@@ -20,6 +20,7 @@ import { PassThrough } from "node:stream";
 import { join } from "node:path";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { setLauncherMachine, type LauncherMachine } from "../src/main/launcher";
 
 // ── electron ──────────────────────────────────────────────────────────────────
 
@@ -59,6 +60,8 @@ mod._resolveFilename = function (this: unknown, request: string, ...rest: unknow
 
 // ── child processes ──────────────────────────────────────────────────────────
 
+let nextPid = 41_000;
+
 /** A scripted stand-in for a spawned CLI process. */
 export class FakeChild extends EventEmitter {
   readonly stdin = new PassThrough();
@@ -69,18 +72,26 @@ export class FakeChild extends EventEmitter {
   exited = false;
   /** Every line the parent wrote to stdin. */
   readonly stdinLines: string[] = [];
+  /** Everything the parent wrote to stdin, as one text (a one-shot prompt). */
+  stdinText = "";
+  /** A process id, as a real child has one (taskkill is handed it on Windows). */
+  readonly pid = nextPid++;
   private stdinBuf = "";
   private readonly stdinListeners: ((line: string) => void)[] = [];
 
   constructor(
+    /** The program's name (`claude`), whatever path it was started by. */
     readonly command: string,
     readonly args: string[],
-    readonly options: { cwd?: string; stdio?: unknown } | undefined,
+    readonly options: { cwd?: string; stdio?: unknown; env?: NodeJS.ProcessEnv; windowsVerbatimArguments?: boolean } | undefined,
+    /** Exactly what spawn was handed: the path the CLI was found at. */
+    readonly file: string = command,
   ) {
     super();
     this.stdin.setEncoding("utf8");
     this.stdin.on("data", (d: string) => {
       this.stdinBuf += d;
+      this.stdinText += d;
       let nl: number;
       while ((nl = this.stdinBuf.indexOf("\n")) !== -1) {
         const line = this.stdinBuf.slice(0, nl);
@@ -153,6 +164,49 @@ export type SpawnScript = (child: FakeChild) => void;
 /** The CLIs that are never really run. */
 export const FAKE_COMMANDS = new Set(["claude", "codex", "gemini"]);
 
+// ── the machine the CLIs are looked for on ────────────────────────────────────
+//
+// The CLIs are FOUND before they are spawned (main/launcher.ts): this process's
+// PATH, the folders installers use, then the login shell's PATH. Against the
+// real machine that would read the developer's own PATH, run their shell, and
+// — on a machine with Claude Code installed — hand spawn a real
+// /Users/…/.local/bin/claude. So every AI test runs on this pretend machine
+// instead: the three CLIs live in FAKE_BIN and nothing else exists.
+
+/** Every path on the pretend machine starts here; spawn never runs one. */
+export const FAKE_ROOT = "/gs-fake-machine";
+export const FAKE_BIN = `${FAKE_ROOT}/bin`;
+
+/** A pretend machine where the CLIs are installed in FAKE_BIN (and `over` says the rest). */
+export function fakeMachine(over: Partial<LauncherMachine> = {}): LauncherMachine {
+  return {
+    platform: "linux",
+    env: { PATH: FAKE_BIN },
+    home: `${FAKE_ROOT}/home`,
+    isFile: (p) => p.startsWith(`${FAKE_BIN}/`) && FAKE_COMMANDS.has(p.slice(FAKE_BIN.length + 1)),
+    readText: () => undefined,
+    freshPath: async () => [],
+    ...over,
+  };
+}
+
+/** Run the next lookups on `m` (resetSpawns() goes back to fakeMachine()). */
+export function useMachine(m: LauncherMachine): void {
+  setLauncherMachine(m);
+}
+setLauncherMachine(fakeMachine());
+
+/** The program a spawn names, without its folder or Windows extension. */
+function programName(command: string): string {
+  return (command.split(/[\\/]/).pop() ?? command).replace(/\.(?:exe|cmd|bat)$/i, "");
+}
+
+/** Is this spawn one of ours to fake? A CLI by name or by any path to it, or
+ *  anything on the pretend machine (a Node a Windows launcher was read for). */
+function isFaked(command: string): boolean {
+  return FAKE_COMMANDS.has(programName(command)) || command.startsWith(FAKE_ROOT) || /^[A-Za-z]:\\gs-fake-machine/.test(command);
+}
+
 const cp = require("node:child_process") as typeof import("node:child_process");
 const realSpawn = cp.spawn;
 
@@ -185,10 +239,11 @@ export function resetSpawns(): void {
   fallbackScript = undefined;
   throwOnSpawn = undefined;
   configurers.length = 0;
+  setLauncherMachine(fakeMachine());
 }
 
 (cp as { spawn: unknown }).spawn = function fakeSpawn(command: string, args?: unknown, options?: unknown) {
-  if (!FAKE_COMMANDS.has(command)) {
+  if (!isFaked(command)) {
     return (realSpawn as (...a: unknown[]) => unknown)(command, args, options);
   }
   if (throwOnSpawn) {
@@ -196,7 +251,7 @@ export function resetSpawns(): void {
     throwOnSpawn = undefined;
     throw e;
   }
-  const child = new FakeChild(command, [...((args as string[]) ?? [])], options as FakeChild["options"]);
+  const child = new FakeChild(programName(command), [...((args as string[]) ?? [])], options as FakeChild["options"], command);
   spawned.push(child);
   configurers.shift()?.(child);
   const script = scripts.shift() ?? fallbackScript;

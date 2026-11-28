@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { constants as osConstants } from "node:os";
 import { auditSpawn } from "./spawnAudit";
 import * as l10n from "@vscode/l10n";
+import { attachGitFailure } from "@gitstudio/host-bridge/reportShape";
 
 export interface GitProcessOptions {
   cwd: string;
@@ -451,7 +452,12 @@ export class GitProcess {
       // truncated history as though it were the whole of it.
       exitCode = code ?? signalExitCode(killedBy);
       if (code === null) {
-        failure = new Error(l10n.t("git {0}: {1}", args.join(" "), signalMessage(killedBy)));
+        failure = attachGitFailure(new Error(l10n.t("git {0}: {1}", args.join(" "), signalMessage(killedBy))), {
+          args: [...args],
+          exitCode: null,
+          signal: killedBy ?? undefined,
+          stderr: Buffer.concat(stderr).toString("utf8"),
+        });
       }
       const tail = decoder.decode();
       if (tail) {
@@ -483,9 +489,12 @@ export class GitProcess {
       }
       if (exitCode !== null && exitCode !== 0) {
         const message = Buffer.concat(stderr).toString("utf8").trim();
-        throw new Error(
-          l10n.t("git {0} exited with code {1}", args.join(" "), exitCode) +
-            (message ? `: ${message}` : ""),
+        // The facts ride along for a crash report (reportShape.ts), which
+        // builds its text from them: this message is translated, and names
+        // every branch and path the command was given.
+        throw attachGitFailure(
+          new Error(l10n.t("git {0} exited with code {1}", args.join(" "), exitCode) + (message ? `: ${message}` : "")),
+          { args: [...args], exitCode, stderr: message },
         );
       }
     } finally {

@@ -196,20 +196,29 @@ test("a custom editor command is launched with the folder substituted for {path}
   assert.equal(readFileSync(marker, "utf8"), dir, "it was handed the repository folder");
 });
 
-test("a custom editor whose program is not there reports that it could not launch", async () => {
-  const prefs = { hidden: [], custom: [{ id: "c", name: "Ghost", command: join(dir, "no-such-editor-binary") }] };
+test("a custom editor whose program is not there says which, as the user's setup to fix", async () => {
+  // This used to be spawned anyway and filed as a crash ("Couldn't launch it:
+  // spawn <path> ENOENT", crash reports "Editors open"): the path is what the
+  // user typed in Settings, and the fix is theirs to make — so it is said in
+  // words, as an expected condition, and nothing is started.
+  const ghost = join(dir, "no-such-editor-binary");
+  const prefs = { hidden: [], custom: [{ id: "c", name: "Ghost", command: ghost }] };
   const res = await openEditor("c", dir, prefs);
   assert.equal(res.ok, false);
-  assert.equal(res.expected, undefined, "we found it in Settings and could not start it: that is news");
-  assert.match(res.message ?? "", /^Couldn't launch it: /);
+  assert.equal(res.expected, true);
+  assert.equal(res.message, `Couldn't find ${ghost}, the program Ghost runs. Write its full path in Settings ▸ Editors.`);
 });
 
 test("a launch the OS refuses outright is answered, not thrown", async () => {
   // A NUL cannot be in an argument: spawn throws before any process exists.
-  const prefs = { hidden: [], custom: [{ id: "c", name: "Mine", command: `${node} {path}` }] };
-  const res = await openEditor("c", "bad\0folder", prefs);
+  const prefs = { hidden: [], custom: [{ id: "c", name: "Mine", command: `${node} "bad\0arg" {path}` }] };
+  const res = await openEditor("c", dir, prefs);
   assert.equal(res.ok, false);
   assert.match(res.message ?? "", /null bytes|\\0|string without null/i);
+  // …and a folder no path can name is simply not there.
+  const gone = await openEditor("c", "bad\0folder", prefs);
+  assert.equal(gone.ok, false);
+  assert.equal(gone.expected, true);
 });
 
 test("an editor that is no longer installed is an expected state with a pointer to Settings", async () => {

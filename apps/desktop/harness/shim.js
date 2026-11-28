@@ -1149,6 +1149,17 @@
     );
   }
 
+  // ?unborn=1 → HEAD on a branch with no commits yet (`git switch --orphan`,
+  // or an init + fetch): every listed branch is someone else's, none is
+  // current, and graph:load names no HEAD commit (crash report #97). Paired
+  // with ?graphfilter=current, a remembered scope that walks nothing.
+  if (params.get("unborn")) {
+    fixtures["refs:list"] = fixtures["refs:list"].map((r) => ({ ...r, isCurrent: false }));
+  }
+  // ?norefs=1 (with ?unborn=1) → a repository just initialised: no commit,
+  // and no branch, tag or remote at all.
+  if (params.get("norefs")) fixtures["refs:list"] = [];
+
   // ?collide=1 (see the branches above): the refs git lists beside them, under
   // the short names git gives them — the tags "main" and "release", the
   // remote-tracking origin/release, and origin/sl beside a LOCAL "origin/sl".
@@ -3212,11 +3223,18 @@
   // refs included, or the picker could never tick one back in. The walk is
   // what git does with `git log --stdin <refs>`: HEAD joins only when detached
   // (it is attached here, on main), a row no ticked ref reaches is gone, and
-  // chips follow exactly the ticked refs — the current branch's included.
-  // Without this the picker was a control with no fixture behind it: every
+  // BRANCH chips follow exactly the ticked refs — the current branch's
+  // included — while a tag on a row that is drawn keeps its chip whatever is
+  // ticked (#159; host-bridge's chipRefsUnderFilter). Without this the picker was a control with no fixture behind it: every
   // tick would have answered the same ten rows and a check could pass over a
   // dead filter.
   const graphBase = fixtures["graph:load"];
+  if (params.get("unborn")) {
+    // No commit is HEAD's, and no branch is current (see ?unborn above).
+    graphBase.head = "";
+    for (const r of graphBase.rows) r.refs = r.refs.map((c) => (c.kind === "currentHead" ? { ...c, kind: "head" } : c));
+  }
+  if (params.get("norefs")) graphBase.rows = [];
   // ?stack=1 (issue #32's multi-select scenes): three LOCAL commits on main,
   // not pushed yet, above the released tip — the history a squash or a drop of
   // several commits is for. main moves up to the newest; origin/main and the
@@ -3319,7 +3337,10 @@
   };
   /** Remembered for the session, like the app's per-repo setting — as
    *  STORED: a preset stays its symbols, and is resolved per load. */
-  let graphRefFilter = null;
+  //  ?graphfilter=current|currentUpstream|local starts the session with that
+  //  preset remembered, the way a reopened repository does.
+  const startPreset = params.get("graphfilter");
+  let graphRefFilter = startPreset && Object.hasOwn(PRESETS, startPreset) ? [...PRESETS[startPreset]] : null;
   /** The walk of the last load (resolved), which graph:reaches answers from. */
   let graphWalk = null;
   window.__GS_GRAPH_LOADS = [];
@@ -3353,7 +3374,7 @@
       .filter((r) => !walk || reached.has(r.sha))
       .map((r) => ({
         ...r,
-        refs: walk ? r.refs.filter((c) => ticked.has(chipFullName(c))) : r.refs,
+        refs: walk ? r.refs.filter((c) => c.kind === "tag" || ticked.has(chipFullName(c))) : r.refs,
       }));
     const out = { ...graphBase, rows, nextSkip: rows.length, refFilter: walk, refListSig: sig };
     if (refPreset) out.refPreset = refPreset;
@@ -3655,6 +3676,29 @@
       apply: shas.length > 1 && !shas.includes(MERGE),
       drop: shas.length > 1 && m.inLine && m.idx.length < m.line.length,
       squash: shas.length > 1 && m.contiguous,
+    };
+  };
+  // The files a selection changed, as one change (#161): a run of commits on
+  // the rewritable line is one change from the oldest one's parent to the
+  // newest; anything else is combined file by file. In path order, as git lists them.
+  dynamic["commits:files"] = (req) => {
+    const shas = (req && req.shas) || [];
+    const m = manyOf(shas);
+    const tip = shas[0];
+    const below = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+    if (m.contiguous) {
+      return {
+        kind: "stack",
+        files: [
+          { path: "apps/desktop/src/renderer/graphMount.ts", oldPath: "apps/desktop/src/renderer/graphHost.ts", status: "R", additions: 3, deletions: 2, from: below, to: tip },
+          { path: "packages/webview-ui/src/graph/multiSelect.ts", status: "M", additions: 42, deletions: 9, from: below, to: tip },
+          { path: "packages/webview-ui/src/graph/selectionSummary.ts", status: "A", additions: 61, deletions: 0, from: below, to: tip },
+        ],
+      };
+    }
+    return {
+      kind: "pieces",
+      files: [{ path: "packages/webview-ui/src/graph/multiSelect.ts", status: "M", additions: 0, deletions: 0, from: below, to: tip }],
     };
   };
   dynamic["commits:plan"] = (req) => {

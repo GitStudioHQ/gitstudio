@@ -50,18 +50,39 @@ it. Nothing is ever public.
   version, and your operating system, processor architecture and OS kernel
   version (for example `darwin`, `arm64`, `24.6.0`);
 - for an error: where it happened, in the app's own words (for example
-  `ipc:branch:create`), the error's type, and its message and stack trace,
-  scrubbed and cut to 300 and 1,600 characters;
+  `ipc:branch:create`); its type;
+  the first line of its message, scrubbed, with any quoted name in it taken
+  out (an error JavaScript raises keeps the code names it quotes), cut to 500
+  characters; the system's error code
+  and call, if it has them (for example `ENOENT` and `spawn`, never the
+  program's path); and its call frames, at most 15, each a function name and a
+  file name with its line and column, never a folder. A failed git command
+  that was thrown is said as its subcommand and options (for example `git log
+  --branches HEAD exited with code 128`), never its arguments: no branch,
+  path, remote or commit message;
 - for a failed git command: the app's name for the command (for example
-  `Push`) and git's error output, scrubbed and cut to 600 characters.
+  `Push`) and the lines of git's output that say what went wrong (its `fatal:` and
+  `error:` lines, a refused push's reason, ssh's refusal), scrubbed: at most
+  four lines and 600 characters; when git said none of those, its first line
+  that isn't progress, advice or a hook's output. Not the rest of what git
+  printed: its progress, advice, file lists, a hook's output and the remote's
+  address are never sent.
+
+**Not reported at all:** a failure that is your situation rather than a fault
+in GitStudio. When git says your network, proxy, credentials, remote or
+working tree is why it failed, or a server couldn't be reached, you see the
+message and nothing is sent.
 
 **Scrubbed** means that before anything leaves your computer, the shared
 scrubber (`packages/host-bridge/src/scrub.ts`, the same code the GitStudio
 extension uses) removes: your home directory; absolute paths, including the
-file and folder names in them (a stack trace keeps its line and column); the
+file and folder names in them (a call frame keeps only its file's name, line and column); the
 organisation, repository, query and any credentials in a URL, and the path of
-an SSH remote (the host name is kept, for example `github.com` or a
-self-hosted server's name); email addresses; IP addresses; access tokens, API
+an SSH remote; every server and proxy name except a public service's (a name
+such as `github.com` or `gitlab.com` is kept, so a report still says which
+forge answered; a self-hosted server's or a company proxy's becomes `<host>`);
+email addresses; the account and organisation names a forge's refusal
+names; Windows account names and SIDs; IP addresses; access tokens, API
 keys, JWTs and private keys; a quoted name with a slash in it, such as a
 repository's `owner/name` in an error message; and full commit SHAs, which
 are cut to 7 characters. From a failed git command's output it also removes

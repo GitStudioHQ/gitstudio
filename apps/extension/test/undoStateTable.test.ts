@@ -20,11 +20,11 @@
 // message; the dialog host answers each question from the cell's script.
 
 import Module from "node:module";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 type Resolver = { _resolveFilename: (request: unknown, ...rest: unknown[]) => string };
@@ -271,7 +271,18 @@ const rows: Row[] = [];
 const UNDO_TOAST = / — done\.$| stopped — finish it, or Undo\.$| did not finish\.$/;
 after(() => {
   if (process.env.UNDO_AUDIT_OUT) writeFileSync(process.env.UNDO_AUDIT_OUT, JSON.stringify(rows, null, 2));
+  // Every cell's repositories: ~20 MB a run, left in the temp folder for good.
+  rmQuietly(scratch);
+  rmQuietly(dirname(cfg));
 });
+
+function rmQuietly(dir: string): void {
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+  } catch {
+    /* a Windows file still held open: the OS's temp cleanup gets it */
+  }
+}
 
 function clear(): void {
   asked = [];

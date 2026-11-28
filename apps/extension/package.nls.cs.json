@@ -1,5 +1,8 @@
 {
   "capabilities.virtualWorkspaces.description": "GitStudio vyžaduje místní repozitář gitu na disku.",
+  "color.gitstudio.changedLines.addedBackground.description": "Pozadí přidaných řádků v kartách editoru, když je zapnuto gitstudio.staging.highlightChangedLines.",
+  "color.gitstudio.changedLines.modifiedBackground.description": "Pozadí upravených řádků v kartách editoru, když je zapnuto gitstudio.staging.highlightChangedLines.",
+  "color.gitstudio.changedLines.deletedBackground.description": "Pozadí štítku, který v kartách editoru označuje odstraněné řádky, když je zapnuto gitstudio.staging.highlightChangedLines.",
   "command.gitstudio.abortRebase.title": "Zrušit rebase",
   "command.gitstudio.addRemote.title": "Přidat vzdálený repozitář…",
   "command.gitstudio.ai.clearApiKey.title": "Vymazat API klíč Anthropic",
@@ -209,6 +212,7 @@
   "config.gitstudio.staging.hoverActions.description": "Zobrazí odkazy Připravit a Zrušit připravení, když ukazatel spočine na změněném řádku, v editoru i na změněné straně porovnání. S výběrem odkazy připraví nebo zruší připravení vybraných řádků. Z klávesnice: Zobrazit nebo zaměřit popisek (Show or Focus Hover) a pak tabulátorem na odkaz.",
   "config.gitstudio.staging.codeLens.description": "Zobrazí odkazy Připravit a Zrušit připravení nad každou změnou v editoru. Editor porovnání je zobrazí jen se zapnutým nastavením VS Code Diff Editor: Code Lens.",
   "config.gitstudio.staging.showGutterState.description": "Zobrazí v okraji editoru, které změny jsou připravené. Značka jen hlásí stav: VS Code žádnému rozšíření nedovolí udělat ikonu v okraji klikatelnou ani k ní zobrazit popisek. Změnu připravíte nebo zrušíte její připravení tak, že necháte ukazatel spočinout na jejích řádcích, kliknete pravým tlačítkem na značku nebo číslo řádku, nebo použijete klávesovou zkratku.",
+  "config.gitstudio.staging.highlightChangedLines.markdownDescription": "Zvýrazní celý řádek každé změny v běžných kartách editoru: přidané a upravené řádky dostanou pozadí a místo, kde byly řádky odstraněny, označí štítek. Zvýrazní se každá změna od posledního commitu, připravená i nepřipravená; zda je připravená, ukazuje značka v okraji. Editory porovnání, které změny barví samy, a soubory nové od posledního commitu zůstanou, jak jsou. Barvy změníte v `#workbench.colorCustomizations#`: `gitstudio.changedLines.addedBackground`, `gitstudio.changedLines.modifiedBackground` a `gitstudio.changedLines.deletedBackground`.",
   "config.gitstudio.statusBar.showGraph.description": "Zobrazit tlačítko ve stavovém řádku, které otevře graf commitů.",
   "config.gitstudio.statusBar.showTerminal.description": "Zobrazit tlačítko ve stavovém řádku, které otevře terminál přímo v kořeni aktivního repozitáře — což nemusí být kořen pracovního prostoru.",
   "config.gitstudio.worktrees.prefixWithProjectName.description": "Už se nepoužívá: Nový pracovní strom teď navrhuje složku '<projekt>-<větev>' vedle hlavního pracovního stromu a můžete ji upravit před vytvořením.",

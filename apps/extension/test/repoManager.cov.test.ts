@@ -28,7 +28,11 @@ interface Harness {
 }
 
 /* eslint-disable @typescript-eslint/no-require-imports -- loaded after the stand-in is in place */
-const vscode = require("vscode") as { __test: Harness; workspace: Record<string, unknown> };
+const vscode = require("vscode") as {
+  __test: Harness;
+  workspace: Record<string, unknown>;
+  commands: { executeCommand: (...args: unknown[]) => Promise<unknown> };
+};
 const vs = vscode.__test;
 const { RepoManager } = require("../src/git/repoManager") as typeof import("../src/git/repoManager");
 /* eslint-enable @typescript-eslint/no-require-imports */
@@ -129,4 +133,31 @@ test("the Undo ledger set at activation is the one every door gets back", async 
   const ledger = { runWithUndo: async <T>(_r: unknown, _l: string, fn: () => Promise<T>) => fn() };
   m.setUndoLedger(ledger);
   assert.equal(m.getUndoLedger(), ledger);
+});
+
+// Report #100: an unhandledRejection "Canceled" from updateHasRepoContext ←
+// init. setContext runs over the extension host's RPC, and a window that is
+// reloading or closing cancels it; `void executeCommand(…)` left the rejection
+// for the process to find.
+test("a context key the window cancels is not left as an unhandled rejection", async () => {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown): void => void unhandled.push(reason);
+  process.on("unhandledRejection", onUnhandled);
+  const real = vscode.commands.executeCommand;
+  const canceled = (): Error => Object.assign(new Error("Canceled"), { name: "Canceled" });
+  vscode.commands.executeCommand = (command: unknown, ...rest: unknown[]) =>
+    command === "setContext" ? Promise.reject(canceled()) : real(command, ...rest);
+  try {
+    const m = await window([REPO]);
+    vs.gitOpen(vs.repository(REPO));
+    await until("the repository", () => m.getAll().length === 1);
+    m.dispose();
+    live.splice(live.indexOf(m), 1);
+    // Unhandled rejections are reported after the microtask queue drains.
+    await new Promise((r) => setTimeout(r, 20));
+    assert.deepEqual(unhandled, [], "every setContext's failure is handled where it is made");
+  } finally {
+    vscode.commands.executeCommand = real;
+    process.off("unhandledRejection", onUnhandled);
+  }
 });

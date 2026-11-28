@@ -651,3 +651,29 @@ test("a built-in blame the user set themselves is left alone", async () => {
   assert.deepEqual(kit.settingWrites, []);
   assert.equal(kit.said.length, 0);
 });
+
+// Report #100's twin here: a window reloading or closing cancels `setContext`,
+// and blame's three calls (the annotate key at start and on toggle, the
+// gutter's menu keys) left the rejection unhandled — or threw it out of the
+// Annotate command itself.
+test("a setContext the window cancels neither escapes nor breaks Annotate", async () => {
+  const vscode = require("vscode") as { commands: { executeCommand: (c: string, ...a: unknown[]) => Promise<unknown> } };
+  const real = vscode.commands.executeCommand;
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown): void => void unhandled.push(reason);
+  process.on("unhandledRejection", onUnhandled);
+  vscode.commands.executeCommand = (command: string, ...args: unknown[]) =>
+    command === "setContext" ? Promise.reject(Object.assign(new Error("Canceled"), { name: "Canceled" })) : real(command, ...args);
+  try {
+    const s = setup();
+    focus(editor(doc(s.file), 0));
+    const ui = start(s);
+    await ui.command("gitstudio.toggleFileBlame");
+    assert.equal(s.state.get("gitstudio.blame.annotateAll"), true, "the toggle still happened");
+    await new Promise((r) => setTimeout(r, 20));
+    assert.deepEqual(unhandled, [], "every setContext's failure is handled where it is made");
+  } finally {
+    vscode.commands.executeCommand = real;
+    process.off("unhandledRejection", onUnhandled);
+  }
+});

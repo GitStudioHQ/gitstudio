@@ -15,6 +15,7 @@ import { AnthropicProvider } from "./anthropicProvider";
 import { VsCodeLmProvider, type LmModelInfo } from "./vscodeLmProvider";
 import { CliProvider, CLI_SPECS } from "./cliProvider";
 import { OpenAiProvider, withProviderDefaults, type OpenAiConfig } from "./openAiProvider";
+import { setContext } from "../util/setContext";
 
 // The AI features — the optional, bring-your-own-key AI layer (M10).
 //
@@ -226,11 +227,7 @@ export class AiFeatures implements vscode.Disposable {
   /** Compute and publish `gitstudio.ai.enabled` so menus/buttons show/hide. */
   async refreshEnabled(): Promise<void> {
     const enabled = await this.isEnabled();
-    await vscode.commands.executeCommand(
-      "setContext",
-      "gitstudio.ai.enabled",
-      enabled,
-    );
+    await setContext("gitstudio.ai.enabled", enabled);
     // Notify listeners (the commit composer) so the ✨/plug buttons update the
     // instant a model is connected or disconnected — not on the next git event.
     this.lastProbedAt = Date.now();

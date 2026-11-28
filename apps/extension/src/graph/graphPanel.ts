@@ -45,18 +45,22 @@ import {
   runCommitAction,
   runMultiCommitAction,
 } from "./commitActions";
-import { menuTarget, selectedCommits } from "@gitstudio/host-bridge/graphSelection";
+import { isCommitSha, menuTarget, selectedCommits } from "@gitstudio/host-bridge/graphSelection";
 import { SettleLatest } from "@gitstudio/host-bridge/settleLatest";
 import { ComparePanel } from "../compare/comparePanel";
 import { pickCompareTarget } from "../compare/refCompare";
 import type { MenuRef } from "./checkoutTarget";
 import { rowStatsReply } from "./rowStatsReply";
 import { readRewritableChain } from "@gitstudio/git-service/rebaseChain";
+import { combinedChanges } from "@gitstudio/git-service/combinedChanges";
 import { buildRebasePlan } from "@gitstudio/git-service/rebasePlan";
 import { runRebasePlan, isRebaseInProgress, reportRebaseFailure } from "../rebase/rebaseRunner";
 import { promptPick } from "../ui/dialogs";
 // EMPTY_TREE: git's empty tree — the "parent" of a root commit's diff.
-import { commitChangeSides, EMPTY_TREE, openSidesDiff } from "../history/revisionContentProvider";
+import { commitChangeSides, EMPTY_TREE, revisionSideUri } from "../history/revisionContentProvider";
+import { openDiff } from "../merge/diffPlaces";
+import { ActiveFileTracker } from "./activeFile";
+import { followTabs } from "./activeFileTabs";
 import { commitWebUrlIn } from "../util/remoteUrl";
 import { relativePath, statusLetter } from "../changes/changesView";
 import type { Change } from "../git/git";
@@ -80,6 +84,8 @@ const ACTION_ID_MAP: Record<string, string> = {
 
 /** Commits per page. The first page lands fast; more stream in on scroll. */
 const PAGE_SIZE = 500;
+/** A full object name, sha-1 or sha-256: what a combined file's revisions must be (#161). */
+const FULL_SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 // The FIRST page is deliberately small so the graph paints fast on open (a
 // 500-commit log + full lane layout was the bulk of the first-paint cost);
 // deeper history streams in via loadMore as you scroll.
@@ -230,6 +236,8 @@ export class CommitGraphPanel {
   private repoRoot: string | undefined;
   /** A sha to reveal once the first page is loaded (from the Commits view). */
   private pendingReveal: string | undefined;
+  /** Which of the details pane's diffs is open, by its tabs (#158). */
+  private readonly activeFile = new ActiveFileTracker();
 
   private constructor(
     private readonly webview: vscode.Webview,
@@ -272,6 +280,10 @@ export class CommitGraphPanel {
       });
       this.disposables.push({ dispose: off });
     }
+    // The details pane lights the file whose diff is open (#158): switching
+    // to another of its diffs' tabs moves the light, closing the last puts it
+    // out. The Commits rail has no pane.
+    if (!sidebar) this.disposables.push(followTabs(this.activeFile, () => this.postActiveFile()));
     // View as Tree / View as List (#81) is one choice for every graph with a
     // details pane: a change made in one reaches the others' open panes. The
     // Commits rail has no pane, and is told nothing.
@@ -315,13 +327,17 @@ export class CommitGraphPanel {
         this.shown = msg.sha;
         // One commit now: a pending "N commits selected" answer is for a selection that is gone.
         this.summary.cancel();
+        this.summaryFiles.cancel();
         void this.pushCommitDetails(msg.sha);
         break;
-      case "selectCommits":
+      case "selectCommits": {
         // Several commits (or none) — issue #32. No one commit is showing.
         this.shown = undefined;
-        void this.pushCommitsSummary(selectedCommits(msg.shas));
+        const shas = selectedCommits(msg.shas);
+        void this.pushCommitsSummary(shas);
+        void this.pushCommitsFiles(shas);
         break;
+      }
       case "contextMenu": {
         // One commit's menu, or — with `shas` — the menu for a selection of
         // several (issue #32). graphSelection decides which, for every door.
@@ -341,7 +357,10 @@ export class CommitGraphPanel {
         void this.openWorkspaceFile(msg.path);
         break;
       case "openFile":
-        void this.doOpenFile(msg.sha, msg.path, !!msg.wip, msg.oldPath, msg.status);
+        void this.doOpenFile(msg.sha, msg.path, !!msg.wip, msg.oldPath, msg.status, !!msg.preserveFocus);
+        break;
+      case "openCombinedFile":
+        void this.openCombinedFile(msg);
         break;
       case "commitAction":
         void this.doCommitAction(msg.action, msg.sha);
@@ -406,6 +425,22 @@ export class CommitGraphPanel {
   private postFilesLayout(): void {
     const layout = this.sidebar ? undefined : getFilesLayoutStore()?.get();
     if (layout) this.post({ type: "filesLayout", layout });
+  }
+
+  /**
+   * Which file's diff is open, for the pane to light (#158) — in the
+   * repository the pane is showing: a working tree's changes have the same
+   * sha in every repository.
+   */
+  private postActiveFile(): void {
+    const a = this.activeFile.active(this.repos.getActive()?.root);
+    this.post(a ? { type: "activeFile", sha: a.sha, path: a.path } : { type: "activeFile" });
+  }
+
+  /** A commit's details, and which of its files' diff is open. */
+  private postDetails(details: CommitDetailsPayload | null): void {
+    this.post({ type: "commitDetails", details });
+    if (details) this.postActiveFile();
   }
 
   /** Tell the page whether it may look authors' pictures up (see avatarPrefs.ts). */
@@ -1047,10 +1082,10 @@ export class CommitGraphPanel {
     const rows = buildWireRows({
       rows: layout.rows,
       records: this.records,
-      // Chips follow the filter: a ref the graph is not walked from draws no
-      // chip — the current branch included, unless it is ticked. The details
-      // pane and the commit menu keep reading the full map — they describe
-      // the commit.
+      // Branch chips follow the filter: a branch the graph is not walked from
+      // draws no chip — the current one included, unless it is ticked. A tag
+      // on a drawn commit always does (#159). The details pane and the commit
+      // menu keep reading the full map — they describe the commit.
       refsBySha: chipRefsUnderFilter(this.refsBySha, this.walk.refs),
     });
     return { rows, totalColumns: layout.totalColumns };
@@ -1143,6 +1178,71 @@ export class CommitGraphPanel {
     }
     const items = await this.summary.run(() => multiCommitMenuItemsFor(active.ctx, shas));
     if (items) this.post({ type: "commitsSummary", shas, items });
+  }
+
+  /** Only the newest selection's files are read, once it settles, as its actions are. */
+  private readonly summaryFiles = new SettleLatest();
+
+  /**
+   * The files a multi-selection changed, as one change (#161), for the
+   * summary's Files list. Asked through its own SettleLatest, so a slow read
+   * never holds up the actions, and Shift+Down over twenty rows reads once.
+   */
+  private async pushCommitsFiles(shas: string[]): Promise<void> {
+    const active = this.repos.getActive();
+    if (!active || shas.length < 2) {
+      this.summaryFiles.cancel();
+      return;
+    }
+    const files = await this.summaryFiles.run(() =>
+      // A git failure is said in the pane, as one commit's unreadable files are.
+      combinedChanges(active.ctx.process, shas).then(
+        (files) => ({ files }),
+        () => ({ failed: true as const }),
+      ),
+    );
+    if (files) this.post({ type: "commitsFiles", shas, ...files });
+  }
+
+  /**
+   * Open a file of the selection's combined change (#161): the file before
+   * the first selected commit that changed it, against after the last. The
+   * revisions come back from the page, so only full shas (or the empty tree)
+   * are taken: anything else is not a revision this pane handed out.
+   */
+  private async openCombinedFile(msg: {
+    key: string;
+    path: string;
+    oldPath?: string;
+    status?: string;
+    from: string;
+    to: string;
+    preserveFocus?: boolean;
+  }): Promise<void> {
+    const active = this.repos.getActive();
+    if (!active || typeof msg.path !== "string" || msg.path === "" || typeof msg.key !== "string") return;
+    const full = (rev: unknown): boolean => isCommitSha(rev) && FULL_SHA.test(rev);
+    if (!full(msg.to) || !(msg.from === EMPTY_TREE || full(msg.from))) return;
+    const oldPath = typeof msg.oldPath === "string" && msg.oldPath !== "" ? msg.oldPath : undefined;
+    const fileName = msg.path.split("/").pop() || msg.path;
+    const sides = commitChangeSides({ sha: msg.to, parent: msg.from, path: msg.path, oldPath, status: msg.status });
+    const title =
+      msg.from === EMPTY_TREE
+        ? `${fileName} (${msg.to.slice(0, 7)})`
+        : `${fileName} (${msg.from.slice(0, 7)} ↔ ${msg.to.slice(0, 7)})`;
+    const original = revisionSideUri(active.root, msg.path, sides.left);
+    const modified = revisionSideUri(active.root, msg.path, sides.right);
+    // Lit in the summary's list while its tab is the open one (#158).
+    this.activeFile.open({
+      root: active.root,
+      sha: msg.key,
+      path: msg.path,
+      original: original.toString(),
+      modified: modified.toString(),
+      title,
+    });
+    this.postActiveFile();
+    await openDiff(original, modified, title, { preview: true, ...(msg.preserveFocus ? { preserveFocus: true } : {}) }, "graph");
   }
 
   /** Run an item of the several-commit menu or summary. */
@@ -1241,6 +1341,7 @@ export class CommitGraphPanel {
     // One commit now (issue #32): a pending "N commits selected" answer is for
     // a selection the reveal replaces — the webview selects this one alone.
     this.summary.cancel();
+    this.summaryFiles.cancel();
     // `ready` only means the webview booted — its first page of rows arrives
     // later, and revealing into an empty graph silently no-ops. Queue until
     // graphInit has actually landed (`initialized`), or a reveal issued during
@@ -1417,7 +1518,7 @@ export class CommitGraphPanel {
     }
     const record = await this.getRecord(active, sha);
     if (!record) {
-      this.post({ type: "commitDetails", details: null });
+      this.postDetails(null);
       return;
     }
     let files: CommitFileChange[];
@@ -1446,7 +1547,7 @@ export class CommitGraphPanel {
       files,
       hasRemote: this.hasAnyRemote,
     };
-    this.post({ type: "commitDetails", details: payload });
+    this.postDetails(payload);
   }
 
   /** Build the working-tree (WIP) details payload from the repo state. */
@@ -1498,6 +1599,8 @@ export class CommitGraphPanel {
         hasRemote: this.hasAnyRemote,
       },
     });
+    // A refresh of the working tree keeps its open file lit (#158).
+    this.postActiveFile();
   }
 
   /** Open a changed file as a diff (commit vs first parent, or WIP vs HEAD). */
@@ -1536,39 +1639,40 @@ export class CommitGraphPanel {
     wip: boolean,
     oldPath?: string,
     status?: string,
+    preserveFocus = false,
   ): Promise<void> {
     const active = this.repos.getActive();
     if (!active) {
       return;
     }
     const fileName = path.split("/").pop() || path;
-    if (wip) {
-      // Working-tree file: HEAD ↔ the live file on disk — HEAD under the old
-      // name for a rename, and nothing on the right for a deletion (the file
-      // URI of a path that is not on disk is not an empty file).
-      await openSidesDiff(
-        active.root,
-        path,
-        {
+    const parent = this.records.get(sha)?.parents[0] ?? EMPTY_TREE;
+    // Working-tree file: HEAD ↔ the live file on disk — HEAD under the old
+    // name for a rename, and nothing on the right for a deletion (the file
+    // URI of a path that is not on disk is not an empty file). A commit's: the
+    // parent side under the name the file had THERE — a rename commit's
+    // parent has no file at the new name, so it used to show as all-added.
+    const sides = wip
+      ? {
           left: status === "A" || status === "U" ? { rev: EMPTY_TREE } : { rev: "HEAD", path: oldPath || path },
           right: status === "D" ? { rev: EMPTY_TREE } : { rev: undefined },
-        },
-        l10n.t("{0} (HEAD ↔ Working Tree)", fileName),
-        "graph",
-      );
-      return;
-    }
-    const record = this.records.get(sha);
-    const parent = record?.parents[0] ?? EMPTY_TREE;
-    // The parent side under the name the file had THERE: a rename commit's
-    // parent has no file at the new name, so it used to show as all-added.
-    await openSidesDiff(
-      active.root,
+        }
+      : commitChangeSides({ sha, parent, path, oldPath, status });
+    const title = wip ? l10n.t("{0} (HEAD ↔ Working Tree)", fileName) : `${fileName} (${sha.slice(0, 7)})`;
+    const original = revisionSideUri(active.root, path, sides.left);
+    const modified = revisionSideUri(active.root, path, sides.right);
+    // Its file is the open one now (#158); the tab that shows it keeps it so.
+    this.activeFile.open({
+      root: active.root,
+      sha,
       path,
-      commitChangeSides({ sha, parent, path, oldPath, status }),
-      `${fileName} (${sha.slice(0, 7)})`,
-      "graph",
-    );
+      original: original.toString(),
+      modified: modified.toString(),
+      title,
+    });
+    this.postActiveFile();
+    // Space in the list keeps the keyboard there (preserveFocus).
+    await openDiff(original, modified, title, { preview: true, ...(preserveFocus ? { preserveFocus: true } : {}) }, "graph");
   }
 
   /** Run a details-panel toolbar action against the target commit. */

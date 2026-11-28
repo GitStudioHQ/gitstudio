@@ -97,22 +97,43 @@ test("detectEditors keeps the catalog order", () => {
   );
 });
 
-test("a macOS app opens through `open -a`, a CLI runs directly", () => {
+test("a macOS app opens through `open -a` (by its full path), a CLI runs directly", () => {
   assert.deepEqual(commandFor({ via: "app", location: "/Applications/Cursor.app" }, "/repo", "darwin"), {
-    cmd: "open",
+    cmd: "/usr/bin/open",
     args: ["-a", "/Applications/Cursor.app", "/repo"],
-    shell: false,
   });
   assert.deepEqual(commandFor({ via: "cli", location: "/usr/local/bin/code" }, "/repo", "darwin"), {
     cmd: "/usr/local/bin/code",
     args: ["/repo"],
-    shell: false,
   });
 });
 
-test("a Windows .cmd shim needs a shell; an .exe does not", () => {
-  assert.equal(commandFor({ via: "cli", location: "C:\\x\\code.cmd" }, "C:\\repo", "win32").shell, true);
-  assert.equal(commandFor({ via: "path", location: "C:\\x\\Code.exe" }, "C:\\repo", "win32").shell, false);
+test("a Windows .cmd launcher runs through a quoted cmd.exe line; an .exe runs directly", () => {
+  // `shell: true` used to run it, and Node joins a shell's arguments with
+  // plain spaces: "C:\\Users\\Jane Doe\\…" reached the editor as two
+  // arguments, and a folder named with `&` ran the rest as a command.
+  const env = { ComSpec: "C:\\Windows\\system32\\cmd.exe" };
+  assert.deepEqual(commandFor({ via: "cli", location: "C:\\x\\code.cmd" }, "C:\\Users\\Jane Doe\\a&b", "win32", env), {
+    cmd: "C:\\Windows\\system32\\cmd.exe",
+    args: ["/d", "/s", "/c", '"C:\\x\\code.cmd ^"C:\\Users\\Jane^ Doe\\a^&b^""'],
+    verbatim: true,
+  });
+  assert.deepEqual(commandFor({ via: "path", location: "C:\\x\\Code.exe" }, "C:\\My Repo", "win32", env), {
+    cmd: "C:\\x\\Code.exe",
+    args: ["C:\\My Repo"],
+  });
+});
+
+test("Windows prefers the installed .exe to the .cmd launcher on PATH", () => {
+  const local = "C:\\Users\\dev\\AppData\\Local";
+  const exe = win32.join(local, "Programs/Microsoft VS Code/Code.exe");
+  const both = env("win32", [win32.join("C:\\tools", "code.cmd"), exe], { localAppData: local, path: "C:\\tools" });
+  assert.deepEqual(detectEditor(spec("vscode"), both), { id: "vscode", name: "VSCode", via: "path", location: exe });
+});
+
+test("Windows never takes the extensionless shell script that sits beside a .cmd", () => {
+  const e = env("win32", [win32.join("C:\\tools", "cursor")], { path: "C:\\tools" });
+  assert.equal(detectEditor(spec("cursor"), e), undefined);
 });
 
 test("a custom command substitutes {path} or appends the folder", () => {
@@ -124,6 +145,9 @@ test("a custom command substitutes {path} or appends the folder", () => {
   });
   // A path with a space must reach the editor as ONE argument.
   assert.deepEqual(customCommandFor("code", "/Users/dev/My Repo"), { cmd: "code", args: ["/Users/dev/My Repo"] });
+  // Quotes inside a word, as a shell reads them: one argument, no quote left
+  // in it (a quote inside an argument can't be carried on a cmd.exe line).
+  assert.deepEqual(customCommandFor('ed --title="My Repo" {path}', "/repo"), { cmd: "ed", args: ["--title=My Repo", "/repo"] });
 });
 
 test("the view hides what Settings hid and defaults to the chosen, else the first shown", () => {

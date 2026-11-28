@@ -18,6 +18,8 @@ import {
   deniedFolderMessage,
   droppedTabsNotice,
   gitNotRunnableMessage,
+  gitMissingError,
+  gitMissingResult,
   missingFolderError,
   missingFolderResult,
   spawnDeniedError,
@@ -540,6 +542,60 @@ test("crash report 34, the other cause: a git this account may not run says that
   }
 });
 
+// Report #90 ("spawn git ENOENT" from graph:load): with the folder THERE, Node's
+// ENOENT is git itself missing — the user's machine, said plainly, never filed.
+test("report 90: a git that is not there says so, with the folder fine — not Node's spawn ENOENT", async () => {
+  const empty = mkdtempSync(join(tmpdir(), "gs-nogit-path-"));
+  try {
+    const err = await spawnFailure(tmpdir(), { ...process.env, PATH: empty, Path: empty });
+    assert.match(err.message, /^spawn \S*git ENOENT$/, "precondition: Node's own error, as in the report");
+    const said = gitMissingError(err, tmpdir());
+    assert.ok(said && isExpectedError(said), "a state of the user's machine, not a crash to report");
+    assert.equal(said.message, "git was not found on your PATH.");
+    assert.equal(gitMissingError(err, undefined)?.message, "git was not found on your PATH.", "no repository open: the same");
+    // A folder that is gone is missingFolderError's sentence, not this one.
+    assert.equal(gitMissingError(err, join(tmpdir(), `gs-gone-${process.pid}-${Date.now()}`)), undefined);
+    // …and a handler that RETURNS the failure.
+    assert.deepEqual(gitMissingResult({ ok: false, message: `Error: ${err.message}` }, tmpdir()), {
+      ok: false,
+      message: "git was not found on your PATH.",
+      expected: true,
+    });
+  } finally {
+    rmSync(empty, { recursive: true, force: true });
+  }
+  // Another program not there is its caller's to say; git failing otherwise is git's.
+  for (const other of [
+    Object.assign(new Error("spawn code ENOENT"), { code: "ENOENT", syscall: "spawn code", path: "code" }),
+    Object.assign(new Error("spawn claude ENOENT"), { code: "ENOENT", syscall: "spawn claude", path: "claude" }),
+    new Error("ENOENT: no such file or directory, open '/r/x/.git/HEAD'"),
+    new Error("fatal: not a git repository"),
+  ]) {
+    assert.equal(gitMissingError(other, tmpdir()), undefined, other.message);
+  }
+  assert.equal(gitMissingResult({ ok: true, message: "spawn git ENOENT" }, tmpdir()), undefined);
+  // Node's own words, the WHOLE message — a path with spaces in it included…
+  assert.equal(
+    gitMissingResult({ ok: false, message: "Error: spawn C:\\Program Files\\Git\\cmd\\git.exe ENOENT" }, tmpdir())?.message,
+    "git was not found on your PATH.",
+  );
+  // …never a message that merely contains them: a commit hook that printed
+  // them keeps its own output, and is git's failure, not a missing git.
+  const hook = "husky - pre-commit hook exited with code 1\n✖ lint-staged failed: Error: spawn git ENOENT\n    at ChildProcess._handle.onexit";
+  assert.equal(gitMissingResult({ ok: false, message: hook }, tmpdir()), undefined);
+  assert.equal(missingFolderResult({ ok: false, message: hook }, join(tmpdir(), `gs-gone-${process.pid}`)), undefined);
+  assert.equal(spawnDeniedResult({ ok: false, message: "✖ lint-staged failed: Error: spawn git EACCES" }, tmpdir()), undefined);
+  // An editor or a CLI this account may not run is not "Git couldn't be started".
+  for (const other of [
+    Object.assign(new Error("spawn code EACCES"), { code: "EACCES", syscall: "spawn code", path: "code" }),
+    Object.assign(new Error("spawn /usr/local/bin/claude EPERM"), { code: "EPERM", syscall: "spawn /usr/local/bin/claude" }),
+  ]) {
+    assert.equal(spawnDeniedError(other, tmpdir()), undefined, other.message);
+  }
+  assert.equal(spawnDeniedResult({ ok: false, message: "Error: spawn cursor EACCES" }, tmpdir()), undefined);
+  assert.ok(spawnDeniedResult({ ok: false, message: "Error: spawn /usr/bin/git EACCES" }, tmpdir()), "git's still is");
+});
+
 test("spawnDeniedError leaves every other failure alone", () => {
   const denied = Object.assign(new Error("spawn git EACCES"), { code: "EACCES", syscall: "spawn git" });
   // macOS's privacy settings refuse a folder with EPERM: the same answer.
@@ -563,7 +619,13 @@ test("main.ts's IPC wrapper maps both spawn failures before it decides what to f
   const main = readFileSync(fileURLToPath(new URL("../src/main/main.ts", import.meta.url)), "utf8");
   const start = main.indexOf("function handle<C extends IpcChannel>(");
   const body = main.slice(start, main.indexOf("\nfunction ", start + 1));
-  assert.match(body, /missingFolderResult\(result, repos\.scopedRoot\(\)\) \?\? spawnDeniedResult\(result, repos\.scopedRoot\(\)\)/);
-  assert.match(body, /missingFolderError\(err, repos\.scopedRoot\(\)\) \?\? spawnDeniedError\(err, repos\.scopedRoot\(\)\)/);
-  assert.ok(body.indexOf("spawnDeniedResult(") < body.indexOf("reportableResultMessage(result)"), "mapped before it is judged");
+  assert.match(
+    body,
+    /missingFolderResult\(result, repos\.scopedRoot\(\)\)\s*\?\?\s*spawnDeniedResult\(result, repos\.scopedRoot\(\)\)\s*\?\?\s*gitMissingResult\(result, repos\.scopedRoot\(\)\)/,
+  );
+  assert.match(
+    body,
+    /missingFolderError\(err, repos\.scopedRoot\(\)\)\s*\?\?\s*spawnDeniedError\(err, repos\.scopedRoot\(\)\)\s*\?\?\s*gitMissingError\(err, repos\.scopedRoot\(\)\)/,
+  );
+  assert.ok(body.indexOf("gitMissingResult(") < body.indexOf("reportableResultMessage(result)"), "mapped before it is judged");
 });

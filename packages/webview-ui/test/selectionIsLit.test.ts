@@ -295,3 +295,66 @@ for (const theme of THEMES) {
     await run(fileURLToPath(new URL("./fixtures/prPageEntry.ts", import.meta.url)), theme, PR_PAGE, { width: 1000, height: 900, size: "", ground: "editor" });
   });
 }
+
+// ── A commit's Files changed: the file whose diff is open (#158) ────────────
+
+const DETAILS_FILES = `
+  const tick = () => new Promise((r) => setTimeout(r, 40));
+  const el = document.createElement("gitstudio-commit-details");
+  el.style.cssText = "display:block;height:640px;width:960px";
+  document.getElementById("root").replaceChildren(el);
+  const settle = async () => { await el.updateComplete; await tick(); await el.updateComplete; };
+  const sha = "a1b2c3d4".repeat(5);
+  el.details = {
+    kind: "commit", sha, shortSha: sha.slice(0, 7), parents: ["f".repeat(40)],
+    author: "Ada Lovelace", authorEmail: "ada@example.com", authorDate: 1700000000,
+    committer: "Ada Lovelace", committerEmail: "ada@example.com", committerDate: 1700000000,
+    subject: "widgets: a commit with several files", body: "", refs: [], hasRemote: false,
+    // Every status, a rename, a binary file: each part of a row sits on the light somewhere.
+    files: [
+      { path: "src/widgets/panel.ts", status: "M", additions: 40, deletions: 12 },
+      { path: "src/widgets/list.ts", status: "A", additions: 120, deletions: 0 },
+      { path: "src/gadgets/old.ts", status: "D", additions: 0, deletions: 30 },
+      { path: "src/widgets/tree.ts", oldPath: "src/gadgets/tree.ts", status: "R", additions: 2, deletions: 2 },
+      { path: "media/logo.png", status: "A", additions: -1, deletions: -1 },
+      { path: "README.md", status: "M", additions: 1, deletions: 1 },
+    ],
+  };
+  await settle();
+  if (localStorage.getItem("gitstudio.details.files.layout") === "tree") { el.shadowRoot.querySelector(".files-layout").click(); await settle(); }
+  const rows = () => [...el.shadowRoot.querySelectorAll(".ftree .file:not(.dir)")];
+  const named = (n) => rows().find((r) => r.querySelector(".fname").textContent.trim() === n);
+  const ring = (e) => getComputedStyle(e).outlineStyle;
+  for (const n of ["panel.ts", "list.ts", "old.ts", "tree.ts", "logo.png"]) {
+    named(n).click();
+    await settle();
+    expect(named(n).classList.contains("active") && el.shadowRoot.querySelectorAll(".file.active").length === 1, "the open file is lit: " + n);
+    if (HC) {
+      expect(ring(named(n)) === "dashed", "high contrast: the open file is ringed whole, dashed (" + ring(named(n)) + ")");
+      sweep("the open file " + n);
+    } else {
+      sweep("the open file " + n, { targets: [".file.active"] });
+    }
+  }
+  // The keyboard on another row: its ring, and the open file's light, side by side.
+  named("README.md").focus();
+  await settle();
+  sweep("the open file beside the keyboard's row", HC ? {} : { targets: [".file.active"] });
+  // As a folder tree.
+  el.shadowRoot.querySelector(".files-layout").click();
+  await settle();
+  expect(!!el.shadowRoot.querySelector(".file.dir") && named("logo.png").classList.contains("active"), "the tree lights the same file");
+  sweep("the open file in the tree", HC ? {} : { targets: [".file.active"] });
+  el.shadowRoot.querySelector(".files-layout").click();
+  await settle();
+`;
+
+for (const theme of THEMES) {
+  test(`a commit's Files changed: the file whose diff is open is lit, not lined (${theme})`, { skip }, async () => {
+    await run(fileURLToPath(new URL("../src/commit-details.ts", import.meta.url)), theme, DETAILS_FILES, {
+      width: 1000,
+      height: 700,
+      size: "height:660px;width:980px",
+    });
+  });
+}

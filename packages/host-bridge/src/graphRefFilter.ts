@@ -302,11 +302,23 @@ export function normalizeRefFilter(
 }
 
 /**
- * The chips a filtered graph keeps: exactly the refs it was walked from
- * (`walked`, the RESOLVED filter). The current branch no longer keeps one
+ * The chips a filtered graph keeps: every TAG, and of the branches exactly the
+ * ones it was walked from (`walked`, the RESOLVED filter). With no filter the
+ * map is returned as it is.
+ *
+ * Branches follow the filter. The current branch no longer keeps one
  * regardless — it is no longer walked regardless (see headIsDetached); when it
- * is ticked, or a preset stands for it, it is in `walked` like any other. With
- * no filter the map is returned as it is.
+ * is ticked, or a preset stands for it, it is in `walked` like any other.
+ *
+ * Tags do not (issue #159). The filter chooses which HISTORY is drawn; a tag
+ * names a commit, and when that commit is drawn the tag is a fact about it,
+ * like its subject. Keeping only ticked refs meant no preset kept any tag —
+ * "Current branch", "Current + upstream" and "Local only" tick branches alone
+ * — so a release tag on a commit right there on main vanished the moment the
+ * scope narrowed, and came back under All. A tag on a commit the walk does not
+ * reach draws nothing either way: a chip is drawn on a row, and there is no
+ * row. Kept by kind, never by name — a tag and a branch can share one, and
+ * `fullName` is what tells refs/tags/release from refs/heads/release.
  */
 export function chipRefsUnderFilter<R extends RefLike & { fullName: string }>(
   refsBySha: ReadonlyMap<string, R[]>,
@@ -316,7 +328,7 @@ export function chipRefsUnderFilter<R extends RefLike & { fullName: string }>(
   const keep = new Set(walked);
   const out = new Map<string, R[]>();
   for (const [sha, refs] of refsBySha) {
-    const kept = refs.filter((r) => keep.has(r.fullName));
+    const kept = refs.filter((r) => r.type === "tag" || keep.has(r.fullName));
     if (kept.length > 0) out.set(sha, kept);
   }
   return out;
